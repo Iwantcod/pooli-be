@@ -90,5 +90,5 @@ jobs:
             --application-name "${{ secrets.CODEDEPLOY_APP_NAME }}" \
             --deployment-group-name "${{ secrets.CODEDEPLOY_DEPLOYMENT_GROUP }}" \
             --deployment-config-name CodeDeployDefault.OneAtATime \
-            --s3-location bucket=${{ secrets.CODEDEPLOY_S3_BUCKET }},key=revisions/${GITHUB_SHA}.zip,bundleType=zip \
+            --s3-location bucket=${{ secrets.CODEDEPLOY_S3_BUCKET }},key=release/${GITHUB_SHA}.zip,bundleType=zip \
             --description "Deploy ${GITHUB_SHA}"
