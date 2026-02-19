@@ -1,0 +1,94 @@
+name: springboot-ci-cd-ecr-codedeploy
+
+on:
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: prod-deploy-main
+  cancel-in-progress: true
+
+permissions:
+  id-token: write   # OIDC 필수
+  contents: read
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # 1) 소스 checkout
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2) JDK 21 설정
+      - name: Set up JDK 21 (Amazon Corretto)
+        uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: "21"
+          cache: gradle
+
+      # 3) gradlew 권한
+      - name: Grant execute permission
+        run: chmod +x ./gradlew
+
+      # 4) 테스트
+      - name: Run tests
+        run: ./gradlew test
+
+      # 5) bootJar 생성
+      - name: Build bootJar
+        run: ./gradlew bootJar
+
+      # 6) 🔥 AWS OIDC 로그인
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # 7) ECR 로그인
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password \
+          | docker login \
+          --username AWS \
+          --password-stdin ${{ secrets.ECR_REGISTRY }}
+
+      # 8) Docker build & tag
+      - name: Build docker image
+        run: |
+          IMAGE=${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}
+          docker build -t $IMAGE:${{ github.sha }} .
+          docker tag $IMAGE:${{ github.sha }} $IMAGE:latest
+
+      # 9) ECR push
+      - name: Push to ECR
+        run: |
+          IMAGE=${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+
+      # 10) 배포 번들 생성 (appspec.yml + scripts + compose + meta)
+      - name: Prepare CodeDeploy bundle
+        run: |
+          mkdir -p deploy/meta
+          echo "${GITHUB_SHA}" > deploy/meta/image_tag
+          zip -r revision.zip appspec.yml deploy docker-compose.yml
+
+      # 11) S3 업로드
+      - name: Upload bundle to S3
+        run: |
+          aws s3 cp revision.zip "s3://${{ secrets.CODEDEPLOY_S3_BUCKET }}/release/${GITHUB_SHA}.zip"
+
+      # 12) CodeDeploy 배포 트리거 (S3 revision)
+      - name: Create CodeDeploy deployment
+        run: |
+          aws deploy create-deployment \
+            --application-name "${{ secrets.CODEDEPLOY_APP_NAME }}" \
+            --deployment-group-name "${{ secrets.CODEDEPLOY_DEPLOYMENT_GROUP }}" \
+            --deployment-config-name CodeDeployDefault.OneAtATime \
+            --s3-location bucket=${{ secrets.CODEDEPLOY_S3_BUCKET }},key=revisions/${GITHUB_SHA}.zip,bundleType=zip \
+            --description "Deploy ${GITHUB_SHA}"
