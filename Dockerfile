@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM amazoncorretto:21-debian
+FROM amazoncorretto:21-al2023-jdk
 
 # 이미지 빌드 시 실행되는 명령어
 # 컨테이너 내부에 'appuser'라는 일반 사용자 생성, 기본 작업 디렉토리를 '/app'으로 설정
