@@ -74,28 +74,28 @@ jobs:
         run: |
           mkdir -p deploy/meta
 
-        # 0) .env 생성
+          # 0) .env 생성
           mkdir -p deploy
           printf '%s' "${{ secrets.PROD_ENV_FILE }}" > deploy/.env
           chmod 600 deploy/.env
 
-        # 1) 이미지 태그 저장
+          # 1) 이미지 태그 저장
           echo "${GITHUB_SHA}" > deploy/meta/image_tag
 
-        # 2) 런타임 메타 저장
+          # 2) 런타임 메타 저장
           cat > deploy/meta/runtime.env <<EOF
           AWS_REGION=${{ secrets.AWS_REGION }}
           ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
           ECR_REPOSITORY=${{ secrets.ECR_REPOSITORY }}
           EOF
 
-        # 3) 번들에 무엇이 들어갔는지 확인 로그
+          # 3) 번들에 무엇이 들어갔는지 확인 로그
           ls -al deploy
           ls -al deploy/meta
-          unzip -l revision.zip 2>/dev/null || true
 
-        # 4) zip 생성
+          # 4) zip 생성
           zip -r revision.zip appspec.yml deploy docker-compose.yml
+          unzip -l revision.zip 2>/dev/null || true
 
       # 11) S3 업로드
       - name: Upload bundle to S3
