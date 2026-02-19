@@ -2,6 +2,12 @@
 
 FROM amazoncorretto:21-al2023-jdk
 
+# useradd 제공 패키지 설치
+RUN dnf -y update \
+ && dnf -y install shadow-utils \
+ && dnf clean all \
+ && rm -rf /var/cache/dnf
+
 # 이미지 빌드 시 실행되는 명령어
 # 컨테이너 내부에 'appuser'라는 일반 사용자 생성, 기본 작업 디렉토리를 '/app'으로 설정
 RUN useradd -ms /bin/bash appuser
