@@ -1,0 +1,43 @@
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  application:
+    name: pooli-be
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DB_URL:jdbc:mysql://localhost:3306/pooli?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    hikari:
+      # Do not fail app startup immediately when DB is unavailable
+      initialization-fail-timeout: ${DB_INIT_FAIL_TIMEOUT:0}
+  flyway:
+    enabled: ${FLYWAY_ENABLED:false}
+    locations: classpath:db/migration
+    baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:true}
+  security:
+    user:
+      name: ${SPRING_SECURITY_USER:admin}
+      password: ${SPRING_SECURITY_PASSWORD:admin1234}
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: ${MYBATIS_TYPE_ALIASES_PACKAGE:pooli}
+  configuration:
+    map-underscore-to-camel-case: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+logging:
+  level:
+    org.mybatis: ${LOG_LEVEL_MYBATIS:DEBUG}
+    org.springframework.jdbc: ${LOG_LEVEL_JDBC:DEBUG}
+
+springdoc:
+  api-docs:
+    enabled: ${OPENAPI_ENABLED:true}
+    path: ${OPENAPI_DOCS_PATH:/v3/api-docs}
+  swagger-ui:
+    enabled: ${SWAGGER_UI_ENABLED:true}
+    path: ${SWAGGER_UI_PATH:/swagger-ui.html}
