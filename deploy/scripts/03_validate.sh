@@ -4,11 +4,10 @@
 
 set -euo pipefail
 
-# 운영에서는 actuator로 검증하는 걸 권장하지만,
-# 초기 세팅 단계라면 "포트 리슨"만 확인하는 형태로도 시작 가능
+
 for i in {1..30}; do
-  if ss -lnt | grep -q ':8080'; then
-    echo "[validate] port 8080 is listening"
+  if curl -fsS "http://127.0.0.1:8080/actuator/health" | grep -q '"status":"UP"'; then
+    echo "[validate] health UP"
     exit 0
   fi
   echo "[validate] waiting... ($i)"

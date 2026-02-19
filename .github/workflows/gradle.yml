@@ -74,6 +74,13 @@ jobs:
         run: |
           mkdir -p deploy/meta
           echo "${GITHUB_SHA}" > deploy/meta/image_tag
+          
+          cat > deploy/meta/runtime.env <<EOF
+          AWS_REGION=${{ secrets.AWS_REGION }}
+          ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
+          ECR_REPOSITORY=${{ secrets.ECR_REPOSITORY }}
+          EOF
+          
           zip -r revision.zip appspec.yml deploy docker-compose.yml
 
       # 11) S3 업로드
