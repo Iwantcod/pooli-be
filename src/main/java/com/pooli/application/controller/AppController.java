@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.pooli.application.domain.dto.response.AppResponseDto;
+import com.pooli.application.domain.dto.response.AppResDto;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -33,7 +33,7 @@ public class AppController {
             
       })
       @GetMapping
-      public ResponseEntity<List<AppResponseDto>> getApps(){
+      public ResponseEntity<List<AppResDto>> getApps(){
           return ResponseEntity.ok(List.of());
       }
 }

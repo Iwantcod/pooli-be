@@ -4,16 +4,16 @@ import java.time.LocalDateTime;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
+@Builder
 @Getter
-@Setter
 @AllArgsConstructor
 @NoArgsConstructor
 @Schema(description = "애플리케이션 조회 응답 DTO")
-public class AppResponseDto {
+public class AppResDto {
 
 	 @Schema(description = "애플리케이션 ID", example = "1")
      private Long appId;
@@ -25,11 +25,11 @@ public class AppResponseDto {
      private LocalDateTime createdAt;
      
      @Schema(description = "애플리케이션 사용량 제한 여부", example = "true")
-     private boolean usageLimit;        
+     private Boolean usageLimit;        
      
      @Schema(description = "애플리케이션 속도 제한 여부", example = "false")
-     private boolean speedLimit;       
+     private Boolean speedLimit;       
      
      @Schema(description = "애플리케이션 정책 예외 여부", example = "false")
-     private boolean policyException;   
+     private Boolean policyException;   
 }
