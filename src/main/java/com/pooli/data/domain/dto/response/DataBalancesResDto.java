@@ -1,11 +1,11 @@
 package com.pooli.data.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Builder;
 import lombok.Getter;
-import lombok.Setter;
 
 @Getter
-@Setter
+@Builder
 @Schema(description = "공유 및 개인 데이터 잔량 조회 응답 DTO")
 public class DataBalancesResDto {
 
@@ -20,4 +20,20 @@ public class DataBalancesResDto {
 
     @Schema(description = "이용 중인 요금제 명", example = "5G 프리미엄")
     private String planName;
+
+    public void updateUserName(String userName) {
+        this.userName = userName;
+    }
+
+    public void updateSharedDataRemaining(Long sharedDataRemaining) {
+        this.sharedDataRemaining = sharedDataRemaining;
+    }
+
+    public void updatePersonalDataRemaining(Long personalDataRemaining) {
+        this.personalDataRemaining = personalDataRemaining;
+    }
+
+    public void updatePlanName(String planName) {
+        this.planName = planName;
+    }
 }

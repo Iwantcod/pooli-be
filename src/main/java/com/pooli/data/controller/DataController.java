@@ -12,6 +12,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @Tag(name = "Data", description = "데이터 관련 API")
 @RestController
 @RequestMapping("/api/data")
@@ -53,7 +55,31 @@ public class DataController {
             @RequestParam Integer month
     ) {
 
-        return ResponseEntity.ok(new MonthlyDataUsageResDto());
+        List<MonthlyDataUsageResDto.MonthlyUsageDto> usages = List.of(
+                MonthlyDataUsageResDto.MonthlyUsageDto.builder()
+                        .yearMonth("2026-01")
+                        .usedAmount(1000L)
+                        .build(),
+                MonthlyDataUsageResDto.MonthlyUsageDto.builder()
+                        .yearMonth("2026-02")
+                        .usedAmount(1500L)
+                        .build(),
+                MonthlyDataUsageResDto.MonthlyUsageDto.builder()
+                        .yearMonth("2026-03")
+                        .usedAmount(1100L)
+                        .build()
+        );
+
+        Long average = usages.stream()
+                .mapToLong(MonthlyDataUsageResDto.MonthlyUsageDto::getUsedAmount)
+                .sum() / usages.size();
+
+        MonthlyDataUsageResDto response = MonthlyDataUsageResDto.builder()
+                .usages(usages)
+                .averageAmount(average)
+                .build();
+
+        return ResponseEntity.ok(response);
     }
 
     @Operation(
@@ -72,7 +98,31 @@ public class DataController {
             @RequestParam Integer lineId
     ) {
 
-        return ResponseEntity.ok(new AppDataUsageResDto());
+        List<AppDataUsageResDto.AppUsageDto> apps = List.of(
+                AppDataUsageResDto.AppUsageDto.builder()
+                        .appName("YouTube")
+                        .usedAmount(2000L)
+                        .build(),
+                AppDataUsageResDto.AppUsageDto.builder()
+                        .appName("Instagram")
+                        .usedAmount(1500L)
+                        .build(),
+                AppDataUsageResDto.AppUsageDto.builder()
+                        .appName("Netflix")
+                        .usedAmount(1700L)
+                        .build()
+        );
+
+        Long total = apps.stream()
+                .mapToLong(AppDataUsageResDto.AppUsageDto::getUsedAmount)
+                .sum();
+
+        AppDataUsageResDto response = AppDataUsageResDto.builder()
+                .totalUsedAmount(total)
+                .apps(apps)
+                .build();
+
+        return ResponseEntity.ok(response);
     }
 
 
@@ -91,6 +141,15 @@ public class DataController {
             @Parameter(description = "회선 ID", example = "1")
             @RequestParam Integer lineId
     ) {
-        return ResponseEntity.ok(new DataBalancesResDto());
+
+        // 데이터 임의적으로 넣어둠. 추후 수정 필요.
+        DataBalancesResDto response = DataBalancesResDto.builder()
+                .userName("홍길동")
+                .sharedDataRemaining(5000L)
+                .personalDataRemaining(2000L)
+                .planName("5G 프리미엄")
+                .build();
+
+        return ResponseEntity.ok(response);
     }
 }
