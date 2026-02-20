@@ -28,7 +28,7 @@ public class AdminPolicyController {
 
     @Operation(
             summary = "전체 정책 목록 조회",
-            description = "관리자 전용. 활성화/비활성화를 포함한 전체 정책 목록을 조회합니다."
+            description = "관리자 전용. 활성화/비활성화 포함 전체 정책 목록을 조회합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -38,9 +38,27 @@ public class AdminPolicyController {
     @GetMapping("/policies/all")
     public ResponseEntity<List<AdminPolicyResDto>> getAllPolicies() {
         List<AdminPolicyResDto> response = List.of(
-                AdminPolicyResDto.of(1001L, "야간 사용 차단", "BLOCK", true, "2026-02-20T10:30:00"),
-                AdminPolicyResDto.of(1002L, "일일 데이터 제한", "LIMIT", true, "2026-02-20T10:31:00"),
-                AdminPolicyResDto.of(1004L, "등교 시간 차단", "BLOCK", false, "2026-02-18T09:00:00")
+                AdminPolicyResDto.builder()
+                        .policyId(1001L)
+                        .policyName("야간 사용 차단")
+                        .policyType("BLOCK")
+                        .active(true)
+                        .updatedAt("2026-02-20T10:30:00")
+                        .build(),
+                AdminPolicyResDto.builder()
+                        .policyId(1002L)
+                        .policyName("일일 데이터 제한")
+                        .policyType("LIMIT")
+                        .active(true)
+                        .updatedAt("2026-02-20T10:31:00")
+                        .build(),
+                AdminPolicyResDto.builder()
+                        .policyId(1004L)
+                        .policyName("등교 시간 차단")
+                        .policyType("BLOCK")
+                        .active(false)
+                        .updatedAt("2026-02-18T09:00:00")
+                        .build()
         );
         return ResponseEntity.ok(response);
     }
@@ -56,8 +74,11 @@ public class AdminPolicyController {
     })
     @PostMapping("/policies")
     public ResponseEntity<PolicyActivationResDto> activatePolicy(@RequestBody PolicyActivationReqDto request) {
-        PolicyActivationResDto response =
-                PolicyActivationResDto.of(request.policyId(), true, LocalDateTime.now().toString());
+        PolicyActivationResDto response = PolicyActivationResDto.builder()
+                .policyId(request.getPolicyId())
+                .active(true)
+                .activatedAt(LocalDateTime.now().toString())
+                .build();
         return ResponseEntity.ok(response);
     }
 
@@ -75,14 +96,17 @@ public class AdminPolicyController {
             @Parameter(description = "정책 식별자", example = "1003")
             @RequestParam Long policyId
     ) {
-        PolicyDeactivationResDto response =
-                PolicyDeactivationResDto.of(policyId, false, LocalDateTime.now().toString());
+        PolicyDeactivationResDto response = PolicyDeactivationResDto.builder()
+                .policyId(policyId)
+                .active(false)
+                .deactivatedAt(LocalDateTime.now().toString())
+                .build();
         return ResponseEntity.ok(response);
     }
 
     @Operation(
-            summary = "회선 앱 사용량 조회",
-            description = "관리자 전용. 특정 회선의 앱 사용량 통계를 조회합니다."
+            summary = "특정 구성원 앱별 사용량 조회",
+            description = "관리자 전용. 특정 구성원의 앱별 사용량 통계를 조회합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -95,12 +119,28 @@ public class AdminPolicyController {
             @RequestParam Long lineId
     ) {
         List<LineAppUsageResDto> response = List.of(
-                LineAppUsageResDto.of(lineId, 301L, "YouTube", 2450L, 32),
-                LineAppUsageResDto.of(lineId, 302L, "Instagram", 1210L, 16),
-                LineAppUsageResDto.of(lineId, 401L, "GameX", 980L, 13)
+                LineAppUsageResDto.builder()
+                        .lineId(lineId)
+                        .appId(301L)
+                        .appName("YouTube")
+                        .usedMb(2450L)
+                        .usagePercent(32)
+                        .build(),
+                LineAppUsageResDto.builder()
+                        .lineId(lineId)
+                        .appId(302L)
+                        .appName("Instagram")
+                        .usedMb(1210L)
+                        .usagePercent(16)
+                        .build(),
+                LineAppUsageResDto.builder()
+                        .lineId(lineId)
+                        .appId(401L)
+                        .appName("GameX")
+                        .usedMb(980L)
+                        .usagePercent(13)
+                        .build()
         );
         return ResponseEntity.ok(response);
     }
 }
-
-

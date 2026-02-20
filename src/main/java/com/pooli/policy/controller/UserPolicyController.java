@@ -43,9 +43,24 @@ public class UserPolicyController {
     @GetMapping("/policies")
     public ResponseEntity<List<ActivePolicyResDto>> getActivePolicies() {
         List<ActivePolicyResDto> response = List.of(
-                ActivePolicyResDto.of(1001L, "야간 사용 차단", "BLOCK", "22:00부터 06:00까지 데이터 사용을 차단합니다."),
-                ActivePolicyResDto.of(1002L, "일일 데이터 제한", "LIMIT", "회선별 일일 데이터 사용량을 제한합니다."),
-                ActivePolicyResDto.of(1003L, "게임 앱 제한", "APP", "선택한 게임 앱을 제한합니다.")
+                ActivePolicyResDto.builder()
+                        .policyId(1001L)
+                        .policyName("야간 사용 차단")
+                        .policyType("BLOCK")
+                        .description("22:00부터 06:00까지 데이터 사용을 차단합니다.")
+                        .build(),
+                ActivePolicyResDto.builder()
+                        .policyId(1002L)
+                        .policyName("일일 데이터 제한")
+                        .policyType("LIMIT")
+                        .description("회선별 일일 데이터 사용량을 제한합니다.")
+                        .build(),
+                ActivePolicyResDto.builder()
+                        .policyId(1003L)
+                        .policyName("게임 앱 제한")
+                        .policyType("APP")
+                        .description("선택한 게임 앱을 제한합니다.")
+                        .build()
         );
         return ResponseEntity.ok(response);
     }
@@ -66,11 +81,15 @@ public class UserPolicyController {
             @RequestBody LinePolicyUpdateReqDto request
     ) {
         int updatedCount = 2;
-        if (request.allowedAppPolicyIds() != null) {
-            updatedCount += request.allowedAppPolicyIds().size();
+        if (request.getAllowedAppPolicyIds() != null) {
+            updatedCount += request.getAllowedAppPolicyIds().size();
         }
         LinePolicyUpdateResDto response =
-                LinePolicyUpdateResDto.of(lineId, updatedCount, LocalDateTime.now().toString());
+                LinePolicyUpdateResDto.builder()
+                        .lineId(lineId)
+                        .updatedPolicyCount(updatedCount)
+                        .updatedAt(LocalDateTime.now().toString())
+                        .build();
         return ResponseEntity.ok(response);
     }
 
@@ -88,7 +107,13 @@ public class UserPolicyController {
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
     ) {
-        return ResponseEntity.ok(BlockPolicyResDto.of(lineId, true, false, true));
+        return ResponseEntity.ok(
+                BlockPolicyResDto.builder()
+                        .lineId(lineId)
+                        .blockRoaming(false)
+                        .blockPaidContent(true)
+                        .build()
+        );
     }
 
     @Operation(
@@ -105,7 +130,14 @@ public class UserPolicyController {
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
     ) {
-        return ResponseEntity.ok(LimitPolicyResDto.of(lineId, 1024, 20480, 80));
+        return ResponseEntity.ok(
+                LimitPolicyResDto.builder()
+                        .lineId(lineId)
+                        .dailyLimitMb(1024)
+                        .monthlyLimitMb(20480)
+                        .warningThresholdPercent(80)
+                        .build()
+        );
     }
 
     @Operation(
@@ -123,9 +155,27 @@ public class UserPolicyController {
             @RequestParam Long lineId
     ) {
         List<AppPolicyResDto> response = List.of(
-                AppPolicyResDto.of(301L, "YouTube", "LIMIT", true, 500),
-                AppPolicyResDto.of(302L, "Instagram", "LIMIT", true, 300),
-                AppPolicyResDto.of(401L, "GameX", "BLOCK", false, 0)
+                AppPolicyResDto.builder()
+                        .appId(301L)
+                        .appName("YouTube")
+                        .policyType("LIMIT")
+                        .enabled(true)
+                        .dailyLimitMb(500)
+                        .build(),
+                AppPolicyResDto.builder()
+                        .appId(302L)
+                        .appName("Instagram")
+                        .policyType("LIMIT")
+                        .enabled(true)
+                        .dailyLimitMb(300)
+                        .build(),
+                AppPolicyResDto.builder()
+                        .appId(401L)
+                        .appName("GameX")
+                        .policyType("BLOCK")
+                        .enabled(false)
+                        .dailyLimitMb(0)
+                        .build()
         );
         return ResponseEntity.ok(response);
     }
@@ -145,8 +195,22 @@ public class UserPolicyController {
             @RequestParam Long lineId
     ) {
         List<AppliedPolicyResDto> response = List.of(
-                AppliedPolicyResDto.of(1001L, "야간 사용 차단", "BLOCK", "LINE", lineId, "2026-02-20T10:10:00"),
-                AppliedPolicyResDto.of(1002L, "일일 데이터 제한", "LIMIT", "LINE", lineId, "2026-02-20T10:12:00")
+                AppliedPolicyResDto.builder()
+                        .policyId(1001L)
+                        .policyName("야간 사용 차단")
+                        .policyType("BLOCK")
+                        .appliedTarget("LINE")
+                        .targetId(lineId)
+                        .appliedAt("2026-02-20T10:10:00")
+                        .build(),
+                AppliedPolicyResDto.builder()
+                        .policyId(1002L)
+                        .policyName("일일 데이터 제한")
+                        .policyType("LIMIT")
+                        .appliedTarget("LINE")
+                        .targetId(lineId)
+                        .appliedAt("2026-02-20T10:12:00")
+                        .build()
         );
         return ResponseEntity.ok(response);
     }
@@ -166,8 +230,22 @@ public class UserPolicyController {
             @RequestParam Long familyId
     ) {
         List<AppliedPolicyResDto> response = List.of(
-                AppliedPolicyResDto.of(1001L, "야간 사용 차단", "BLOCK", "FAMILY", familyId, "2026-02-20T10:20:00"),
-                AppliedPolicyResDto.of(1003L, "게임 앱 제한", "APP", "FAMILY", familyId, "2026-02-20T10:22:00")
+                AppliedPolicyResDto.builder()
+                        .policyId(1001L)
+                        .policyName("야간 사용 차단")
+                        .policyType("BLOCK")
+                        .appliedTarget("FAMILY")
+                        .targetId(familyId)
+                        .appliedAt("2026-02-20T10:20:00")
+                        .build(),
+                AppliedPolicyResDto.builder()
+                        .policyId(1003L)
+                        .policyName("게임 앱 제한")
+                        .policyType("APP")
+                        .appliedTarget("FAMILY")
+                        .targetId(familyId)
+                        .appliedAt("2026-02-20T10:22:00")
+                        .build()
         );
         return ResponseEntity.ok(response);
     }
@@ -188,7 +266,12 @@ public class UserPolicyController {
             @RequestBody FamilyPolicyApplyReqDto request
     ) {
         FamilyPolicyChangeResDto response =
-                FamilyPolicyChangeResDto.of(familyId, request.policyId(), "APPLIED", LocalDateTime.now().toString());
+                FamilyPolicyChangeResDto.builder()
+                        .familyId(familyId)
+                        .policyId(request.getPolicyId())
+                        .status("APPLIED")
+                        .processedAt(LocalDateTime.now().toString())
+                        .build();
         return ResponseEntity.ok(response);
     }
 
@@ -209,7 +292,12 @@ public class UserPolicyController {
             @RequestParam Long policyId
     ) {
         FamilyPolicyChangeResDto response =
-                FamilyPolicyChangeResDto.of(familyId, policyId, "REMOVED", LocalDateTime.now().toString());
+                FamilyPolicyChangeResDto.builder()
+                        .familyId(familyId)
+                        .policyId(policyId)
+                        .status("REMOVED")
+                        .processedAt(LocalDateTime.now().toString())
+                        .build();
         return ResponseEntity.ok(response);
     }
 }
