@@ -2,15 +2,15 @@ package com.pooli.policy.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-@Schema(description = "Active policy that can be applied to a family")
+@Schema(description = "가족에 적용 가능한 활성화 정책")
 public record ActivePolicyResDto(
-        @Schema(description = "Policy identifier", example = "1001")
+        @Schema(description = "정책 식별자", example = "1001")
         Long policyId,
-        @Schema(description = "Policy name", example = "Night Usage Block")
+        @Schema(description = "정책명", example = "야간 사용 차단")
         String policyName,
-        @Schema(description = "Policy type", example = "BLOCK")
+        @Schema(description = "정책 유형", example = "BLOCK")
         String policyType,
-        @Schema(description = "Policy description", example = "Blocks data usage from 22:00 to 06:00.")
+        @Schema(description = "정책 설명", example = "22:00부터 06:00까지 데이터 사용을 차단합니다.")
         String description
 ) {
     public static ActivePolicyResDto of(Long policyId, String policyName, String policyType, String description) {

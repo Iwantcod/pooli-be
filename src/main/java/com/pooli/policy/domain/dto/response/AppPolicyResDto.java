@@ -2,17 +2,17 @@ package com.pooli.policy.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-@Schema(description = "App-level policy detail for a specific line")
+@Schema(description = "특정 회선의 앱 단위 정책 상세")
 public record AppPolicyResDto(
-        @Schema(description = "App identifier", example = "301")
+        @Schema(description = "앱 식별자", example = "301")
         Long appId,
-        @Schema(description = "App name", example = "YouTube")
+        @Schema(description = "앱 이름", example = "YouTube")
         String appName,
-        @Schema(description = "Policy type", example = "LIMIT")
+        @Schema(description = "정책 유형", example = "LIMIT")
         String policyType,
-        @Schema(description = "Whether this app policy is enabled", example = "true")
+        @Schema(description = "앱 정책 활성화 여부", example = "true")
         Boolean enabled,
-        @Schema(description = "App daily limit in MB", example = "500")
+        @Schema(description = "앱 일일 제한(MB)", example = "500")
         Integer dailyLimitMb
 ) {
     public static AppPolicyResDto of(

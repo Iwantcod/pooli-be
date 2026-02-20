@@ -2,10 +2,10 @@ package com.pooli.policy.domain.dto.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-@Schema(description = "Request body for applying a policy to a family")
+@Schema(description = "가족 정책 적용 요청 바디")
 public record FamilyPolicyApplyReqDto(
         @Schema(
-                description = "Policy identifier to apply",
+                description = "적용할 정책 식별자",
                 example = "1002",
                 requiredMode = Schema.RequiredMode.REQUIRED
         )

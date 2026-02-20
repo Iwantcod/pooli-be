@@ -2,15 +2,15 @@ package com.pooli.policy.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-@Schema(description = "Block policy detail for a specific line")
+@Schema(description = "특정 회선의 차단 정책 상세")
 public record BlockPolicyResDto(
-        @Schema(description = "Line identifier", example = "101")
+        @Schema(description = "회선 식별자", example = "101")
         Long lineId,
-        @Schema(description = "Adult content block status", example = "true")
+        @Schema(description = "성인 콘텐츠 차단 여부", example = "true")
         Boolean blockAdultContent,
-        @Schema(description = "Roaming data block status", example = "false")
+        @Schema(description = "로밍 데이터 차단 여부", example = "false")
         Boolean blockRoaming,
-        @Schema(description = "Paid content block status", example = "true")
+        @Schema(description = "유료 콘텐츠 차단 여부", example = "true")
         Boolean blockPaidContent
 ) {
     public static BlockPolicyResDto of(

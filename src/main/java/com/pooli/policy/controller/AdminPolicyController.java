@@ -21,38 +21,38 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "Policy", description = "Policy APIs")
+@Tag(name = "정책", description = "정책 API")
 @RestController
 @RequestMapping("/api")
 public class AdminPolicyController {
 
     @Operation(
-            summary = "List all policies",
-            description = "Admin only. Returns all policies including both active and inactive items."
+            summary = "전체 정책 목록 조회",
+            description = "관리자 전용. 활성화/비활성화를 포함한 전체 정책 목록을 조회합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/policies/all")
     public ResponseEntity<List<AdminPolicyResDto>> getAllPolicies() {
         List<AdminPolicyResDto> response = List.of(
-                AdminPolicyResDto.of(1001L, "Night Usage Block", "BLOCK", true, "2026-02-20T10:30:00"),
-                AdminPolicyResDto.of(1002L, "Daily Data Limit", "LIMIT", true, "2026-02-20T10:31:00"),
-                AdminPolicyResDto.of(1004L, "School Hours Block", "BLOCK", false, "2026-02-18T09:00:00")
+                AdminPolicyResDto.of(1001L, "야간 사용 차단", "BLOCK", true, "2026-02-20T10:30:00"),
+                AdminPolicyResDto.of(1002L, "일일 데이터 제한", "LIMIT", true, "2026-02-20T10:31:00"),
+                AdminPolicyResDto.of(1004L, "등교 시간 차단", "BLOCK", false, "2026-02-18T09:00:00")
         );
         return ResponseEntity.ok(response);
     }
 
     @Operation(
-            summary = "Activate policy",
-            description = "Admin only. Activates a policy from back office."
+            summary = "정책 활성화",
+            description = "관리자 전용. 백오피스에서 정책을 활성화합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PostMapping("/policies")
     public ResponseEntity<PolicyActivationResDto> activatePolicy(@RequestBody PolicyActivationReqDto request) {
@@ -62,17 +62,17 @@ public class AdminPolicyController {
     }
 
     @Operation(
-            summary = "Deactivate policy",
-            description = "Admin only. Deactivates a policy from back office."
+            summary = "정책 비활성화",
+            description = "관리자 전용. 백오피스에서 정책을 비활성화합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @DeleteMapping("/policies")
     public ResponseEntity<PolicyDeactivationResDto> deactivatePolicy(
-            @Parameter(description = "Policy identifier", example = "1003")
+            @Parameter(description = "정책 식별자", example = "1003")
             @RequestParam Long policyId
     ) {
         PolicyDeactivationResDto response =
@@ -81,17 +81,17 @@ public class AdminPolicyController {
     }
 
     @Operation(
-            summary = "Get app usage by line",
-            description = "Admin only. Returns app usage statistics for a specific line."
+            summary = "회선 앱 사용량 조회",
+            description = "관리자 전용. 특정 회선의 앱 사용량 통계를 조회합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/policies/lines/apps/usage")
     public ResponseEntity<List<LineAppUsageResDto>> getLineAppUsage(
-            @Parameter(description = "Line identifier", example = "101")
+            @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
     ) {
         List<LineAppUsageResDto> response = List.of(

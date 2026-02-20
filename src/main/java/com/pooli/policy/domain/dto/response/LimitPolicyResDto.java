@@ -2,15 +2,15 @@ package com.pooli.policy.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-@Schema(description = "Limit policy detail for a specific line")
+@Schema(description = "특정 회선의 제한 정책 상세")
 public record LimitPolicyResDto(
-        @Schema(description = "Line identifier", example = "101")
+        @Schema(description = "회선 식별자", example = "101")
         Long lineId,
-        @Schema(description = "Daily data limit in MB", example = "1024")
+        @Schema(description = "일일 데이터 제한(MB)", example = "1024")
         Integer dailyLimitMb,
-        @Schema(description = "Monthly data limit in MB", example = "20480")
+        @Schema(description = "월간 데이터 제한(MB)", example = "20480")
         Integer monthlyLimitMb,
-        @Schema(description = "Warning threshold percent", example = "80")
+        @Schema(description = "경고 임계치(%)", example = "80")
         Integer warningThresholdPercent
 ) {
     public static LimitPolicyResDto of(

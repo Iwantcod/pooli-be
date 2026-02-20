@@ -26,42 +26,42 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "Policy", description = "Policy APIs")
+@Tag(name = "정책", description = "정책 API")
 @RestController
 @RequestMapping("/api")
 public class UserPolicyController {
 
     @Operation(
-            summary = "List active policies",
-            description = "User role required. Returns active policies that a family representative can apply to the family group."
+            summary = "활성화 정책 목록 조회",
+            description = "사용자 권한 필요. 가족 대표가 가족 그룹에 적용할 수 있는 활성화 정책 목록을 조회합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/policies")
     public ResponseEntity<List<ActivePolicyResDto>> getActivePolicies() {
         List<ActivePolicyResDto> response = List.of(
-                ActivePolicyResDto.of(1001L, "Night Usage Block", "BLOCK", "Blocks data usage from 22:00 to 06:00."),
-                ActivePolicyResDto.of(1002L, "Daily Data Limit", "LIMIT", "Limits daily data usage per line."),
-                ActivePolicyResDto.of(1003L, "Game App Restriction", "APP", "Restricts selected game apps.")
+                ActivePolicyResDto.of(1001L, "야간 사용 차단", "BLOCK", "22:00부터 06:00까지 데이터 사용을 차단합니다."),
+                ActivePolicyResDto.of(1002L, "일일 데이터 제한", "LIMIT", "회선별 일일 데이터 사용량을 제한합니다."),
+                ActivePolicyResDto.of(1003L, "게임 앱 제한", "APP", "선택한 게임 앱을 제한합니다.")
         );
         return ResponseEntity.ok(response);
     }
 
     @Operation(
-            summary = "Update line policies",
-            description = "User role required. Bulk updates detailed policy settings for a specific line."
+            summary = "회선 정책 수정",
+            description = "사용자 권한 필요. 특정 회선의 정책 상세 설정값을 일괄 수정합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PatchMapping("/policies/lines")
     public ResponseEntity<LinePolicyUpdateResDto> updateLinePolicies(
-            @Parameter(description = "Line identifier", example = "101")
+            @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId,
             @RequestBody LinePolicyUpdateReqDto request
     ) {
@@ -75,51 +75,51 @@ public class UserPolicyController {
     }
 
     @Operation(
-            summary = "Get line block policies",
-            description = "User role required. Returns block policy details for a specific line."
+            summary = "회선 차단 정책 조회",
+            description = "사용자 권한 필요. 특정 회선의 차단 정책 상세 정보를 조회합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/policies/lines/blocks")
     public ResponseEntity<BlockPolicyResDto> getBlockPolicies(
-            @Parameter(description = "Line identifier", example = "101")
+            @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
     ) {
         return ResponseEntity.ok(BlockPolicyResDto.of(lineId, true, false, true));
     }
 
     @Operation(
-            summary = "Get line limit policies",
-            description = "User role required. Returns limit policy details for a specific line."
+            summary = "회선 제한 정책 조회",
+            description = "사용자 권한 필요. 특정 회선의 제한 정책 상세 정보를 조회합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/policies/lines/limits")
     public ResponseEntity<LimitPolicyResDto> getLimitPolicies(
-            @Parameter(description = "Line identifier", example = "101")
+            @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
     ) {
         return ResponseEntity.ok(LimitPolicyResDto.of(lineId, 1024, 20480, 80));
     }
 
     @Operation(
-            summary = "Get app policies by line",
-            description = "User role required. Returns app-level policy list for a specific line."
+            summary = "회선 앱 정책 조회",
+            description = "사용자 권한 필요. 특정 회선의 앱 단위 정책 목록을 조회합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/policies/lines/apps")
     public ResponseEntity<List<AppPolicyResDto>> getAppPolicies(
-            @Parameter(description = "Line identifier", example = "101")
+            @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
     ) {
         List<AppPolicyResDto> response = List.of(
@@ -131,59 +131,59 @@ public class UserPolicyController {
     }
 
     @Operation(
-            summary = "Get applied policies by line",
-            description = "User role required. Returns currently applied policy list for a specific line."
+            summary = "회선 적용 정책 목록 조회",
+            description = "사용자 권한 필요. 특정 회선에 현재 적용 중인 정책 목록을 조회합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/policies/lines/applied")
     public ResponseEntity<List<AppliedPolicyResDto>> getAppliedPoliciesByLine(
-            @Parameter(description = "Line identifier", example = "101")
+            @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
     ) {
         List<AppliedPolicyResDto> response = List.of(
-                AppliedPolicyResDto.of(1001L, "Night Usage Block", "BLOCK", "LINE", lineId, "2026-02-20T10:10:00"),
-                AppliedPolicyResDto.of(1002L, "Daily Data Limit", "LIMIT", "LINE", lineId, "2026-02-20T10:12:00")
+                AppliedPolicyResDto.of(1001L, "야간 사용 차단", "BLOCK", "LINE", lineId, "2026-02-20T10:10:00"),
+                AppliedPolicyResDto.of(1002L, "일일 데이터 제한", "LIMIT", "LINE", lineId, "2026-02-20T10:12:00")
         );
         return ResponseEntity.ok(response);
     }
 
     @Operation(
-            summary = "Get applied policies by family",
-            description = "User role required. Returns policies currently applied to a family."
+            summary = "가족 적용 정책 목록 조회",
+            description = "사용자 권한 필요. 가족에 현재 적용 중인 정책 목록을 조회합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/policies/families")
     public ResponseEntity<List<AppliedPolicyResDto>> getFamilyPolicies(
-            @Parameter(description = "Family identifier", example = "10")
+            @Parameter(description = "가족 식별자", example = "10")
             @RequestParam Long familyId
     ) {
         List<AppliedPolicyResDto> response = List.of(
-                AppliedPolicyResDto.of(1001L, "Night Usage Block", "BLOCK", "FAMILY", familyId, "2026-02-20T10:20:00"),
-                AppliedPolicyResDto.of(1003L, "Game App Restriction", "APP", "FAMILY", familyId, "2026-02-20T10:22:00")
+                AppliedPolicyResDto.of(1001L, "야간 사용 차단", "BLOCK", "FAMILY", familyId, "2026-02-20T10:20:00"),
+                AppliedPolicyResDto.of(1003L, "게임 앱 제한", "APP", "FAMILY", familyId, "2026-02-20T10:22:00")
         );
         return ResponseEntity.ok(response);
     }
 
     @Operation(
-            summary = "Apply family policy",
-            description = "User role required. Applies an activated policy to a specific family."
+            summary = "가족 정책 적용",
+            description = "사용자 권한 필요. 활성화된 정책을 특정 가족에 적용합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PostMapping("/policies/families")
     public ResponseEntity<FamilyPolicyChangeResDto> applyFamilyPolicy(
-            @Parameter(description = "Family identifier", example = "10")
+            @Parameter(description = "가족 식별자", example = "10")
             @RequestParam Long familyId,
             @RequestBody FamilyPolicyApplyReqDto request
     ) {
@@ -193,19 +193,19 @@ public class UserPolicyController {
     }
 
     @Operation(
-            summary = "Remove family policy",
-            description = "User role required. Removes an applied policy from a specific family."
+            summary = "가족 정책 제거",
+            description = "사용자 권한 필요. 특정 가족에 적용된 정책을 제거합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Request succeeded"),
-            @ApiResponse(responseCode = "404", description = "Resource not found"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @DeleteMapping("/policies/families")
     public ResponseEntity<FamilyPolicyChangeResDto> removeFamilyPolicy(
-            @Parameter(description = "Family identifier", example = "10")
+            @Parameter(description = "가족 식별자", example = "10")
             @RequestParam Long familyId,
-            @Parameter(description = "Policy identifier", example = "1003")
+            @Parameter(description = "정책 식별자", example = "1003")
             @RequestParam Long policyId
     ) {
         FamilyPolicyChangeResDto response =

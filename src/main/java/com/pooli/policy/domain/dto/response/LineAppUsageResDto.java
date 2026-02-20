@@ -2,17 +2,17 @@ package com.pooli.policy.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-@Schema(description = "App usage statistics for a specific line")
+@Schema(description = "특정 회선의 앱 사용량 통계")
 public record LineAppUsageResDto(
-        @Schema(description = "Line identifier", example = "101")
+        @Schema(description = "회선 식별자", example = "101")
         Long lineId,
-        @Schema(description = "App identifier", example = "301")
+        @Schema(description = "앱 식별자", example = "301")
         Long appId,
-        @Schema(description = "App name", example = "YouTube")
+        @Schema(description = "앱 이름", example = "YouTube")
         String appName,
-        @Schema(description = "Used data in MB", example = "2450")
+        @Schema(description = "사용 데이터(MB)", example = "2450")
         Long usedMb,
-        @Schema(description = "Usage share percent", example = "32")
+        @Schema(description = "사용 비중(%)", example = "32")
         Integer usagePercent
 ) {
     public static LineAppUsageResDto of(
