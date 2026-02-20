@@ -2,8 +2,6 @@ package com.pooli.common.dto;
 
 import java.util.List;
 
-import com.pooli.notification.domain.dto.response.NotiSendResDto;
-
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -15,10 +13,10 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 @Schema(description = "페이징 응답 DTO")
-public class PagingResDto {
+public class PagingResDto<T> {
 	
     @Schema(description = "페이징 처리된 목록")
-    private List<NotiSendResDto> content;
+    private List<T> content;
 
     @Schema(description = "현재 페이지", example = "0")
     private Integer page;
@@ -30,6 +28,6 @@ public class PagingResDto {
     private Long totalElements;
     
     @Schema(description = "전체 페이지 수", example = "3")
-    private Long totalPages;
+    private Integer totalPages;
         
 }
