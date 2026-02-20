@@ -17,14 +17,6 @@ public class AppDataUsageResDto {
     @Schema(description = "앱별 사용량 목록")
     private List<AppUsageDto> apps;
 
-    public void updateTotalUsedAmount(Long totalUsedAmount) {
-        this.totalUsedAmount = totalUsedAmount;
-    }
-
-    public void updateApps(List<AppUsageDto> apps) {
-        this.apps = apps;
-    }
-
     @Getter
     @Builder
     @Schema(description = "앱별 사용량 DTO")
@@ -35,13 +27,5 @@ public class AppDataUsageResDto {
 
         @Schema(description = "사용량(MB)", example = "2000")
         private Long usedAmount;
-
-        public void updateAppName(String appName) {
-            this.appName = appName;
-        }
-
-        public void updateUsedAmount(Long usedAmount) {
-            this.usedAmount = usedAmount;
-        }
     }
 }

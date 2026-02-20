@@ -17,9 +17,7 @@ public class MonthlyDataUsageResDto {
     @Schema(description = "평균 사용량(MB)", example = "1200")
     private Long averageAmount;
 
-    public void updateUsages(List<MonthlyUsageDto> usages) {
-        this.usages = usages;
-    }
+
 
     public void updateAverageAmount(Long averageAmount) {
         this.averageAmount = averageAmount;
@@ -36,12 +34,5 @@ public class MonthlyDataUsageResDto {
         @Schema(description = "사용량(MB)", example = "1500")
         private Long usedAmount;
 
-        public void updateUsedAmount(Long usedAmount){
-            this.usedAmount = usedAmount;
-        }
-
-        public void updateYearMonth(String yearMonth){
-            this.yearMonth = yearMonth;
-        }
     }
 }

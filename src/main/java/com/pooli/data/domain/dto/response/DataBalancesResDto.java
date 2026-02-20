@@ -21,19 +21,4 @@ public class DataBalancesResDto {
     @Schema(description = "이용 중인 요금제 명", example = "5G 프리미엄")
     private String planName;
 
-    public void updateUserName(String userName) {
-        this.userName = userName;
-    }
-
-    public void updateSharedDataRemaining(Long sharedDataRemaining) {
-        this.sharedDataRemaining = sharedDataRemaining;
-    }
-
-    public void updatePersonalDataRemaining(Long personalDataRemaining) {
-        this.personalDataRemaining = personalDataRemaining;
-    }
-
-    public void updatePlanName(String planName) {
-        this.planName = planName;
-    }
 }
