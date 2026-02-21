@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Builder
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@NoArgsConstructor()
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "가족관리자 역할 양도 응답 DTO")
 public class RepresentativeRoleTransferResDto {
@@ -19,10 +19,4 @@ public class RepresentativeRoleTransferResDto {
 
     @Schema(description = "변경 대상 사용자 ID", example = "202")
     private Long changeUserId;
-
-    @Schema(description = "변경 전 역할", example = "OWNER")
-    private String beforeRole;
-
-    @Schema(description = "변경 후 역할", example = "MEMBER")
-    private String afterRole;
 }
