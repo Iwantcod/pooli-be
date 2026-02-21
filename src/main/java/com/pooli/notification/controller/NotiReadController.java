@@ -92,7 +92,7 @@ public class NotiReadController {
 	NotiSendResDto response = NotiSendResDto.builder()
 	            .alarmHistoryId(alarmHistoryId)   
 	            .lineId(lineId)
-	            .alarmCode(AlarmCode.permission)     
+	            .alarmCode(AlarmCode.PERMISSION)     
 	            .value(null)
 	            .isRead(true)                      
 	            .createdAt(LocalDateTime.now())
