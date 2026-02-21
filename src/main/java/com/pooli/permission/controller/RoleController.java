@@ -1,11 +1,8 @@
 package com.pooli.permission.controller;
 
-import com.pooli.permission.domain.dto.response.CommonErrorResDto;
 import com.pooli.permission.domain.dto.response.RepresentativeRoleTransferResDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,14 +22,8 @@ public class RoleController {
             description = "관리자가 현재 대표 회선 사용자와 변경 대상 회선 사용자를 기준으로 가족관리자 역할을 양도한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "양도 성공"),
-            @ApiResponse(
-                    responseCode = "404",
-                    description = "대상 사용자 또는 회선 정보가 존재하지 않음",
-                    content = @Content(schema = @Schema(implementation = CommonErrorResDto.class))),
-            @ApiResponse(
-                    responseCode = "500",
-                    description = "서버 오류",
-                    content = @Content(schema = @Schema(implementation = CommonErrorResDto.class)))
+            @ApiResponse(responseCode = "404", description = "대상 사용자 또는 회선 정보가 존재하지 않음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @PatchMapping("/representative")
     public ResponseEntity<RepresentativeRoleTransferResDto> transferRepresentativeRole(
