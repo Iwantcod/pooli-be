@@ -7,20 +7,22 @@ import com.pooli.notification.domain.enums.AlarmCode;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Getter
+@Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Schema(description = "알림 생성 DTO")
-public class NotiResponseDto {
+@Schema(description = "알림 생성 응답 DTO")
+public class NotiSendResDto {
 	
 	@Schema(description = "알림 ID", example = "1")
 	private Long alarmHistoryId;
    
-	@Schema(description = "사용자 ID", example = "1")
-	private Long userId;
+	@Schema(description = "회선 ID", example = "2")
+	private Long lineId;
 	
 	@Schema(description = "알림 코드", example = "policy")
 	private AlarmCode alarmCode; // enum
@@ -29,7 +31,7 @@ public class NotiResponseDto {
 	private JsonNode value;
 	
     @Schema(description = "알림 읽음 여부", example = "false")
-	private boolean isRead;
+	private Boolean isRead; 
     
     @Schema(description = "알림 생성 시간", example = "2026-02-20T14:30:00")
     private LocalDateTime createdAt;
