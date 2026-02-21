@@ -9,17 +9,17 @@ import lombok.Getter;
 @Getter
 @Builder
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Schema(description = "특정 회선의 제한 정책 상세")
+@Schema(description = "특정 구성원의 제한 정책 항목")
 public class LimitPolicyResDto {
+    @Schema(description = "제한 정책 PK", example = "7201")
+    private Long limitPolicyId;
+
     @Schema(description = "회선 식별자", example = "101")
     private Long lineId;
 
-    @Schema(description = "일일 데이터 제한량(MB)", example = "1024")
-    private Integer dailyLimitMb;
+    @Schema(description = "제한 정책 유형", example = "DAILY_MB")
+    private String limitType;
 
-    @Schema(description = "월간 데이터 제한량(MB)", example = "20480")
-    private Integer monthlyLimitMb;
-
-    @Schema(description = "경고 임계치(%)", example = "80")
-    private Integer warningThresholdPercent;
+    @Schema(description = "정책 값", example = "1024")
+    private Integer policyValue;
 }

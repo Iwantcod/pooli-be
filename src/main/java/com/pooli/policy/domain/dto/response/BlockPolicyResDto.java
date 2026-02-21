@@ -9,14 +9,17 @@ import lombok.Getter;
 @Getter
 @Builder
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Schema(description = "특정 회선의 차단 정책 상세")
+@Schema(description = "특정 구성원의 차단 정책 항목")
 public class BlockPolicyResDto {
+    @Schema(description = "차단 정책 PK", example = "7101")
+    private Long blockPolicyId;
+
     @Schema(description = "회선 식별자", example = "101")
     private Long lineId;
 
-    @Schema(description = "로밍 데이터 차단 여부", example = "false")
-    private Boolean blockRoaming;
+    @Schema(description = "차단 정책 유형", example = "ROAMING")
+    private String blockType;
 
-    @Schema(description = "유료 콘텐츠 차단 여부", example = "true")
-    private Boolean blockPaidContent;
+    @Schema(description = "정책 활성화 여부", example = "true")
+    private Boolean enabled;
 }

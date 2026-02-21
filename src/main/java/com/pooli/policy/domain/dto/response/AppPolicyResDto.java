@@ -9,8 +9,11 @@ import lombok.Getter;
 @Getter
 @Builder
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Schema(description = "특정 회선의 앱 단위 정책 상세")
+@Schema(description = "특정 구성원의 앱 정책 항목")
 public class AppPolicyResDto {
+    @Schema(description = "앱 정책 PK", example = "7301")
+    private Long appPolicyId;
+
     @Schema(description = "앱 식별자", example = "301")
     private Long appId;
 
@@ -20,9 +23,9 @@ public class AppPolicyResDto {
     @Schema(description = "정책 유형", example = "LIMIT")
     private String policyType;
 
-    @Schema(description = "앱 정책 활성화 여부", example = "true")
+    @Schema(description = "정책 활성화 여부", example = "true")
     private Boolean enabled;
 
-    @Schema(description = "앱 일일 제한량(MB)", example = "500")
+    @Schema(description = "일일 제한량(MB)", example = "500")
     private Integer dailyLimitMb;
 }

@@ -64,7 +64,7 @@ public class AdminPolicyController {
     }
 
     @Operation(
-            summary = "정책 활성화",
+            summary = "정책 추가 ( 활성화)",
             description = "관리자 전용. 백오피스에서 정책을 활성화합니다."
     )
     @ApiResponses({
@@ -83,7 +83,7 @@ public class AdminPolicyController {
     }
 
     @Operation(
-            summary = "정책 비활성화",
+            summary = "정책 삭제 ( 비활성화)",
             description = "관리자 전용. 백오피스에서 정책을 비활성화합니다."
     )
     @ApiResponses({
@@ -105,7 +105,7 @@ public class AdminPolicyController {
     }
 
     @Operation(
-            summary = "특정 구성원 앱별 사용량 조회",
+            summary = "특정 구성원 앱별 사용량",
             description = "관리자 전용. 특정 구성원의 앱별 사용량 통계를 조회합니다."
     )
     @ApiResponses({
