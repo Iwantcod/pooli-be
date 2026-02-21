@@ -20,9 +20,6 @@ public class AppPolicyResDto {
     @Schema(description = "앱 이름", example = "YouTube")
     private String appName;
 
-    @Schema(description = "정책 유형", example = "LIMIT")
-    private String policyType;
-
     @Schema(description = "정책 활성화 여부", example = "true")
     private Boolean enabled;
 

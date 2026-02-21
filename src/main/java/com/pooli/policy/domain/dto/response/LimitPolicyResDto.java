@@ -17,9 +17,6 @@ public class LimitPolicyResDto {
     @Schema(description = "회선 식별자", example = "101")
     private Long lineId;
 
-    @Schema(description = "제한 정책 유형", example = "DAILY_MB")
-    private String limitType;
-
     @Schema(description = "정책 값", example = "1024")
     private Integer policyValue;
 }

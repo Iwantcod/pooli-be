@@ -17,9 +17,6 @@ public class BlockPolicyResDto {
     @Schema(description = "회선 식별자", example = "101")
     private Long lineId;
 
-    @Schema(description = "차단 정책 유형", example = "ROAMING")
-    private String blockType;
-
     @Schema(description = "정책 활성화 여부", example = "true")
     private Boolean enabled;
 }

@@ -84,13 +84,11 @@ public class UserPolicyController {
                 BlockPolicyResDto.builder()
                         .blockPolicyId(7101L)
                         .lineId(lineId)
-                        .blockType("ROAMING")
                         .enabled(false)
                         .build(),
                 BlockPolicyResDto.builder()
                         .blockPolicyId(7102L)
                         .lineId(lineId)
-                        .blockType("PAID_CONTENT")
                         .enabled(true)
                         .build()
         );
@@ -117,7 +115,6 @@ public class UserPolicyController {
         BlockPolicyResDto response = BlockPolicyResDto.builder()
                 .blockPolicyId(blockPolicyId)
                 .lineId(lineId)
-                .blockType(resolveBlockType(blockPolicyId))
                 .enabled(request.getEnabled() != null ? request.getEnabled() : Boolean.FALSE)
                 .build();
         return ResponseEntity.ok(response);
@@ -141,19 +138,16 @@ public class UserPolicyController {
                 LimitPolicyResDto.builder()
                         .limitPolicyId(7201L)
                         .lineId(lineId)
-                        .limitType("DAILY_MB")
                         .policyValue(1024)
                         .build(),
                 LimitPolicyResDto.builder()
                         .limitPolicyId(7202L)
                         .lineId(lineId)
-                        .limitType("MONTHLY_MB")
                         .policyValue(20480)
                         .build(),
                 LimitPolicyResDto.builder()
                         .limitPolicyId(7203L)
                         .lineId(lineId)
-                        .limitType("WARNING_THRESHOLD_PERCENT")
                         .policyValue(80)
                         .build()
         );
@@ -180,7 +174,6 @@ public class UserPolicyController {
         LimitPolicyResDto response = LimitPolicyResDto.builder()
                 .limitPolicyId(limitPolicyId)
                 .lineId(lineId)
-                .limitType(resolveLimitType(limitPolicyId))
                 .policyValue(request.getPolicyValue() != null ? request.getPolicyValue() : 0)
                 .build();
         return ResponseEntity.ok(response);
@@ -205,7 +198,6 @@ public class UserPolicyController {
                         .appPolicyId(7301L)
                         .appId(301L)
                         .appName("YouTube")
-                        .policyType("LIMIT")
                         .enabled(true)
                         .dailyLimitMb(500)
                         .build(),
@@ -213,7 +205,6 @@ public class UserPolicyController {
                         .appPolicyId(7302L)
                         .appId(302L)
                         .appName("Instagram")
-                        .policyType("LIMIT")
                         .enabled(true)
                         .dailyLimitMb(300)
                         .build(),
@@ -221,7 +212,6 @@ public class UserPolicyController {
                         .appPolicyId(7303L)
                         .appId(401L)
                         .appName("GameX")
-                        .policyType("BLOCK")
                         .enabled(false)
                         .dailyLimitMb(0)
                         .build()
@@ -250,7 +240,6 @@ public class UserPolicyController {
                 .appPolicyId(appPolicyId)
                 .appId(resolveAppId(appPolicyId))
                 .appName(resolveAppName(appPolicyId))
-                .policyType(resolveAppPolicyType(appPolicyId))
                 .enabled(request.getEnabled() != null ? request.getEnabled() : Boolean.FALSE)
                 .dailyLimitMb(request.getDailyLimitMb() != null ? request.getDailyLimitMb() : 0)
                 .build();
@@ -376,29 +365,6 @@ public class UserPolicyController {
         return ResponseEntity.ok(response);
     }
 
-    private String resolveBlockType(Long blockPolicyId) {
-        if (Long.valueOf(7101L).equals(blockPolicyId)) {
-            return "ROAMING";
-        }
-        if (Long.valueOf(7102L).equals(blockPolicyId)) {
-            return "PAID_CONTENT";
-        }
-        return "UNKNOWN";
-    }
-
-    private String resolveLimitType(Long limitPolicyId) {
-        if (Long.valueOf(7201L).equals(limitPolicyId)) {
-            return "DAILY_MB";
-        }
-        if (Long.valueOf(7202L).equals(limitPolicyId)) {
-            return "MONTHLY_MB";
-        }
-        if (Long.valueOf(7203L).equals(limitPolicyId)) {
-            return "WARNING_THRESHOLD_PERCENT";
-        }
-        return "UNKNOWN";
-    }
-
     private Long resolveAppId(Long appPolicyId) {
         if (Long.valueOf(7301L).equals(appPolicyId)) {
             return 301L;
@@ -425,10 +391,4 @@ public class UserPolicyController {
         return "Unknown";
     }
 
-    private String resolveAppPolicyType(Long appPolicyId) {
-        if (Long.valueOf(7303L).equals(appPolicyId)) {
-            return "BLOCK";
-        }
-        return "LIMIT";
-    }
 }
