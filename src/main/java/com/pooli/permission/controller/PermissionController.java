@@ -1,7 +1,6 @@
 package com.pooli.permission.controller;
 
-import com.pooli.permission.domain.dto.request.PermissionCreateReqDto;
-import com.pooli.permission.domain.dto.request.PermissionUpdateReqDto;
+import com.pooli.permission.domain.dto.request.PermissionReqDto;
 import com.pooli.permission.domain.dto.response.CommonErrorResDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionListResDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionResDto;
@@ -109,10 +108,10 @@ public class PermissionController {
     })
     @PostMapping
     public ResponseEntity<PermissionResDto> createPermission(
-            @RequestBody PermissionCreateReqDto permissionCreateReqDto) {
+            @RequestBody PermissionReqDto permissionReqDto) {
         PermissionResDto permissionResDto = PermissionResDto.builder()
                 .permissionId(1)
-                .permissionTitle(permissionCreateReqDto.getPermissionTitle())
+                .permissionTitle(permissionReqDto.getPermissionTitle())
                 .createdAt(LocalDateTime.parse("2026-02-20T12:00:00"))
                 .deletedAt(null)
                 .build();
@@ -137,10 +136,10 @@ public class PermissionController {
     public ResponseEntity<PermissionResDto> updatePermissionTitle(
             @Parameter(description = "권한 ID", example = "1")
             @RequestParam Integer permissionId,
-            @RequestBody PermissionUpdateReqDto permissionUpdateReqDto) {
+            @RequestBody PermissionReqDto permissionReqDto) {
         PermissionResDto permissionResDto = PermissionResDto.builder()
                 .permissionId(permissionId)
-                .permissionTitle(permissionUpdateReqDto.getPermissionTitle())
+                .permissionTitle(permissionReqDto.getPermissionTitle())
                 .createdAt(LocalDateTime.parse("2026-02-20T12:00:00"))
                 .deletedAt(null)
                 .build();

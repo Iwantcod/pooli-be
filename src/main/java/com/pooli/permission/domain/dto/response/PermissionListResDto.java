@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Builder
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@NoArgsConstructor()
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "권한 목록 응답 DTO")
 public class PermissionListResDto {

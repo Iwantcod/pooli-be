@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Builder
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@NoArgsConstructor()
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "구성원 권한 응답 DTO")
 public class MemberPermissionResDto {
