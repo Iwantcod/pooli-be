@@ -1,13 +1,10 @@
 package com.pooli.permission.controller;
 
 import com.pooli.permission.domain.dto.request.MemberPermissionUpsertReqDto;
-import com.pooli.permission.domain.dto.response.CommonErrorResDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionListResDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionResDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -31,14 +28,8 @@ public class MemberPermissionController {
             description = "가족관리자 또는 관리자가 familyId와 lineId를 기준으로 구성원의 권한 목록을 조회한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(
-                    responseCode = "404",
-                    description = "가족 또는 회선 정보가 존재하지 않음",
-                    content = @Content(schema = @Schema(implementation = CommonErrorResDto.class))),
-            @ApiResponse(
-                    responseCode = "500",
-                    description = "서버 오류",
-                    content = @Content(schema = @Schema(implementation = CommonErrorResDto.class)))
+            @ApiResponse(responseCode = "404", description = "가족 또는 회선 정보가 존재하지 않음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @GetMapping
     public ResponseEntity<MemberPermissionListResDto> getMemberPermissions(
@@ -66,14 +57,8 @@ public class MemberPermissionController {
             description = "가족관리자 또는 관리자가 familyId와 lineId를 기준으로 권한 식별자와 활성화 여부(is_enable)를 변경한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "변경 성공"),
-            @ApiResponse(
-                    responseCode = "404",
-                    description = "가족, 회선 또는 권한 정보가 존재하지 않음",
-                    content = @Content(schema = @Schema(implementation = CommonErrorResDto.class))),
-            @ApiResponse(
-                    responseCode = "500",
-                    description = "서버 오류",
-                    content = @Content(schema = @Schema(implementation = CommonErrorResDto.class)))
+            @ApiResponse(responseCode = "404", description = "가족, 회선 또는 권한 정보가 존재하지 않음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @PatchMapping
     public ResponseEntity<MemberPermissionResDto> updateMemberPermission(

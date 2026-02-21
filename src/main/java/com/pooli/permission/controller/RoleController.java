@@ -43,8 +43,6 @@ public class RoleController {
         RepresentativeRoleTransferResDto representativeRoleTransferResDto = RepresentativeRoleTransferResDto.builder()
                 .currentUserId(currentUserId)
                 .changeUserId(changeUserId)
-                .beforeRole("OWNER")
-                .afterRole("MEMBER")
                 .build();
         return ResponseEntity.ok(representativeRoleTransferResDto);
     }
