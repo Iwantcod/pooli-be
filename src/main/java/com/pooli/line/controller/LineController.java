@@ -1,15 +1,16 @@
 package com.pooli.line.controller;
 
+import com.pooli.line.domain.dto.request.UpdateIndividualThresholdReqDto;
+import com.pooli.line.domain.dto.response.IndividualThresholdResDto;
 import com.pooli.line.domain.dto.response.LineSimpleResDto;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -43,4 +44,35 @@ public class LineController {
         return ResponseEntity.ok(response);
     }
 
+    @Operation(
+            summary = "유저 회선별 개인 임계치 조회",
+            description = "유저 회선별 설정된 개인 임계치를 조회한다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "임계치 조회 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청 파라미터"),
+            @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
+    @GetMapping("/thresholds")
+    public ResponseEntity<IndividualThresholdResDto> getIndividualThreshold(
+            @Parameter(description = "회선 ID", example = "1")
+            @RequestParam Integer lineId
+    ) {
+
+        IndividualThresholdResDto response = IndividualThresholdResDto.builder()
+                .individualThreshold(3000)
+                .isThresholdActive(true)
+                .build();
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PatchMapping("/thresholds")
+    public ResponseEntity<Void> updateIndividualThreshold(
+            @RequestBody UpdateIndividualThresholdReqDto request
+    ) {
+
+        return ResponseEntity.ok().build();
+    }
 }
