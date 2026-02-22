@@ -7,10 +7,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "Family", description = "가족 관련 API")
 @RestController
@@ -33,5 +30,24 @@ public class FamilyController {
     ) {
         SharedDataThresholdResDto result = SharedDataThresholdResDto.builder().build();
         return ResponseEntity.ok(result);
+    }
+
+    @Operation(
+            summary = "가족 공유 데이터 사용량 알람 임계치 수정",
+            description = "가족 대표자만 요청할 수 있습니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "수정 성공"),
+            @ApiResponse(responseCode = "401", description = "수정 권한 없음"),
+            @ApiResponse(responseCode = "404", description = "가족 식별자에 해당하는 가족이 존재하지 않음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류"),
+
+    })
+    @PatchMapping("/shared-data-limit")
+    public ResponseEntity<Void> updateSharedDataLimit(
+            @Parameter(description = "가족 식별자", example = "1")
+            @RequestParam Long familyId
+    ) {
+        return ResponseEntity.ok().build();
     }
 }
