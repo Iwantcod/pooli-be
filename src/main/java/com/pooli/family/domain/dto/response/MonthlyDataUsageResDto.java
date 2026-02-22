@@ -11,5 +11,5 @@ public class MonthlyDataUsageResDto {
     @Schema(description = "Month를 의미하는 정수", example = "1")
     private Integer month;
     @Schema(description = "사용량을 의미하는 정수", example = "10000")
-    private Integer usage;
+    private Integer totalUsageData;
 }

@@ -72,9 +72,9 @@ public class FamilyController {
             @RequestParam Long memberId
     ) {
         List<MonthlyDataUsageResDto> result = new ArrayList<>();
-        result.add(MonthlyDataUsageResDto.builder().month(1).usage(10000).build());
-        result.add(MonthlyDataUsageResDto.builder().month(2).usage(15000).build());
-        result.add(MonthlyDataUsageResDto.builder().month(3).usage(9200).build());
+        result.add(MonthlyDataUsageResDto.builder().month(1).totalUsageData(10000).build());
+        result.add(MonthlyDataUsageResDto.builder().month(2).totalUsageData(15000).build());
+        result.add(MonthlyDataUsageResDto.builder().month(3).totalUsageData(9200).build());
         return ResponseEntity.ok(result);
     }
 
