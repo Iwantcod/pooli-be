@@ -29,7 +29,7 @@ public class FamilyController {
             @ApiResponse(responseCode = "404", description = "데이터가 존재하지 않음"),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
-    @GetMapping("/shared-data-limit")
+    @GetMapping("/shared-data-limits")
     public ResponseEntity<SharedDataThresholdResDto> getSharedDataLimit(
             @Parameter(description = "가족 식별자", example = "1")
             @RequestParam Long familyId
@@ -48,7 +48,7 @@ public class FamilyController {
             @ApiResponse(responseCode = "404", description = "가족 식별자에 해당하는 가족이 존재하지 않음"),
             @ApiResponse(responseCode = "500", description = "서버 오류"),
     })
-    @PatchMapping("/shared-data-limit")
+    @PatchMapping("/shared-data-limits")
     public ResponseEntity<Void> updateSharedDataLimit(
             @Parameter(description = "가족 식별자", example = "1")
             @RequestParam Long familyId
