@@ -61,7 +61,7 @@ public class LineController {
     ) {
 
         IndividualThresholdResDto response = IndividualThresholdResDto.builder()
-                .individualThreshold(3000)
+                .individualThreshold(3000L)
                 .isThresholdActive(true)
                 .build();
 
