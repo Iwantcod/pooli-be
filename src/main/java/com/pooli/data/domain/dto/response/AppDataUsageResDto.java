@@ -12,6 +12,9 @@ import java.util.List;
 @Schema(description = "앱 서비스별 데이터 사용량 조회 응답 DTO")
 public class AppDataUsageResDto {
 
+    @Schema(description = "가족원에게 정보 공개 여부", example = "true")
+    private Boolean isPublic;
+
     @Schema(description = "총 사용 데이터량(bite)", example = "5200")
     private Long totalUsedAmount;
 
