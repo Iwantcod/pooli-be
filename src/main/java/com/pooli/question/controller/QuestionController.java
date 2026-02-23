@@ -12,8 +12,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.pooli.common.dto.PagingResDto;
 import com.pooli.question.domain.dto.request.QuestionCreateReqDto;
 import com.pooli.question.domain.dto.response.QuestionListResDto;
+import com.pooli.question.domain.dto.response.QuestionResDto;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -64,12 +66,31 @@ public class QuestionController {
 	        
 	})
 	@GetMapping
-	public ResponseEntity<List<QuestionListResDto>> selectQuestion(
+	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestion(
 			@RequestParam(name="categories") String categories,
-			@RequestParam(name="isAnswered") Boolean isAnswered,
-			@RequestParam(name="page") Long page,
-			@RequestParam(name="size") Long size
+			@RequestParam(name="isAnswered", required = false) Boolean isAnswered,
+			@RequestParam(name="pageNumber") Integer page,
+			@RequestParam(name="pageSize") Integer size
 			) {
-		return ResponseEntity.ok(List.of());
+		return ResponseEntity.ok(new PagingResDto<>());
+	}
+	
+	@Operation(
+	    summary = "문의사항 상세 내용 조회 요청",
+	    description = "문의사항 상세 내용을 조회한다"
+	)
+	@ApiResponses({
+	    @ApiResponse(responseCode = "200", description = "문의사항 상세 내용 조회 성공"),
+	    @ApiResponse(responseCode = "404", description = "문의사항 상세 정보가 존재하지 않음"),
+	    @ApiResponse(responseCode = "500", description = "서버 오류"),
+	        
+	})
+	@GetMapping("/details")
+	public ResponseEntity<QuestionResDto> selectDetailQuestion(
+			@RequestParam(name="questionId") Long questionId
+			) {
+		return ResponseEntity.ok(
+			    QuestionResDto.builder().build()
+			);
 	}
 }
