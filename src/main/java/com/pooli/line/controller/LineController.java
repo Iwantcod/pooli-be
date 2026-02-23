@@ -68,6 +68,16 @@ public class LineController {
         return ResponseEntity.ok(response);
     }
 
+    @Operation(
+            summary = "유저 회선별 개인 임계치 수정",
+            description = "유저 회선별 설정된 개인 임계치를 수정합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "임계치 수정 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청 파라미터"),
+            @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
     @PatchMapping("/thresholds")
     public ResponseEntity<Void> updateIndividualThreshold(
             @RequestBody UpdateIndividualThresholdReqDto request
