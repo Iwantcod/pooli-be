@@ -13,7 +13,7 @@ import java.util.List;
 public class AppDataUsageResDto {
 
     @Schema(description = "가족원에게 정보 공개 여부", example = "true")
-    private Boolean is_public;
+    private Boolean isPublic;
 
     @Schema(description = "총 사용 데이터량(bite)", example = "5200")
     private Long totalUsedAmount;
