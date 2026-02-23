@@ -11,7 +11,7 @@ import lombok.*;
 public class SharedDataThresholdResDto {
     @Schema(description = "가족 공유 데이터 임계치 설정 여부", example = "true")
     private Boolean isThresholdActive;
-    @Schema(description = "가족 공유 데이터 사용량 임계치 값", example = "1000")
+    @Schema(description = "가족 공유 데이터 사용량 임계치 값(단위: Byte)", example = "1000")
     private Integer familyThreshold;
 
 }

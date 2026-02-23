@@ -8,6 +8,6 @@ import lombok.Setter;
 @Setter
 @Schema(description = "가족 공유 데이터 사용량 임계치 수정 요청 DTO")
 public class UpdateSharedDataThresholdReqDto {
-    @Schema(description = "새로운 임계치 값", example = "1500")
+    @Schema(description = "새로운 임계치 값(단위: Byte)", example = "1500")
     private Integer newFamilyThreshold;
 }
