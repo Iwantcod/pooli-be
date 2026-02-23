@@ -74,7 +74,8 @@ public class QuestionController {
 			@RequestParam(name="pageNumber") Integer page,
 			@RequestParam(name="pageSize") Integer size
 			) {
-		return ResponseEntity.ok(new PagingResDto<>());
+
+		return ResponseEntity.ok().build();
 	}
 	
 	@Operation(
