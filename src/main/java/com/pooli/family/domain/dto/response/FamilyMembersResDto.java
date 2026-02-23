@@ -8,6 +8,8 @@ import java.util.List;
 
 @Getter
 @Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "가족 구성원 조회 응답 DTO")
 public class FamilyMembersResDto {
 
