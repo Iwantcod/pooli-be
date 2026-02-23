@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Builder
-@NoArgsConstructor()
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "가족관리자 역할 양도 응답 DTO")
 public class RepresentativeRoleTransferResDto {
