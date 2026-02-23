@@ -59,7 +59,7 @@ public class FamilyController {
             @ApiResponse(responseCode = "404", description = "가족 정보를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
-    @GetMapping("/members")
+    @GetMapping("/members-simple")
     public ResponseEntity<FamilyMembersSimpleResDto> getFamilyMembers(
             @Parameter(description = "가족 식별자", example = "1")
             @RequestParam Integer familyId
