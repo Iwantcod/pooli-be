@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
-public class AlarmSettingEntity {
+public class AlarmSetting {
 	
 	Long userId;
 	Boolean familyAlarm;
