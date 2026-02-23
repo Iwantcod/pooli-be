@@ -104,7 +104,7 @@ public class QuestionController {
 			@ApiResponse(responseCode = "404", description = "카테고리 정보가 존재하지 않음"),
 			@ApiResponse(responseCode = "500", description = "서버 오류")
 	})
-	@GetMapping("/category")
+	@GetMapping("/categories")
 	public ResponseEntity<QuestionCategoryListResDto> getQuestionCategories() {
 		QuestionCategoryResDto questionCategoryResDto = QuestionCategoryResDto.builder()
 				.questionCategoryId(1)
