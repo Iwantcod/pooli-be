@@ -18,6 +18,9 @@ public class FamilyMembersResDto {
     @Schema(description = "가족 식별자", example = "1")
     private Integer familyId;
 
+    @Schema(description = "가족 공유풀 총량", example = "10000000")
+    private Long sharedPoolTotalData;
+
     @Schema(description = "가족 구성원 목록")
     private List<FamilyMemberDto> members;
 
@@ -45,7 +48,7 @@ public class FamilyMembersResDto {
         @Schema(description = "요금제명", example = "5G 프리미엄")
         private String planName;
 
-        @Schema(description = "기본 제공 데이터 잔량(MB)", example = "5000")
+        @Schema(description = "기본 제공 데이터 잔량(bite)", example = "5000")
         private Long remainingData;
 
         @Schema(description = "기본 제공 데이터량(MB)", example = "10000")
@@ -54,7 +57,11 @@ public class FamilyMembersResDto {
         @Schema(description = "가족 역할 (OWNER / MEMBER)", example = "OWNER")
         private FamilyRole role;
 
-        @Schema(description = "당일 누적 공유풀 데이터 사용량(MB)", example = "120")
-        private Long usageAmount;
+        @Schema(description = "사용 가능한 공유풀 데이터 총량(bite)", example = "120")
+        private Long sharedPoolTotalAmount;
+
+        @Schema(description = "사용 가능한 공유풀 데이터 잔량(bite)", example = "12000")
+        private Long sharedPoolRemainingAmount;
+
     }
 }
