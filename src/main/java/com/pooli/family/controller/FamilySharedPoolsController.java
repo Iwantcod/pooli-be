@@ -13,9 +13,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-@Tag(name = "Family", description = "가족 공유데이터 관련 API")
+@Tag(name = "Shared Pool", description = "가족 공유데이터 관련 API")
 @RestController
-@RequestMapping("/api/families/shared-pools")
+@RequestMapping("/api/shared-pools")
 public class FamilySharedPoolsController {
 
     @Operation(
