@@ -1,11 +1,12 @@
 package com.pooli.family.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Builder;
-import lombok.Getter;
+import lombok.*;
 
 @Getter
 @Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "공유 데이터 담기 화면 개인 정보 조회 응답 DTO")
 public class SharedPoolMyStatusResDto {
 

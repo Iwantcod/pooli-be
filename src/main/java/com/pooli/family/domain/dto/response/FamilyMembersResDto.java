@@ -2,8 +2,7 @@ package com.pooli.family.domain.dto.response;
 
 import com.pooli.family.domain.enums.FamilyRole;
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Builder;
-import lombok.Getter;
+import lombok.*;
 
 import java.util.List;
 
@@ -27,6 +26,8 @@ public class FamilyMembersResDto {
 
     @Getter
     @Builder
+    @AllArgsConstructor(access = AccessLevel.PRIVATE)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
     @Schema(description = "가족 구성원 DTO")
     public static class FamilyMemberDto {
 

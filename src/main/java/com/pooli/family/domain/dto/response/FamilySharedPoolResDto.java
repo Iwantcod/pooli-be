@@ -1,11 +1,12 @@
 package com.pooli.family.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Builder;
-import lombok.Getter;
+import lombok.*;
 
 @Getter
 @Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "가족 공유풀 조회 응답 DTO")
 public class FamilySharedPoolResDto {
     // 이거 MB로 줄까? KB가 기준일까?

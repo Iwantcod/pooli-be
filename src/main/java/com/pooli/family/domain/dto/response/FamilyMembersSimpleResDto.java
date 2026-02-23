@@ -1,13 +1,14 @@
 package com.pooli.family.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Builder;
-import lombok.Getter;
+import lombok.*;
 
 import java.util.List;
 
 @Getter
 @Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "가족 결합 구성원(단말) 조회 응답 DTO")
 public class FamilyMembersSimpleResDto {
 
