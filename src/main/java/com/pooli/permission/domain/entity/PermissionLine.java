@@ -16,7 +16,7 @@ public class PermissionLine {
 
     private Long lineId;
 
-    private Long permissionId;
+    private Integer permissionId;
 
     private Boolean isEnable;
 

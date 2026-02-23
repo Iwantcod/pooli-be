@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Permission {
 
-    private Long id;
+    private Integer permissionId;
 
     private String permissionTitle;
 
