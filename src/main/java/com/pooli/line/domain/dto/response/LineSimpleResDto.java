@@ -1,11 +1,12 @@
 package com.pooli.line.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Builder;
-import lombok.Getter;
+import lombok.*;
 
 @Getter
 @Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "User 회선 응답 DTO")
 public class LineSimpleResDto {
     @Schema(description = "회선 식별자", example = "1")
