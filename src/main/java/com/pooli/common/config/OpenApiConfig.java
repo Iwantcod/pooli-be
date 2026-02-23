@@ -13,9 +13,9 @@ public class OpenApiConfig {
     public OpenAPI pooliOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Pooli API")
-                        .description("Pooli backend API docs")
+                        .title("Pooli API 명세")
+                        .description("Pooli 백엔드 API 문서")
                         .version("v1")
-                        .contact(new Contact().name("Pooli Team")));
+                        .contact(new Contact().name("Pooli 팀")));
     }
 }
