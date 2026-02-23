@@ -53,7 +53,9 @@ public class NotiReadController {
 	})
 	@GetMapping("/unread-counts")
 	public ResponseEntity<UnreadCountsResDto> getUnreadCounts(){
-		return ResponseEntity.ok(new UnreadCountsResDto());
+		return ResponseEntity.ok(
+				UnreadCountsResDto.builder().build()
+			);
 	}
 	
 	@Operation(
