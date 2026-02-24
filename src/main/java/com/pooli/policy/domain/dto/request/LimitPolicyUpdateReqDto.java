@@ -8,6 +8,8 @@ import lombok.Setter;
 @Setter
 @Schema(description = "제한 정책 단건 수정 요청")
 public class LimitPolicyUpdateReqDto {
-    @Schema(description = "수정할 정책 값", example = "1024", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "제한 정책 식별자", example = "21")
+    private Long limitPolicyId;
+    @Schema(description = "수정할 정책 값", example = "1024")
     private Integer policyValue;
 }
