@@ -4,26 +4,25 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import lombok.Builder;
 import lombok.Getter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 @Getter
+@Builder
 public class AuthUserDetails implements UserDetails {
 
     private final Long userId;
     private final String userName;
     private final String email;
     private final String password;
+    private final Long lineId;
     private final List<GrantedAuthority> authorities;
 
-    public AuthUserDetails(Long userId, String userName, String email, String password, List<String> roleNames) {
-        this.userId = userId;
-        this.userName = userName;
-        this.email = email;
-        this.password = password;
-        this.authorities = roleNames.stream()
+    public static List<GrantedAuthority> toAuthorities(List<String> roleNames) {
+        return roleNames.stream()
             .filter(Objects::nonNull)
             .map(String::trim)
             .filter(role -> !role.isEmpty())
@@ -46,6 +45,22 @@ public class AuthUserDetails implements UserDetails {
     @Override
     public String getUsername() {
         return email;
+    }
+
+    @Override
+    public String getPassword() {
+        return password;
+    }
+
+    public AuthUserDetails withoutPassword() {
+        return AuthUserDetails.builder()
+            .userId(userId)
+            .userName(userName)
+            .email(email)
+            .password(null)
+            .lineId(lineId)
+            .authorities(authorities)
+            .build();
     }
 
     @Override

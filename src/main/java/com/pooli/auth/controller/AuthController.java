@@ -16,10 +16,13 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.servlet.http.Cookie;
 
 @RestController
 @RequiredArgsConstructor
@@ -30,6 +33,7 @@ public class AuthController {
 
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
+    private final CsrfTokenRepository csrfTokenRepository;
 
     @PostMapping("/user/login")
     public ResponseEntity<LoginResDto> loginUser(
@@ -47,6 +51,24 @@ public class AuthController {
         HttpServletResponse httpResponse
     ) {
         return authenticateAndRespond(request, httpRequest, httpResponse, true);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(
+        HttpServletRequest httpRequest,
+        HttpServletResponse httpResponse
+    ) {
+        SecurityContextHolder.clearContext();
+        var session = httpRequest.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
+
+        clearCookie(httpResponse, "JSESSIONID");
+        csrfTokenRepository.saveToken(null, httpRequest, httpResponse);
+        clearCookie(httpResponse, "XSRF-TOKEN");
+
+        return ResponseEntity.ok().build();
     }
 
     private ResponseEntity<LoginResDto> authenticateAndRespond(
@@ -68,17 +90,27 @@ public class AuthController {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
 
+            AuthUserDetails principal = (AuthUserDetails) authentication.getPrincipal();
+            AuthUserDetails sanitizedPrincipal = principal.withoutPassword();
+            Authentication sanitizedAuthentication = new UsernamePasswordAuthenticationToken(
+                sanitizedPrincipal,
+                null,
+                authentication.getAuthorities()
+            );
+
             SecurityContext context = SecurityContextHolder.createEmptyContext();
-            context.setAuthentication(authentication);
+            context.setAuthentication(sanitizedAuthentication);
             SecurityContextHolder.setContext(context);
             securityContextRepository.saveContext(context, httpRequest, httpResponse);
+            var csrfToken = csrfTokenRepository.generateToken(httpRequest);
+            csrfTokenRepository.saveToken(csrfToken, httpRequest, httpResponse);
 
-            AuthUserDetails principal = (AuthUserDetails) authentication.getPrincipal();
             LoginResDto response = LoginResDto.builder()
-                .userId(principal.getUserId())
-                .userName(principal.getUsername())
-                .email(principal.getEmail())
-                .roles(principal.getRoleNames())
+                .userId(sanitizedPrincipal.getUserId())
+                .userName(sanitizedPrincipal.getUsername())
+                .email(sanitizedPrincipal.getEmail())
+                .lineId(sanitizedPrincipal.getLineId())
+                .roles(sanitizedPrincipal.getRoleNames())
                 .build();
 
             return ResponseEntity.ok(response);
@@ -90,5 +122,16 @@ public class AuthController {
     private boolean hasRole(Authentication authentication, String role) {
         return authentication.getAuthorities().stream()
             .anyMatch(authority -> role.equals(authority.getAuthority()));
+    }
+
+    private void clearCookie(HttpServletResponse response, String name) {
+        if (!StringUtils.hasText(name)) {
+            return;
+        }
+        Cookie cookie = new Cookie(name, "");
+        cookie.setPath("/");
+        cookie.setMaxAge(0);
+        cookie.setHttpOnly(true);
+        response.addCookie(cookie);
     }
 }
