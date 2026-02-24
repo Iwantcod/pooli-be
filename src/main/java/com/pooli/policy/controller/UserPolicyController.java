@@ -249,7 +249,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PatchMapping("/policies/lines/shared/limits")
+    @PatchMapping("/policies/lines/shares/limits")
     public ResponseEntity<LimitPolicyResDto> updateShareLimitPolicy(
             @RequestBody LimitPolicyUpdateReqDto request
     ) {
