@@ -1,6 +1,6 @@
 package com.pooli.policy.domain.dto.request;
 
-import com.pooli.policy.domain.enums.DayOfWeek;
+import java.util.List;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
@@ -14,11 +14,6 @@ public class RepeatBlockPolicyReqDto {
 	@Schema(description = "활성화 상태", example = "false")
 	private Boolean isActive;
 	
-	@Schema(description = "시작 시간", example = "1401")
-	private Integer startAt;
-	
-	@Schema(description = "종료 시간", example = "2003")
-	private Integer endAt;	
-	
-	DayOfWeek dayOfWeek;
+	@Schema(description = "차단 요일 목록")
+	private List<RepeatBlockDayReqDto> days;
 }

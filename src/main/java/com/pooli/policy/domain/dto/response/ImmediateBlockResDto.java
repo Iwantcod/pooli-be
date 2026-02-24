@@ -1,5 +1,7 @@
 package com.pooli.policy.domain.dto.response;
 
+import java.time.LocalDateTime;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -18,11 +20,9 @@ public class ImmediateBlockResDto {
 	private Long lineId;
 
 	@Schema(description = "차단 종료 시간", example = "2026-02-20T14:30:00")
-	private String blockEndAt;	
+	private LocalDateTime blockEndAt;	
 	
 	@Schema(description = "차단 상태", example = "false")
-	private Boolean isBlock;
+	private Boolean isBlocked;
 	
-	@Schema(description = "차단 종료 시간", example = "2026-02-20T14:30:00")
-	private String updatedAt;
 }
