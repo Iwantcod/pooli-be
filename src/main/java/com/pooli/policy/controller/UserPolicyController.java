@@ -220,8 +220,9 @@ public class UserPolicyController {
     }
 
     @Operation(
-            summary = "특정 구성원 정책 정보 수정",
-            description = "사용자 권한 필요. 앱 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다."
+            summary = "특정 구성원 앱별 정책 정보 수정",
+            description = "사용자 권한 필요. 앱 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
