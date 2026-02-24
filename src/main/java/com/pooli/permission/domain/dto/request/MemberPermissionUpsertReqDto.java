@@ -5,10 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
 @Getter
-@Builder
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "구성원 권한 부여 변경 요청 DTO")
 public class MemberPermissionUpsertReqDto {
 

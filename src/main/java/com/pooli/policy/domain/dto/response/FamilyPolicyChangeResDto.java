@@ -1,13 +1,11 @@
 package com.pooli.policy.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
+import lombok.*;
 
 @Getter
 @Builder
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "가족 정책 적용/제거 결과")
 public class FamilyPolicyChangeResDto {

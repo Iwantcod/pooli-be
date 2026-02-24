@@ -1,17 +1,11 @@
 package com.pooli.notification.domain.dto.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Getter
 @Setter
-@Builder
-@AllArgsConstructor
-@NoArgsConstructor
 @Schema(description = "알림 설정 변경 요청 DTO")
 public class AlarmSettingReqDto {
 

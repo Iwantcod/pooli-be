@@ -1,6 +1,7 @@
 package com.pooli.notification.controller;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,7 +39,25 @@ public class NotiReadController {
 			@RequestParam(name = "pageNumber") Integer page,
 	        @RequestParam(name = "pageSize") Integer size,
 	        @RequestParam(name = "isRead", required = false) Boolean isRead){
-		return ResponseEntity.ok(new PagingResDto<NotiSendResDto>());
+		
+	    NotiSendResDto noti = NotiSendResDto.builder()
+        .alarmHistoryId(1L)
+        .lineId(2L)
+        .alarmCode(AlarmCode.LIMIT)
+        .value(null)  
+        .isRead(isRead != null ? isRead : false)
+        .build();
+		
+		// PagingResDto 빌더로 생성
+		PagingResDto<NotiSendResDto> response = PagingResDto.<NotiSendResDto>builder()
+		        .page(page)
+		        .page(size)
+		        .totalElements(1L)
+		        .totalPages(1)    
+		        .content(List.of(noti)) 
+		        .build();
+
+		return ResponseEntity.ok(response);
 	}
 	
 	
@@ -53,6 +72,7 @@ public class NotiReadController {
 	})
 	@GetMapping("/unread-counts")
 	public ResponseEntity<UnreadCountsResDto> getUnreadCounts(){
+		
 		return ResponseEntity.ok(
 				UnreadCountsResDto.builder().build()
 			);

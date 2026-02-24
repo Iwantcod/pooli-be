@@ -30,12 +30,8 @@ public class AlarmSettingController {
 	public ResponseEntity<AlarmSettingReqDto> updateFamilyAlarm(){
 	 
 	// @AuthenticationPrincipal LoginUser loginUser
-	
-	AlarmSettingReqDto response = AlarmSettingReqDto.builder()
-	            .familyAlarm(false)
-	            .build();
 
-	    return ResponseEntity.ok(response);
+		 return ResponseEntity.ok().build();
 	}
 	
 	@Operation(
@@ -52,11 +48,7 @@ public class AlarmSettingController {
 	 
 	// @AuthenticationPrincipal LoginUser loginUser
 	
-	AlarmSettingReqDto response = AlarmSettingReqDto.builder()
-	            .userAlarm(false)
-	            .build();
-
-	    return ResponseEntity.ok(response);
+		 return ResponseEntity.ok().build();
 	}
 	
 	@Operation(
@@ -73,11 +65,7 @@ public class AlarmSettingController {
 	 
 	// @AuthenticationPrincipal LoginUser loginUser
 	
-	AlarmSettingReqDto response = AlarmSettingReqDto.builder()
-	            .policyChangeAlarm(false)
-	            .build();
-
-	    return ResponseEntity.ok(response);
+		 return ResponseEntity.ok().build();
 	}
 	
 	@Operation(
@@ -93,12 +81,8 @@ public class AlarmSettingController {
 	public ResponseEntity<AlarmSettingReqDto> updatePolicyLimitAlarm(){
 	 
 	// @AuthenticationPrincipal LoginUser loginUser
-	
-	AlarmSettingReqDto response = AlarmSettingReqDto.builder()
-	            .policyLimitAlarm(false)
-	            .build();
 
-	    return ResponseEntity.ok(response);
+		 return ResponseEntity.ok().build();
 	}
 	
 	@Operation(
@@ -115,11 +99,7 @@ public class AlarmSettingController {
 	 
 	// @AuthenticationPrincipal LoginUser loginUser
 	
-	AlarmSettingReqDto response = AlarmSettingReqDto.builder()
-	            .permissionAlarm(false)
-	            .build();
-
-	    return ResponseEntity.ok(response);
+		 return ResponseEntity.ok().build();
 	}
 	
 	@Operation(
@@ -135,11 +115,7 @@ public class AlarmSettingController {
 	public ResponseEntity<AlarmSettingReqDto> updateQuestionAlarm(){
 	 
 	// @AuthenticationPrincipal LoginUser loginUser
-	
-	AlarmSettingReqDto response = AlarmSettingReqDto.builder()
-	            .questionAlarm(false)
-	            .build();
 
-	    return ResponseEntity.ok(response);
+	 return ResponseEntity.ok().build();
 	}
 }
