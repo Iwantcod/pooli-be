@@ -105,15 +105,15 @@ public class AuthController {
             var csrfToken = csrfTokenRepository.generateToken(httpRequest);
             csrfTokenRepository.saveToken(csrfToken, httpRequest, httpResponse);
 
-            LoginResDto response = LoginResDto.builder()
-                .userId(sanitizedPrincipal.getUserId())
-                .userName(sanitizedPrincipal.getUsername())
-                .email(sanitizedPrincipal.getEmail())
-                .lineId(sanitizedPrincipal.getLineId())
-                .roles(sanitizedPrincipal.getRoleNames())
-                .build();
+//            LoginResDto response = LoginResDto.builder()
+//                .userId(sanitizedPrincipal.getUserId())
+//                .userName(sanitizedPrincipal.getUsername())
+//                .email(sanitizedPrincipal.getEmail())
+//                .lineId(sanitizedPrincipal.getLineId())
+//                .roles(sanitizedPrincipal.getRoleNames())
+//                .build();
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok().build();
         } catch (AuthenticationException ex) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
