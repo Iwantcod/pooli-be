@@ -1,6 +1,7 @@
 package com.pooli.family.controller;
 
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
+import com.pooli.family.domain.dto.request.UpdateVisibilityReqDto;
 import com.pooli.family.domain.dto.response.SharedDataThresholdResDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -71,5 +72,24 @@ public class FamilyController {
         FamilyMembersSimpleResDto response = FamilyMembersSimpleResDto.builder().build();
 
         return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "앱별 사용량 데이터 가족 공개 여부 설정 변경",
+            description = "lineId에 해당하는 회선의 앱별 사용량 데이터를 "
+                    + "가족에게 공개할지 여부를 변경합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "설정 변경 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청 데이터"),
+            @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
+    @PatchMapping("/visibility")
+    public ResponseEntity<Void> updateVisibility(
+            @RequestBody UpdateVisibilityReqDto request
+    ) {
+
+        return ResponseEntity.ok().build();
     }
 }
