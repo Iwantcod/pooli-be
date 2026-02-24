@@ -34,7 +34,8 @@ public class UserPolicyController {
 
     @Operation(
             summary = "백오피스에서 '활성화'한 전체 정책 목록 조회",
-            description = "사용자 권한 필요. 가족 대표가 가족 그룹에 적용할 수 있는 활성화 정책 목록을 조회합니다."
+            description = "사용자 권한 필요. 가족 대표가 가족 그룹에 적용할 수 있는 활성화 정책 목록을 조회합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -68,7 +69,8 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 차단 정책 조회",
-            description = "사용자 권한 필요. 특정 회선의 차단 정책 항목과 PK를 조회합니다."
+            description = "사용자 권한 필요. 특정 회선의 차단 정책 항목과 PK를 조회합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -97,7 +99,8 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 정책 정보 수정",
-            description = "사용자 권한 필요. 차단 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다."
+            description = "사용자 권한 필요. 차단 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -122,7 +125,8 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 제한 정책 조회",
-            description = "사용자 권한 필요. 특정 회선의 제한 정책 항목과 PK를 조회합니다."
+            description = "사용자 권한 필요. 특정 회선의 제한 정책 항목과 PK를 조회합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -156,7 +160,8 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 정책 정보 수정",
-            description = "사용자 권한 필요. 제한 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다."
+            description = "사용자 권한 필요. 제한 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -181,7 +186,8 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 앱 별 정책 조회",
-            description = "사용자 권한 필요. 특정 회선의 앱 단위 정책 목록과 PK를 조회합니다."
+            description = "사용자 권한 필요. 특정 회선의 앱 단위 정책 목록과 PK를 조회합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -221,7 +227,8 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 정책 정보 수정",
-            description = "사용자 권한 필요. 앱 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다."
+            description = "사용자 권한 필요. 앱 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -248,7 +255,8 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 적용 중인 정책 목록 조회",
-            description = "사용자 권한 필요. 특정 회선에 현재 적용 중인 정책 목록을 조회합니다."
+            description = "사용자 권한 필요. 특정 회선에 현재 적용 중인 정책 목록을 조회합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -283,7 +291,8 @@ public class UserPolicyController {
 
     @Operation(
             summary = "가족에 적용중인 정책 목록 조회",
-            description = "사용자 권한 필요. 가족에 현재 적용 중인 정책 목록을 조회합니다."
+            description = "사용자 권한 필요. 가족에 현재 적용 중인 정책 목록을 조회합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -318,7 +327,8 @@ public class UserPolicyController {
 
     @Operation(
             summary = "가족 신규 정책 적용",
-            description = "사용자 권한 필요. 활성화된 정책을 특정 가족에 적용합니다."
+            description = "사용자 권한 필요. 활성화된 정책을 특정 가족에 적용합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -342,7 +352,8 @@ public class UserPolicyController {
 
     @Operation(
             summary = "가족 정책 제거",
-            description = "사용자 권한 필요. 특정 가족에 적용된 정책을 제거합니다."
+            description = "사용자 권한 필요. 특정 가족에 적용된 정책을 제거합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
