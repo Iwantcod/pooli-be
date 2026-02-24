@@ -1,9 +1,6 @@
 package com.pooli.policy.controller;
 
-import com.pooli.policy.domain.dto.request.AppPolicyUpdateReqDto;
-import com.pooli.policy.domain.dto.request.BlockPolicyUpdateReqDto;
-import com.pooli.policy.domain.dto.request.FamilyPolicyApplyReqDto;
-import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
+import com.pooli.policy.domain.dto.request.*;
 import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
 import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
 import com.pooli.policy.domain.dto.response.AppPolicyResDto;
@@ -196,21 +193,21 @@ public class UserPolicyController {
         List<AppPolicyResDto> response = List.of(
                 AppPolicyResDto.builder()
                         .appPolicyId(7301L)
-                        .appId(301L)
+                        .appId(301)
                         .appName("YouTube")
                         .enabled(true)
                         .dailyLimitMb(500)
                         .build(),
                 AppPolicyResDto.builder()
                         .appPolicyId(7302L)
-                        .appId(302L)
+                        .appId(302)
                         .appName("Instagram")
                         .enabled(true)
                         .dailyLimitMb(300)
                         .build(),
                 AppPolicyResDto.builder()
                         .appPolicyId(7303L)
-                        .appId(401L)
+                        .appId(401)
                         .appName("GameX")
                         .enabled(false)
                         .dailyLimitMb(0)
@@ -244,6 +241,25 @@ public class UserPolicyController {
                 .enabled(request.getEnabled() != null ? request.getEnabled() : Boolean.FALSE)
                 .dailyLimitMb(request.getDailyLimitMb() != null ? request.getDailyLimitMb() : 0)
                 .build();
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "특정 구성원 앱별 정책 신규 생성",
+            description = "가족 대표자만 설정 가능합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한이 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PostMapping("/policies/app")
+    public ResponseEntity<AppPolicyResDto> createAppPolicy(
+            @RequestBody AppPolicyCreateReqDto request
+    ) {
+        AppPolicyResDto response = AppPolicyResDto.builder().build();
         return ResponseEntity.ok(response);
     }
 
@@ -282,17 +298,17 @@ public class UserPolicyController {
         return ResponseEntity.ok(response);
     }
 
-    private Long resolveAppId(Long appPolicyId) {
+    private Integer resolveAppId(Long appPolicyId) {
         if (Long.valueOf(7301L).equals(appPolicyId)) {
-            return 301L;
+            return 301;
         }
         if (Long.valueOf(7302L).equals(appPolicyId)) {
-            return 302L;
+            return 302;
         }
         if (Long.valueOf(7303L).equals(appPolicyId)) {
-            return 401L;
+            return 401;
         }
-        return 0L;
+        return 0;
     }
 
     private String resolveAppName(Long appPolicyId) {

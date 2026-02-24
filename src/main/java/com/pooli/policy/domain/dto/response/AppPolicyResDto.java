@@ -13,7 +13,7 @@ public class AppPolicyResDto {
     private Long appPolicyId;
 
     @Schema(description = "앱 식별자", example = "301")
-    private Long appId;
+    private Integer appId;
 
     @Schema(description = "앱 이름", example = "YouTube")
     private String appName;
@@ -23,4 +23,7 @@ public class AppPolicyResDto {
 
     @Schema(description = "일일 제한량(MB)", example = "500")
     private Integer dailyLimitMb;
+
+    @Schema(description = "제한 속도(Kbps, 1Mbps: 1000Kbps)", example = "5000")
+    private Integer dailyLimitSpeed;
 }
