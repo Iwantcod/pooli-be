@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminPolicyController {
 
     @Operation(
-            summary = "전체 정책 목록 조회",
+            summary = "관리자 기능: 전체 정책 목록 조회",
             description = "관리자 전용. 활성화/비활성화 포함 전체 정책 목록을 조회합니다."
     )
     @ApiResponses({
@@ -64,7 +64,7 @@ public class AdminPolicyController {
     }
 
     @Operation(
-            summary = "정책 추가 ( 활성화)",
+            summary = "관리자 기능: 정책 추가 ( 활성화)",
             description = "관리자 전용. 백오피스에서 정책을 활성화합니다."
     )
     @ApiResponses({
@@ -83,7 +83,7 @@ public class AdminPolicyController {
     }
 
     @Operation(
-            summary = "정책 삭제 ( 비활성화)",
+            summary = "관리자 기능: 정책 삭제 ( 비활성화)",
             description = "관리자 전용. 백오피스에서 정책을 비활성화합니다."
     )
     @ApiResponses({
@@ -105,7 +105,7 @@ public class AdminPolicyController {
     }
 
     @Operation(
-            summary = "특정 구성원 앱별 사용량",
+            summary = "관리자 기능: 특정 구성원 앱별 사용량",
             description = "관리자 전용. 특정 구성원의 앱별 사용량 통계를 조회합니다."
     )
     @ApiResponses({
