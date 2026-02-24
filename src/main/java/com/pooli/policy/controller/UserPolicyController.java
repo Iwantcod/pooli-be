@@ -322,6 +322,25 @@ public class UserPolicyController {
     }
 
     @Operation(
+            summary = "구성원의 특정 앱 데이터 사용 정책 삭제",
+            description = "가족 대표자 권한 필요"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한이 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @DeleteMapping("/policies/app")
+    public ResponseEntity<Void> deleteAppPolicy(
+            @Parameter(description = "앱 정책 식별자", example = "154")
+            @RequestParam Long appPolicyId
+    ) {
+        return ResponseEntity.ok().build();
+    }
+
+    @Operation(
             summary = "특정 구성원 적용 중인 정책 목록 조회",
             description = "사용자 권한 필요. 특정 회선에 현재 적용 중인 정책 목록을 조회합니다."
     )
