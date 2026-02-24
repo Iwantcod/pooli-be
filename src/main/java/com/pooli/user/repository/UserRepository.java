@@ -42,4 +42,13 @@ public interface UserRepository {
         LIMIT 1
         """)
     String findFamilyRoleByMainLineUserId(@Param("userId") Long userId);
+
+    @Select("""
+        SELECT l.line_id
+        FROM LINE l
+        WHERE l.user_id = #{userId}
+          AND l.is_main = TRUE
+        LIMIT 1
+        """)
+    Long findMainLineIdByUserId(@Param("userId") Long userId);
 }

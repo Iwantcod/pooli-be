@@ -31,12 +31,14 @@ public class CustomUserDetailsService implements UserDetailsService {
                 roleNames.add(mappedFamilyRole);
             }
         }
-        return new AuthUserDetails(
-            user.getUserId(),
-            user.getUserName(),
-            user.getEmail(),
-            user.getPassword(),
-            roleNames
-        );
+        Long mainLineId = userRepository.findMainLineIdByUserId(user.getUserId());
+        return AuthUserDetails.builder()
+            .userId(user.getUserId())
+            .userName(user.getUserName())
+            .email(user.getEmail())
+            .password(user.getPassword())
+            .lineId(mainLineId)
+            .authorities(AuthUserDetails.toAuthorities(roleNames))
+            .build();
     }
 }
