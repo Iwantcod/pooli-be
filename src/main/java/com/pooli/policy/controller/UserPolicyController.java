@@ -264,6 +264,46 @@ public class UserPolicyController {
     }
 
     @Operation(
+            summary = "특정 구성원 앱별 정책의 제한 데이터량(단위: Byte) 수정",
+            description = "가족 대표자 권한 필요, value 단위: Byte"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한이 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/policies/app/limit")
+    public ResponseEntity<AppPolicyResDto> updateAppPolicyLimit(
+            @RequestBody AppPolicyUpdateValueReqDto request
+    ) {
+        AppPolicyResDto response = AppPolicyResDto.builder().build();
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "특정 구성원 앱별 정책의 제한 속도(단위: Kbps) 수정",
+            description = "가족 대표자 권한 필요, value 단위: Kbps(ex: 1Mbps == 1000Kbps)"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한이 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/policies/app/speed")
+    public ResponseEntity<AppPolicyResDto> updateAppPolicySpeed(
+            @RequestBody AppPolicyUpdateValueReqDto request
+    ) {
+        AppPolicyResDto response = AppPolicyResDto.builder().build();
+        return ResponseEntity.ok(response);
+    }
+
+
+
+    @Operation(
             summary = "특정 구성원 적용 중인 정책 목록 조회",
             description = "사용자 권한 필요. 특정 회선에 현재 적용 중인 정책 목록을 조회합니다."
     )
