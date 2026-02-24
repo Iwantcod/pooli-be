@@ -24,6 +24,34 @@ import org.springframework.web.bind.annotation.RestController;
 public class MemberPermissionController {
 
     @Operation(
+            summary = "내 권한 상태 조회",
+            description = "로그인한 유저가 자신의 권한 목록과 활성화 상태를 조회한다. 세션의 사용자 정보를 기준으로 조회한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "404", description = "사용자 또는 권한 정보가 존재하지 않음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
+    @GetMapping("/me")
+    public ResponseEntity<MemberPermissionListResDto> getMyPermissions(
+            @Parameter(description = "회선 ID", example = "1001")
+            @RequestParam Long lineId
+    ) {
+        MemberPermissionResDto memberPermissionResDto = MemberPermissionResDto.builder()
+                .familyId(10L)
+                .lineId(lineId)
+                .permissionId(1)
+                .permissionTitle("데이터 차단")
+                .isEnable(Boolean.FALSE)
+                .createdAt(LocalDateTime.parse("2026-02-20T12:00:00"))
+                .build();
+
+        MemberPermissionListResDto memberPermissionListResDto = MemberPermissionListResDto.builder()
+                .memberPermissions(List.of(memberPermissionResDto))
+                .build();
+        return ResponseEntity.ok(memberPermissionListResDto);
+    }
+
+    @Operation(
             summary = "구성원 권한 목록 조회",
             description = "가족관리자 또는 관리자가 familyId와 lineId를 기준으로 구성원의 권한 목록을 조회한다.")
     @ApiResponses({
