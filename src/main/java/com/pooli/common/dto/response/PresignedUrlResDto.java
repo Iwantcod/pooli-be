@@ -10,5 +10,7 @@ import java.util.List;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "파일 업로드를 위한 Presigned URL 목록 응답 DTO")
 public class PresignedUrlResDto {
+
+    @Schema(description = "생성된 Presigned URL 목록")
     private List<UploadFileResDto> uploads;
 }

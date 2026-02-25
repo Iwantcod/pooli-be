@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.DotenvInitializer;
 import com.pooli.common.dto.request.PresignedUrlReqDto;
 import com.pooli.common.dto.request.UploadFileReqDto;
+import com.pooli.common.enums.FileDomain;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -41,7 +42,7 @@ public class UploadControllerTest {
 
         PresignedUrlReqDto request = new PresignedUrlReqDto();
         request.setFiles(List.of(file));
-        request.setDomain("QUESTION");
+        request.setDomain(FileDomain.QUESTION);
 
         mockMvc.perform(post("/api/uploads/presigned-urls")
                         .contentType(MediaType.APPLICATION_JSON)

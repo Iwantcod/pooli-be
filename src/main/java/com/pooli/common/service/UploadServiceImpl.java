@@ -1,5 +1,6 @@
 package com.pooli.common.service;
 
+import com.pooli.common.enums.FileDomain;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.dto.request.PresignedUrlReqDto;
 import com.pooli.common.dto.request.UploadFileReqDto;
@@ -10,14 +11,17 @@ import com.pooli.common.validator.UploadValidationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Set;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -28,10 +32,6 @@ public class UploadServiceImpl implements UploadService {
     private final S3Presigner presigner;
     private final UploadValidationService uploadValidationService;
 
-    @Value("${cloud.aws.region}")
-    private String region;
-
-
     @Value("${cloud.aws.s3.bucket}")
     private String bucket;
 
@@ -39,6 +39,7 @@ public class UploadServiceImpl implements UploadService {
     public PresignedUrlResDto generatePresignedUrls(PresignedUrlReqDto request) {
 
         uploadValidationService.validateRequest(request);
+
         try {
             List<UploadFileResDto> uploads = request.getFiles()
                     .stream()
@@ -48,6 +49,7 @@ public class UploadServiceImpl implements UploadService {
             return PresignedUrlResDto.builder()
                     .uploads(uploads)
                     .build();
+
         } catch (Exception e) {
             throw new ApplicationException(
                     UploadErrorCode.PRESIGNED_URL_GENERATION_FAILED,
@@ -57,7 +59,27 @@ public class UploadServiceImpl implements UploadService {
     }
 
     @Override
-    public UploadFileResDto createPresignedUrl(UploadFileReqDto file, String domain) {
+    public String generateGetPresignedUrl(String key) {
+
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .build();
+
+        GetObjectPresignRequest presignRequest =
+                GetObjectPresignRequest.builder()
+                        .signatureDuration(Duration.ofMinutes(5))
+                        .getObjectRequest(getObjectRequest)
+                        .build();
+
+        PresignedGetObjectRequest presignedRequest =
+                presigner.presignGetObject(presignRequest);
+
+        return presignedRequest.url().toString();
+    }
+
+    @Override
+    public UploadFileResDto createPresignedUrl(UploadFileReqDto file, FileDomain domain) {
 
         String key = generateKey(file, domain);
 
@@ -77,21 +99,26 @@ public class UploadServiceImpl implements UploadService {
                 presigner.presignPutObject(presignRequest);
 
         String uploadUrl = presignedRequest.url().toString();
-        String fileUrl = String.format(
-                "https://%s.s3.%s.amazonaws.com/%s",
-                bucket, region, key
-        );
 
         return UploadFileResDto.builder()
                 .uploadUrl(uploadUrl)
-                .fileUrl(fileUrl)
+                .s3Key(key)
                 .build();
     }
 
     @Override
-    public String generateKey(UploadFileReqDto file, String domain) {
-        String uuid = UUID.randomUUID().toString();
-        return domain.toLowerCase() + "/" + uuid + "-" + file.getFileName();
+    public String generateKey(UploadFileReqDto file, FileDomain domain) {
+        String ext = uploadValidationService
+                .getFileExtension(file.getFileName())
+                .toLowerCase(Locale.ROOT);
+
+        String prefix = domain.name().toLowerCase(Locale.ROOT);
+
+        String uuid = UUID.randomUUID()
+                .toString()
+                .replace("-", "");
+
+        return prefix + "/" + uuid + "." + ext;
     }
 
 }

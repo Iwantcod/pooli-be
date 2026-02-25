@@ -35,13 +35,7 @@ public class UploadValidationServiceImpl implements UploadValidationService{
         }
 
         // 도메인이 null 인지 확인
-        if (request.getDomain() == null || request.getDomain().isBlank()) {
-            throw new ApplicationException(UploadErrorCode.INVALID_DOMAIN);
-        }
-
-        // domain 문자열 대문자 변환 후 허용값 체크
-        request.setDomain(request.getDomain().toUpperCase());
-        if (!ALLOWED_DOMAINS.contains(request.getDomain())) {
+        if (request.getDomain() == null) {
             throw new ApplicationException(UploadErrorCode.INVALID_DOMAIN);
         }
 
@@ -51,6 +45,10 @@ public class UploadValidationServiceImpl implements UploadValidationService{
 
     @Override
     public void validateFile(UploadFileReqDto file) {
+
+        if (file == null) {
+            throw new ApplicationException(UploadErrorCode.INVALID_UPLOAD_REQUEST);
+        }
 
         if (file.getFileName() == null || file.getFileName().isBlank()) {
             throw new ApplicationException(UploadErrorCode.INVALID_UPLOAD_REQUEST);
