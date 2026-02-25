@@ -4,10 +4,13 @@ import com.pooli.common.dto.request.PresignedUrlReqDto;
 import com.pooli.common.dto.response.PresignedUrlResDto;
 import com.pooli.common.service.UploadService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,13 +31,21 @@ public class UploadController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Presigned URL 생성 성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청 값 (파일 정보 또는 도메인 누락)"),
-            @ApiResponse(responseCode = "400", description = "UPLOAD:4001 - 업로드 요청 값이 올바르지 않습니다."),
-            @ApiResponse(responseCode = "400", description = "UPLOAD:4002 - 파일은 최대 3개까지 업로드할 수 있습니다."),
-            @ApiResponse(responseCode = "400", description = "UPLOAD:4003 - 파일 정보가 부족하거나 허용되지 않는 형식입니다."),
-            @ApiResponse(responseCode = "400", description = "UPLOAD:4004 - 허용되지 않은 업로드 도메인입니다."),
-            @ApiResponse(responseCode = "500", description = "UPLOAD:5001 - Presigned URL 생성 중 오류가 발생했습니다."),
-            @ApiResponse(responseCode = "500", description = "Presigned URL 생성 중 서버 오류")
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+                        업로드 요청 오류
+                        
+                        - UPLOAD:4001 요청 값 오류
+                        - UPLOAD:4002 파일 개수 초과
+                        - UPLOAD:4003 파일 형식 오류
+                        - UPLOAD:4004 도메인 오류
+                        """
+            ),
+            @ApiResponse(
+                    responseCode = "500",
+                    description = "UPLOAD:5001 - Presigned URL 생성 실패"
+            )
     })
     @PostMapping("/presigned-urls")
     public PresignedUrlResDto createPresignedUrls(
