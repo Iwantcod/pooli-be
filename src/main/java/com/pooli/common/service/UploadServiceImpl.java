@@ -28,7 +28,7 @@ public class UploadServiceImpl implements UploadService {
     private final S3Presigner presigner;
     private final UploadValidationService uploadValidationService;
 
-    @Value("${cloud.aws.region.static}")
+    @Value("${cloud.aws.region}")
     private String region;
 
 
