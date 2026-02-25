@@ -1,9 +1,6 @@
 package com.pooli.policy.controller;
 
-import com.pooli.policy.domain.dto.request.AppPolicyUpdateReqDto;
-import com.pooli.policy.domain.dto.request.BlockPolicyUpdateReqDto;
-import com.pooli.policy.domain.dto.request.FamilyPolicyApplyReqDto;
-import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
+import com.pooli.policy.domain.dto.request.*;
 import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
 import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
 import com.pooli.policy.domain.dto.response.AppPolicyResDto;
@@ -196,32 +193,33 @@ public class UserPolicyController {
         List<AppPolicyResDto> response = List.of(
                 AppPolicyResDto.builder()
                         .appPolicyId(7301L)
-                        .appId(301L)
+                        .appId(301)
                         .appName("YouTube")
                         .enabled(true)
-                        .dailyLimitMb(500)
+                        .dailyLimitMb(500L)
                         .build(),
                 AppPolicyResDto.builder()
                         .appPolicyId(7302L)
-                        .appId(302L)
+                        .appId(302)
                         .appName("Instagram")
                         .enabled(true)
-                        .dailyLimitMb(300)
+                        .dailyLimitMb(300L)
                         .build(),
                 AppPolicyResDto.builder()
                         .appPolicyId(7303L)
-                        .appId(401L)
+                        .appId(401)
                         .appName("GameX")
                         .enabled(false)
-                        .dailyLimitMb(0)
+                        .dailyLimitMb(0L)
                         .build()
         );
         return ResponseEntity.ok(response);
     }
 
     @Operation(
-            summary = "특정 구성원 정책 정보 수정",
-            description = "사용자 권한 필요. 앱 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다."
+            summary = "특정 구성원 앱별 정책 정보 수정",
+            description = "사용자 권한 필요. 앱 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -241,9 +239,105 @@ public class UserPolicyController {
                 .appId(resolveAppId(appPolicyId))
                 .appName(resolveAppName(appPolicyId))
                 .enabled(request.getEnabled() != null ? request.getEnabled() : Boolean.FALSE)
-                .dailyLimitMb(request.getDailyLimitMb() != null ? request.getDailyLimitMb() : 0)
+                .dailyLimitMb(request.getDailyLimitMb() != null ? request.getDailyLimitMb() : 0L)
                 .build();
         return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "특정 구성원 앱별 정책 신규 생성",
+            description = "가족 대표자만 설정 가능합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한이 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PostMapping("/policies/lines/apps")
+    public ResponseEntity<AppPolicyResDto> createAppPolicy(
+            @RequestBody AppPolicyCreateReqDto request
+    ) {
+        AppPolicyResDto response = AppPolicyResDto.builder().build();
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "특정 구성원 앱별 정책의 제한 데이터량(단위: Byte) 수정",
+            description = "가족 대표자 권한 필요, value 단위: Byte"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한이 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/policies/lines/apps/limits")
+    public ResponseEntity<AppPolicyResDto> updateAppPolicyLimit(
+            @RequestBody AppDataLimitUpdateReqDto request
+    ) {
+        AppPolicyResDto response = AppPolicyResDto.builder().build();
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "특정 구성원 앱별 정책의 제한 속도(단위: Kbps) 수정",
+            description = "가족 대표자 권한 필요, value 단위: Kbps(ex: 1Mbps == 1000Kbps)"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한이 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/policies/lines/apps/speeds")
+    public ResponseEntity<AppPolicyResDto> updateAppPolicySpeed(
+            @RequestBody AppSpeedLimitUpdateReqDto request
+    ) {
+        AppPolicyResDto response = AppPolicyResDto.builder().build();
+        return ResponseEntity.ok(response);
+    }
+
+
+    @Operation(
+            summary = "구성원의 특정 앱 데이터 사용 정책 활성화/비활성화 토글 요청",
+            description = "가족 대표자 권한 필요"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한이 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/policies/lines/apps/enable-toggles")
+    public ResponseEntity<Void> toggleAppPolicyEnable(
+            @Parameter(description = "앱 정책 식별자", example = "154")
+            @RequestParam Long appPolicyId
+    ) {
+        return ResponseEntity.ok().build();
+    }
+
+    @Operation(
+            summary = "구성원의 특정 앱 데이터 사용 정책 삭제",
+            description = "가족 대표자 권한 필요"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한이 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @DeleteMapping("/policies/lines/apps")
+    public ResponseEntity<Void> deleteAppPolicy(
+            @Parameter(description = "앱 정책 식별자", example = "154")
+            @RequestParam Long appPolicyId
+    ) {
+        return ResponseEntity.ok().build();
     }
 
     @Operation(
@@ -281,101 +375,17 @@ public class UserPolicyController {
         return ResponseEntity.ok(response);
     }
 
-    @Operation(
-            summary = "가족에 적용중인 정책 목록 조회",
-            description = "사용자 권한 필요. 가족에 현재 적용 중인 정책 목록을 조회합니다."
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
-    })
-    @GetMapping("/policies/families")
-    public ResponseEntity<List<AppliedPolicyResDto>> getFamilyPolicies(
-            @Parameter(description = "가족 식별자", example = "10")
-            @RequestParam Long familyId
-    ) {
-        List<AppliedPolicyResDto> response = List.of(
-                AppliedPolicyResDto.builder()
-                        .policyId(1001L)
-                        .policyName("야간 사용 차단")
-                        .policyType("BLOCK")
-                        .appliedTarget("FAMILY")
-                        .targetId(familyId)
-                        .appliedAt("2026-02-20T10:20:00")
-                        .build(),
-                AppliedPolicyResDto.builder()
-                        .policyId(1003L)
-                        .policyName("게임 앱 제한")
-                        .policyType("APP")
-                        .appliedTarget("FAMILY")
-                        .targetId(familyId)
-                        .appliedAt("2026-02-20T10:22:00")
-                        .build()
-        );
-        return ResponseEntity.ok(response);
-    }
-
-    @Operation(
-            summary = "가족 신규 정책 적용",
-            description = "사용자 권한 필요. 활성화된 정책을 특정 가족에 적용합니다."
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
-    })
-    @PostMapping("/policies/families")
-    public ResponseEntity<FamilyPolicyChangeResDto> applyFamilyPolicy(
-            @Parameter(description = "가족 식별자", example = "10")
-            @RequestParam Long familyId,
-            @RequestBody FamilyPolicyApplyReqDto request
-    ) {
-        FamilyPolicyChangeResDto response = FamilyPolicyChangeResDto.builder()
-                .familyId(familyId)
-                .policyId(request.getPolicyId())
-                .status("APPLIED")
-                .processedAt(LocalDateTime.now().toString())
-                .build();
-        return ResponseEntity.ok(response);
-    }
-
-    @Operation(
-            summary = "가족 정책 제거",
-            description = "사용자 권한 필요. 특정 가족에 적용된 정책을 제거합니다."
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
-    })
-    @DeleteMapping("/policies/families")
-    public ResponseEntity<FamilyPolicyChangeResDto> removeFamilyPolicy(
-            @Parameter(description = "가족 식별자", example = "10")
-            @RequestParam Long familyId,
-            @Parameter(description = "정책 식별자", example = "1003")
-            @RequestParam Long policyId
-    ) {
-        FamilyPolicyChangeResDto response = FamilyPolicyChangeResDto.builder()
-                .familyId(familyId)
-                .policyId(policyId)
-                .status("REMOVED")
-                .processedAt(LocalDateTime.now().toString())
-                .build();
-        return ResponseEntity.ok(response);
-    }
-
-    private Long resolveAppId(Long appPolicyId) {
+    private Integer resolveAppId(Long appPolicyId) {
         if (Long.valueOf(7301L).equals(appPolicyId)) {
-            return 301L;
+            return 301;
         }
         if (Long.valueOf(7302L).equals(appPolicyId)) {
-            return 302L;
+            return 302;
         }
         if (Long.valueOf(7303L).equals(appPolicyId)) {
-            return 401L;
+            return 401;
         }
-        return 0L;
+        return 0;
     }
 
     private String resolveAppName(Long appPolicyId) {
