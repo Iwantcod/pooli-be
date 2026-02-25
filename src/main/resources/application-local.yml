@@ -34,9 +34,11 @@ spring:
 
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml
-  type-aliases-package: ${MYBATIS_TYPE_ALIASES_PACKAGE}
+  type-aliases-package: com.pooli
   configuration:
     map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    #cache-enabled: true
 
 server:
   port: ${SERVER_PORT}

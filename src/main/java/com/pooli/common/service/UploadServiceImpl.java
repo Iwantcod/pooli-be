@@ -28,6 +28,10 @@ public class UploadServiceImpl implements UploadService {
     private final S3Presigner presigner;
     private final UploadValidationService uploadValidationService;
 
+    @Value("${cloud.aws.region.static}")
+    private String region;
+
+
     @Value("${cloud.aws.s3.bucket}")
     private String bucket;
 
@@ -45,12 +49,10 @@ public class UploadServiceImpl implements UploadService {
                     .uploads(uploads)
                     .build();
         } catch (Exception e) {
-            e.printStackTrace();
-            throw e;
-//            throw new ApplicationException(
-//                    UploadErrorCode.PRESIGNED_URL_GENERATION_FAILED,
-//                    e
-//            );
+            throw new ApplicationException(
+                    UploadErrorCode.PRESIGNED_URL_GENERATION_FAILED,
+                    e
+            );
         }
     }
 
@@ -75,7 +77,10 @@ public class UploadServiceImpl implements UploadService {
                 presigner.presignPutObject(presignRequest);
 
         String uploadUrl = presignedRequest.url().toString();
-        String fileUrl = "https://" + bucket + ".s3.amazonaws.com/" + key;
+        String fileUrl = String.format(
+                "https://%s.s3.%s.amazonaws.com/%s",
+                bucket, region, key
+        );
 
         return UploadFileResDto.builder()
                 .uploadUrl(uploadUrl)
