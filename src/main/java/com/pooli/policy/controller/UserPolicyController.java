@@ -228,31 +228,6 @@ public class UserPolicyController {
         return ResponseEntity.ok(response);
     }
 
-    @Operation(
-            summary = "특정 구성원 반복적 차단 정책 정보 수정",
-            description = "사용자 권한 필요. 차단 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
-            deprecated = true
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
-    })
-    @PatchMapping("/lines/blocks")
-    public ResponseEntity<BlockPolicyResDto> updateBlockPolicy(
-            @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
-            @Parameter(description = "차단 정책 PK", example = "7101")
-            @RequestParam Long blockPolicyId,
-            @RequestBody BlockPolicyUpdateReqDto request
-    ) {
-        BlockPolicyResDto response = BlockPolicyResDto.builder()
-                .blockPolicyId(blockPolicyId)
-                .lineId(lineId)
-                .enabled(request.getEnabled() != null ? request.getEnabled() : Boolean.FALSE)
-                .build();
-        return ResponseEntity.ok(response);
-    }
 
     @Operation(
             summary = "특정 구성원 제한 정책 조회",
@@ -269,29 +244,6 @@ public class UserPolicyController {
             @RequestParam Long lineId
     ) {
         return ResponseEntity.ok(LimitPolicyResDto.builder().build());
-    }
-
-    @Operation(
-            summary = "특정 구성원 제한 정책 정보 수정",
-            description = "사용자 권한 필요. 제한 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
-            deprecated = true
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
-    })
-    @PatchMapping("/lines/limits")
-    public ResponseEntity<LimitPolicyResDto> updateLimitPolicy(
-            @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
-            @Parameter(description = "제한 정책 PK", example = "7201")
-            @RequestParam Long limitPolicyId,
-            @RequestBody LimitPolicyUpdateReqDto request
-    ) {
-        LimitPolicyResDto response = LimitPolicyResDto.builder()
-                .build();
-        return ResponseEntity.ok(response);
     }
 
     @Operation(
@@ -409,34 +361,6 @@ public class UserPolicyController {
                         .dailyLimitData(0L)
                         .build()
         );
-        return ResponseEntity.ok(response);
-    }
-
-    @Operation(
-            summary = "특정 구성원 앱별 정책 정보 수정",
-            description = "사용자 권한 필요. 앱 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
-            deprecated = true
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
-    })
-    @PatchMapping("/lines/apps")
-    public ResponseEntity<AppPolicyResDto> updateAppPolicy(
-            @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
-            @Parameter(description = "앱 정책 PK", example = "7301")
-            @RequestParam Long appPolicyId,
-            @RequestBody AppPolicyUpdateReqDto request
-    ) {
-        AppPolicyResDto response = AppPolicyResDto.builder()
-                .appPolicyId(appPolicyId)
-                .appId(resolveAppId(appPolicyId))
-                .appName(resolveAppName(appPolicyId))
-                .enabled(request.getEnabled() != null ? request.getEnabled() : Boolean.FALSE)
-                .dailyLimitData(request.getDailyLimitMb() != null ? request.getDailyLimitMb() : 0L)
-                .build();
         return ResponseEntity.ok(response);
     }
 
@@ -568,6 +492,83 @@ public class UserPolicyController {
                         .appliedAt("2026-02-20T10:12:00")
                         .build()
         );
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "특정 구성원 제한 정책 정보 수정",
+            description = "사용자 권한 필요. 제한 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
+            deprecated = true
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/lines/limits")
+    public ResponseEntity<LimitPolicyResDto> updateLimitPolicy(
+            @Parameter(description = "회선 식별자", example = "101")
+            @RequestParam Long lineId,
+            @Parameter(description = "제한 정책 PK", example = "7201")
+            @RequestParam Long limitPolicyId,
+            @RequestBody LimitPolicyUpdateReqDto request
+    ) {
+        LimitPolicyResDto response = LimitPolicyResDto.builder()
+                .build();
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "특정 구성원 반복적 차단 정책 정보 수정",
+            description = "사용자 권한 필요. 차단 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
+            deprecated = true
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/lines/blocks")
+    public ResponseEntity<BlockPolicyResDto> updateBlockPolicy(
+            @Parameter(description = "회선 식별자", example = "101")
+            @RequestParam Long lineId,
+            @Parameter(description = "차단 정책 PK", example = "7101")
+            @RequestParam Long blockPolicyId,
+            @RequestBody BlockPolicyUpdateReqDto request
+    ) {
+        BlockPolicyResDto response = BlockPolicyResDto.builder()
+                .blockPolicyId(blockPolicyId)
+                .lineId(lineId)
+                .enabled(request.getEnabled() != null ? request.getEnabled() : Boolean.FALSE)
+                .build();
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "특정 구성원 앱별 정책 정보 수정",
+            description = "사용자 권한 필요. 앱 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
+            deprecated = true
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/lines/apps")
+    public ResponseEntity<AppPolicyResDto> updateAppPolicy(
+            @Parameter(description = "회선 식별자", example = "101")
+            @RequestParam Long lineId,
+            @Parameter(description = "앱 정책 PK", example = "7301")
+            @RequestParam Long appPolicyId,
+            @RequestBody AppPolicyUpdateReqDto request
+    ) {
+        AppPolicyResDto response = AppPolicyResDto.builder()
+                .appPolicyId(appPolicyId)
+                .appId(resolveAppId(appPolicyId))
+                .appName(resolveAppName(appPolicyId))
+                .enabled(request.getEnabled() != null ? request.getEnabled() : Boolean.FALSE)
+                .dailyLimitData(request.getDailyLimitMb() != null ? request.getDailyLimitMb() : 0L)
+                .build();
         return ResponseEntity.ok(response);
     }
 
