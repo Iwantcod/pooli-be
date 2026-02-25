@@ -122,7 +122,7 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 제한 정책 조회",
-            description = "사용자 권한 필요. 특정 회선의 제한 정책 항목과 PK를 조회합니다."
+            description = "사용자 권한 필요. 특정 회선의 제한 정책 항목을 조회합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -130,28 +130,11 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/policies/lines/limits")
-    public ResponseEntity<List<LimitPolicyResDto>> getLimitPolicies(
+    public ResponseEntity<LimitPolicyResDto> getLimitPolicies(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
     ) {
-        List<LimitPolicyResDto> response = List.of(
-                LimitPolicyResDto.builder()
-                        .limitPolicyId(7201L)
-                        .lineId(lineId)
-                        .policyValue(1024L)
-                        .build(),
-                LimitPolicyResDto.builder()
-                        .limitPolicyId(7202L)
-                        .lineId(lineId)
-                        .policyValue(20480L)
-                        .build(),
-                LimitPolicyResDto.builder()
-                        .limitPolicyId(7203L)
-                        .lineId(lineId)
-                        .policyValue(80L)
-                        .build()
-        );
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(LimitPolicyResDto.builder().build());
     }
 
     @Operation(
@@ -173,9 +156,6 @@ public class UserPolicyController {
             @RequestBody LimitPolicyUpdateReqDto request
     ) {
         LimitPolicyResDto response = LimitPolicyResDto.builder()
-                .limitPolicyId(limitPolicyId)
-                .lineId(lineId)
-                .policyValue(request.getPolicyValue() != null ? request.getPolicyValue() : 0)
                 .build();
         return ResponseEntity.ok(response);
     }
@@ -326,7 +306,7 @@ public class UserPolicyController {
     }
 
     @Operation(
-            summary = "특정 구성원 적용 중인 정책 목록 조회",
+            summary = "특정 구성원에게 적용 중인 모든 정책 목록 조회(현재 적용 중인 정책)",
             description = "사용자 권한 필요. 특정 회선에 현재 적용 중인 정책 목록을 조회합니다."
     )
     @ApiResponses({
