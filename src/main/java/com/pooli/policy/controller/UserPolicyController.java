@@ -138,17 +138,17 @@ public class UserPolicyController {
                 LimitPolicyResDto.builder()
                         .limitPolicyId(7201L)
                         .lineId(lineId)
-                        .policyValue(1024)
+                        .policyValue(1024L)
                         .build(),
                 LimitPolicyResDto.builder()
                         .limitPolicyId(7202L)
                         .lineId(lineId)
-                        .policyValue(20480)
+                        .policyValue(20480L)
                         .build(),
                 LimitPolicyResDto.builder()
                         .limitPolicyId(7203L)
                         .lineId(lineId)
-                        .policyValue(80)
+                        .policyValue(80L)
                         .build()
         );
         return ResponseEntity.ok(response);

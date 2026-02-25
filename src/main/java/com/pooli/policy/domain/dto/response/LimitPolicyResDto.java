@@ -16,5 +16,5 @@ public class LimitPolicyResDto {
     private Long lineId;
 
     @Schema(description = "정책 값", example = "1024")
-    private Integer policyValue;
+    private Long policyValue;
 }
