@@ -24,9 +24,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "정책", description = "정책 API")
+@Tag(name = "Policy", description = "정책 API")
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/policies")
 public class UserPolicyController {
 
     @Operation(
@@ -39,7 +39,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @GetMapping("/policies")
+    @GetMapping
     public ResponseEntity<List<ActivePolicyResDto>> getActivePolicies() {
         List<ActivePolicyResDto> response = List.of(
                 ActivePolicyResDto.builder()
@@ -74,7 +74,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @GetMapping("/policies/lines/blocks")
+    @GetMapping("/lines/blocks")
     public ResponseEntity<List<BlockPolicyResDto>> getBlockPolicies(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
@@ -104,7 +104,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PatchMapping("/policies/lines/blocks")
+    @PatchMapping("/lines/blocks")
     public ResponseEntity<BlockPolicyResDto> updateBlockPolicy(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId,
@@ -130,7 +130,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @GetMapping("/policies/lines/limits")
+    @GetMapping("/lines/limits")
     public ResponseEntity<LimitPolicyResDto> getLimitPolicies(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
@@ -148,7 +148,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PatchMapping("/policies/lines/limits")
+    @PatchMapping("/lines/limits")
     public ResponseEntity<LimitPolicyResDto> updateLimitPolicy(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId,
@@ -172,7 +172,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PatchMapping("/policies/lines/days/limits/enable-toggles")
+    @PatchMapping("/lines/days/limits/enable-toggles")
     public ResponseEntity<LimitPolicyResDto> toggleDayLimitPolicy(
             @Parameter(description = "회선 식별자", example = "1")
             @RequestParam Long lineId
@@ -192,7 +192,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PatchMapping("/policies/lines/days/limits")
+    @PatchMapping("/lines/days/limits")
     public ResponseEntity<LimitPolicyResDto> updateDayLimitPolicy(
             @RequestBody LimitPolicyUpdateReqDto request
     ) {
@@ -211,7 +211,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PatchMapping("/policies/lines/shares/limits/enable-toggles")
+    @PatchMapping("/lines/shares/limits/enable-toggles")
     public ResponseEntity<LimitPolicyResDto> toggleShareLimitPolicy(
             @Parameter(description = "회선 식별자", example = "1")
             @RequestParam Long lineId
@@ -231,7 +231,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PatchMapping("/policies/lines/shares/limits")
+    @PatchMapping("/lines/shares/limits")
     public ResponseEntity<LimitPolicyResDto> updateShareLimitPolicy(
             @RequestBody LimitPolicyUpdateReqDto request
     ) {
@@ -249,7 +249,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @GetMapping("/policies/lines/apps")
+    @GetMapping("/lines/apps")
     public ResponseEntity<List<AppPolicyResDto>> getAppPolicies(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
@@ -290,7 +290,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PatchMapping("/policies/lines/apps")
+    @PatchMapping("/lines/apps")
     public ResponseEntity<AppPolicyResDto> updateAppPolicy(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId,
@@ -320,7 +320,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PostMapping("/policies/lines/apps")
+    @PostMapping("/lines/apps")
     public ResponseEntity<AppPolicyResDto> createAppPolicy(
             @RequestBody AppPolicyCreateReqDto request
     ) {
@@ -339,7 +339,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PatchMapping("/policies/lines/apps/limits")
+    @PatchMapping("/lines/apps/limits")
     public ResponseEntity<AppPolicyResDto> updateAppPolicyLimit(
             @RequestBody AppDataLimitUpdateReqDto request
     ) {
@@ -358,7 +358,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PatchMapping("/policies/lines/apps/speeds")
+    @PatchMapping("/lines/apps/speeds")
     public ResponseEntity<AppPolicyResDto> updateAppPolicySpeed(
             @RequestBody AppSpeedLimitUpdateReqDto request
     ) {
@@ -378,7 +378,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PatchMapping("/policies/lines/apps/enable-toggles")
+    @PatchMapping("/lines/apps/enable-toggles")
     public ResponseEntity<Void> toggleAppPolicyEnable(
             @Parameter(description = "앱 정책 식별자", example = "154")
             @RequestParam Long appPolicyId
@@ -397,7 +397,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @DeleteMapping("/policies/lines/apps")
+    @DeleteMapping("/lines/apps")
     public ResponseEntity<Void> deleteAppPolicy(
             @Parameter(description = "앱 정책 식별자", example = "154")
             @RequestParam Long appPolicyId
@@ -414,7 +414,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @GetMapping("/policies/lines/applied")
+    @GetMapping("/lines/applied")
     public ResponseEntity<List<AppliedPolicyResDto>> getAppliedPoliciesByLine(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
