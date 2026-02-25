@@ -21,9 +21,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "정책", description = "정책 API")
+@Tag(name = "Admin-Policy", description = "관리자용 정책 API")
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/admin/policies")
 public class AdminPolicyController {
 
     @Operation(
@@ -35,7 +35,7 @@ public class AdminPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @GetMapping("/policies/all")
+    @GetMapping("/all")
     public ResponseEntity<List<AdminPolicyResDto>> getAllPolicies() {
         List<AdminPolicyResDto> response = List.of(
                 AdminPolicyResDto.builder()
@@ -72,7 +72,7 @@ public class AdminPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PostMapping("/policies")
+    @PostMapping
     public ResponseEntity<PolicyActivationResDto> activatePolicy(@RequestBody PolicyActivationReqDto request) {
         PolicyActivationResDto response = PolicyActivationResDto.builder()
                 .policyId(request.getPolicyId())
@@ -91,7 +91,7 @@ public class AdminPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @DeleteMapping("/policies")
+    @DeleteMapping
     public ResponseEntity<PolicyDeactivationResDto> deactivatePolicy(
             @Parameter(description = "정책 식별자", example = "1003")
             @RequestParam Long policyId
@@ -113,7 +113,7 @@ public class AdminPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @GetMapping("/policies/lines/apps/usage")
+    @GetMapping("/lines/apps/usage")
     public ResponseEntity<List<LineAppUsageResDto>> getLineAppUsage(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
