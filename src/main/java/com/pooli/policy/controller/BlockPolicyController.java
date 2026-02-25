@@ -27,7 +27,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
-@Tag(name = "정책", description = "차단 정책 관련 API")
+@Tag(name = "Policy-Block", description = "반복적/실시간 차단 정책 관련 API")
 @RestController
 @RequestMapping("/api/policies/lines")
 public class BlockPolicyController {

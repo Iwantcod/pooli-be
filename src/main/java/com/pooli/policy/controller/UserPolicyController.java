@@ -31,8 +31,7 @@ public class UserPolicyController {
 
     @Operation(
             summary = "백오피스에서 '활성화'한 전체 정책 목록 조회",
-            description = "사용자 권한 필요. 가족 대표가 가족 그룹에 적용할 수 있는 활성화 정책 목록을 조회합니다.",
-            deprecated = true
+            description = "사용자 권한 필요. 가족 대표가 가족 그룹에 적용할 수 있는 활성화 정책 목록을 조회합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -65,9 +64,8 @@ public class UserPolicyController {
     }
 
     @Operation(
-            summary = "특정 구성원 차단 정책 조회",
-            description = "사용자 권한 필요. 특정 회선의 차단 정책 항목과 PK를 조회합니다.",
-            deprecated = true
+            summary = "특정 구성원 반복적 차단 정책 조회",
+            description = "사용자 권한 필요. 특정 회선의 차단 정책 항목과 PK를 조회합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -122,8 +120,7 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 제한 정책 조회",
-            description = "사용자 권한 필요. 특정 회선의 제한 정책 항목을 조회합니다.",
-            deprecated = true
+            description = "사용자 권한 필요. 특정 회선의 제한 정책 항목을 조회합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -241,8 +238,7 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 앱 별 정책 조회",
-            description = "사용자 권한 필요. 특정 회선의 앱 단위 정책 목록과 PK를 조회합니다.",
-            deprecated = true
+            description = "사용자 권한 필요. 특정 회선의 앱 단위 정책 목록과 PK를 조회합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -310,8 +306,7 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 앱별 정책 신규 생성",
-            description = "가족 대표자만 설정 가능합니다.",
-            deprecated = true
+            description = "가족 대표자만 설정 가능합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
