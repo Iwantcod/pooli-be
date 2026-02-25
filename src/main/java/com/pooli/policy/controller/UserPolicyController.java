@@ -441,29 +441,11 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/lines/applied")
-    public ResponseEntity<List<AppliedPolicyResDto>> getAppliedPoliciesByLine(
+    public ResponseEntity<AppliedPolicyResDto> getAppliedPoliciesByLine(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
     ) {
-        List<AppliedPolicyResDto> response = List.of(
-                AppliedPolicyResDto.builder()
-                        .policyId(1001L)
-                        .policyName("야간 사용 차단")
-                        .policyType("BLOCK")
-                        .appliedTarget("LINE")
-                        .targetId(lineId)
-                        .appliedAt("2026-02-20T10:10:00")
-                        .build(),
-                AppliedPolicyResDto.builder()
-                        .policyId(1002L)
-                        .policyName("일일 데이터 제한")
-                        .policyType("LIMIT")
-                        .appliedTarget("LINE")
-                        .targetId(lineId)
-                        .appliedAt("2026-02-20T10:12:00")
-                        .build()
-        );
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(AppliedPolicyResDto.builder().build());
     }
 
     @Operation(
