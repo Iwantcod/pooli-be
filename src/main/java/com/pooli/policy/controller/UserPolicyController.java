@@ -196,21 +196,21 @@ public class UserPolicyController {
                         .appId(301)
                         .appName("YouTube")
                         .enabled(true)
-                        .dailyLimitMb(500)
+                        .dailyLimitMb(500L)
                         .build(),
                 AppPolicyResDto.builder()
                         .appPolicyId(7302L)
                         .appId(302)
                         .appName("Instagram")
                         .enabled(true)
-                        .dailyLimitMb(300)
+                        .dailyLimitMb(300L)
                         .build(),
                 AppPolicyResDto.builder()
                         .appPolicyId(7303L)
                         .appId(401)
                         .appName("GameX")
                         .enabled(false)
-                        .dailyLimitMb(0)
+                        .dailyLimitMb(0L)
                         .build()
         );
         return ResponseEntity.ok(response);
@@ -239,7 +239,7 @@ public class UserPolicyController {
                 .appId(resolveAppId(appPolicyId))
                 .appName(resolveAppName(appPolicyId))
                 .enabled(request.getEnabled() != null ? request.getEnabled() : Boolean.FALSE)
-                .dailyLimitMb(request.getDailyLimitMb() != null ? request.getDailyLimitMb() : 0)
+                .dailyLimitMb(request.getDailyLimitMb() != null ? request.getDailyLimitMb() : 0L)
                 .build();
         return ResponseEntity.ok(response);
     }
