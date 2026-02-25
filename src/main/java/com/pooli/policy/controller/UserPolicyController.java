@@ -220,7 +220,8 @@ public class UserPolicyController {
     }
 
     @Operation(
-            summary = "특정 구성원의 공유풀 데이터 사용량 제한 제한 정책 (신규 추가 or 활성화)/비활성화"
+            summary = "특정 구성원의 공유풀 데이터 사용량 제한 제한 정책 (신규 추가 or 활성화)/비활성화",
+            description = "제한 정책을 활성화하거나, 활성화했던 적이 없다면 신규 추가합니다. 혹은 비활성화합니다. 가족 대표자 권한이 필요합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
