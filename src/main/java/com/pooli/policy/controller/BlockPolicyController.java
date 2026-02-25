@@ -92,7 +92,7 @@ public class BlockPolicyController {
     
     @Operation(
             summary = "특정 구성원의 반복적 차단 정책 수정",
-            description = "특정 구성원의 회선 ID, 반복적 차단 ID 필요. 해당 회선의 반복적 차단 정책 목록을 수정합니다."
+            description = "특정 구성원의 반복적 차단 ID 필요. 반복적 차단 정책 목록을 수정합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -112,7 +112,7 @@ public class BlockPolicyController {
     
     @Operation(
             summary = "특정 구성원의 반복적 차단 정책 삭제",
-            description = "특정 구성원의 회선 ID, 반복적 차단 ID 필요. 해당 회선의 반복적 차단 정책 목록을 수정합니다."
+            description = "특정 구성원의 반복적 차단 ID 필요. 반복적 차단 정책 목록을 삭제합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
