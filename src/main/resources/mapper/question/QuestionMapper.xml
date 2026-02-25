@@ -6,7 +6,7 @@
 <mapper namespace="com.pooli.question.mapper.QuestionMapper">
 
     <select id="findAllActiveCategories"
-            resultType="question.domain.entity.QuestionCategory">
+            resultType="QuestionCategory">
 
         SELECT
         question_category_id,
@@ -18,5 +18,4 @@
         ORDER BY question_category_id ASC
 
     </select>
-
 </mapper>
