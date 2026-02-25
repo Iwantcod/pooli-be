@@ -29,7 +29,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 @Tag(name = "정책", description = "차단 정책 관련 API")
 @RestController
-@RequestMapping("/api/policies")
+@RequestMapping("/api/policies/lines")
 public class BlockPolicyController {
 
     @Operation(
@@ -74,7 +74,7 @@ public class BlockPolicyController {
 
     @Operation(
             summary = "특정 구성원의 반복적 차단 정책 생성",
-            description = "특정 구성원의 회선 ID, 반복적 차단 ID 필요. 해당 회선의 반복적 차단 정책을 생성합니다."
+            description = "특정 구성원의 반복적 차단 정책을 생성합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -101,8 +101,6 @@ public class BlockPolicyController {
     })
     @PatchMapping("/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> updateReBlockPolicies(
-    		@Parameter(name = "lineId", description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
             @RequestParam Long repeatBlockId,
             @RequestBody RepeatBlockPolicyReqDto request
@@ -123,8 +121,6 @@ public class BlockPolicyController {
     })
     @DeleteMapping("/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> deleteReBlockPolicies(
-    		@Parameter(name = "lineId", description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
             @RequestParam Long repeatBlockId
     		) {
@@ -149,7 +145,6 @@ public class BlockPolicyController {
         ImmediateBlockResDto response = ImmediateBlockResDto.builder()
 			    		.lineId(lineId)
 						.blockEndAt(LocalDateTime.now())
-						.isBlocked(true)
 			            .build();
         
         return ResponseEntity.ok(response);

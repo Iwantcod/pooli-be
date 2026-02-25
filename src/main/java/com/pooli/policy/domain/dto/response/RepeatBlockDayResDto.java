@@ -18,6 +18,7 @@ import lombok.NoArgsConstructor;
 @Schema(description = "특정 구성원에 적용된 반복적 차단 요일")
 public class RepeatBlockDayResDto {
 	
+	@Schema(description = "특정 구성원에 적용된 반복적 차단 요일")
 	private DayOfWeek dayOfWeek;
 	
 	@Schema(description = "시작 시간", example = "14:01:00")

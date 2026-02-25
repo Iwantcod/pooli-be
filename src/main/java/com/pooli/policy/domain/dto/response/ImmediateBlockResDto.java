@@ -22,7 +22,4 @@ public class ImmediateBlockResDto {
 	@Schema(description = "차단 종료 시간", example = "2026-02-20T14:30:00")
 	private LocalDateTime blockEndAt;	
 	
-	@Schema(description = "차단 상태", example = "false")
-	private Boolean isBlocked;
-	
 }
