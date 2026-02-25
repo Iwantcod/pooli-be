@@ -4,6 +4,8 @@ import java.util.List;
 
 import com.pooli.question.domain.dto.response.QuestionCategoryListResDto;
 import com.pooli.question.domain.dto.response.QuestionCategoryResDto;
+import com.pooli.question.service.QuestionService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,8 +28,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 @Tag(name = "question", description = "문의 사항 관련 API")
 @RestController
+@RequiredArgsConstructor
 @RequestMapping("/api/questions")
 public class QuestionController {
+
+	private final QuestionService questionService;
+
 	@Operation(
 	    summary = "문의사항 생성 요청",
 	    description = "새로운 문의사항을 생성한다"
@@ -102,20 +108,14 @@ public class QuestionController {
 			description = "관리자 및 유저가 문의 카테고리 전체 목록을 조회한다. 삭제 여부는 deletedAt 값으로 구분한다.")
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "조회 성공"),
-			@ApiResponse(responseCode = "404", description = "카테고리 정보가 존재하지 않음"),
 			@ApiResponse(responseCode = "404", description = "QUESTION:4041 카테고리가 존재하지 않음"),
 			@ApiResponse(responseCode = "500", description = "서버 오류")
 	})
 	@GetMapping("/categories")
 	public ResponseEntity<QuestionCategoryListResDto> getQuestionCategories() {
-		QuestionCategoryResDto questionCategoryResDto = QuestionCategoryResDto.builder()
-				.questionCategoryId(1)
-				.questionCategoryName("요금제 문의")
-				.build();
 
-		QuestionCategoryListResDto questionCategoryListResDto = QuestionCategoryListResDto.builder()
-				.questionCategories(List.of(questionCategoryResDto))
-				.build();
-		return ResponseEntity.ok(questionCategoryListResDto);
+		QuestionCategoryListResDto response =  questionService.getQuestionCategories();
+
+		return ResponseEntity.ok(response);
 	}
 }
