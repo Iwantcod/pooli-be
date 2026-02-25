@@ -276,7 +276,7 @@ public class UserPolicyController {
     })
     @PatchMapping("/policies/lines/apps/limits")
     public ResponseEntity<AppPolicyResDto> updateAppPolicyLimit(
-            @RequestBody AppPolicyUpdateValueReqDto request
+            @RequestBody AppDataLimitUpdateReqDto request
     ) {
         AppPolicyResDto response = AppPolicyResDto.builder().build();
         return ResponseEntity.ok(response);
@@ -295,7 +295,7 @@ public class UserPolicyController {
     })
     @PatchMapping("/policies/lines/apps/speeds")
     public ResponseEntity<AppPolicyResDto> updateAppPolicySpeed(
-            @RequestBody AppPolicyUpdateValueReqDto request
+            @RequestBody AppSpeedLimitUpdateReqDto request
     ) {
         AppPolicyResDto response = AppPolicyResDto.builder().build();
         return ResponseEntity.ok(response);
