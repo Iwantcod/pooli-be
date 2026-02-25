@@ -103,6 +103,7 @@ public class QuestionController {
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "조회 성공"),
 			@ApiResponse(responseCode = "404", description = "카테고리 정보가 존재하지 않음"),
+			@ApiResponse(responseCode = "404", description = "QUESTION:4041 카테고리가 존재하지 않음"),
 			@ApiResponse(responseCode = "500", description = "서버 오류")
 	})
 	@GetMapping("/categories")

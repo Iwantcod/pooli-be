@@ -1,8 +1,10 @@
 package com.pooli.question.service;
 
+import com.pooli.common.exception.ApplicationException;
 import com.pooli.question.domain.dto.response.QuestionCategoryListResDto;
 import com.pooli.question.domain.dto.response.QuestionCategoryResDto;
 import com.pooli.question.domain.entity.QuestionCategory;
+import com.pooli.question.exception.QuestionErrorCode;
 import com.pooli.question.mapper.QuestionMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,7 +23,7 @@ public class QuestionServiceImpl implements QuestionService {
                 questionMapper.findAllActiveCategories();
 
         if (categories.isEmpty()) {
-            throw new NotFoundException("카테고리가 존재하지 않습니다.");
+            throw new ApplicationException(QuestionErrorCode.QUESTION_CATEGORY_NOT_FOUND);
         }
 
         List<QuestionCategoryResDto> dtoList =
