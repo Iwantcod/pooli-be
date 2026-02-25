@@ -119,7 +119,7 @@ public class UserPolicyController {
 
     @Operation(
             summary = "특정 구성원 제한 정책 조회",
-            description = "사용자 권한 필요. 특정 회선의 제한 정책 항목과 PK를 조회합니다."
+            description = "사용자 권한 필요. 특정 회선의 제한 정책 항목을 조회합니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -127,33 +127,17 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/policies/lines/limits")
-    public ResponseEntity<List<LimitPolicyResDto>> getLimitPolicies(
+    public ResponseEntity<LimitPolicyResDto> getLimitPolicies(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId
     ) {
-        List<LimitPolicyResDto> response = List.of(
-                LimitPolicyResDto.builder()
-                        .limitPolicyId(7201L)
-                        .lineId(lineId)
-                        .policyValue(1024)
-                        .build(),
-                LimitPolicyResDto.builder()
-                        .limitPolicyId(7202L)
-                        .lineId(lineId)
-                        .policyValue(20480)
-                        .build(),
-                LimitPolicyResDto.builder()
-                        .limitPolicyId(7203L)
-                        .lineId(lineId)
-                        .policyValue(80)
-                        .build()
-        );
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(LimitPolicyResDto.builder().build());
     }
 
     @Operation(
             summary = "특정 구성원 정책 정보 수정",
-            description = "사용자 권한 필요. 제한 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다."
+            description = "사용자 권한 필요. 제한 정책 PK 기준으로 1건만 수정하고 PK와 값을 응답합니다.",
+            deprecated = true
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
@@ -169,11 +153,86 @@ public class UserPolicyController {
             @RequestBody LimitPolicyUpdateReqDto request
     ) {
         LimitPolicyResDto response = LimitPolicyResDto.builder()
-                .limitPolicyId(limitPolicyId)
-                .lineId(lineId)
-                .policyValue(request.getPolicyValue() != null ? request.getPolicyValue() : 0)
                 .build();
         return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "특정 구성원의 하루 총 데이터 사용량 제한 제한 정책 (신규 추가 or 활성화)/비활성화",
+            description = "제한 정책을 활성화하거나, 활성화했던 적이 없다면 신규 추가합니다. 혹은 비활성화합니다. 가족 대표자 권한이 필요합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/policies/lines/days/limits/enable-toggles")
+    public ResponseEntity<LimitPolicyResDto> toggleDayLimitPolicy(
+            @Parameter(description = "회선 식별자", example = "1")
+            @RequestParam Long lineId
+    ) {
+        LimitPolicyResDto answer = LimitPolicyResDto.builder().build();
+        return ResponseEntity.ok(answer);
+    }
+
+    @Operation(
+            summary = "특정 구성원의 하루 총 데이터 사용량 제한 정책 값 수정",
+            description = "슬라이드로 결정된 값으로 수정합니다. 가족 대표자 권한이 필요합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/policies/lines/days/limits")
+    public ResponseEntity<LimitPolicyResDto> updateDayLimitPolicy(
+            @RequestBody LimitPolicyUpdateReqDto request
+    ) {
+        LimitPolicyResDto answer = LimitPolicyResDto.builder().build();
+        return ResponseEntity.ok(answer);
+    }
+
+    @Operation(
+            summary = "특정 구성원의 공유풀 데이터 사용량 제한 제한 정책 (신규 추가 or 활성화)/비활성화",
+            description = "제한 정책을 활성화하거나, 활성화했던 적이 없다면 신규 추가합니다. 혹은 비활성화합니다. 가족 대표자 권한이 필요합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/policies/lines/shares/limits/enable-toggles")
+    public ResponseEntity<LimitPolicyResDto> toggleShareLimitPolicy(
+            @Parameter(description = "회선 식별자", example = "1")
+            @RequestParam Long lineId
+    ) {
+        LimitPolicyResDto answer = LimitPolicyResDto.builder().build();
+        return ResponseEntity.ok(answer);
+    }
+
+    @Operation(
+            summary = "특정 구성원의 공유풀 데이터 사용량 제한 정책 값 수정",
+            description = "슬라이드로 결정된 값으로 수정합니다. 가족 대표자 권한이 필요합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+            @ApiResponse(responseCode = "401", description = "권한 없음"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PatchMapping("/policies/lines/shares/limits")
+    public ResponseEntity<LimitPolicyResDto> updateShareLimitPolicy(
+            @RequestBody LimitPolicyUpdateReqDto request
+    ) {
+        LimitPolicyResDto answer = LimitPolicyResDto.builder().build();
+        return ResponseEntity.ok(answer);
     }
 
     @Operation(
@@ -341,7 +400,7 @@ public class UserPolicyController {
     }
 
     @Operation(
-            summary = "특정 구성원 적용 중인 정책 목록 조회",
+            summary = "특정 구성원에게 적용 중인 모든 정책 목록 조회(현재 적용 중인 정책)",
             description = "사용자 권한 필요. 특정 회선에 현재 적용 중인 정책 목록을 조회합니다."
     )
     @ApiResponses({
