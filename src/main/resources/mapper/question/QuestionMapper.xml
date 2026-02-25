@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.question.mapper.QuestionMapper">
+
+    <select id="findAllActiveCategories"
+            resultType="question.domain.entity.QuestionCategory">
+
+        SELECT
+        question_category_id,
+        question_category_name,
+        created_at,
+        deleted_at
+        FROM question_category
+        WHERE deleted_at IS NULL
+        ORDER BY question_category_id ASC
+
+    </select>
+
+</mapper>
