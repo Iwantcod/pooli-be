@@ -22,7 +22,7 @@ public class AppPolicyResDto {
     private Boolean enabled;
 
     @Schema(description = "일일 제한량(Byte)", example = "5000")
-    private Long dailyLimitMb;
+    private Long dailyLimitData;
 
     @Schema(description = "제한 속도(Kbps, 1Mbps: 1000Kbps)", example = "5000")
     private Integer dailyLimitSpeed;
