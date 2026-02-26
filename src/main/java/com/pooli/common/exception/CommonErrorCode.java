@@ -15,6 +15,7 @@ public enum CommonErrorCode implements ErrorCode {
             "요청 형식 불일치"
     ),
 
+    // 요청 DTO 필드 유효성 검증 실패
     INVALID_REQUEST_BODY(
             HttpStatus.BAD_REQUEST,
             "COMMON:4001",
