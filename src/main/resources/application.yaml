@@ -76,3 +76,12 @@ cloud:
     s3:
       bucket: pooli-s3-bucket
     region: ap-southeast-2
+# Spring Actuator 헬스 체크 설정(경로: GET [origin]/actuator/health)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
