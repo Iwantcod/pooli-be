@@ -8,11 +8,13 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
 import com.pooli.common.exception.ApplicationException;
+import com.pooli.family.domain.entity.FamilyLine;
 import com.pooli.permission.domain.dto.request.MemberPermissionUpsertReqDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionListResDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionResDto;
 import com.pooli.permission.domain.entity.Permission;
 import com.pooli.permission.exception.PermissionErrorCode;
+import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.PermissionLineMapper;
 import com.pooli.permission.mapper.PermissionMapper;
 import java.time.LocalDateTime;
@@ -28,6 +30,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class MemberPermissionServiceImplTest {
+
+    @Mock
+    private FamilyLineMapper familyLineMapper;
 
     @Mock
     private PermissionLineMapper permissionLineMapper;
@@ -49,6 +54,11 @@ class MemberPermissionServiceImplTest {
             List<MemberPermissionResDto> permissions = List.of(
                     memberPermissionResDto(10L, lineId, 1, "데이터 차단", false)
             );
+            given(familyLineMapper.findByLineId(lineId))
+                    .willReturn(Optional.of(FamilyLine.builder()
+                            .familyId(10L)
+                            .lineId(lineId)
+                            .build()));
             given(permissionLineMapper.findByLineId(lineId)).willReturn(permissions);
 
             MemberPermissionListResDto result = memberPermissionService.getMyPermissions(lineId);
@@ -61,6 +71,11 @@ class MemberPermissionServiceImplTest {
         @DisplayName("권한이 없으면 빈 목록을 반환한다")
         void emptyResult() {
             Long lineId = 1001L;
+            given(familyLineMapper.findByLineId(lineId))
+                    .willReturn(Optional.of(FamilyLine.builder()
+                            .familyId(10L)
+                            .lineId(lineId)
+                            .build()));
             given(permissionLineMapper.findByLineId(lineId)).willReturn(List.of());
 
             MemberPermissionListResDto result = memberPermissionService.getMyPermissions(lineId);
@@ -82,6 +97,11 @@ class MemberPermissionServiceImplTest {
                     memberPermissionResDto(familyId, lineId, 1, "데이터 차단", true),
                     memberPermissionResDto(familyId, lineId, 2, "앱 차단", false)
             );
+            given(familyLineMapper.findByFamilyIdAndLineId(familyId, lineId))
+                    .willReturn(Optional.of(FamilyLine.builder()
+                            .familyId(familyId)
+                            .lineId(lineId)
+                            .build()));
             given(permissionLineMapper.findByFamilyIdAndLineId(familyId, lineId)).willReturn(permissions);
 
             MemberPermissionListResDto result = memberPermissionService.getMemberPermissions(familyId, lineId);
