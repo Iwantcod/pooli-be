@@ -36,6 +36,7 @@ public class MemberPermissionController {
     })
     @GetMapping("/me")
     public ResponseEntity<MemberPermissionListResDto> getMyPermissions(
+            // TODO:  @AuthenticationPrincipal로 교체
             @Parameter(description = "회선 ID", example = "1001")
             @RequestParam Long lineId
     ) {
