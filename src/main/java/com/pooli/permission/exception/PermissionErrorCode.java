@@ -12,10 +12,6 @@ public enum PermissionErrorCode implements ErrorCode {
     ROLE_TRANSFER_REQUEST_INVALID(HttpStatus.BAD_REQUEST, "PERMISSION-4003", "역할 양도 요청 값이 올바르지 않습니다."),
     ROLE_TRANSFER_SELF(HttpStatus.BAD_REQUEST, "PERMISSION-4004", "자기 자신에게 역할을 양도할 수 없습니다."),
 
-    // 403 Forbidden
-    FAMILY_REPRESENTATIVE_REQUIRED(HttpStatus.FORBIDDEN, "PERMISSION-4300", "가족 대표자 권한이 필요합니다."),
-    ADMIN_REQUIRED(HttpStatus.FORBIDDEN, "PERMISSION-4301", "관리자 권한이 필요합니다."),
-
     // 404 Not Found
     PERMISSION_NOT_FOUND(HttpStatus.NOT_FOUND, "PERMISSION-4400", "해당 권한 정보가 존재하지 않습니다."),
     LINE_NOT_FOUND(HttpStatus.NOT_FOUND, "PERMISSION-4401", "대상 회선 정보가 존재하지 않습니다."),
@@ -29,8 +25,7 @@ public enum PermissionErrorCode implements ErrorCode {
     ROLE_TRANSFER_TARGET_ALREADY_REPRESENTATIVE(HttpStatus.CONFLICT, "PERMISSION-4902", "대상 사용자는 이미 가족 대표자입니다."),
 
     // 500 Internal Server Error
-    MEMBER_PERMISSION_APPLY_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "PERMISSION-5000", "구성원 권한 반영 중 오류가 발생했습니다."),
-    ROLE_TRANSFER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "PERMISSION-5001", "역할 양도 처리 중 오류가 발생했습니다.");
+    MEMBER_PERMISSION_APPLY_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "PERMISSION-5000", "구성원 권한 반영 중 오류가 발생했습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;
