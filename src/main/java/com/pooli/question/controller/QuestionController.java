@@ -76,14 +76,15 @@ public class QuestionController {
 	})
 	@GetMapping
 	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestion(
-			@RequestParam(name="categories") String categories,
+			@RequestParam(name="categoryIds", required = false) List<Long> categoryIds,
+			@RequestParam(name="lineId") Long lineId,
 			@RequestParam(name="isAnswered", required = false) Boolean isAnswered,
 			@RequestParam(name="pageNumber") Integer page,
 			@RequestParam(name="pageSize") Integer size
-			) {
+	) {
 
 		PagingResDto<QuestionListResDto> result =
-				questionService.selectQuestion(categories, isAnswered, page, size);
+				questionService.selectQuestion(categoryIds, lineId, isAnswered, page, size);
 
 		return ResponseEntity.ok(result);
 	}

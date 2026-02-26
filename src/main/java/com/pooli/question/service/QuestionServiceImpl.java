@@ -2,6 +2,7 @@ package com.pooli.question.service;
 
 import com.pooli.common.dto.PagingResDto;
 import com.pooli.common.exception.ApplicationException;
+import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.question.domain.dto.QuestionAttachmentDto;
 import com.pooli.question.domain.dto.request.*;
 import com.pooli.question.domain.dto.response.*;
@@ -95,24 +96,29 @@ public class QuestionServiceImpl implements QuestionService {
     @Override
     @Transactional(readOnly = true)
     public PagingResDto<QuestionListResDto> selectQuestion(
-            String categories,
+            List<Long> categoryIds,
+            Long lineId,
             Boolean isAnswered,
             Integer page,
             Integer size
     ) {
 
-        List<Long> categoryList = Arrays.stream(categories.split(","))
-                .map(String::trim)
-                .map(Long::parseLong)
-                .toList();
+        if (lineId == null) {
+            throw new ApplicationException(CommonErrorCode.MISSING_REQUEST_PARAM);
+        }
+
+        if (page == null || page < 0 || size == null || size <= 0) {
+            throw new ApplicationException(CommonErrorCode.INVALID_REQUEST_PARAM);
+        }
 
         int offset = page * size;
 
+        // 2️⃣ 조회
         List<QuestionListResDto> content =
-                questionMapper.selectQuestionList(categoryList, isAnswered, offset, size);
+                questionMapper.selectQuestionList(categoryIds, lineId, isAnswered, offset, size);
 
         Long totalElements =
-                questionMapper.countQuestionList(categoryList, isAnswered);
+                questionMapper.countQuestionList(categoryIds, lineId, isAnswered);
 
         int totalPages = (int) Math.ceil((double) totalElements / size);
 
