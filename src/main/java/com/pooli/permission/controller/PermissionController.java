@@ -30,31 +30,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class PermissionController {
 
     @Operation(
-            summary = "내 권한 상태 조회",
-            description = "로그인한 유저가 자신의 권한 목록과 활성화 상태를 조회한다. 세션의 사용자 정보를 기준으로 조회한다.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(responseCode = "404", description = "사용자 또는 권한 정보가 존재하지 않음"),
-            @ApiResponse(responseCode = "500", description = "서버 오류")
-    })
-    @GetMapping("/me")
-    public ResponseEntity<MemberPermissionListResDto> getMyPermissions() {
-        MemberPermissionResDto memberPermissionResDto = MemberPermissionResDto.builder()
-                .familyId(10L)
-                .lineId(1001L)
-                .permissionId(1)
-                .permissionTitle("데이터 차단")
-                .isEnable(Boolean.FALSE)
-                .createdAt(LocalDateTime.parse("2026-02-20T12:00:00"))
-                .build();
-
-        MemberPermissionListResDto memberPermissionListResDto = MemberPermissionListResDto.builder()
-                .memberPermissions(List.of(memberPermissionResDto))
-                .build();
-        return ResponseEntity.ok(memberPermissionListResDto);
-    }
-
-    @Operation(
             summary = "권한 목록 조회",
             description = "관리자가 전체 권한 목록을 조회한다. 삭제 여부는 deletedAt 값으로 구분한다.")
     @ApiResponses({

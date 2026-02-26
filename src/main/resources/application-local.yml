@@ -1,0 +1,83 @@
+spring:
+  config:
+    import: optional:file:.env[.properties]
+    activate:
+      on-profile: local
+  application:
+    name: pooli-be
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      # Do not fail app startup immediately when DB is unavailable
+      initialization-fail-timeout: ${DB_INIT_FAIL_TIMEOUT}
+  flyway:
+    enabled: ${FLYWAY_ENABLED}
+    locations: classpath:db/migration
+    baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE}
+  security:
+    user:
+      name: ${SPRING_SECURITY_USER}
+      password: ${SPRING_SECURITY_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+  session:
+    store-type: redis
+    timeout: ${SESSION_TIMEOUT}
+    redis:
+      namespace: ${SESSION_REDIS_NAMESPACE}
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.pooli
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    #cache-enabled: true
+
+server:
+  port: ${SERVER_PORT}
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      timeout: ${SESSION_TIMEOUT}
+      cookie:
+        name: ${SESSION_COOKIE_NAME:JSESSIONID}
+        http-only: true
+        secure: ${SESSION_COOKIE_SECURE}
+        same-site: ${SESSION_COOKIE_SAME_SITE}
+
+logging:
+  level:
+    org.mybatis: ${LOG_LEVEL_MYBATIS}
+    org.springframework.jdbc: ${LOG_LEVEL_JDBC}
+
+springdoc:
+  api-docs:
+    enabled: ${OPENAPI_ENABLED}
+    path: ${OPENAPI_DOCS_PATH}
+  swagger-ui:
+    enabled: ${SWAGGER_UI_ENABLED}
+    path: ${SWAGGER_UI_PATH}
+
+app:
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
+
+# ==========================================================
+# AWS S3 CONFIG
+# 로컬 전용 세팅 후 Ec2 사용 시 지우기
+# ==========================================================
+cloud:
+  aws:
+    s3:
+      bucket: pooli-s3-bucket
+    region: ap-southeast-2
+    credentials:
+      access-key: ${AWS_ACCESS_KEY}
+      secret-key: ${AWS_SECRET_KEY}
