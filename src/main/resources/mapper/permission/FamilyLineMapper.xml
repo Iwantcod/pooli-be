@@ -22,6 +22,14 @@
         WHERE line_id = #{lineId}
     </select>
 
+    <!-- familyId + lineId로 FamilyLine 조회 -->
+    <select id="findByFamilyIdAndLineId" resultMap="familyLineResultMap">
+        SELECT family_id, line_id, role, is_public, created_at, updated_at
+        FROM FAMILY_LINE
+        WHERE family_id = #{familyId}
+          AND line_id = #{lineId}
+    </select>
+
     <!-- 역할 변경 (OWNER <-> MEMBER) -->
     <update id="updateRole">
         UPDATE FAMILY_LINE
