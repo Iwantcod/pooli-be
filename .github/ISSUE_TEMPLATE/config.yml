@@ -1,0 +1,22 @@
+blank_issues_enabled: false
+
+issue_templates:
+  - name: Bug Report
+    description: 버그를 발견했을 때 사용합니다.
+    file: bug_report.md
+
+  - name: Feature Request
+    description: 새로운 기능을 제안합니다.
+    file: feature_request.md
+
+  - name: Refactoring
+    description: 기존 코드를 개선할 필요가 있을 때 사용합니다.
+    file: refactor_issue.md
+
+  - name: Chore Request
+    description: 기능과 관련 없는 코드 정리, 설정 변경 요청 시 사용합니다.
+    file: chore_request.md
+
+  - name: Test Request
+    description: 테스트 코드 작성이나 QA 테스트 등 테스트가 필요할 때 사용합니다.
+    file: test_request.md
