@@ -32,8 +32,8 @@ public class UserPolicyController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+            @ApiResponse(responseCode = "403", description = "가족 대표자 권한이 없음(COMMON:4300)"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류(COMMON:5000, COMMON:5001)")
     })
     @GetMapping
     public ResponseEntity<List<ActivePolicyResDto>> getActivePolicies() {
@@ -66,8 +66,10 @@ public class UserPolicyController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+            @ApiResponse(responseCode = "400", description = "잘못된 요청(COMMON:4002, COMMON:4003, COMMON:4004)"),
+            @ApiResponse(responseCode = "403", description = "가족 대표자 권한이 없음(COMMON:4300)"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음(POLICY:4400)"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류(COMMON:5000, COMMON:5001)")
     })
     @GetMapping("/lines/repeat-block")
     public ResponseEntity<List<RepeatBlockPolicyResDto>> getReBlockPolicies(
@@ -105,9 +107,11 @@ public class UserPolicyController {
             description = "특정 구성원의 반복적 차단 정책을 생성합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+            @ApiResponse(responseCode = "201", description = "생성 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청(COMMON:4000, COMMON:4001, COMMON:4006, POLICY:4000, POLICY:4001, POLICY:4002)"),
+            @ApiResponse(responseCode = "403", description = "가족 대표자 권한이 없음(COMMON:4300)"),
+            @ApiResponse(responseCode = "409", description = "기존 정책과 충돌(POLICY:4903)"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류(COMMON:5000, COMMON:5001)")
     })
     @PostMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> createReBlockPolicies(
@@ -124,8 +128,14 @@ public class UserPolicyController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+            @ApiResponse(responseCode = "400", 
+            description = "잘못된 요청("
+            		+ "COMMON:4000, COMMON:4001, COMMON:4002, COMMON:4003, COMMON:4004, COMMON:4006, "
+            		+ "POLICY:4000, POLICY:4001, POLICY:4002)"),
+            @ApiResponse(responseCode = "403", description = "가족 대표자 권한이 없음(COMMON:4300)"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음(POLICY:4401)"),
+            @ApiResponse(responseCode = "409", description = "기존 정책과 충돌(POLICY:4903)"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류(COMMON:5000, COMMON:5001)")
     })
     @PatchMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> updateReBlockPolicies(
@@ -143,9 +153,12 @@ public class UserPolicyController {
             description = "특정 구성원의 반복적 차단 ID 필요. 반복적 차단 정책 목록을 삭제합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+            @ApiResponse(responseCode = "204", description = "삭제 성공"),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청(COMMON:4002, COMMON:4003, COMMON:4004)"),
+            @ApiResponse(responseCode = "403", description = "가족 대표자 권한이 없음(COMMON:4300)"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음(POLICY:4401)"),
+            @ApiResponse(responseCode = "409", description = "기존 정책과 충돌(POLICY:4901)"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류(COMMON:5000, COMMON:5001)")
     })
     @DeleteMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> deleteReBlockPolicies(
