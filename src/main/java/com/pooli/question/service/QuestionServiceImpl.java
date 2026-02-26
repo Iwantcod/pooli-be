@@ -1,5 +1,6 @@
 package com.pooli.question.service;
 
+import com.pooli.common.dto.PagingResDto;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.question.domain.dto.QuestionAttachmentDto;
 import com.pooli.question.domain.dto.request.*;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 
 @Service
@@ -88,6 +90,39 @@ public class QuestionServiceImpl implements QuestionService {
         }
 
         questionMapper.softDeleteQuestionAttachments(questionId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PagingResDto<QuestionListResDto> selectQuestion(
+            String categories,
+            Boolean isAnswered,
+            Integer page,
+            Integer size
+    ) {
+
+        List<Long> categoryList = Arrays.stream(categories.split(","))
+                .map(String::trim)
+                .map(Long::parseLong)
+                .toList();
+
+        int offset = page * size;
+
+        List<QuestionListResDto> content =
+                questionMapper.selectQuestionList(categoryList, isAnswered, offset, size);
+
+        Long totalElements =
+                questionMapper.countQuestionList(categoryList, isAnswered);
+
+        int totalPages = (int) Math.ceil((double) totalElements / size);
+
+        return PagingResDto.<QuestionListResDto>builder()
+                .content(content)
+                .page(page)
+                .size(size)
+                .totalElements(totalElements)
+                .totalPages(totalPages)
+                .build();
     }
 
 }

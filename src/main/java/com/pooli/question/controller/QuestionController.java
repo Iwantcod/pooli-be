@@ -82,7 +82,10 @@ public class QuestionController {
 			@RequestParam(name="pageSize") Integer size
 			) {
 
-		return ResponseEntity.ok().build();
+		PagingResDto<QuestionListResDto> result =
+				questionService.selectQuestion(categories, isAnswered, page, size);
+
+		return ResponseEntity.ok(result);
 	}
 	
 	@Operation(
