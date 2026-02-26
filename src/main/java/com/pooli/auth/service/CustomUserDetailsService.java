@@ -1,19 +1,22 @@
 package com.pooli.auth.service;
 
-import com.pooli.user.domain.entity.User;
-import com.pooli.user.repository.UserRepository;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
+
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
+import com.pooli.user.domain.entity.User;
+import com.pooli.user.mapper.UserMapper;
+
+import lombok.RequiredArgsConstructor;
+
 @Service
 @RequiredArgsConstructor
 public class CustomUserDetailsService implements UserDetailsService {
 
-    private final UserRepository userRepository;
+    private final UserMapper userRepository;
 
     @Override
     public UserDetails loadUserByUsername(String email) {

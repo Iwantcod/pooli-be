@@ -1,12 +1,5 @@
 package com.pooli.auth.controller;
 
-import com.pooli.auth.dto.request.LoginReqDto;
-import com.pooli.auth.dto.response.LoginResDto;
-import com.pooli.auth.service.AuthUserDetails;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.util.List;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -22,8 +15,22 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import jakarta.servlet.http.Cookie;
 
+import com.pooli.auth.dto.request.LoginReqDto;
+import com.pooli.auth.dto.response.LoginResDto;
+import com.pooli.auth.service.AuthUserDetails;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import lombok.RequiredArgsConstructor;
+
+@Tag(name = "Authentication", description = "인증 및 인가 관련 API")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/auth")
@@ -35,31 +42,48 @@ public class AuthController {
     private final SecurityContextRepository securityContextRepository;
     private final CsrfTokenRepository csrfTokenRepository;
 
+    
+    @Operation(
+        summary = "유저 로그인",
+        description = "이메일, 비밀번호를 받은 뒤 Cookie에 X-XSRF-TOKEN / JSESSIONID 전달"
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "조회 성공"),
+        @ApiResponse(responseCode = "404", description = "앱 정보가 존재하지 않음"),
+        @ApiResponse(responseCode = "500", description = "서버 오류"),
+          
+    })
     @PostMapping("/user/login")
-    public ResponseEntity<LoginResDto> loginUser(
-        @RequestBody LoginReqDto request,
-        HttpServletRequest httpRequest,
-        HttpServletResponse httpResponse
-    ) {
+    public ResponseEntity<Void> loginUser( @RequestBody LoginReqDto request,
+    											  HttpServletRequest httpRequest,
+    											  HttpServletResponse httpResponse) {
         return authenticateAndRespond(request, httpRequest, httpResponse, false);
     }
 
+    
+    @Operation(
+            summary = "관리자 로그인",
+            description = "이메일, 비밀번호를 받은 뒤 Cookie에 X-XSRF-TOKEN / JSESSIONID 전달"
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "조회 성공"),
+        @ApiResponse(responseCode = "404", description = "앱 정보가 존재하지 않음"),
+        @ApiResponse(responseCode = "500", description = "서버 오류"),
+          
+    })
     @PostMapping("/admin/login")
-    public ResponseEntity<LoginResDto> loginAdmin(
-        @RequestBody LoginReqDto request,
-        HttpServletRequest httpRequest,
-        HttpServletResponse httpResponse
-    ) {
+    public ResponseEntity<Void> loginAdmin( @RequestBody LoginReqDto request,
+    											   HttpServletRequest httpRequest,
+    											   HttpServletResponse httpResponse) {
         return authenticateAndRespond(request, httpRequest, httpResponse, true);
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(
-        HttpServletRequest httpRequest,
-        HttpServletResponse httpResponse
-    ) {
+    public ResponseEntity<Void> logout( HttpServletRequest httpRequest,
+    									HttpServletResponse httpResponse) {
+    	
         SecurityContextHolder.clearContext();
-        var session = httpRequest.getSession(false);
+        HttpSession session = httpRequest.getSession(false);
         if (session != null) {
             session.invalidate();
         }
@@ -71,12 +95,10 @@ public class AuthController {
         return ResponseEntity.ok().build();
     }
 
-    private ResponseEntity<LoginResDto> authenticateAndRespond(
-        LoginReqDto request,
-        HttpServletRequest httpRequest,
-        HttpServletResponse httpResponse,
-        boolean adminOnly
-    ) {
+    private ResponseEntity<Void> authenticateAndRespond( LoginReqDto request,
+												         HttpServletRequest httpRequest,
+												         HttpServletResponse httpResponse,
+												         boolean adminOnly) {
     	
     	
         try {
