@@ -36,7 +36,7 @@ public class MemberPermissionController {
     })
     @GetMapping("/me")
     public ResponseEntity<MemberPermissionListResDto> getMyPermissions(
-            // TODO:  @AuthenticationPrincipal로 교체
+            // TODO:  @AuthenticationPrincipal 세션에 있는 유저 id로 검증 필요
             @Parameter(description = "회선 ID", example = "1001")
             @RequestParam Long lineId
     ) {
