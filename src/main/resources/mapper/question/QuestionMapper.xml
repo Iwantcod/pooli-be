@@ -19,6 +19,7 @@
 
     </select>
 
+    <!-- 문의사항 insert -->
     <insert id="insertQuestion" useGeneratedKeys="true" keyProperty="questionId">
         INSERT INTO question
         (question_category_id, line_id, title, content, is_answer, created_at)
@@ -26,12 +27,30 @@
         (#{questionCategoryId}, #{lineId}, #{title}, #{content}, false, NOW())
     </insert>
 
+    <!-- 문의사항 첨부파일 insert -->
     <insert id="insertQuestionAttachments">
-        <foreach collection="attachments" item="att" separator=";">
-            INSERT INTO question_attachment
-            (question_id, s3_key, file_size, created_at)
-            VALUES
+        INSERT INTO question_attachment
+        (question_id, s3_key, file_size, created_at)
+        VALUES
+        <foreach collection="attachments" item="att" separator=",">
             (#{questionId}, #{att.s3Key}, #{att.fileSize}, NOW())
         </foreach>
     </insert>
+
+    <!-- 문의사항 soft delete -->
+    <update id="softDeleteQuestion">
+        UPDATE question
+        SET deleted_at = NOW()
+        WHERE question_id = #{questionId}
+        AND deleted_at IS NULL
+    </update>
+
+    <!-- 문의사항 첨부파일 soft delete -->
+    <update id="softDeleteQuestionAttachments">
+        UPDATE question_attachment
+        SET deleted_at = NOW()
+        WHERE question_id = #{questionId}
+        AND deleted_at IS NULL
+    </update>
+
 </mapper>

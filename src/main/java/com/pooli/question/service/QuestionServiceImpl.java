@@ -20,6 +20,7 @@ import java.util.List;
 public class QuestionServiceImpl implements QuestionService {
 
     private final QuestionMapper questionMapper;
+    private final QuestionValidationService questionValidationService;
 
     @Override
     public QuestionCategoryListResDto getQuestionCategories() {
@@ -46,6 +47,10 @@ public class QuestionServiceImpl implements QuestionService {
     @Override
     @Transactional
     public QuestionCreateResDto createQuestion(QuestionCreateReqDto req) {
+
+        int attachmentCount =
+                req.getAttachments() == null ? 0 : req.getAttachments().size();
+
         // 1. Question insert
         Question question = Question.builder()
                 .questionCategoryId(req.getQuestionCategoryId())
@@ -59,21 +64,30 @@ public class QuestionServiceImpl implements QuestionService {
         questionMapper.insertQuestion(question); // insert 후 questionId 채워짐
 
         // 2. Attachments insert
-        List<String> s3Keys = null;
-        if (req.getAttachments() != null && !req.getAttachments().isEmpty()) {
+        if (attachmentCount > 0) {
             questionMapper.insertQuestionAttachments(question.getQuestionId(), req.getAttachments());
-            // Response용 s3Key 리스트 추출
-            s3Keys = req.getAttachments().stream()
-                    .map(QuestionAttachmentDto::getS3Key)
-                    .toList();
         }
 
         // 3. Response 생성
         return QuestionCreateResDto.builder()
                 .questionId(question.getQuestionId())
                 .title(question.getTitle())
-                .s3Keys(s3Keys)
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public void deleteQuestion(Long questionId) {
+
+        int affected = questionMapper.softDeleteQuestion(questionId);
+
+        if (affected == 0) {
+            throw new ApplicationException(
+                    QuestionErrorCode.QUESTION_NOT_FOUND
+            );
+        }
+
+        questionMapper.softDeleteQuestionAttachments(questionId);
     }
 
 }

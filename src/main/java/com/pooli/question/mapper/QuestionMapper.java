@@ -17,4 +17,8 @@ public interface QuestionMapper {
 
     int insertQuestionAttachments(@Param("questionId") Long questionId,
                           @Param("attachments") List<QuestionAttachmentDto> attachments);
+
+    int softDeleteQuestion(Long questionId);
+
+    int softDeleteQuestionAttachments(Long questionId);
 }

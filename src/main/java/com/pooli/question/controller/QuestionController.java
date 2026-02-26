@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.pooli.question.domain.dto.response.*;
 import com.pooli.question.service.QuestionService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -43,7 +44,7 @@ public class QuestionController {
 	        
 	})
 	@PostMapping
-	public ResponseEntity<QuestionCreateResDto> createQuestion(@RequestBody QuestionCreateReqDto request) {
+	public ResponseEntity<QuestionCreateResDto> createQuestion( @Valid @RequestBody QuestionCreateReqDto request) {
 		QuestionCreateResDto res = questionService.createQuestion(request);
 		return ResponseEntity.status(HttpStatus.CREATED).body(res);
 	}
@@ -59,6 +60,7 @@ public class QuestionController {
 	})
 	@DeleteMapping
 	public ResponseEntity<Void> deleteQuestion(@RequestParam(name="questionId") Long questionId) {
+		questionService.deleteQuestion(questionId);
 		return ResponseEntity.noContent().build();
 	}
 	

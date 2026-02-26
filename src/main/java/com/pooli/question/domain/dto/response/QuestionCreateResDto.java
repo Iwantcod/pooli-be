@@ -16,7 +16,4 @@ public class QuestionCreateResDto {
 
     @Schema(description = "문의사항 제목", example = "요금제 관련 문의드립니다")
     private String title;
-
-    @Schema(description = "문의사항 첨부 파일 S3 Key")
-    private List<String> s3Keys;
 }
