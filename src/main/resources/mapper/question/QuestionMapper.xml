@@ -18,4 +18,20 @@
         ORDER BY question_category_id ASC
 
     </select>
+
+    <insert id="insertQuestion" useGeneratedKeys="true" keyProperty="questionId">
+        INSERT INTO question
+        (question_category_id, line_id, title, content, is_answer, created_at)
+        VALUES
+        (#{questionCategoryId}, #{lineId}, #{title}, #{content}, false, NOW())
+    </insert>
+
+    <insert id="insertQuestionAttachments">
+        <foreach collection="attachments" item="att" separator=";">
+            INSERT INTO question_attachment
+            (question_id, s3_key, file_size, created_at)
+            VALUES
+            (#{questionId}, #{att.s3Key}, #{att.fileSize}, NOW())
+        </foreach>
+    </insert>
 </mapper>

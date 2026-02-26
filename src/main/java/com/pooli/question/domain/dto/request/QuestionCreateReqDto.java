@@ -15,7 +15,7 @@ import lombok.Setter;
 public class QuestionCreateReqDto {
 	
 	@Schema(description = "문의사항 카테고리 ID", example = "2")
-	private Long questionCategoryId;
+	private Integer questionCategoryId;
 	
 	@Schema(description = "회선 ID", example = "3")
 	private Long lineId;

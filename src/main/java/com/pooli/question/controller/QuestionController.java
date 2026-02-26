@@ -1,9 +1,9 @@
 package com.pooli.question.controller;
 
+import java.util.Collections;
 import java.util.List;
 
-import com.pooli.question.domain.dto.response.QuestionCategoryListResDto;
-import com.pooli.question.domain.dto.response.QuestionCategoryResDto;
+import com.pooli.question.domain.dto.response.*;
 import com.pooli.question.service.QuestionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,8 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.pooli.common.dto.PagingResDto;
 import com.pooli.question.domain.dto.request.QuestionCreateReqDto;
-import com.pooli.question.domain.dto.response.QuestionListResDto;
-import com.pooli.question.domain.dto.response.QuestionResDto;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -45,8 +43,9 @@ public class QuestionController {
 	        
 	})
 	@PostMapping
-	public ResponseEntity<List<QuestionCreateReqDto>> createQuestion(@RequestBody QuestionCreateReqDto request) {
-		return ResponseEntity.status(HttpStatus.CREATED).body(List.of());
+	public ResponseEntity<QuestionCreateResDto> createQuestion(@RequestBody QuestionCreateReqDto request) {
+		QuestionCreateResDto res = questionService.createQuestion(request);
+		return ResponseEntity.status(HttpStatus.CREATED).body(res);
 	}
 	
 	@Operation(
