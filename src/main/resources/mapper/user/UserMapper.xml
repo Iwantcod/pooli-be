@@ -1,15 +1,10 @@
-package com.pooli.user.repository;
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
-import com.pooli.user.domain.entity.User;
-import java.util.List;
-import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
-
-@Mapper
-public interface UserRepository {
-
-    @Select("""
+<mapper namespace="com.pooli.user.mapper.UserMapper">
+    <select id="findByEmail" parameterType="string" resultType="com.pooli.user.domain.entity.User">
         SELECT
             user_id,
             user_name,
@@ -22,33 +17,29 @@ public interface UserRepository {
         FROM USERS
         WHERE email = #{email}
           AND deleted_at IS NULL
-        """)
-    User findByEmail(@Param("email") String email);
+    </select>
 
-    @Select("""
+    <select id="findRoleNamesByUserId" parameterType="long" resultType="string">
         SELECT r.role_name
         FROM ROLE r
         JOIN USER_ROLE ur ON ur.role_id = r.role_id
         WHERE ur.user_id = #{userId}
-        """)
-    List<String> findRoleNamesByUserId(@Param("userId") Long userId);
+    </select>
 
-    @Select("""
+    <select id="findFamilyRoleByMainLineUserId" parameterType="long" resultType="string">
         SELECT fl.role
         FROM LINE l
         JOIN FAMILY_LINE fl ON fl.line_id = l.line_id
         WHERE l.user_id = #{userId}
           AND l.is_main = TRUE
         LIMIT 1
-        """)
-    String findFamilyRoleByMainLineUserId(@Param("userId") Long userId);
+    </select>
 
-    @Select("""
+    <select id="findMainLineIdByUserId" parameterType="long" resultType="long">
         SELECT l.line_id
         FROM LINE l
         WHERE l.user_id = #{userId}
           AND l.is_main = TRUE
         LIMIT 1
-        """)
-    Long findMainLineIdByUserId(@Param("userId") Long userId);
-}
+    </select>
+</mapper>
