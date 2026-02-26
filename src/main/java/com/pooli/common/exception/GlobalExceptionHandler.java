@@ -1,7 +1,6 @@
 package com.pooli.common.exception;
 
 import com.pooli.common.dto.ErrorResDto;
-import com.pooli.common.dto.ValidationErrorResDto;
 import com.pooli.common.dto.Violation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -47,8 +46,8 @@ public class GlobalExceptionHandler {
 
     // COMMON-4000: 요청 형식 불일치 (JSON 파싱/역직렬화 실패)
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ValidationErrorResDto> handleHttpMessageNotReadableException(HttpMessageNotReadableException ex) {
-        ValidationErrorResDto body = ValidationErrorResDto.builder()
+    public ResponseEntity<ErrorResDto> handleHttpMessageNotReadableException(HttpMessageNotReadableException ex) {
+        ErrorResDto body = ErrorResDto.builder()
                 .code("COMMON:4000")
                 .message("요청 형식이 일치하지 않습니다.")
                 .timestamp(OffsetDateTime.now().toString())
@@ -67,7 +66,7 @@ public class GlobalExceptionHandler {
 
     // COMMON-4001: 요청 DTO 필드 유효성 검증 실패 (@Valid @RequestBody)
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ValidationErrorResDto> handleMethodArgumentNotValidException(MethodArgumentNotValidException ex) {
+    public ResponseEntity<ErrorResDto> handleMethodArgumentNotValidException(MethodArgumentNotValidException ex) {
 
         List<Violation> violations = ex.getBindingResult()
                 .getFieldErrors()
@@ -75,7 +74,7 @@ public class GlobalExceptionHandler {
                 .map(this::toBodyViolation)
                 .toList();
 
-        ValidationErrorResDto body = ValidationErrorResDto.builder()
+        ErrorResDto body = ErrorResDto.builder()
                 .code("COMMON:4001")
                 .message("요청 DTO 필드 유효성 검증에 실패했습니다.")
                 .timestamp(OffsetDateTime.now().toString())
@@ -88,7 +87,7 @@ public class GlobalExceptionHandler {
 
     // @ModelAttribute 바인딩/검증 실패도 동일하게 COMMON-4001로 수렴
     @ExceptionHandler(BindException.class)
-    public ResponseEntity<ValidationErrorResDto> handleBindException(BindException ex) {
+    public ResponseEntity<ErrorResDto> handleBindException(BindException ex) {
 
         List<Violation> violations = ex.getBindingResult()
                 .getFieldErrors()
@@ -96,7 +95,7 @@ public class GlobalExceptionHandler {
                 .map(this::toBodyViolation)
                 .toList();
 
-        ValidationErrorResDto body = ValidationErrorResDto.builder()
+        ErrorResDto body = ErrorResDto.builder()
                 .code("COMMON:4001")
                 .message("요청 DTO 필드 유효성 검증에 실패했습니다.")
                 .timestamp(OffsetDateTime.now().toString())
@@ -109,7 +108,7 @@ public class GlobalExceptionHandler {
 
     // COMMON-4002: RequestParam 유효성 검증 실패 (@Validated + @RequestParam/@PathVariable)
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ValidationErrorResDto> handleConstraintViolationException(ConstraintViolationException ex) {
+    public ResponseEntity<ErrorResDto> handleConstraintViolationException(ConstraintViolationException ex) {
 
         // propertyPath가 "method.arg0"처럼 길어질 수 있습니다.
         // 필요하면 name을 후처리(마지막 토큰만)하는 로직을 추가하십시오.
@@ -122,7 +121,7 @@ public class GlobalExceptionHandler {
                         .build())
                 .toList();
 
-        ValidationErrorResDto body = ValidationErrorResDto.builder()
+        ErrorResDto body = ErrorResDto.builder()
                 .code("COMMON:4002")
                 .message("요청 파라미터 유효성 검증에 실패했습니다.")
                 .timestamp(OffsetDateTime.now().toString())
@@ -135,9 +134,9 @@ public class GlobalExceptionHandler {
 
     // COMMON-4003: RequestParam 타입 불일치
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ValidationErrorResDto> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException ex) {
+    public ResponseEntity<ErrorResDto> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException ex) {
 
-        ValidationErrorResDto body = ValidationErrorResDto.builder()
+        ErrorResDto body = ErrorResDto.builder()
                 .code("COMMON:4003")
                 .message("요청 파라미터 타입이 일치하지 않습니다.")
                 .timestamp(OffsetDateTime.now().toString())
@@ -156,10 +155,10 @@ public class GlobalExceptionHandler {
 
     // COMMON-4004: 필수 RequestParam 누락
     @ExceptionHandler(MissingServletRequestParameterException.class)
-    public ResponseEntity<ValidationErrorResDto> handleMissingServletRequestParameterException(
+    public ResponseEntity<ErrorResDto> handleMissingServletRequestParameterException(
             MissingServletRequestParameterException ex
     ) {
-        ValidationErrorResDto body = ValidationErrorResDto.builder()
+        ErrorResDto body = ErrorResDto.builder()
                 .code("COMMON:4004")
                 .message("필수 요청 파라미터가 누락되었습니다.")
                 .timestamp(OffsetDateTime.now().toString())
@@ -178,10 +177,10 @@ public class GlobalExceptionHandler {
 
     // COMMON-4005: 지원하지 않는 HTTP 메서드
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<ValidationErrorResDto> handleHttpRequestMethodNotSupportedException(
+    public ResponseEntity<ErrorResDto> handleHttpRequestMethodNotSupportedException(
             HttpRequestMethodNotSupportedException ex
     ) {
-        ValidationErrorResDto body = ValidationErrorResDto.builder()
+        ErrorResDto body = ErrorResDto.builder()
                 .code("COMMON:4005")
                 .message("지원하지 않는 HTTP 메서드입니다.")
                 .timestamp(OffsetDateTime.now().toString())
@@ -200,10 +199,10 @@ public class GlobalExceptionHandler {
 
     // COMMON-4006: Content-Type 불일치
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
-    public ResponseEntity<ValidationErrorResDto> handleHttpMediaTypeNotSupportedException(
+    public ResponseEntity<ErrorResDto> handleHttpMediaTypeNotSupportedException(
             HttpMediaTypeNotSupportedException ex
     ) {
-        ValidationErrorResDto body = ValidationErrorResDto.builder()
+        ErrorResDto body = ErrorResDto.builder()
                 .code("COMMON:4006")
                 .message("지원하지 않는 Content-Type입니다.")
                 .timestamp(OffsetDateTime.now().toString())
