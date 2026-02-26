@@ -49,7 +49,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ValidationErrorResDto> handleHttpMessageNotReadableException(HttpMessageNotReadableException ex) {
         ValidationErrorResDto body = ValidationErrorResDto.builder()
-                .code("COMMON-4000")
+                .code("COMMON:4000")
                 .message("요청 형식이 일치하지 않습니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
@@ -76,7 +76,7 @@ public class GlobalExceptionHandler {
                 .toList();
 
         ValidationErrorResDto body = ValidationErrorResDto.builder()
-                .code("COMMON-4001")
+                .code("COMMON:4001")
                 .message("요청 DTO 필드 유효성 검증에 실패했습니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
@@ -97,7 +97,7 @@ public class GlobalExceptionHandler {
                 .toList();
 
         ValidationErrorResDto body = ValidationErrorResDto.builder()
-                .code("COMMON-4001")
+                .code("COMMON:4001")
                 .message("요청 DTO 필드 유효성 검증에 실패했습니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
@@ -123,7 +123,7 @@ public class GlobalExceptionHandler {
                 .toList();
 
         ValidationErrorResDto body = ValidationErrorResDto.builder()
-                .code("COMMON-4002")
+                .code("COMMON:4002")
                 .message("요청 파라미터 유효성 검증에 실패했습니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
@@ -138,7 +138,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ValidationErrorResDto> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException ex) {
 
         ValidationErrorResDto body = ValidationErrorResDto.builder()
-                .code("COMMON-4003")
+                .code("COMMON:4003")
                 .message("요청 파라미터 타입이 일치하지 않습니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
@@ -160,7 +160,7 @@ public class GlobalExceptionHandler {
             MissingServletRequestParameterException ex
     ) {
         ValidationErrorResDto body = ValidationErrorResDto.builder()
-                .code("COMMON-4004")
+                .code("COMMON:4004")
                 .message("필수 요청 파라미터가 누락되었습니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
@@ -182,7 +182,7 @@ public class GlobalExceptionHandler {
             HttpRequestMethodNotSupportedException ex
     ) {
         ValidationErrorResDto body = ValidationErrorResDto.builder()
-                .code("COMMON-4005")
+                .code("COMMON:4005")
                 .message("지원하지 않는 HTTP 메서드입니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
@@ -204,7 +204,7 @@ public class GlobalExceptionHandler {
             HttpMediaTypeNotSupportedException ex
     ) {
         ValidationErrorResDto body = ValidationErrorResDto.builder()
-                .code("COMMON-4006")
+                .code("COMMON:4006")
                 .message("지원하지 않는 Content-Type입니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
@@ -226,7 +226,7 @@ public class GlobalExceptionHandler {
         log.error("DB error", ex);
 
         ErrorResDto body = ErrorResDto.builder()
-                .code("COMMON-5001")
+                .code("COMMON:5001")
                 .message("데이터베이스 처리 중 오류가 발생했습니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
@@ -241,7 +241,7 @@ public class GlobalExceptionHandler {
         log.error("External system error", ex);
 
         ErrorResDto body = ErrorResDto.builder()
-                .code("COMMON-5002")
+                .code("COMMON:5002")
                 .message("외부 시스템 호출 중 오류가 발생했습니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
@@ -256,7 +256,7 @@ public class GlobalExceptionHandler {
         log.error("Transaction error", ex);
 
         ErrorResDto body = ErrorResDto.builder()
-                .code("COMMON-5003")
+                .code("COMMON:5003")
                 .message("요청 처리 중 오류가 발생했습니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
@@ -271,7 +271,7 @@ public class GlobalExceptionHandler {
         log.error("Unhandled error", ex);
 
         ErrorResDto body = ErrorResDto.builder()
-                .code("COMMON-5000")
+                .code("COMMON:5000")
                 .message("서버 내부 오류가 발생했습니다.")
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
