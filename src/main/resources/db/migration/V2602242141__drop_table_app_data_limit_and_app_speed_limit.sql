@@ -1,0 +1,4 @@
+-- APP_DATA_LIMIT, APP_SPEED_LIMIT 테이블 drop
+
+drop table APP_DATA_LIMIT;
+drop table APP_SPEED_LIMIT;

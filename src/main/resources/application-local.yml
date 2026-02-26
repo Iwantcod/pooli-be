@@ -1,6 +1,8 @@
 spring:
   config:
     import: optional:file:.env[.properties]
+    activate:
+      on-profile: local
   application:
     name: pooli-be
   datasource:
@@ -76,12 +78,6 @@ cloud:
     s3:
       bucket: pooli-s3-bucket
     region: ap-southeast-2
-# Spring Actuator 헬스 체크 설정(경로: GET [origin]/actuator/health)
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health
-  endpoint:
-    health:
-      show-details: never
+    credentials:
+      access-key: ${AWS_ACCESS_KEY}
+      secret-key: ${AWS_SECRET_KEY}
