@@ -27,7 +27,23 @@ public class RoleController {
             description = "관리자가 현재 대표 회선 사용자와 변경 대상 회선 사용자를 기준으로 가족관리자 역할을 양도한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "양도 성공"),
-            @ApiResponse(responseCode = "400", description = "PERMISSION-4004: 자기 자신에게 역할을 양도할 수 없습니다."),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+                            요청 값 오류
+
+                            - PERMISSION-4004: 자기 자신에게 역할을 양도할 수 없습니다.
+                            """
+            ),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = """
+                            권한 없음
+
+                            - COMMON:4300: 가족 대표자 권한이 없습니다.
+                            - COMMON:4301: 관리자 권한이 없습니다.
+                            """
+            ),
             @ApiResponse(
                     responseCode = "404",
                     description = """
@@ -46,7 +62,14 @@ public class RoleController {
                             - PERMISSION-4902: 대상 사용자는 이미 가족 대표자입니다.
                             """
             ),
-            @ApiResponse(responseCode = "500", description = "PERMISSION-5001: 역할 양도 처리 중 오류가 발생했습니다.")
+            @ApiResponse(
+                    responseCode = "500",
+                    description = """
+                            서버 오류
+
+                            - COMMON:5000: 서버 내부 오류가 발생했습니다.
+                            """
+            )
     })
     @PatchMapping("/representative")
     public ResponseEntity<RepresentativeRoleTransferResDto> transferRepresentativeRole(
