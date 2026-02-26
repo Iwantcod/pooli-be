@@ -753,6 +753,7 @@ public class UserPolicyController {
         return ResponseEntity.ok(response);
     }
 
+    /*************************************************************************************/
 
     @Operation(
             summary = "구성원의 특정 앱 데이터 사용 정책 활성화/비활성화 토글 요청",
