@@ -32,8 +32,8 @@ public class AdminPolicyController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+            @ApiResponse(responseCode = "403", description = "관리자 권한이 없음(COMMON:4301)"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류(COMMON:5000, COMMON:5001)")
     })
     @GetMapping("/all")
     public ResponseEntity<List<AdminPolicyResDto>> getAllPolicies() {
@@ -69,8 +69,10 @@ public class AdminPolicyController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+            @ApiResponse(responseCode = "400", description = "잘못된 요청(COMMON:4000, COMMON:4001, COMMON:4006)"),
+            @ApiResponse(responseCode = "403", description = "관리자 권한이 없음(COMMON:4301)"),
+            @ApiResponse(responseCode = "409", description = "기존 정책과 충돌(POLICY:4901, POLICY:4902, POLICY:4903)"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류(COMMON:5000, COMMON:5001)")
     })
     @PostMapping
     public ResponseEntity<PolicyActivationResDto> activatePolicy(@RequestBody PolicyActivationReqDto request) {
@@ -87,9 +89,11 @@ public class AdminPolicyController {
             description = "관리자 전용. 백오피스에서 정책을 비활성화합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+	    	 @ApiResponse(responseCode = "200", description = "요청 성공"),
+             @ApiResponse(responseCode = "400", description = "잘못된 요청(COMMON:4002, COMMON:4003, COMMON:4004)"),
+	         @ApiResponse(responseCode = "403", description = "관리자 권한이 없음(COMMON:4301)"),
+	         @ApiResponse(responseCode = "409", description = "기존 정책과 충돌(POLICY:4901)"),
+	         @ApiResponse(responseCode = "500", description = "서버 내부 오류(COMMON:5000, COMMON:5001)")
     })
     @DeleteMapping
     public ResponseEntity<PolicyDeactivationResDto> deactivatePolicy(
@@ -110,8 +114,10 @@ public class AdminPolicyController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+            @ApiResponse(responseCode = "400", description = "잘못된 요청(COMMON:4002, COMMON:4003, COMMON:4004)"),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음(POLICY:4400, POLICY:4402, POLICY:4403)"),
+            @ApiResponse(responseCode = "403", description = "관리자 권한이 없음(COMMON:4301)"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류(COMMON:5000, COMMON:5001)")
     })
     @GetMapping("/lines/apps/usage")
     public ResponseEntity<List<LineAppUsageResDto>> getLineAppUsage(
