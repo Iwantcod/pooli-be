@@ -974,18 +974,47 @@ public class UserPolicyController {
         return ResponseEntity.ok(response);
     }
 
-    /*************************************************************************************/
 
     @Operation(
             summary = "구성원의 특정 앱 데이터 사용 정책 활성화/비활성화 토글 요청",
             description = "가족 대표자 권한 필요"
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
-            @ApiResponse(responseCode = "401", description = "권한이 없음"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+            잘못된 요청
+            
+            - COMMON:4002 RequestParam 유효성 검증 실패
+            - COMMON:4003 RequestParam 타입 불일치
+            - COMMON:4004 필수 RequestParam 누락
+            """
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = """
+            권한이 없음
+            
+            - COMMON:4300 가족 대표자 권한이 없습니다.
+            """
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = """
+            리소스를 찾을 수 없음
+            
+            - POLICY:4402 해당 앱 정책 정보가 존재하지 않습니다.
+            """
+            ),
+            @ApiResponse(
+                    responseCode = "500",
+                    description = """
+            서버 내부 오류
+            
+            - COMMON:5000 서버 내부 오류 발생
+            - COMMON:5001 데이터베이스 오류
+            """
+            )
     })
     @PatchMapping("/lines/apps/enable-toggles")
     public ResponseEntity<Void> toggleAppPolicyEnable(
@@ -1000,11 +1029,41 @@ public class UserPolicyController {
             description = "가족 대표자 권한 필요"
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청"),
-            @ApiResponse(responseCode = "401", description = "권한이 없음"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+            잘못된 요청
+            
+            - COMMON:4002 RequestParam 유효성 검증 실패
+            - COMMON:4003 RequestParam 타입 불일치
+            - COMMON:4004 필수 RequestParam 누락
+            """
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = """
+            권한이 없음
+            
+            - COMMON:4300 가족 대표자 권한이 없습니다.
+            """
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = """
+            리소스를 찾을 수 없음
+            
+            - POLICY:4402 해당 앱 정책 정보가 존재하지 않습니다.
+            """
+            ),
+            @ApiResponse(
+                    responseCode = "500",
+                    description = """
+            서버 내부 오류
+            
+            - COMMON:5000 서버 내부 오류 발생
+            - COMMON:5001 데이터베이스 오류
+            """
+            )
     })
     @DeleteMapping("/lines/apps")
     public ResponseEntity<Void> deleteAppPolicy(
@@ -1019,9 +1078,41 @@ public class UserPolicyController {
             description = "사용자 권한 필요. 특정 회선에 현재 적용 중인 정책 목록을 조회합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+            잘못된 요청
+            
+            - COMMON:4002 RequestParam 유효성 검증 실패
+            - COMMON:4003 RequestParam 타입 불일치
+            - COMMON:4004 필수 RequestParam 누락
+            """
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = """
+            권한이 없음
+            
+            - COMMON:4300 가족 대표자 권한이 없습니다.
+            """
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = """
+            리소스를 찾을 수 없음
+            
+            - POLICY:4400 해당 회선이 존재하지 않습니다.
+            """
+            ),
+            @ApiResponse(
+                    responseCode = "500",
+                    description = """
+            서버 내부 오류
+            
+            - COMMON:5000 서버 내부 오류 발생
+            - COMMON:5001 데이터베이스 오류
+            """
+            )
     })
     @GetMapping("/lines/applied")
     public ResponseEntity<AppliedPolicyResDto> getAppliedPoliciesByLine(
