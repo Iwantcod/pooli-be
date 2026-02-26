@@ -6,6 +6,7 @@ import com.pooli.permission.domain.dto.response.MemberPermissionListResDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionResDto;
 import com.pooli.permission.domain.entity.PermissionLine;
 import com.pooli.permission.exception.PermissionErrorCode;
+import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.PermissionLineMapper;
 import com.pooli.permission.mapper.PermissionMapper;
 import java.util.List;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class MemberPermissionServiceImpl implements MemberPermissionService {
 
+    private final FamilyLineMapper familyLineMapper;
     private final PermissionLineMapper permissionLineMapper;
     private final PermissionMapper permissionMapper;
 
@@ -24,6 +26,9 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
     @Override
     @Transactional(readOnly = true)
     public MemberPermissionListResDto getMyPermissions(Long lineId) {
+        familyLineMapper.findByLineId(lineId)
+                .orElseThrow(() -> new ApplicationException(PermissionErrorCode.LINE_NOT_FOUND));
+
         List<MemberPermissionResDto> permissions = permissionLineMapper.findByLineId(lineId);
         return MemberPermissionListResDto.builder()
                 .memberPermissions(permissions)
@@ -34,6 +39,9 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
     @Override
     @Transactional(readOnly = true)
     public MemberPermissionListResDto getMemberPermissions(Long familyId, Long lineId) {
+        familyLineMapper.findByFamilyIdAndLineId(familyId, lineId)
+                .orElseThrow(() -> new ApplicationException(PermissionErrorCode.FAMILY_LINE_MAPPING_NOT_FOUND));
+
         List<MemberPermissionResDto> permissions = permissionLineMapper.findByFamilyIdAndLineId(familyId, lineId);
         return MemberPermissionListResDto.builder()
                 .memberPermissions(permissions)
@@ -56,6 +64,6 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
         return permissionLineMapper.findByFamilyIdAndLineId(familyId, lineId).stream()
                 .filter(p -> p.getPermissionId().equals(reqDto.getPermissionId()))
                 .findFirst()
-                .orElseThrow(() -> new ApplicationException(PermissionErrorCode.MEMBER_PERMISSION_NOT_FOUND));
+                .orElseThrow(() -> new ApplicationException(PermissionErrorCode.MEMBER_PERMISSION_APPLY_ERROR));
     }
 }

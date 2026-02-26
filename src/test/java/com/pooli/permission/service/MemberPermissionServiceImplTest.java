@@ -145,7 +145,7 @@ class MemberPermissionServiceImplTest {
         }
 
         @Test
-        @DisplayName("upsert 후 결과 조회 실패 시 MEMBER_PERMISSION_NOT_FOUND 예외를 던진다")
+        @DisplayName("upsert 후 결과 조회 실패 시 MEMBER_PERMISSION_APPLY_ERROR 예외를 던진다")
         void memberPermissionNotFound() {
             Long familyId = 10L;
             Long lineId = 1001L;
@@ -167,7 +167,7 @@ class MemberPermissionServiceImplTest {
             assertThatThrownBy(() -> memberPermissionService.updateMemberPermission(familyId, lineId, reqDto))
                     .isInstanceOf(ApplicationException.class)
                     .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
-                            .isEqualTo(PermissionErrorCode.MEMBER_PERMISSION_NOT_FOUND));
+                            .isEqualTo(PermissionErrorCode.MEMBER_PERMISSION_APPLY_ERROR));
         }
     }
 

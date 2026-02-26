@@ -3,13 +3,13 @@ package com.pooli.permission.controller;
 import com.pooli.permission.domain.dto.request.MemberPermissionUpsertReqDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionListResDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionResDto;
+import com.pooli.permission.service.MemberPermissionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.time.LocalDateTime;
-import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -21,14 +21,17 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "MemberPermission", description = "구성원 권한 관련 API")
 @RestController
 @RequestMapping("/api/member-permissions")
+@RequiredArgsConstructor
 public class MemberPermissionController {
+
+    private final MemberPermissionService memberPermissionService;
 
     @Operation(
             summary = "내 권한 상태 조회",
             description = "로그인한 유저가 자신의 권한 목록과 활성화 상태를 조회한다. 세션의 사용자 정보를 기준으로 조회한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(responseCode = "404", description = "사용자 또는 권한 정보가 존재하지 않음"),
+            @ApiResponse(responseCode = "404", description = "PERMISSION-4401: 대상 회선 정보가 존재하지 않습니다."),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @GetMapping("/me")
@@ -36,19 +39,7 @@ public class MemberPermissionController {
             @Parameter(description = "회선 ID", example = "1001")
             @RequestParam Long lineId
     ) {
-        MemberPermissionResDto memberPermissionResDto = MemberPermissionResDto.builder()
-                .familyId(10L)
-                .lineId(lineId)
-                .permissionId(1)
-                .permissionTitle("데이터 차단")
-                .isEnable(Boolean.FALSE)
-                .createdAt(LocalDateTime.parse("2026-02-20T12:00:00"))
-                .build();
-
-        MemberPermissionListResDto memberPermissionListResDto = MemberPermissionListResDto.builder()
-                .memberPermissions(List.of(memberPermissionResDto))
-                .build();
-        return ResponseEntity.ok(memberPermissionListResDto);
+        return ResponseEntity.ok(memberPermissionService.getMyPermissions(lineId));
     }
 
     @Operation(
@@ -56,7 +47,7 @@ public class MemberPermissionController {
             description = "가족관리자 또는 관리자가 familyId와 lineId를 기준으로 구성원의 권한 목록을 조회한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(responseCode = "404", description = "가족 또는 회선 정보가 존재하지 않음"),
+            @ApiResponse(responseCode = "404", description = "PERMISSION-4404: 해당 가족-회선 매핑 정보가 존재하지 않습니다."),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @GetMapping
@@ -65,19 +56,7 @@ public class MemberPermissionController {
             @RequestParam Long familyId,
             @Parameter(description = "회선 ID", example = "1001")
             @RequestParam Long lineId) {
-        MemberPermissionResDto memberPermissionResDto = MemberPermissionResDto.builder()
-                .familyId(familyId)
-                .lineId(lineId)
-                .permissionId(1)
-                .permissionTitle("데이터 차단")
-                .isEnable(Boolean.TRUE)
-                .createdAt(LocalDateTime.parse("2026-02-20T12:00:00"))
-                .build();
-
-        MemberPermissionListResDto memberPermissionListResDto = MemberPermissionListResDto.builder()
-                .memberPermissions(List.of(memberPermissionResDto))
-                .build();
-        return ResponseEntity.ok(memberPermissionListResDto);
+        return ResponseEntity.ok(memberPermissionService.getMemberPermissions(familyId, lineId));
     }
 
     @Operation(
@@ -85,8 +64,9 @@ public class MemberPermissionController {
             description = "가족관리자 또는 관리자가 familyId와 lineId를 기준으로 권한 식별자와 활성화 여부(is_enable)를 변경한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "변경 성공"),
-            @ApiResponse(responseCode = "404", description = "가족, 회선 또는 권한 정보가 존재하지 않음"),
-            @ApiResponse(responseCode = "500", description = "서버 오류")
+            @ApiResponse(responseCode = "400", description = "PERMISSION-4002: 권한 활성화 값(isEnable)이 누락되었습니다."),
+            @ApiResponse(responseCode = "404", description = "PERMISSION-4400: 해당 권한 정보가 존재하지 않습니다."),
+            @ApiResponse(responseCode = "500", description = "PERMISSION-5000: 구성원 권한 반영 중 오류가 발생했습니다.")
     })
     @PatchMapping
     public ResponseEntity<MemberPermissionResDto> updateMemberPermission(
@@ -95,14 +75,6 @@ public class MemberPermissionController {
             @Parameter(description = "회선 ID", example = "1001")
             @RequestParam Long lineId,
             @RequestBody MemberPermissionUpsertReqDto memberPermissionUpsertReqDto) {
-        MemberPermissionResDto memberPermissionResDto = MemberPermissionResDto.builder()
-                .familyId(familyId)
-                .lineId(lineId)
-                .permissionId(memberPermissionUpsertReqDto.getPermissionId())
-                .permissionTitle("데이터 차단")
-                .isEnable(memberPermissionUpsertReqDto.getIsEnable())
-                .createdAt(LocalDateTime.parse("2026-02-20T12:00:00"))
-                .build();
-        return ResponseEntity.ok(memberPermissionResDto);
+        return ResponseEntity.ok(memberPermissionService.updateMemberPermission(familyId, lineId, memberPermissionUpsertReqDto));
     }
 }
