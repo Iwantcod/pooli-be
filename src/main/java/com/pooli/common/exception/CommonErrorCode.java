@@ -57,6 +57,20 @@ public enum CommonErrorCode implements ErrorCode {
             "Content-Type 불일치"
     ),
 
+    // 페이지 관련 유효성 오류 - 페이지 번호
+    INVALID_PAGE_NUMBER(
+            HttpStatus.BAD_REQUEST,
+            "COMMON:4007",
+            "페이지 번호가 올바르지 않습니다."
+    ),
+
+    // 페이지 관련 유효성 오류 - 페이지 크기
+    INVALID_PAGE_SIZE(
+            HttpStatus.BAD_REQUEST,
+            "COMMON:4008",
+            "페이지 크기(size)가 올바르지 않습니다."
+    ),
+
 
 	/* 403 Forbidden */
 

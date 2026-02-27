@@ -10,6 +10,12 @@ public enum QuestionErrorCode implements ErrorCode {
             HttpStatus.NOT_FOUND,
             "QUESTION:4041",
             "카테고리가 존재하지 않습니다."
+    ),
+
+    QUESTION_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "QUESTION:4042",
+            "해당 문의사항이 존재하지 않습니다."
     );
 
     private final HttpStatus httpStatus;
