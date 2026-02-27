@@ -265,12 +265,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 
-    // COMMON-4300: @PreAuthorize 인가 실패
+    // COMMON-4302: @PreAuthorize 인가 실패
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResDto> handleAccessDeniedException(AccessDeniedException ex) {
         ErrorResDto body = ErrorResDto.builder()
-                .code(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN.getCode())
-                .message(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN.getMessage())
+                .code(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN.getCode())
+                .message(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN.getMessage())
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
                 .build();

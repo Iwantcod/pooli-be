@@ -51,8 +51,7 @@ public class MemberPermissionController {
             @ApiResponse(responseCode = "403", description = """
                     권한 없음
 
-                    - COMMON:4300: 가족 대표자 권한이 없습니다.
-                    - COMMON:4301: 관리자 권한이 없습니다.
+                    - COMMON:4302: 접근 권한이 없습니다.
                     """),
             @ApiResponse(responseCode = "404", description = """
                     가족-회선 매핑 정보 없음
@@ -80,8 +79,7 @@ public class MemberPermissionController {
             @ApiResponse(responseCode = "403", description = """
                     권한 없음
 
-                    - COMMON:4300: 가족 대표자 권한이 없습니다.
-                    - COMMON:4301: 관리자 권한이 없습니다.
+                    - COMMON:4302: 접근 권한이 없습니다.
                     """),
             @ApiResponse(responseCode = "404", description = """
                     권한 정보 없음

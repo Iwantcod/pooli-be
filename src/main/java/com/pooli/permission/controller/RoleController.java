@@ -54,8 +54,7 @@ public class RoleController {
                     description = """
                             권한 없음
 
-                            - COMMON:4300: 가족 대표자 권한이 없습니다.
-                            - COMMON:4301: 관리자 권한이 없습니다.
+                            - COMMON:4302: 접근 권한이 없습니다.
                             """
             ),
             @ApiResponse(
