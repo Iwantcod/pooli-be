@@ -1,5 +1,6 @@
 package com.pooli.permission.controller;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.permission.domain.dto.response.RepresentativeRoleTransferResDto;
 import com.pooli.permission.service.RoleService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -7,8 +8,20 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -21,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class RoleController {
 
     private final RoleService roleService;
+    private final SecurityContextRepository securityContextRepository;
 
     @Operation(
             summary = "가족관리자 역할 양도",
@@ -71,12 +85,38 @@ public class RoleController {
                             """
             )
     })
+    @PreAuthorize("hasRole('ADMIN') or hasRole('FAMILY_OWNER')")
     @PatchMapping("/representative")
     public ResponseEntity<RepresentativeRoleTransferResDto> transferRepresentativeRole(
-            @Parameter(description = "현재 대표 사용자 ID", example = "101")
-            @RequestParam Long currentUserId,
-            @Parameter(description = "변경 대상 사용자 ID", example = "202")
-            @RequestParam Long changeUserId) {
-        return ResponseEntity.ok(roleService.transferRepresentativeRole(currentUserId, changeUserId));
+            @AuthenticationPrincipal AuthUserDetails userDetails,
+            @Parameter(description = "변경 대상 사용자 ID", example = "202") @RequestParam Long changeUserId,
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        RepresentativeRoleTransferResDto result =
+                roleService.transferRepresentativeRole(userDetails.getUserId(), changeUserId);
+
+        // 역할 양도 후 현재 사용자 세션의 ROLE_FAMILY_OWNER → ROLE_FAMILY_MEMBER 교체
+        List<GrantedAuthority> updatedAuthorities = userDetails.getAuthorities().stream()
+                .map(auth -> "ROLE_FAMILY_OWNER".equals(auth.getAuthority())
+                        ? new SimpleGrantedAuthority("ROLE_FAMILY_MEMBER")
+                        : auth)
+                .collect(Collectors.toList());
+
+        AuthUserDetails updatedUserDetails = AuthUserDetails.builder()
+                .userId(userDetails.getUserId())
+                .userName(userDetails.getUsername())
+                .email(userDetails.getEmail())
+                .password(userDetails.getPassword())
+                .lineId(userDetails.getLineId())
+                .authorities(updatedAuthorities)
+                .build();
+
+        SecurityContext newContext = SecurityContextHolder.createEmptyContext();
+        newContext.setAuthentication(
+                new UsernamePasswordAuthenticationToken(updatedUserDetails, null, updatedAuthorities));
+        SecurityContextHolder.setContext(newContext);
+        securityContextRepository.saveContext(newContext, request, response);
+
+        return ResponseEntity.ok(result);
     }
 }
