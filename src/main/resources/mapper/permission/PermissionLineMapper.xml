@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.permission.mapper.PermissionLineMapper">
+
+    <resultMap id="memberPermissionResultMap" type="com.pooli.permission.domain.dto.response.MemberPermissionResDto">
+        <constructor>
+            <arg column="family_id"        javaType="java.lang.Long"/>
+            <arg column="line_id"          javaType="java.lang.Long"/>
+            <arg column="permission_id"    javaType="java.lang.Integer"/>
+            <arg column="permission_title" javaType="java.lang.String"/>
+            <arg column="is_enable"        javaType="java.lang.Boolean"/>
+            <arg column="created_at"       javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 내 권한 상태 조회 (lineId 기준) -->
+    <select id="findByLineId" resultMap="memberPermissionResultMap">
+        SELECT fl.family_id,
+               pl.line_id,
+               pl.permission_id,
+               p.permission_title,
+               pl.is_enable,
+               pl.created_at
+        FROM PERMISSION_LINE pl
+                 JOIN PERMISSION p ON pl.permission_id = p.permission_id
+                 JOIN FAMILY_LINE fl ON pl.line_id = fl.line_id
+        WHERE pl.line_id = #{lineId}
+          AND p.deleted_at IS NULL
+    </select>
+
+    <!-- 구성원 권한 목록 조회 (familyId + lineId 기준) -->
+    <select id="findByFamilyIdAndLineId" resultMap="memberPermissionResultMap">
+        SELECT fl.family_id,
+               pl.line_id,
+               pl.permission_id,
+               p.permission_title,
+               pl.is_enable,
+               pl.created_at
+        FROM PERMISSION_LINE pl
+                 JOIN PERMISSION p ON pl.permission_id = p.permission_id
+                 JOIN FAMILY_LINE fl ON pl.line_id = fl.line_id
+        WHERE fl.family_id = #{familyId}
+          AND pl.line_id = #{lineId}
+          AND p.deleted_at IS NULL
+    </select>
+
+    <!-- 구성원 권한 변경 (없으면 INSERT, 있으면 UPDATE) -->
+    <insert id="upsert">
+        INSERT INTO PERMISSION_LINE (line_id, permission_id, is_enable, created_at, updated_at)
+        VALUES (#{lineId}, #{permissionId}, #{isEnable}, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+            is_enable  = #{isEnable},
+            updated_at = NOW()
+    </insert>
+
+</mapper>
