@@ -65,7 +65,9 @@
         is_answer AS isAnswer
         FROM question
         WHERE deleted_at IS NULL
+        AND line_id = #{lineId}
 
+        <!--  category optional -->
         <if test="categories != null and categories.size() > 0">
             AND question_category_id IN
             <foreach collection="categories" item="cat" open="(" separator="," close=")">
@@ -89,6 +91,8 @@
         FROM question
         WHERE deleted_at IS NULL
 
+        AND line_id = #{lineId}
+
         <if test="categories != null and categories.size() > 0">
             AND question_category_id IN
             <foreach collection="categories" item="cat" open="(" separator="," close=")">
@@ -101,4 +105,60 @@
         </if>
 
     </select>
+
+    <!-- 관리자용 목록 조회 -->
+    <select id="selectQuestionListAdmin" resultType="com.pooli.question.domain.dto.response.QuestionListResDto">
+        SELECT
+        question_id AS questionId,
+        question_category_id AS questionCategoryId,
+        line_id AS lineId,
+        title,
+        is_answer AS isAnswer
+        FROM question
+        WHERE deleted_at IS NULL
+
+        <!-- lineId optional -->
+        <if test="lineId != null">
+            AND line_id = #{lineId}
+        </if>
+
+        <!-- category optional -->
+        <if test="categories != null and categories.size() > 0">
+            AND question_category_id IN
+            <foreach collection="categories" item="cat" open="(" separator="," close=")">
+                #{cat}
+            </foreach>
+        </if>
+
+        <!-- isAnswered optional -->
+        <if test="isAnswered != null">
+            AND is_answer = #{isAnswered}
+        </if>
+
+        ORDER BY created_at DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <!-- 관리자용 전체 개수 조회 -->
+    <select id="countQuestionListAdmin" resultType="long">
+        SELECT COUNT(*)
+        FROM question
+        WHERE deleted_at IS NULL
+
+        <if test="lineId != null">
+            AND line_id = #{lineId}
+        </if>
+
+        <if test="categories != null and categories.size() > 0">
+            AND question_category_id IN
+            <foreach collection="categories" item="cat" open="(" separator="," close=")">
+                #{cat}
+            </foreach>
+        </if>
+
+        <if test="isAnswered != null">
+            AND is_answer = #{isAnswered}
+        </if>
+    </select>
+
 </mapper>

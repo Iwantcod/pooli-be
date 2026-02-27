@@ -39,9 +39,22 @@ public class QuestionController {
 	)
 	@ApiResponses({
 	    @ApiResponse(responseCode = "201", description = "문의사항 생성 성공"),
-	    @ApiResponse(responseCode = "400", description = "잘못된 요청"),
-	    @ApiResponse(responseCode = "500", description = "서버 오류"),
-	        
+	    @ApiResponse(responseCode = "400",
+				description = """
+						잘못된 요청
+							
+						- COMMON:4000 요청 형식 불일치
+						- COMMON:4001 요청 DTO 필드 유효성 검증 실패
+						- COMMON:4006 Content-Type 불일치
+						- UPLOAD:4002 파일 개수 초과
+					"""),
+	    @ApiResponse(responseCode = "500",
+				description = """
+						서버 오류
+						
+						- COMMON:5000 서버 내부 오류 발생
+						- COMMON:5001 데이터베이스 오류
+					""")
 	})
 	@PostMapping
 	public ResponseEntity<QuestionCreateResDto> createQuestion( @Valid @RequestBody QuestionCreateReqDto request) {
@@ -55,8 +68,22 @@ public class QuestionController {
 	)
 	@ApiResponses({
 	    @ApiResponse(responseCode = "204", description = "문의사항 삭제 성공"),
-	    @ApiResponse(responseCode = "400", description = "잘못된 요청"),
-	    @ApiResponse(responseCode = "404", description = "문의사항을 찾을 수 없음"),    
+	    @ApiResponse(responseCode = "400",
+				description = """
+						잘못된 요청
+						
+						 - COMMON:4002 RequestParam 유효성 검증 실패
+						 - COMMON:4003 RequestParam 타입 불일치
+						 - COMMON:4004 필수 RequestParam 누락
+					"""),
+	    @ApiResponse(responseCode = "404", description = "QUESTION:4042:해당 문의사항이 존재하지 않습니다."),
+		@ApiResponse(responseCode = "500",
+				description = """
+					서버 오류
+					
+					- COMMON:5000 서버 내부 오류 발생
+					- COMMON:5001 데이터베이스 오류
+				""")
 	})
 	@DeleteMapping
 	public ResponseEntity<Void> deleteQuestion(@RequestParam(name="questionId") Long questionId) {
@@ -65,8 +92,8 @@ public class QuestionController {
 	}
 	
 	@Operation(
-	    summary = "문의사항 목록 조회 요청",
-	    description = "문의사항 목록을 조회한다"
+	    summary = "유저 문의사항 목록 조회 요청",
+	    description = "유저의 문의사항 목록을 조회한다"
 	)
 	@ApiResponses({
 	    @ApiResponse(responseCode = "200", description = "문의사항 조회 성공"),
@@ -74,7 +101,7 @@ public class QuestionController {
 	    @ApiResponse(responseCode = "500", description = "서버 오류"),
 	        
 	})
-	@GetMapping
+	@GetMapping("/users")
 	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestion(
 			@RequestParam(name="categoryIds", required = false) List<Long> categoryIds,
 			@RequestParam(name="lineId") Long lineId,
@@ -87,6 +114,21 @@ public class QuestionController {
 				questionService.selectQuestion(categoryIds, lineId, isAnswered, page, size);
 
 		return ResponseEntity.ok(result);
+	}
+
+
+
+	@GetMapping("/admins")
+	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestionAdmin(
+			@RequestParam(required = false) List<Long> categoryIds,
+			@RequestParam(required = false) Boolean isAnswered,
+			@RequestParam(required = false) Long lineId,
+			@RequestParam Integer pageNumber,
+			@RequestParam Integer pageSize
+	) {
+		return ResponseEntity.ok(
+				questionService.selectQuestionAdmin(categoryIds, isAnswered, lineId, pageNumber, pageSize)
+		);
 	}
 	
 	@Operation(

@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.pooli.auth.dto.request.LoginReqDto;
-import com.pooli.auth.dto.response.LoginResDto;
 import com.pooli.auth.service.AuthUserDetails;
 
 import io.swagger.v3.oas.annotations.Operation;

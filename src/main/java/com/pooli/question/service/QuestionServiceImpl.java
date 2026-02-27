@@ -3,6 +3,7 @@ package com.pooli.question.service;
 import com.pooli.common.dto.PagingResDto;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.common.exception.UploadErrorCode;
 import com.pooli.question.domain.dto.QuestionAttachmentDto;
 import com.pooli.question.domain.dto.request.*;
 import com.pooli.question.domain.dto.response.*;
@@ -51,8 +52,7 @@ public class QuestionServiceImpl implements QuestionService {
     @Transactional
     public QuestionCreateResDto createQuestion(QuestionCreateReqDto req) {
 
-        int attachmentCount =
-                req.getAttachments() == null ? 0 : req.getAttachments().size();
+       int attachmentCount = questionValidationService.validateQuestionCreate(req);
 
         // 1. Question insert
         Question question = Question.builder()
@@ -103,13 +103,7 @@ public class QuestionServiceImpl implements QuestionService {
             Integer size
     ) {
 
-        if (lineId == null) {
-            throw new ApplicationException(CommonErrorCode.MISSING_REQUEST_PARAM);
-        }
-
-        if (page == null || page < 0 || size == null || size <= 0) {
-            throw new ApplicationException(CommonErrorCode.INVALID_REQUEST_PARAM);
-        }
+        questionValidationService.validatePagingParams(page, size);
 
         int offset = page * size;
 
@@ -131,4 +125,34 @@ public class QuestionServiceImpl implements QuestionService {
                 .build();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public PagingResDto<QuestionListResDto> selectQuestionAdmin(
+            List<Long> categoryIds,
+            Boolean isAnswered,
+            Long lineId,
+            Integer page,
+            Integer size
+    ) {
+        questionValidationService.validatePagingParams(page, size);
+
+        int offset = page * size;
+
+        // 조회
+        List<QuestionListResDto> content =
+                questionMapper.selectQuestionListAdmin(categoryIds, isAnswered, lineId, offset, size);
+
+        Long totalElements =
+                questionMapper.countQuestionListAdmin(categoryIds, isAnswered, lineId);
+
+        int totalPages = (int) Math.ceil((double) totalElements / size);
+
+        return PagingResDto.<QuestionListResDto>builder()
+                .content(content)
+                .page(page)
+                .size(size)
+                .totalElements(totalElements)
+                .totalPages(totalPages)
+                .build();
+    }
 }

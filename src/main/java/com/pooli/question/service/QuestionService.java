@@ -20,4 +20,12 @@ public interface QuestionService {
             Integer page,
             Integer size
     );
+
+    PagingResDto<QuestionListResDto> selectQuestionAdmin(
+            List<Long> categoryIds,
+            Boolean isAnswered,
+            Long lineId, // 선택사항
+            Integer page,
+            Integer size
+    );
 }

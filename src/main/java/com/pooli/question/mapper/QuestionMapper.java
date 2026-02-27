@@ -25,6 +25,7 @@ public interface QuestionMapper {
 
     List<QuestionListResDto> selectQuestionList(
             @Param("categories") List<Long> categories,
+            @Param("lineId") Long lineId,
             @Param("isAnswered") Boolean isAnswered,
             @Param("offset") int offset,
             @Param("size") int size
@@ -32,6 +33,22 @@ public interface QuestionMapper {
 
     Long countQuestionList(
             @Param("categories") List<Long> categories,
+            @Param("lineId") Long lineId,
             @Param("isAnswered") Boolean isAnswered
     );
+
+    List<QuestionListResDto> selectQuestionListAdmin(
+            @Param("categories") List<Long> categories,
+            @Param("isAnswered") Boolean isAnswered,
+            @Param("lineId") Long lineId,
+            @Param("offset") int offset,
+            @Param("size") int size
+    );
+
+    Long countQuestionListAdmin(
+            @Param("categories") List<Long> categories,
+            @Param("isAnswered") Boolean isAnswered,
+            @Param("lineId") Long lineId
+    );
+
 }

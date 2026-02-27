@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,6 +37,9 @@ public class UploadController {
                     description = """
                         업로드 요청 오류
                         
+                        - COMMON:4000 요청 형식 불일치
+                        - COMMON:4001 DTO 유효성 검증 실패
+                        - COMMON:4006 Content-Type 불일치
                         - UPLOAD:4001 요청 값 오류
                         - UPLOAD:4002 파일 개수 초과
                         - UPLOAD:4003 파일 형식 오류
@@ -44,12 +48,17 @@ public class UploadController {
             ),
             @ApiResponse(
                     responseCode = "500",
-                    description = "UPLOAD:5001 - Presigned URL 생성 실패"
+                    description = """
+                        서버 내부 오류
+                        
+                        - COMMON:5000 서버 내부 오류
+                        - UUPLOAD:5001 - Presigned URL 생성 실패
+                        """
             )
     })
     @PostMapping("/presigned-urls")
     public PresignedUrlResDto createPresignedUrls(
-            @RequestBody PresignedUrlReqDto request
+            @Valid @RequestBody PresignedUrlReqDto request
     ) {
         return uploadService.generatePresignedUrls(request);
     }

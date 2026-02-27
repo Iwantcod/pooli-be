@@ -14,7 +14,7 @@ public enum QuestionErrorCode implements ErrorCode {
 
     QUESTION_NOT_FOUND(
             HttpStatus.NOT_FOUND,
-            "QUESTION:4402",
+            "QUESTION:4042",
             "해당 문의사항이 존재하지 않습니다."
     );
 
