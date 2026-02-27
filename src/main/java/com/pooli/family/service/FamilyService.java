@@ -9,9 +9,9 @@ import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 
 public interface FamilyService {
 	
-	FamilyMembersResDto getFamilyMembers(Integer familyId,Integer lineId);
+	FamilyMembersResDto getFamilyMembers(Integer familyId,Long lineId);
 	
-	List<FamilyMembersSimpleResDto> getFamilyMembersSimple(Integer familyId, Integer lineId);
+	List<FamilyMembersSimpleResDto> getFamilyMembersSimple(Integer familyId, Long lineId);
 	
-	Void updateVisibility(Integer lineId, Boolean isPublic);
+	Void updateVisibility(Long lineId, Boolean isPublic);
 }

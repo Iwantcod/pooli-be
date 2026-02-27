@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.family.domain.dto.response.FamilyMembersResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
+import com.pooli.family.error.FamilyErrorCode;
 import com.pooli.family.mapper.FamilyMapper;
 import com.pooli.family.service.FamilyService;
 
@@ -20,11 +21,11 @@ public class FamilyServiceImpl implements FamilyService {
 	
 
 	@Override
-	public FamilyMembersResDto getFamilyMembers(Integer familyId, Integer lineId) {
+	public FamilyMembersResDto getFamilyMembers(Integer familyId, Long lineId) {
 		
 		FamilyMembersResDto header = familyMapper.selectFamilyMembersHeader(familyId, lineId);
 		if (header == null) {
-//		    throw new ApplicationException();
+			throw new ApplicationException(FamilyErrorCode.FAM_NOT_FOUND);
 		}
 		
 		List<FamilyMembersResDto.FamilyMemberDto> members =
@@ -39,12 +40,12 @@ public class FamilyServiceImpl implements FamilyService {
 	}
 
 	@Override
-	public List<FamilyMembersSimpleResDto> getFamilyMembersSimple(Integer familyId, Integer lineId) {
+	public List<FamilyMembersSimpleResDto> getFamilyMembersSimple(Integer familyId, Long lineId) {
 		
 		List<FamilyMembersSimpleResDto> list = familyMapper.selectFamilyMembersSimple(familyId, lineId);
 		
 		if(list.isEmpty()) {
-//			throw new ApplicationException();
+			throw new ApplicationException(FamilyErrorCode.FAM_NOT_FOUND);
 		}
 		
 		
@@ -52,13 +53,13 @@ public class FamilyServiceImpl implements FamilyService {
 	}
 
 	@Override
-	public Void updateVisibility(Integer lineId, Boolean isPublic) {
+	public Void updateVisibility(Long lineId, Boolean isPublic) {
 		
 		// Permission 여부 확인
 		Boolean permissionId = familyMapper.isPermissionEnabledByTitle(lineId, "가족원 정보 공개 여부");
 		
 		if (permissionId == null) {
-//		    throw new ApplicationException();
+			throw new ApplicationException(FamilyErrorCode.FAM_NOT_FOUND);
 		}
 		
 		// 공개 여부 수정

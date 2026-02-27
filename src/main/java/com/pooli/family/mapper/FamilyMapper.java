@@ -13,7 +13,7 @@ public interface FamilyMapper {
 	
 	FamilyMembersResDto selectFamilyMembersHeader(
 		      @Param("familyId") Integer familyId,
-		      @Param("lineId") Integer lineId
+		      @Param("lineId") Long lineId
     );
 
 	List<FamilyMembersResDto.FamilyMemberDto> selectFamilyMembers(
@@ -22,18 +22,18 @@ public interface FamilyMapper {
 	
 	List<FamilyMembersSimpleResDto> selectFamilyMembersSimple(
 	          @Param("familyId") Integer familyId,
-	          @Param("lineId") Integer lineId);
+	          @Param("lineId") Long lineId);
 	
 	
 	
 	
 	Boolean isPermissionEnabledByTitle(
-	     @Param("lineId") Integer lineId,
+	     @Param("lineId") Long lineId,
 	     @Param("title") String title
 	);
 	
 	int updateFamilyLineVisibility(
-	    @Param("lineId") Integer lineId,
+	    @Param("lineId") Long lineId,
 	    @Param("isPublic") Boolean isPublic
 	);
 
