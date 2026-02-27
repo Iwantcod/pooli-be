@@ -3,12 +3,15 @@ package com.pooli.question.controller;
 import java.util.Collections;
 import java.util.List;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.question.domain.dto.response.*;
 import com.pooli.question.service.QuestionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -61,8 +64,10 @@ public class QuestionController {
 					""")
 	})
 	@PostMapping
-	public ResponseEntity<QuestionCreateResDto> createQuestion( @Valid @RequestBody QuestionCreateReqDto request) {
-		QuestionCreateResDto res = questionService.createQuestion(request);
+	public ResponseEntity<QuestionCreateResDto> createQuestion(
+			@AuthenticationPrincipal AuthUserDetails userDetails,
+			@Valid @RequestBody QuestionCreateReqDto request) {
+		QuestionCreateResDto res = questionService.createQuestion(request, userDetails.getLineId());
 		return ResponseEntity.status(HttpStatus.CREATED).body(res);
 	}
 	
@@ -80,6 +85,12 @@ public class QuestionController {
 						 - COMMON:4003 RequestParam 타입 불일치
 						 - COMMON:4004 필수 RequestParam 누락
 					"""),
+		@ApiResponse(responseCode = "403",
+				description = """
+						권한 없음
+						
+						 - COMMON:4302 해당 회선에 대한 접근 권한이 없습니다.
+					"""),
 	    @ApiResponse(responseCode = "404", description = "QUESTION:4042:해당 문의사항이 존재하지 않습니다."),
 		@ApiResponse(responseCode = "500",
 				description = """
@@ -90,8 +101,11 @@ public class QuestionController {
 				""")
 	})
 	@DeleteMapping
-	public ResponseEntity<Void> deleteQuestion(@RequestParam(name="questionId") Long questionId) {
-		questionService.deleteQuestion(questionId);
+	public ResponseEntity<Void> deleteQuestion(
+			@AuthenticationPrincipal AuthUserDetails userDetails,
+			@RequestParam(name="questionId") Long questionId) {
+
+		questionService.deleteQuestion(questionId, userDetails);
 		return ResponseEntity.noContent().build();
 	}
 	
@@ -111,21 +125,27 @@ public class QuestionController {
 					 - COMMON:4008 페이지 크기(size)가 올바르지 않습니다.
 					 - COMMON:4007 페이지 번호가 올바르지 않습니다.
 				"""),
+		@ApiResponse(responseCode = "403",
+				description = """
+						권한 없음
+						
+						 - COMMON:4302 해당 회선에 대한 접근 권한이 없습니다.
+					"""),
 	    @ApiResponse(responseCode = "404", description = "문의사항 정보가 존재하지 않음"),
 	    @ApiResponse(responseCode = "500", description = "서버 오류"),
 	        
 	})
 	@GetMapping("/users")
 	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestion(
+			@AuthenticationPrincipal AuthUserDetails userDetails,
 			@RequestParam(name="categoryIds", required = false) List<Long> categoryIds,
-			@RequestParam(name="lineId") Long lineId,
 			@RequestParam(name="isAnswered", required = false) Boolean isAnswered,
 			@RequestParam(name="pageNumber") Integer page,
 			@RequestParam(name="pageSize") Integer size
 	) {
 
 		PagingResDto<QuestionListResDto> result =
-				questionService.selectQuestion(categoryIds, lineId, isAnswered, page, size);
+				questionService.selectQuestion(categoryIds, userDetails.getLineId(), isAnswered, page, size);
 
 		return ResponseEntity.ok(result);
 	}
@@ -146,12 +166,20 @@ public class QuestionController {
 					 - COMMON:4008 페이지 크기(size)가 올바르지 않습니다.
 					 - COMMON:4007 페이지 번호가 올바르지 않습니다.
 				"""),
+			@ApiResponse(responseCode = "403",
+					description = """
+							권한 없음
+							
+							 - COMMON:4301 관리자 권한이 없습니다.
+						"""),
 			@ApiResponse(responseCode = "404", description = "문의사항 정보가 존재하지 않음"),
 			@ApiResponse(responseCode = "500", description = "서버 오류"),
 
 	})
+	@PreAuthorize("hasRole('ADMIN')")
 	@GetMapping("/admins")
 	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestionAdmin(
+			@AuthenticationPrincipal AuthUserDetails userDetails,
 			@RequestParam(required = false) List<Long> categoryIds,
 			@RequestParam(required = false) Boolean isAnswered,
 			@RequestParam(required = false) Long lineId,
@@ -177,16 +205,26 @@ public class QuestionController {
 					 - COMMON:4003 RequestParam 타입 불일치
 					 - COMMON:4004 필수 RequestParam 누락
 				"""),
+		@ApiResponse(responseCode = "403",
+				description = """
+					권한 없음
+					
+					 - COMMON:4302 해당 회선에 대한 접근 권한이 없습니다.
+				"""),
 	    @ApiResponse(responseCode = "404", description = "문의사항 상세 정보가 존재하지 않음"),
 	    @ApiResponse(responseCode = "500", description = "서버 오류"),
 	        
 	})
 	@GetMapping("/details")
 	public ResponseEntity<QuestionResDto> selectDetailQuestion(
+			@AuthenticationPrincipal AuthUserDetails userDetails,
 			@RequestParam(name="questionId") Long questionId
 			) {
+
+		boolean isAdmin = userDetails.getAuthorities().stream()
+				.anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
 		return ResponseEntity.ok(
-			    questionService.selectDetailQuestion(questionId)
+			    questionService.selectDetailQuestion(questionId, userDetails)
 			);
 	}
 

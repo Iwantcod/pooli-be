@@ -18,10 +18,6 @@ public class QuestionCreateReqDto {
 	@Schema(description = "문의사항 카테고리 ID", example = "2")
 	private Integer questionCategoryId;
 
-	@NotNull(message = "회선 ID는 필수입니다.")
-	@Schema(description = "회선 ID", example = "3")
-	private Long lineId;
-
 	@NotBlank(message = "제목은 비어 있을 수 없습니다.")
 	@Schema(description = "문의사항 제목", example = "요금제 관련 문의드립니다")
 	private String title;

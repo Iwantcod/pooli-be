@@ -1,5 +1,6 @@
 package com.pooli.question.service;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.dto.PagingResDto;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
@@ -50,14 +51,15 @@ public class QuestionServiceImpl implements QuestionService {
 
     @Override
     @Transactional
-    public QuestionCreateResDto createQuestion(QuestionCreateReqDto req) {
+    public QuestionCreateResDto createQuestion(QuestionCreateReqDto req, Long sessionLineId) {
+
 
        int attachmentCount = questionValidationService.validateQuestionCreate(req);
 
         // 1. Question insert
         Question question = Question.builder()
                 .questionCategoryId(req.getQuestionCategoryId())
-                .lineId(req.getLineId())
+                .lineId(sessionLineId)
                 .title(req.getTitle())
                 .content(req.getContent())
                 .isAnswer(false)
@@ -80,16 +82,27 @@ public class QuestionServiceImpl implements QuestionService {
 
     @Override
     @Transactional
-    public void deleteQuestion(Long questionId) {
+    public void deleteQuestion(Long questionId, AuthUserDetails userDetails) {
+        Long sessionLineId = userDetails.getLineId();
+        boolean isAdmin = userDetails.getRoleNames().contains("ROLE_ADMIN");
 
-        int affected = questionMapper.softDeleteQuestion(questionId);
+        // 기본 검증
+        questionValidationService.validateQuestionId(questionId);
 
-        if (affected == 0) {
-            throw new ApplicationException(
-                    QuestionErrorCode.QUESTION_NOT_FOUND
-            );
-        }
+        // 조회
+        Question question = questionMapper.findQuestionById(questionId);
 
+        // 존재 검증
+        questionValidationService.validateQuestionExists(question);
+
+        // 권한 검증
+        questionValidationService.validateOwnerOrAdmin(
+                question.getLineId(),
+                sessionLineId,
+                isAdmin
+        );
+
+        questionMapper.softDeleteQuestion(questionId);
         questionMapper.softDeleteQuestionAttachments(questionId);
     }
 
@@ -107,7 +120,7 @@ public class QuestionServiceImpl implements QuestionService {
 
         int offset = page * size;
 
-        // 2️⃣ 조회
+        //
         List<QuestionListResDto> content =
                 questionMapper.selectQuestionList(categoryIds, lineId, isAnswered, offset, size);
 
@@ -158,13 +171,21 @@ public class QuestionServiceImpl implements QuestionService {
 
     @Override
     @Transactional(readOnly = true)
-    public QuestionResDto selectDetailQuestion(Long questionId) {
+    public QuestionResDto selectDetailQuestion(Long questionId, AuthUserDetails userDetails) {
+        Long sessionLineId = userDetails.getLineId();
+        boolean isAdmin = userDetails.getRoleNames().contains("ROLE_ADMIN");
 
         questionValidationService.validateQuestionId(questionId);
 
         Question question = questionMapper.findQuestionById(questionId);
 
         questionValidationService.validateQuestionExists(question);
+
+        questionValidationService.validateOwnerOrAdmin(
+                question.getLineId(),
+                sessionLineId,
+                isAdmin
+        );
 
         // 2️. 질문 첨부파일 조회
         List<AttachmentResDto> questionAttachments = questionMapper.findQuestionAttachments(questionId)

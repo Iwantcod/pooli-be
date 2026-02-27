@@ -1,5 +1,6 @@
 package com.pooli.question.service;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.dto.PagingResDto;
 import com.pooli.question.domain.dto.request.QuestionCreateReqDto;
 import com.pooli.question.domain.dto.response.QuestionCategoryListResDto;
@@ -11,8 +12,8 @@ import java.util.List;
 
 public interface QuestionService {
     QuestionCategoryListResDto getQuestionCategories();
-    QuestionCreateResDto createQuestion(QuestionCreateReqDto req);
-    void deleteQuestion(Long questionId);
+    QuestionCreateResDto createQuestion(QuestionCreateReqDto req, Long sessionLineId);
+    void deleteQuestion(Long questionId, AuthUserDetails userDetails);
 
     PagingResDto<QuestionListResDto> selectQuestion(
             List<Long> categoryIds,
@@ -30,5 +31,5 @@ public interface QuestionService {
             Integer size
     );
 
-    QuestionResDto selectDetailQuestion(Long questionId);
+    QuestionResDto selectDetailQuestion(Long questionId, AuthUserDetails userDetails);
 }

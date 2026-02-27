@@ -8,4 +8,8 @@ public interface QuestionValidationService {
     int validateQuestionCreate(QuestionCreateReqDto req);
     void validateQuestionId(Long questionId);
     void validateQuestionExists(Question question);
+    void validatePermission(Long questionId, Long sessionLineId);
+    void validateOwnerOrAdmin(Long resourceLineId,
+                              Long sessionLineId,
+                              Boolean isAdmin);
 }

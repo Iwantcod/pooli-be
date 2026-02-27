@@ -46,4 +46,27 @@ public class QuestionValidationServiceImpl implements QuestionValidationService 
             throw new ApplicationException(QuestionErrorCode.QUESTION_NOT_FOUND);
         }
     }
+
+    @Override
+    public void validatePermission(Long lineId,
+                                   Long sessionLineId) {
+
+        if (!lineId.equals(sessionLineId)) {
+            throw new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN);
+        }
+    }
+
+    @Override
+    public void validateOwnerOrAdmin(Long resourceLineId,
+                                     Long sessionLineId,
+                                     Boolean isAdmin) {
+
+        if (Boolean.TRUE.equals(isAdmin)) {
+            return; // admin이면 통과
+        }
+
+        if (!resourceLineId.equals(sessionLineId)) {
+            throw new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN);
+        }
+    }
 }
