@@ -7,7 +7,7 @@ import com.pooli.line.domain.entity.Line;
 import com.pooli.permission.domain.dto.response.RepresentativeRoleTransferResDto;
 import com.pooli.permission.exception.PermissionErrorCode;
 import com.pooli.permission.mapper.FamilyLineMapper;
-import com.pooli.permission.mapper.LineMapper;
+import com.pooli.permission.mapper.LineUserPermissionMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class RoleServiceImpl implements RoleService {
 
-    private final LineMapper lineMapper;
+    private final LineUserPermissionMapper lineUserPermissionMapper;
     private final FamilyLineMapper familyLineMapper;
 
     @Override
@@ -27,10 +27,10 @@ public class RoleServiceImpl implements RoleService {
             throw new ApplicationException(PermissionErrorCode.ROLE_TRANSFER_SELF);
         }
 
-        Line currentLine = lineMapper.findMainLineByUserId(currentUserId)
+        Line currentLine = lineUserPermissionMapper.findMainLineByUserId(currentUserId)
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.ROLE_TRANSFER_SOURCE_NOT_FOUND));
 
-        Line targetLine = lineMapper.findMainLineByUserId(changeUserId)
+        Line targetLine = lineUserPermissionMapper.findMainLineByUserId(changeUserId)
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.ROLE_TRANSFER_TARGET_NOT_FOUND));
 
         FamilyLine currentFamilyLine = familyLineMapper.findByLineId(currentLine.getLineId())
