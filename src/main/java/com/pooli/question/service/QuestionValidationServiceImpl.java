@@ -48,15 +48,6 @@ public class QuestionValidationServiceImpl implements QuestionValidationService 
     }
 
     @Override
-    public void validatePermission(Long lineId,
-                                   Long sessionLineId) {
-
-        if (!lineId.equals(sessionLineId)) {
-            throw new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN);
-        }
-    }
-
-    @Override
     public void validateOwnerOrAdmin(Long resourceLineId,
                                      Long sessionLineId,
                                      Boolean isAdmin) {

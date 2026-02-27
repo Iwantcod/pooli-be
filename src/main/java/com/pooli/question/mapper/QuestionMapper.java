@@ -34,9 +34,6 @@ public interface QuestionMapper {
 
     List<QuestionAttachment> findQuestionAttachments(@Param("questionId") Long questionId);
 
-    Answer findAnswerByQuestionId(@Param("questionId") Long questionId);
-
-    List<AnswerAttachment> findAnswerAttachments(@Param("answerId") Long answerId);
 
     Long countQuestionList(
             @Param("categoryIds") List<Long> categoryIds,
@@ -57,5 +54,8 @@ public interface QuestionMapper {
             @Param("isAnswered") Boolean isAnswered,
             @Param("lineId") Long lineId
     );
+
+    int updateQuestionIsAnswer(@Param("questionId") Long questionId,
+                               @Param("isAnswer") Boolean isAnswer);
 
 }
