@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -50,6 +51,7 @@ public class AdminPolicyController {
    	                 """
    	         )
     })
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     @GetMapping("/all")
     public ResponseEntity<List<AdminPolicyResDto>> getAllPolicies() {
         List<AdminPolicyResDto> response = List.of(
@@ -122,6 +124,7 @@ public class AdminPolicyController {
                 """
         )
     })
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     @PostMapping
     public ResponseEntity<PolicyActivationResDto> activatePolicy(@RequestBody PolicyActivationReqDto request) {
         PolicyActivationResDto response = PolicyActivationResDto.builder()
@@ -174,6 +177,7 @@ public class AdminPolicyController {
                 """
         )
     })
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     @DeleteMapping
     public ResponseEntity<PolicyDeactivationResDto> deactivatePolicy(
             @Parameter(description = "정책 식별자", example = "1003")
@@ -231,6 +235,7 @@ public class AdminPolicyController {
                 """
         )
     })
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     @GetMapping("/lines/apps/usage")
     public ResponseEntity<List<LineAppUsageResDto>> getLineAppUsage(
             @Parameter(description = "회선 식별자", example = "101")
