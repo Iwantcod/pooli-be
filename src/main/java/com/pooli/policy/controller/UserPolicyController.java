@@ -153,7 +153,7 @@ public class UserPolicyController {
             description = "특정 구성원의 반복적 차단 정책을 생성합니다."
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "201", description = "특정 구성원의 반복적 차단 정책 생성 성공"),
+        @ApiResponse(responseCode = "200", description = "요청 성공"),
         @ApiResponse(
             responseCode = "400",
             description = """
@@ -282,7 +282,7 @@ public class UserPolicyController {
             description = "특정 구성원의 반복적 차단 ID 필요. 반복적 차단 정책을 삭제합니다."
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "204", description = "반복적 차단 정책 삭제 성공"),
+        @ApiResponse(responseCode = "200", description = "요청 성공"),
         @ApiResponse(
             responseCode = "400",
             description = """
@@ -814,7 +814,7 @@ public class UserPolicyController {
             description = "가족 대표자만 설정 가능합니다."
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "201", description = "특정 구성원 앱별 정책 신규 생성 요청 성공"),
+        @ApiResponse(responseCode = "200", description = "요청 성공"),
         @ApiResponse(
                 responseCode = "400",
                 description = """
@@ -980,6 +980,7 @@ public class UserPolicyController {
             description = "가족 대표자 권한 필요"
     )
     @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
             @ApiResponse(
                     responseCode = "400",
                     description = """
@@ -1029,6 +1030,7 @@ public class UserPolicyController {
             description = "가족 대표자 권한 필요"
     )
     @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
             @ApiResponse(
                     responseCode = "400",
                     description = """
@@ -1078,6 +1080,7 @@ public class UserPolicyController {
             description = "사용자 권한 필요. 특정 회선에 현재 적용 중인 정책 목록을 조회합니다."
     )
     @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
             @ApiResponse(
                     responseCode = "400",
                     description = """
