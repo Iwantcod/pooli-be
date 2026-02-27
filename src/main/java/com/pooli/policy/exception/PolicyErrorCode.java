@@ -1,5 +1,6 @@
-package com.pooli.common.exception;
+package com.pooli.policy.exception;
 
+import com.pooli.common.exception.ErrorCode;
 import org.springframework.http.HttpStatus;
 
 public enum PolicyErrorCode implements ErrorCode {
