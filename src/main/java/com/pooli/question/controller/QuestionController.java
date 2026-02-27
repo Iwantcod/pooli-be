@@ -221,8 +221,6 @@ public class QuestionController {
 			@RequestParam(name="questionId") Long questionId
 			) {
 
-		boolean isAdmin = userDetails.getAuthorities().stream()
-				.anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
 		return ResponseEntity.ok(
 			    questionService.selectDetailQuestion(questionId, userDetails)
 			);
