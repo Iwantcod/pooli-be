@@ -38,7 +38,7 @@ public class AnwserController {
                 - ANSWER:4001: 이미 답변이 존재합니다
                 """),
             @ApiResponse(responseCode = "403",
-                    description = "삭제 권한 없음"),
+                    description = "COMMON:4302 접근 권한이 없습니다."),
             @ApiResponse(responseCode = "500",
                     description = """
                 서버 오류
@@ -68,7 +68,7 @@ public class AnwserController {
             - COMMON:4000 요청 형식 불일치
             """),
             @ApiResponse(responseCode = "403",
-                    description = "삭제 권한 없음"),
+                    description = "COMMON:4302 접근 권한이 없습니다."),
             @ApiResponse(responseCode = "404",
                     description = "해당 답변 없음"),
             @ApiResponse(responseCode = "500",
