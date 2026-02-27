@@ -1,9 +1,8 @@
 package com.pooli.question.mapper;
 
-import com.pooli.question.domain.dto.QuestionAttachmentDto;
+import com.pooli.question.domain.dto.request.AttachmentReqDto;
 import com.pooli.question.domain.dto.response.QuestionListResDto;
-import com.pooli.question.domain.entity.Question;
-import com.pooli.question.domain.entity.QuestionCategory;
+import com.pooli.question.domain.entity.*;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -17,28 +16,36 @@ public interface QuestionMapper {
     int insertQuestion(Question question); // questionId auto increment
 
     int insertQuestionAttachments(@Param("questionId") Long questionId,
-                          @Param("attachments") List<QuestionAttachmentDto> attachments);
+                          @Param("attachments") List<AttachmentReqDto> attachments);
 
     int softDeleteQuestion(Long questionId);
 
     int softDeleteQuestionAttachments(Long questionId);
 
     List<QuestionListResDto> selectQuestionList(
-            @Param("categories") List<Long> categories,
+            @Param("categoryIds") List<Long> categoryIds,
             @Param("lineId") Long lineId,
             @Param("isAnswered") Boolean isAnswered,
             @Param("offset") int offset,
             @Param("size") int size
     );
 
+    Question findQuestionById(@Param("questionId") Long questionId);
+
+    List<QuestionAttachment> findQuestionAttachments(@Param("questionId") Long questionId);
+
+    Answer findAnswerByQuestionId(@Param("questionId") Long questionId);
+
+    List<AnswerAttachment> findAnswerAttachments(@Param("answerId") Long answerId);
+
     Long countQuestionList(
-            @Param("categories") List<Long> categories,
+            @Param("categoryIds") List<Long> categoryIds,
             @Param("lineId") Long lineId,
             @Param("isAnswered") Boolean isAnswered
     );
 
     List<QuestionListResDto> selectQuestionListAdmin(
-            @Param("categories") List<Long> categories,
+            @Param("categoryIds") List<Long> categoryIds,
             @Param("isAnswered") Boolean isAnswered,
             @Param("lineId") Long lineId,
             @Param("offset") int offset,
@@ -46,7 +53,7 @@ public interface QuestionMapper {
     );
 
     Long countQuestionListAdmin(
-            @Param("categories") List<Long> categories,
+            @Param("categoryIds") List<Long> categoryIds,
             @Param("isAnswered") Boolean isAnswered,
             @Param("lineId") Long lineId
     );

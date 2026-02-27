@@ -5,6 +5,7 @@ import com.pooli.question.domain.dto.request.QuestionCreateReqDto;
 import com.pooli.question.domain.dto.response.QuestionCategoryListResDto;
 import com.pooli.question.domain.dto.response.QuestionCreateResDto;
 import com.pooli.question.domain.dto.response.QuestionListResDto;
+import com.pooli.question.domain.dto.response.QuestionResDto;
 
 import java.util.List;
 
@@ -28,4 +29,6 @@ public interface QuestionService {
             Integer page,
             Integer size
     );
+
+    QuestionResDto selectDetailQuestion(Long questionId);
 }

@@ -31,6 +31,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @RequestMapping("/api/questions")
 public class QuestionController {
 
+	/*TodoList :
+			- Session에 따른 Common validation 추가 시 각자 Session에 따른 유효성 검사 추가 필요
+	* */
+
 	private final QuestionService questionService;
 
 	@Operation(
@@ -97,6 +101,16 @@ public class QuestionController {
 	)
 	@ApiResponses({
 	    @ApiResponse(responseCode = "200", description = "문의사항 조회 성공"),
+		@ApiResponse(responseCode = "400",
+				description = """
+					잘못된 요청
+					
+					 - COMMON:4002 RequestParam 유효성 검증 실패
+					 - COMMON:4003 RequestParam 타입 불일치
+					 - COMMON:4004 필수 RequestParam 누락
+					 - COMMON:4008 페이지 크기(size)가 올바르지 않습니다.
+					 - COMMON:4007 페이지 번호가 올바르지 않습니다.
+				"""),
 	    @ApiResponse(responseCode = "404", description = "문의사항 정보가 존재하지 않음"),
 	    @ApiResponse(responseCode = "500", description = "서버 오류"),
 	        
@@ -116,8 +130,26 @@ public class QuestionController {
 		return ResponseEntity.ok(result);
 	}
 
+	@Operation(
+			summary = "백오피스 문의사항 목록 조회 요청",
+			description = "백오피스 문의사항 목록을 조회한다"
+	)
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "문의사항 조회 성공"),
+			@ApiResponse(responseCode = "400",
+					description = """
+					잘못된 요청
+					
+					 - COMMON:4002 RequestParam 유효성 검증 실패
+					 - COMMON:4003 RequestParam 타입 불일치
+					 - COMMON:4004 필수 RequestParam 누락
+					 - COMMON:4008 페이지 크기(size)가 올바르지 않습니다.
+					 - COMMON:4007 페이지 번호가 올바르지 않습니다.
+				"""),
+			@ApiResponse(responseCode = "404", description = "문의사항 정보가 존재하지 않음"),
+			@ApiResponse(responseCode = "500", description = "서버 오류"),
 
-
+	})
 	@GetMapping("/admins")
 	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestionAdmin(
 			@RequestParam(required = false) List<Long> categoryIds,
@@ -137,6 +169,14 @@ public class QuestionController {
 	)
 	@ApiResponses({
 	    @ApiResponse(responseCode = "200", description = "문의사항 상세 내용 조회 성공"),
+		@ApiResponse(responseCode = "400",
+				description = """
+					잘못된 요청
+					
+					 - COMMON:4002 RequestParam 유효성 검증 실패
+					 - COMMON:4003 RequestParam 타입 불일치
+					 - COMMON:4004 필수 RequestParam 누락
+				"""),
 	    @ApiResponse(responseCode = "404", description = "문의사항 상세 정보가 존재하지 않음"),
 	    @ApiResponse(responseCode = "500", description = "서버 오류"),
 	        
@@ -146,7 +186,7 @@ public class QuestionController {
 			@RequestParam(name="questionId") Long questionId
 			) {
 		return ResponseEntity.ok(
-			    QuestionResDto.builder().build()
+			    questionService.selectDetailQuestion(questionId)
 			);
 	}
 

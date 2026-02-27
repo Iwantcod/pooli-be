@@ -2,8 +2,6 @@ package com.pooli.question.domain.dto.request;
 
 import java.util.List;
 
-import com.pooli.question.domain.dto.QuestionAttachmentDto;
-
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import jakarta.validation.Valid;
@@ -35,5 +33,5 @@ public class QuestionCreateReqDto {
 	@Valid
 	@Size(max = 3, message = "파일은 최대 3개까지 가능합니다.")
 	@Schema(description = "문의사항 첨부 파일 목록")
-	private List<QuestionAttachmentDto> attachments;
+	private List<AttachmentReqDto> attachments;
 }
