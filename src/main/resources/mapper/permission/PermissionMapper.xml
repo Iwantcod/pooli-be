@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.permission.mapper.PermissionMapper">
+
+    <resultMap id="permissionResultMap" type="com.pooli.permission.domain.entity.Permission">
+        <constructor>
+            <idArg column="permission_id"    javaType="java.lang.Integer"/>
+            <arg   column="permission_title" javaType="java.lang.String"/>
+            <arg   column="created_at"       javaType="java.time.LocalDateTime"/>
+            <arg   column="updated_at"       javaType="java.time.LocalDateTime"/>
+            <arg   column="deleted_at"       javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 권한 목록 조회 (삭제되지 않은 것만) -->
+    <select id="findAll" resultMap="permissionResultMap">
+        SELECT permission_id, permission_title, created_at, updated_at, deleted_at
+        FROM PERMISSION
+        WHERE deleted_at IS NULL
+    </select>
+
+    <!-- 권한 단건 조회 -->
+    <select id="findById" resultMap="permissionResultMap">
+        SELECT permission_id, permission_title, created_at, updated_at, deleted_at
+        FROM PERMISSION
+        WHERE permission_id = #{permissionId}
+          AND deleted_at IS NULL
+    </select>
+
+    <!-- 권한 이름 중복 확인 -->
+    <select id="existsByPermissionTitle" resultType="boolean">
+        SELECT COUNT(*) > 0
+        FROM PERMISSION
+        WHERE permission_title = #{permissionTitle}
+          AND deleted_at IS NULL
+    </select>
+
+    <!-- 권한 생성 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="permissionId">
+        INSERT INTO PERMISSION (permission_title, created_at, updated_at)
+        VALUES (#{permissionTitle}, NOW(), NOW())
+    </insert>
+
+    <!-- 권한 이름 수정 -->
+    <update id="updateTitle">
+        UPDATE PERMISSION
+        SET permission_title = #{permissionTitle},
+            updated_at       = NOW()
+        WHERE permission_id = #{permissionId}
+    </update>
+
+    <!-- 권한 삭제 (soft delete) -->
+    <update id="softDelete">
+        UPDATE PERMISSION
+        SET deleted_at = NOW()
+        WHERE permission_id = #{permissionId}
+    </update>
+
+</mapper>
