@@ -30,10 +30,25 @@ public class AdminPolicyController {
             summary = "관리자 기능: 전체 정책 목록 조회",
             description = "관리자 전용. 활성화/비활성화 포함 전체 정책 목록을 조회합니다."
     )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    @ApiResponses({   	 
+            @ApiResponse(responseCode = "200", description = "정책 목록 조회 요청 성공"),
+            @ApiResponse(
+   	             responseCode = "403",
+   	             description = """
+   	                 관리자 권한 오류
+   	                 
+   	                 - COMMON:4301 관리자 권한이 없음
+   	                 """
+   	         ),
+            @ApiResponse(
+   	             responseCode = "500",
+   	             description = """
+   	                 서버 내부 오류
+   	                 
+   	                 - COMMON:5000 서버 내부 오류
+   	                 - COMMON:5001 데이터베이스 오류
+   	                 """
+   	         )
     })
     @GetMapping("/all")
     public ResponseEntity<List<AdminPolicyResDto>> getAllPolicies() {
@@ -64,13 +79,48 @@ public class AdminPolicyController {
     }
 
     @Operation(
-            summary = "관리자 기능: 정책 추가 ( 활성화)",
+            summary = "관리자 기능: 정책 추가 (활성화)",
             description = "관리자 전용. 백오피스에서 정책을 활성화합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+        @ApiResponse(responseCode = "200", description = "정책 활성화 요청 성공"),
+        @ApiResponse(
+            responseCode = "400",
+            description = """
+                잘못된 요청
+                
+                - COMMON:4000 요청 형식 불일치
+                - COMMON:4001 DTO 유효성 검증 실패
+                - COMMON:4006 Content-Type 불일치
+                """
+        ),
+        @ApiResponse(
+            responseCode = "403",
+            description = """
+                관리자 권한 없음
+                
+                - COMMON:4301 관리자 권한이 없음
+                """
+        ),
+        @ApiResponse(
+            responseCode = "409",
+            description = """
+                정책 충돌
+                
+                - POLICY:4901 이미 삭제된 정책
+                - POLICY:4902 이미 활성화된 정책
+                - POLICY:4903 기존의 차단 정책과 충돌
+                """
+        ),
+        @ApiResponse(
+            responseCode = "500",
+            description = """
+                서버 내부 오류
+                
+                - COMMON:5000 서버 내부 오류
+                - COMMON:5001 데이터베이스 오류
+                """
+        )
     })
     @PostMapping
     public ResponseEntity<PolicyActivationResDto> activatePolicy(@RequestBody PolicyActivationReqDto request) {
@@ -83,13 +133,46 @@ public class AdminPolicyController {
     }
 
     @Operation(
-            summary = "관리자 기능: 정책 삭제 ( 비활성화)",
+            summary = "관리자 기능: 정책 삭제 (비활성화)",
             description = "관리자 전용. 백오피스에서 정책을 비활성화합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+        @ApiResponse(responseCode = "200", description = "정책 비활성화 요청 성공"),
+        @ApiResponse(
+            responseCode = "400",
+            description = """
+                잘못된 요청
+                
+                - COMMON:4002 RequestParam 유효성 검증 실패
+                - COMMON:4003 RequestParam 타입 불일치
+                - COMMON:4004 필수 RequestParam 누락
+                """
+        ),
+        @ApiResponse(
+            responseCode = "403",
+            description = """
+                관리자 권한 없음
+                
+                - COMMON:4301 관리자 권한이 없음
+                """
+        ),
+        @ApiResponse(
+            responseCode = "409",
+            description = """
+                정책 충돌
+                
+                - POLICY:4901 이미 삭제된 정책
+                """
+        ),
+        @ApiResponse(
+            responseCode = "500",
+            description = """
+                서버 내부 오류
+                
+                - COMMON:5000 서버 내부 오류
+                - COMMON:5001 데이터베이스 오류
+                """
+        )
     })
     @DeleteMapping
     public ResponseEntity<PolicyDeactivationResDto> deactivatePolicy(
@@ -109,9 +192,44 @@ public class AdminPolicyController {
             description = "관리자 전용. 특정 구성원의 앱별 사용량 통계를 조회합니다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "요청 성공"),
-            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+        @ApiResponse(responseCode = "200", description = "앱별 사용량 통계 조회 요청 성공"),
+        @ApiResponse(
+            responseCode = "400",
+            description = """
+                잘못된 요청
+                
+                - COMMON:4002 RequestParam 유효성 검증 실패
+                - COMMON:4003 RequestParam 타입 불일치
+                - COMMON:4004 필수 RequestParam 누락
+                """
+        ),
+        @ApiResponse(
+            responseCode = "404",
+            description = """
+                리소스를 찾을 수 없음
+                
+                - POLICY:4400 해당 회선이 없음
+                - POLICY:4402 해당 앱 정책 정보가 없음
+                - POLICY:4403 해당 앱 정보가 없음
+                """
+        ),
+        @ApiResponse(
+            responseCode = "403",
+            description = """
+                관리자 권한 없음
+                
+                - COMMON:4301 관리자 권한이 없음
+                """
+        ),
+        @ApiResponse(
+            responseCode = "500",
+            description = """
+                서버 내부 오류
+                
+                - COMMON:5000 서버 내부 오류
+                - COMMON:5001 데이터베이스 오류
+                """
+        )
     })
     @GetMapping("/lines/apps/usage")
     public ResponseEntity<List<LineAppUsageResDto>> getLineAppUsage(
