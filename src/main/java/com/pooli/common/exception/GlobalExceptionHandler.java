@@ -17,6 +17,7 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
@@ -262,6 +263,19 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+    }
+
+    // COMMON-4302: @PreAuthorize 인가 실패
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResDto> handleAccessDeniedException(AccessDeniedException ex) {
+        ErrorResDto body = ErrorResDto.builder()
+                .code(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN.getCode())
+                .message(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN.getMessage())
+                .timestamp(OffsetDateTime.now().toString())
+                .traceId(MDC.get(TRACE_ID_KEY))
+                .build();
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
     // COMMON-5000: 최종 fallback
