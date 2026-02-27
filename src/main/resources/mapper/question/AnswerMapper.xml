@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.question.mapper.AnswerMapper">
+
+    <!-- 답변 첨부파일 soft delete -->
+    <update id="softDeleteAnswerAttachments">
+        UPDATE answer_attachment
+        SET deleted_at = NOW()
+        WHERE answer_id IN (
+        SELECT answer_id
+        FROM answer
+        WHERE question_id = #{questionId}
+        AND deleted_at IS NULL
+        )
+        AND deleted_at IS NULL
+    </update>
+
+    <!-- 답변 soft delete -->
+    <update id="softDeleteAnswers">
+        UPDATE answer
+        SET deleted_at = NOW()
+        WHERE question_id = #{questionId}
+        AND deleted_at IS NULL
+    </update>
+
+</mapper>

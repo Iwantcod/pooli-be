@@ -11,6 +11,7 @@ import com.pooli.question.domain.entity.Answer;
 import com.pooli.question.domain.entity.Question;
 import com.pooli.question.domain.entity.QuestionCategory;
 import com.pooli.question.exception.QuestionErrorCode;
+import com.pooli.question.mapper.AnswerMapper;
 import com.pooli.question.mapper.QuestionMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,7 @@ public class QuestionServiceImpl implements QuestionService {
     private final QuestionMapper questionMapper;
     private final UploadService uploadService;
     private final QuestionValidationService questionValidationService;
+    private final AnswerMapper answerMapper;
 
     @Override
     public QuestionCategoryListResDto getQuestionCategories() {
@@ -102,8 +104,17 @@ public class QuestionServiceImpl implements QuestionService {
                 isAdmin
         );
 
-        questionMapper.softDeleteQuestion(questionId);
+        // 1. 질문 첨부파일 삭제
         questionMapper.softDeleteQuestionAttachments(questionId);
+
+        // 2. 답변 첨부파일 삭제
+        answerMapper.softDeleteAnswerAttachments(questionId);
+
+        // 3. 답변 삭제
+        answerMapper.softDeleteAnswers(questionId);
+
+        // 4. 질문 삭제
+        questionMapper.softDeleteQuestion(questionId);
     }
 
     @Override

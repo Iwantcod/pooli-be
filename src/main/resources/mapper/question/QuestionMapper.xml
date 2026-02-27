@@ -42,7 +42,6 @@
         UPDATE question
         SET deleted_at = NOW()
         WHERE question_id = #{questionId}
-        AND line_id = #{lineId}
         AND deleted_at IS NULL
     </update>
 
