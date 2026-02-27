@@ -1,0 +1,31 @@
+name: "Enforce: only dev -> main"
+
+on:
+  pull_request:
+    # PR 이벤트 발생 시 트리거
+    # 새 PR 생성, 닫혔다가 다시 열린 PR, PR에 새로운 커밋이 push된 경우에 트리거
+    types: [opened, reopened, synchronize, edited]
+
+jobs:
+  # action 식별자: 'enforce'
+  enforce:
+    # base가 main인 PR 에서만 검사
+    if: github.event.pull_request.base.ref == 'main'
+    # Github가 제공하는 Hosted Runner라는 가상머신에서 실행
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Verify head is 'dev' when base is 'main'
+        run: |
+          BASE="${{ github.event.pull_request.base.ref }}"
+          HEAD="${{ github.event.pull_request.head.ref }}"
+          echo "base=$BASE head=$HEAD"
+
+          if [ "$BASE" = "main" ] && [ "$HEAD" != "dev" ]; then
+            echo "Only 'dev' branch may open PRs into 'main'."
+            exit 1
+          fi
+
+          echo "Rule passed."

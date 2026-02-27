@@ -66,3 +66,22 @@ springdoc:
 app:
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
+
+# ==========================================================
+# AWS S3 CONFIG
+# 로컬 전용 세팅 후 Ec2 사용 시 지우기
+# ==========================================================
+cloud:
+  aws:
+    s3:
+      bucket: pooli-s3-bucket
+    region: ap-southeast-2
+# Spring Actuator 헬스 체크 설정(경로: GET [origin]/actuator/health)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
