@@ -68,9 +68,9 @@
         AND line_id = #{lineId}
 
         <!--  category optional -->
-        <if test="categories != null and categories.size() > 0">
+        <if test="categoryIds != null and categoryIds.size() > 0">
             AND question_category_id IN
-            <foreach collection="categories" item="cat" open="(" separator="," close=")">
+            <foreach collection="categoryIds" item="cat" open="(" separator="," close=")">
                 #{cat}
             </foreach>
         </if>
@@ -93,9 +93,9 @@
 
         AND line_id = #{lineId}
 
-        <if test="categories != null and categories.size() > 0">
+        <if test="categoryIds != null and categoryIds.size() > 0">
             AND question_category_id IN
-            <foreach collection="categories" item="cat" open="(" separator="," close=")">
+            <foreach collection="categoryIds" item="cat" open="(" separator="," close=")">
                 #{cat}
             </foreach>
         </if>
@@ -123,9 +123,9 @@
         </if>
 
         <!-- category optional -->
-        <if test="categories != null and categories.size() > 0">
+        <if test="categoryIds != null and categoryIds.size() > 0">
             AND question_category_id IN
-            <foreach collection="categories" item="cat" open="(" separator="," close=")">
+            <foreach collection="categoryIds" item="cat" open="(" separator="," close=")">
                 #{cat}
             </foreach>
         </if>
@@ -149,9 +149,9 @@
             AND line_id = #{lineId}
         </if>
 
-        <if test="categories != null and categories.size() > 0">
+        <if test="categoryIds != null and categoryIds.size() > 0">
             AND question_category_id IN
-            <foreach collection="categories" item="cat" open="(" separator="," close=")">
+            <foreach collection="categoryIds" item="cat" open="(" separator="," close=")">
                 #{cat}
             </foreach>
         </if>
@@ -159,6 +159,60 @@
         <if test="isAnswered != null">
             AND is_answer = #{isAnswered}
         </if>
+    </select>
+
+    <!-- 질문 조회 -->
+    <select id="findQuestionById" resultType="com.pooli.question.domain.entity.Question">
+        SELECT
+        question_id,
+        question_category_id,
+        line_id,
+        title,
+        content,
+        is_answer,
+        created_at
+        FROM question
+        WHERE question_id = #{questionId}
+        AND deleted_at IS NULL
+    </select>
+
+    <!-- 질문 첨부파일 조회 -->
+    <select id="findQuestionAttachments" resultType="com.pooli.question.domain.entity.QuestionAttachment">
+        SELECT
+        question_attachment_id,
+        question_id,
+        s3_key,
+        file_size,
+        created_at
+        FROM question_attachment
+        WHERE question_id = #{questionId}
+        AND deleted_at IS NULL
+    </select>
+
+    <!-- 답변 조회 -->
+    <select id="findAnswerByQuestionId" resultType="com.pooli.question.domain.entity.Answer">
+        SELECT
+        answer_id,
+        user_id,
+        question_id,
+        content,
+        created_at
+        FROM answer
+        WHERE question_id = #{questionId}
+        AND deleted_at IS NULL
+    </select>
+
+    <!-- 답변 첨부파일 조회 -->
+    <select id="findAnswerAttachments" resultType="com.pooli.question.domain.entity.AnswerAttachment">
+        SELECT
+        answer_attachment_id,
+        answer_id,
+        s3_key,
+        file_size,
+        created_at
+        FROM answer_attachment
+        WHERE answer_id = #{answerId}
+        AND deleted_at IS NULL
     </select>
 
 </mapper>
