@@ -42,6 +42,7 @@ public class UserPolicyController {
         ),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
+    @PreAuthorize("hasRole('ROLE_OWNER')")
     @GetMapping
     public ResponseEntity<List<ActivePolicyResDto>> getActivePolicies() {
         List<ActivePolicyResDto> response = List.of(
@@ -92,6 +93,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
+    @PreAuthorize("hasRole('ROLE_OWNER')")
     @GetMapping("/lines/repeat-block")
     public ResponseEntity<List<RepeatBlockPolicyResDto>> getReBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
@@ -160,6 +162,7 @@ public class UserPolicyController {
         ),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
+    @PreAuthorize("hasRole('ROLE_OWNER')")
     @PostMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> createReBlockPolicies(
             @RequestBody RepeatBlockPolicyReqDto request
@@ -202,6 +205,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "409", description = "정책 충돌"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
+    @PreAuthorize("hasRole('ROLE_OWNER')")
     @PatchMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> updateReBlockPolicies(
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
@@ -241,6 +245,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "409", description = "정책 충돌"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
+    @PreAuthorize("hasRole('ROLE_OWNER')")
     @DeleteMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> deleteReBlockPolicies(
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
@@ -276,6 +281,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
+    @PreAuthorize("hasRole('ROLE_OWNER')")
     @GetMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> getImBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
@@ -321,6 +327,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "409", description = "정책 충돌"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
+    @PreAuthorize("hasRole('ROLE_OWNER')")
     @PatchMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> updateImBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
