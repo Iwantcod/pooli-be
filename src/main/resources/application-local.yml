@@ -13,6 +13,10 @@ spring:
     hikari:
       # Do not fail app startup immediately when DB is unavailable
       initialization-fail-timeout: ${DB_INIT_FAIL_TIMEOUT}
+      maximum-pool-size: 20
+      connection-timeout: 5000
+      minimum-idle: 10
+
   flyway:
     enabled: ${FLYWAY_ENABLED}
     locations: classpath:db/migration
