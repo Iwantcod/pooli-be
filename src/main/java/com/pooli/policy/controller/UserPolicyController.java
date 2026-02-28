@@ -1,8 +1,10 @@
 package com.pooli.policy.controller;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.policy.domain.dto.request.*;
 import com.pooli.policy.domain.dto.response.*;
 import com.pooli.policy.domain.enums.DayOfWeek;
+import com.pooli.policy.service.UserPolicyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -13,6 +15,7 @@ import java.time.LocalTime;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -26,6 +29,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/policies")
 public class UserPolicyController {
+
+    private final UserPolicyService userPolicyService;
+
+    public UserPolicyController(UserPolicyService userPolicyService) {
+        this.userPolicyService = userPolicyService;
+    }
 
     @Operation(
             summary = "백오피스에서 '활성화'한 전체 정책 목록 조회",
@@ -42,7 +51,7 @@ public class UserPolicyController {
         ),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping
     public ResponseEntity<List<ActivePolicyResDto>> getActivePolicies() {
         List<ActivePolicyResDto> response = List.of(
@@ -93,7 +102,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/repeat-block")
     public ResponseEntity<List<RepeatBlockPolicyResDto>> getReBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
@@ -162,7 +171,7 @@ public class UserPolicyController {
         ),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PostMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> createReBlockPolicies(
             @RequestBody RepeatBlockPolicyReqDto request
@@ -205,7 +214,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "409", description = "정책 충돌"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> updateReBlockPolicies(
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
@@ -245,7 +254,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "409", description = "정책 충돌"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @DeleteMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> deleteReBlockPolicies(
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
@@ -281,7 +290,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> getImBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
@@ -327,7 +336,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "409", description = "정책 충돌"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> updateImBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
@@ -365,13 +374,15 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/limits")
     public ResponseEntity<LimitPolicyResDto> getLimitPolicies(
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId
-    ) {
-        return ResponseEntity.ok(LimitPolicyResDto.builder().build());
+            @RequestParam Long lineId,
+            @AuthenticationPrincipal AuthUserDetails auth
+            ) {
+        LimitPolicyResDto answer = userPolicyService.getLimitPolicy(lineId, auth);
+        return ResponseEntity.ok(answer);
     }
 
     @Operation(
@@ -401,7 +412,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "409", description = "정책 충돌"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/days/limits/enable-toggles")
     public ResponseEntity<LimitPolicyResDto> toggleDayLimitPolicy(
             @Parameter(description = "회선 식별자", example = "1")
@@ -438,7 +449,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "409", description = "정책 충돌"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/days/limits")
     public ResponseEntity<LimitPolicyResDto> updateDayLimitPolicy(
             @RequestBody LimitPolicyUpdateReqDto request
@@ -472,7 +483,7 @@ public class UserPolicyController {
 	    @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
 	    @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/shares/limits/enable-toggles")
     public ResponseEntity<LimitPolicyResDto> toggleShareLimitPolicy(
             @Parameter(description = "회선 식별자", example = "1")
@@ -509,7 +520,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "409", description = "정책 충돌"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/shares/limits")
     public ResponseEntity<LimitPolicyResDto> updateShareLimitPolicy(
             @RequestBody LimitPolicyUpdateReqDto request
@@ -543,7 +554,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/apps")
     public ResponseEntity<List<AppPolicyResDto>> getAppPolicies(
             @Parameter(description = "회선 식별자", example = "101")
@@ -603,7 +614,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "409", description = "정책 충돌"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PostMapping("/lines/apps")
     public ResponseEntity<AppPolicyResDto> createAppPolicy(
             @RequestBody AppPolicyCreateReqDto request
@@ -638,7 +649,7 @@ public class UserPolicyController {
 	    @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
 	    @ApiResponse(responseCode = "500", description = "서버 내부 오류")
 	})
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/apps/limits")
     public ResponseEntity<AppPolicyResDto> updateAppPolicyLimit(
             @RequestBody AppDataLimitUpdateReqDto request
@@ -673,7 +684,7 @@ public class UserPolicyController {
 	    @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
 	    @ApiResponse(responseCode = "500", description = "서버 내부 오류")
 	})
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/apps/speeds")
     public ResponseEntity<AppPolicyResDto> updateAppPolicySpeed(
             @RequestBody AppSpeedLimitUpdateReqDto request
@@ -708,7 +719,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/apps/enable-toggles")
     public ResponseEntity<Void> toggleAppPolicyEnable(
             @Parameter(description = "앱 정책 식별자", example = "154")
@@ -742,7 +753,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @DeleteMapping("/lines/apps")
     public ResponseEntity<Void> deleteAppPolicy(
             @Parameter(description = "앱 정책 식별자", example = "154")
@@ -776,7 +787,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('ROLE_OWNER')")
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/applied")
     public ResponseEntity<AppliedPolicyResDto> getAppliedPoliciesByLine(
             @Parameter(description = "회선 식별자", example = "101")
