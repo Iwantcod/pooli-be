@@ -36,19 +36,10 @@ public class UserPolicyController {
             responseCode = "403",
             description = """
                 가족 대표자 권한 없음
-                
                 - COMMON:4300 가족 대표자 권한 없음
                 """
         ),
-        @ApiResponse(
-            responseCode = "500",
-            description = """
-                서버 내부 오류
-                
-                - COMMON:5000 서버 내부 오류 발생
-                - COMMON:5001 데이터베이스 오류
-                """
-        )
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping
     public ResponseEntity<List<ActivePolicyResDto>> getActivePolicies() {
@@ -85,7 +76,6 @@ public class UserPolicyController {
             responseCode = "400",
             description = """
                 잘못된 요청
-                
                 - COMMON:4002 RequestParam 유효성 검증 실패
                 - COMMON:4003 RequestParam 타입 불일치
                 - COMMON:4004 필수 RequestParam 누락
@@ -95,27 +85,11 @@ public class UserPolicyController {
             responseCode = "403",
             description = """
                 가족 대표자 권한 없음
-                
                 - COMMON:4300 가족 대표자 권한이 없음
                 """
         ),
-        @ApiResponse(
-            responseCode = "404",
-            description = """
-                리소스를 찾을 수 없음
-                
-                - POLICY:4400 해당 회선이 없음
-                """
-        ),
-        @ApiResponse(
-            responseCode = "500",
-            description = """
-                서버 내부 오류
-                
-                - COMMON:5000 서버 내부 오류 발생
-                - COMMON:5001 데이터베이스 오류
-                """
-        )
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/lines/repeat-block")
     public ResponseEntity<List<RepeatBlockPolicyResDto>> getReBlockPolicies(
@@ -175,31 +149,15 @@ public class UserPolicyController {
                 - COMMON:4300 가족 대표자 권한이 없음
                 """
         ),
-        @ApiResponse(
-            responseCode = "404",
-            description = """
-                리소스를 찾을 수 없음
-                
-                - POLICY:4400 해당 회선이 없음
-                """
-        ),
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
         @ApiResponse(
             responseCode = "409",
             description = """
                 정책 충돌
-                
                 - POLICY:4904 기존의 차단 정책과 충돌
                 """
         ),
-        @ApiResponse(
-            responseCode = "500",
-            description = """
-                서버 내부 오류
-                
-                - COMMON:5000 서버 내부 오류 발생
-                - COMMON:5001 데이터베이스 오류
-                """
-        )
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PostMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> createReBlockPolicies(
@@ -236,35 +194,12 @@ public class UserPolicyController {
             responseCode = "403",
             description = """
                 가족 대표자 권한 없음
-                
                 - COMMON:4300 가족 대표자 권한이 없음
                 """
         ),
-        @ApiResponse(
-            responseCode = "404",
-            description = """
-                리소스를 찾을 수 없음
-                
-                - POLICY:4401 해당 반복적 차단 정보가 없음
-                """
-        ),
-        @ApiResponse(
-            responseCode = "409",
-            description = """
-                정책 충돌
-                
-                - POLICY:4904 기존의 차단 정책과 충돌
-                """
-        ),
-        @ApiResponse(
-            responseCode = "500",
-            description = """
-                서버 내부 오류
-                
-                - COMMON:5000 서버 내부 오류 발생
-                - COMMON:5001 데이터베이스 오류
-                """
-        )
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "409", description = "정책 충돌"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PatchMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> updateReBlockPolicies(
@@ -301,31 +236,9 @@ public class UserPolicyController {
                 - COMMON:4300 가족 대표자 권한이 없음
                 """
         ),
-        @ApiResponse(
-            responseCode = "404",
-            description = """
-                리소스를 찾을 수 없음
-                
-                - POLICY:4401 해당 반복적 차단 정보가 없음
-                """
-        ),
-        @ApiResponse(
-            responseCode = "409",
-            description = """
-                정책 충돌
-                
-                - POLICY:4901 이미 삭제된 정책
-                """
-        ),
-        @ApiResponse(
-            responseCode = "500",
-            description = """
-                서버 내부 오류
-                
-                - COMMON:5000 서버 내부 오류 발생
-                - COMMON:5001 데이터베이스 오류
-                """
-        )
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "409", description = "정책 충돌"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @DeleteMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> deleteReBlockPolicies(
@@ -346,7 +259,6 @@ public class UserPolicyController {
                 responseCode = "400",
                 description = """
                     잘못된 요청
-                    
                     - COMMON:4002 RequestParam 유효성 검증 실패
                     - COMMON:4003 RequestParam 타입 불일치
                     - COMMON:4004 필수 RequestParam 누락
@@ -360,23 +272,8 @@ public class UserPolicyController {
                     - COMMON:4300 가족 대표자 권한이 없음
                     """
             ),
-        @ApiResponse(
-                responseCode = "404",
-                description = """
-                    리소스를 찾을 수 없음
-                    
-                    - POLICY:4400 해당 회선이 없음
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "500",
-                description = """
-                    서버 내부 오류
-                    
-                    - COMMON:5000 서버 내부 오류 발생
-                    - COMMON:5001 데이터베이스 오류
-                    """
-            )
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> getImBlockPolicies(
@@ -416,35 +313,12 @@ public class UserPolicyController {
                 responseCode = "403",
                 description = """
                     가족 대표자 권한 없음
-                    
                     - COMMON:4300 가족 대표자 권한이 없음
                     """
             ),
-        @ApiResponse(
-                responseCode = "404",
-                description = """
-                    리소스를 찾을 수 없음
-                    
-                    - POLICY:4400 해당 회선이 없음
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "409",
-                description = """
-                    정책 충돌
-                    
-                    - POLICY:4904 기존의 차단 정책과 충돌
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "500",
-                description = """
-                    서버 내부 오류
-                    
-                    - COMMON:5000 서버 내부 오류 발생
-                    - COMMON:5001 데이터베이스 오류
-                    """
-            )
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "409", description = "정책 충돌"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PatchMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> updateImBlockPolicies(
@@ -481,23 +355,8 @@ public class UserPolicyController {
                     - COMMON:4300 가족 대표자 권한이 없음
                     """
             ),
-        @ApiResponse(
-                responseCode = "404",
-                description = """
-                    리소스를 찾을 수 없음
-                    
-                    - POLICY:4400 해당 회선이 없음
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "500",
-                description = """
-                    서버 내부 오류
-                    
-                    - COMMON:5000 서버 내부 오류 발생
-                    - COMMON:5001 데이터베이스 오류
-                    """
-            )
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/lines/limits")
     public ResponseEntity<LimitPolicyResDto> getLimitPolicies(
@@ -530,31 +389,9 @@ public class UserPolicyController {
                     - COMMON:4300 가족 대표자 권한이 없음
                     """
             ),
-        @ApiResponse(
-                responseCode = "404",
-                description = """
-                    리소스를 찾을 수 없음
-                    
-                    - POLICY:4400 해당 회선이 없음
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "409",
-                description = """
-                    정책 충돌
-                    
-                    - POLICY:4902 이미 활성화된 정책
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "500",
-                description = """
-                    서버 내부 오류
-                    
-                    - COMMON:5000 서버 내부 오류 발생
-                    - COMMON:5001 데이터베이스 오류
-                    """
-            )
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "409", description = "정책 충돌"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PatchMapping("/lines/days/limits/enable-toggles")
     public ResponseEntity<LimitPolicyResDto> toggleDayLimitPolicy(
@@ -575,7 +412,6 @@ public class UserPolicyController {
                 responseCode = "400",
                 description = """
                     잘못된 요청
-                    
                     - COMMON:4000 요청 형식 불일치
                     - COMMON:4001 요청 DTO 필드 유효성 검증 실패
                     - COMMON:4006 Content-Type 불일치
@@ -586,35 +422,12 @@ public class UserPolicyController {
                 responseCode = "403",
                 description = """
                     가족 대표자 권한 없음
-                    
                     - COMMON:4300 가족 대표자 권한이 없음
                     """
             ),
-        @ApiResponse(
-                responseCode = "404",
-                description = """
-                    리소스를 찾을 수 없음
-                    
-                    - POLICY:4400 해당 회선이 없음
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "409",
-                description = """
-                    정책 충돌
-                    
-                    - POLICY:4903 활성화되지 않은 정책
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "500",
-                description = """
-                    서버 내부 오류
-                    
-                    - COMMON:5000 서버 내부 오류 발생
-                    - COMMON:5001 데이터베이스 오류
-                    """
-            )
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "409", description = "정책 충돌"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PatchMapping("/lines/days/limits")
     public ResponseEntity<LimitPolicyResDto> updateDayLimitPolicy(
@@ -634,7 +447,6 @@ public class UserPolicyController {
 	            responseCode = "400",
 	            description = """
 	                잘못된 요청
-	                
 	                - COMMON:4002 RequestParam 유효성 검증 실패
 	                - COMMON:4003 RequestParam 타입 불일치
 	                - COMMON:4004 필수 RequestParam 누락
@@ -644,27 +456,11 @@ public class UserPolicyController {
 	            responseCode = "403",
 	            description = """
 	                가족 대표자 권한 없음
-	                
 	                - COMMON:4300 가족 대표자 권한이 없음
 	                """
 	        ),
-	    @ApiResponse(
-	            responseCode = "404",
-	            description = """
-	                리소스를 찾을 수 없음
-	                
-	                - POLICY:4400 해당 회선이 없음
-	                """
-	        ),
-	    @ApiResponse(
-	            responseCode = "500",
-	            description = """
-	                서버 내부 오류
-	                
-	                - COMMON:5000 서버 내부 오류 발생
-	                - COMMON:5001 데이터베이스 오류
-	                """
-	    )
+	    @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+	    @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PatchMapping("/lines/shares/limits/enable-toggles")
     public ResponseEntity<LimitPolicyResDto> toggleShareLimitPolicy(
@@ -685,7 +481,6 @@ public class UserPolicyController {
                 responseCode = "400",
                 description = """
                     잘못된 요청
-                    
                     - COMMON:4000 요청 형식 불일치
                     - COMMON:4001 요청 DTO 필드 유효성 검증 실패
                     - COMMON:4006 Content-Type 불일치
@@ -696,35 +491,12 @@ public class UserPolicyController {
                 responseCode = "403",
                 description = """
                     가족 대표자 권한 없음
-                    
                     - COMMON:4300 가족 대표자 권한이 없음
                     """
             ),
-        @ApiResponse(
-                responseCode = "404",
-                description = """
-                    리소스를 찾을 수 없음
-                    
-                    - POLICY:4400 해당 회선이 없음
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "409",
-                description = """
-                    정책 충돌
-                    
-                    - POLICY:4903 활성화되지 않은 정책
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "500",
-                description = """
-                    서버 내부 오류
-                    
-                    - COMMON:5000 서버 내부 오류 발생
-                    - COMMON:5001 데이터베이스 오류
-                    """
-            )
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "409", description = "정책 충돌"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PatchMapping("/lines/shares/limits")
     public ResponseEntity<LimitPolicyResDto> updateShareLimitPolicy(
@@ -744,7 +516,6 @@ public class UserPolicyController {
                 responseCode = "400",
                 description = """
                     잘못된 요청
-                        
 	                - COMMON:4002 RequestParam 유효성 검증 실패
 	                - COMMON:4003 RequestParam 타입 불일치
 	                - COMMON:4004 필수 RequestParam 누락
@@ -754,29 +525,11 @@ public class UserPolicyController {
                 responseCode = "403",
                 description = """
                     가족 대표자 권한 없음
-                    
                     - COMMON:4300 가족 대표자 권한이 없음
                     """
             ),
-        @ApiResponse(
-                responseCode = "404",
-                description = """
-                    리소스를 찾을 수 없음
-                    
-                    - POLICY:4400 해당 회선이 없음
-                    - POLICY:4402 해당 앱 정책 정보가 없음
-                    - POLICY:4403 해당 앱 정보가 없음
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "500",
-                description = """
-                    서버 내부 오류
-                    
-                    - COMMON:5000 서버 내부 오류 발생
-                    - COMMON:5001 데이터베이스 오류
-                    """
-            )
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/lines/apps")
     public ResponseEntity<List<AppPolicyResDto>> getAppPolicies(
@@ -833,32 +586,9 @@ public class UserPolicyController {
                     - COMMON:4300 가족 대표자 권한이 없음
                     """
             ),
-        @ApiResponse(
-                responseCode = "404",
-                description = """
-                    리소스를 찾을 수 없음
-                    
-                    - POLICY:4400 해당 회선이 없음
-                    - POLICY:4403 해당 앱 정보가 없음
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "409",
-                description = """
-                    정책 충돌
-                    
-                    - POLICY:4904 기존의 차단 정책과 충돌
-                    """
-            ),
-        @ApiResponse(
-                responseCode = "500",
-                description = """
-                    서버 내부 오류
-                    
-                    - COMMON:5000 서버 내부 오류 발생
-                    - COMMON:5001 데이터베이스 오류
-                    """
-            )
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "409", description = "정책 충돌"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PostMapping("/lines/apps")
     public ResponseEntity<AppPolicyResDto> createAppPolicy(
@@ -878,7 +608,6 @@ public class UserPolicyController {
 	            responseCode = "400",
 	            description = """
 	            	잘못된 요청
-	            		
 	                - COMMON:4000 요청 형식 불일치
 	                - COMMON:4001 DTO 유효성 검증 실패
 	                - COMMON:4006 Content-Type 불일치
@@ -889,29 +618,11 @@ public class UserPolicyController {
 	            responseCode = "403",
 	            description = """
 	                가족 대표자 권한 없음
-	                
 	                - COMMON:4300 가족 대표자 권한이 없음
 	                """
 	        ),
-	    @ApiResponse(
-	            responseCode = "404",
-	            description = """
-	                리소스를 찾을 수 없음
-	                
-	                - POLICY:4400 해당 회선이 없음
-	                - POLICY:4402 해당 앱 정책 정보가 없음
-	                - POLICY:4403 해당 앱 정보가 없음
-	                """
-	        ),
-	    @ApiResponse(
-	            responseCode = "500",
-	            description = """
-	                서버 내부 오류
-	                
-	                - COMMON:5000 서버 내부 오류 발생
-	                - COMMON:5001 데이터베이스 오류
-	                """
-	        )
+	    @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+	    @ApiResponse(responseCode = "500", description = "서버 내부 오류")
 	})
     @PatchMapping("/lines/apps/limits")
     public ResponseEntity<AppPolicyResDto> updateAppPolicyLimit(
@@ -931,7 +642,6 @@ public class UserPolicyController {
 	            responseCode = "400",
 	            description = """
 	            	잘못된 요청
-	            	
 	                - COMMON:4000 요청 형식 불일치
 	                - COMMON:4001 DTO 유효성 검증 실패
 	                - COMMON:4006 Content-Type 불일치
@@ -942,29 +652,11 @@ public class UserPolicyController {
 	            responseCode = "403",
 	            description = """
 	                가족 대표자 권한 없음
-	                
 	                - COMMON:4300 가족 대표자 권한이 없음
 	                """
 	        ),
-	    @ApiResponse(
-	            responseCode = "404",
-	            description = """
-	                리소스를 찾을 수 없음
-	                
-	                - POLICY:4400 해당 회선이 없음
-	                - POLICY:4402 해당 앱 정책 정보가 없음
-	                - POLICY:4403 해당 앱 정보가 없음
-	                """
-	        ),
-	    @ApiResponse(
-	            responseCode = "500",
-	            description = """
-	                서버 내부 오류
-	                
-	                - COMMON:5000 서버 내부 오류 발생
-	                - COMMON:5001 데이터베이스 오류
-	                """
-	        )
+	    @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+	    @ApiResponse(responseCode = "500", description = "서버 내부 오류")
 	})
     @PatchMapping("/lines/apps/speeds")
     public ResponseEntity<AppPolicyResDto> updateAppPolicySpeed(
@@ -985,7 +677,6 @@ public class UserPolicyController {
                     responseCode = "400",
                     description = """
             잘못된 요청
-            
             - COMMON:4002 RequestParam 유효성 검증 실패
             - COMMON:4003 RequestParam 타입 불일치
             - COMMON:4004 필수 RequestParam 누락
@@ -995,27 +686,11 @@ public class UserPolicyController {
                     responseCode = "401",
                     description = """
             권한이 없음
-            
             - COMMON:4300 가족 대표자 권한이 없습니다.
             """
             ),
-            @ApiResponse(
-                    responseCode = "404",
-                    description = """
-            리소스를 찾을 수 없음
-            
-            - POLICY:4402 해당 앱 정책 정보가 존재하지 않습니다.
-            """
-            ),
-            @ApiResponse(
-                    responseCode = "500",
-                    description = """
-            서버 내부 오류
-            
-            - COMMON:5000 서버 내부 오류 발생
-            - COMMON:5001 데이터베이스 오류
-            """
-            )
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @PatchMapping("/lines/apps/enable-toggles")
     public ResponseEntity<Void> toggleAppPolicyEnable(
@@ -1035,7 +710,6 @@ public class UserPolicyController {
                     responseCode = "400",
                     description = """
             잘못된 요청
-            
             - COMMON:4002 RequestParam 유효성 검증 실패
             - COMMON:4003 RequestParam 타입 불일치
             - COMMON:4004 필수 RequestParam 누락
@@ -1045,27 +719,11 @@ public class UserPolicyController {
                     responseCode = "401",
                     description = """
             권한이 없음
-            
             - COMMON:4300 가족 대표자 권한이 없습니다.
             """
             ),
-            @ApiResponse(
-                    responseCode = "404",
-                    description = """
-            리소스를 찾을 수 없음
-            
-            - POLICY:4402 해당 앱 정책 정보가 존재하지 않습니다.
-            """
-            ),
-            @ApiResponse(
-                    responseCode = "500",
-                    description = """
-            서버 내부 오류
-            
-            - COMMON:5000 서버 내부 오류 발생
-            - COMMON:5001 데이터베이스 오류
-            """
-            )
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @DeleteMapping("/lines/apps")
     public ResponseEntity<Void> deleteAppPolicy(
@@ -1085,7 +743,6 @@ public class UserPolicyController {
                     responseCode = "400",
                     description = """
             잘못된 요청
-            
             - COMMON:4002 RequestParam 유효성 검증 실패
             - COMMON:4003 RequestParam 타입 불일치
             - COMMON:4004 필수 RequestParam 누락
@@ -1095,27 +752,11 @@ public class UserPolicyController {
                     responseCode = "401",
                     description = """
             권한이 없음
-            
             - COMMON:4300 가족 대표자 권한이 없습니다.
             """
             ),
-            @ApiResponse(
-                    responseCode = "404",
-                    description = """
-            리소스를 찾을 수 없음
-            
-            - POLICY:4400 해당 회선이 존재하지 않습니다.
-            """
-            ),
-            @ApiResponse(
-                    responseCode = "500",
-                    description = """
-            서버 내부 오류
-            
-            - COMMON:5000 서버 내부 오류 발생
-            - COMMON:5001 데이터베이스 오류
-            """
-            )
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/lines/applied")
     public ResponseEntity<AppliedPolicyResDto> getAppliedPoliciesByLine(
