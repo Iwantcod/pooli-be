@@ -71,6 +71,15 @@ public enum CommonErrorCode implements ErrorCode {
             "페이지 크기(size)가 올바르지 않습니다."
     ),
 
+    
+
+	/* 401 UnAuthorized */
+    UNAUTHORIZED(
+            HttpStatus.UNAUTHORIZED,
+            "COMMON:4101",
+            "로그인이 필요합니다."
+    ),
+    
 
 	/* 403 Forbidden */
 
