@@ -30,6 +30,16 @@
           AND line_id = #{lineId}
     </select>
 
+    <select id="findAllFamilyIdByLineId" parameterType="long" resultType="long">
+        SELECT line_id
+        FROM FAMILY_LINE
+        WHERE family_id = (
+            SELECT family_id
+            FROM FAMILY_LINE
+            WHERE line_id = #{lineId}
+        );
+    </select>
+
     <!-- 역할 변경 (OWNER <-> MEMBER) -->
     <update id="updateRole">
         UPDATE FAMILY_LINE
