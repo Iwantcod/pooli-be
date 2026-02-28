@@ -68,7 +68,7 @@ public class UploadServiceImpl implements UploadService {
 
         GetObjectPresignRequest presignRequest =
                 GetObjectPresignRequest.builder()
-                        .signatureDuration(Duration.ofMinutes(5))
+                        .signatureDuration(Duration.ofMinutes(10))
                         .getObjectRequest(getObjectRequest)
                         .build();
 
