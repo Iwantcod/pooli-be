@@ -1,5 +1,8 @@
 package com.pooli.permission.service;
 
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.family.domain.entity.FamilyLine;
 import com.pooli.family.domain.enums.FamilyRole;
@@ -8,9 +11,8 @@ import com.pooli.permission.domain.dto.response.RepresentativeRoleTransferResDto
 import com.pooli.permission.exception.PermissionErrorCode;
 import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.LineUserPermissionMapper;
+
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor

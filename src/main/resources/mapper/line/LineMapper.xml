@@ -23,6 +23,7 @@
         line
     WHERE
         user_id = #{userId}
+        AND deleted_at IS NULL
     ORDER BY
         CASE WHEN line_id = #{lineId} THEN 0 ELSE 1 END,
         line_id ASC

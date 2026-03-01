@@ -21,17 +21,17 @@ public interface LineMapper {
     Long findOwnerUserIdByLineId(@Param("lineId") Long lineId);
 	
 	List<LineSimpleResDto> selectLinesByUserId(
-	          @Param("userId") Integer userId,
-	          @Param("lineId") Integer lineId
+	          @Param("userId") Long userId,
+	          @Param("lineId") Long lineId
 	  );
 	
 	IndividualThresholdResDto selectIndividualThresholdByLineId(
-            @Param("lineId") Integer lineId
+            @Param("lineId") Long lineId
     );
 	
 	
 	int updateIndividualThreshold(
-	          @Param("lineId") Integer lineId,
+	          @Param("lineId") Long lineId,
 	          @Param("individualThreshold") Integer individualThreshold,
 	          @Param("isThresholdActive") Boolean isThresholdActive
 	  );
