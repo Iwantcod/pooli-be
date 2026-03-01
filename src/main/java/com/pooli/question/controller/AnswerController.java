@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/answers")
-public class AnwserController {
+public class AnswerController {
 
     private final AnswerService answerService;
 
@@ -37,7 +37,7 @@ public class AnwserController {
                 - COMMON:4001 요청 DTO 필드 유효성 검증 실패
                 - ANSWER:4001: 이미 답변이 존재합니다
                 """),
-            @ApiResponse(responseCode = "430",
+            @ApiResponse(responseCode = "403",
                     description = "COMMON:4302 접근 권한이 없습니다."),
             @ApiResponse(responseCode = "500",
                     description = """
@@ -67,7 +67,7 @@ public class AnwserController {
             잘못된 요청
             - COMMON:4000 요청 형식 불일치
             """),
-            @ApiResponse(responseCode = "430",
+            @ApiResponse(responseCode = "403",
                     description = "COMMON:4302 접근 권한이 없습니다."),
             @ApiResponse(responseCode = "404",
                     description = "해당 답변 없음"),
@@ -81,8 +81,7 @@ public class AnwserController {
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping
     public ResponseEntity<Void> deleteAnswer(
-            @RequestParam Long answerId,
-            @AuthenticationPrincipal AuthUserDetails userDetails
+            @RequestParam Long answerId
     ) {
         answerService.deleteAnswer(answerId);
         return ResponseEntity.noContent().build();

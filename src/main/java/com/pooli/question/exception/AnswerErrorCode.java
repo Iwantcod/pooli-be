@@ -14,7 +14,7 @@ public enum AnswerErrorCode implements ErrorCode {
     // 답변 존재하지 않음
     ANSWER_NOT_FOUND(
             HttpStatus.NOT_FOUND,
-            "ANSWER:4041",
+            "ANSWER:4401",
             "해당 답변이 존재하지 않습니다."
     );
 
