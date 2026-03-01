@@ -5,7 +5,6 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.pooli.policy.domain.dto.request.RepeatBlockDayReqDto;
 import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
 
@@ -18,10 +17,6 @@ public interface RepeatBlockMapper {
 	 // 특정 구성원의 반복적 차단 정책 생성 -> 반복적 차단 정보 생성
 	 int insertRepeatBlock(RepeatBlockPolicyReqDto request);
 
-    // 특정 구성원의 반복적 차단 정책 생성 -> 반복적 차단 차단 요일/시간대 정보 생성
-    int insertRepeatBlockDays(@Param("repeatBlockId") Long repeatBlockId,
-                              @Param("days") List<RepeatBlockDayReqDto> days);
-    
      // 특정 구성원의 반복적 차단 정책 수정 -> 로직 결정 후 수정하기
 	 int updateRepeatBlock(@Param("repeatBlockId") Long repeatBlockId, RepeatBlockPolicyReqDto request);
 	 

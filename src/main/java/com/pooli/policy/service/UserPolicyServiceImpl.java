@@ -24,6 +24,7 @@ import com.pooli.policy.domain.dto.response.RepeatBlockDayResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
 import com.pooli.policy.exception.PolicyErrorCode;
 import com.pooli.policy.mapper.PolicyBackOfficeMapper;
+import com.pooli.policy.mapper.RepeatBlockDayMapper;
 import com.pooli.policy.mapper.RepeatBlockMapper;
 
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
     private final PolicyBackOfficeMapper policyBackOfficeMapper;
     private final RepeatBlockMapper repeatBlockMapper;
+    private final RepeatBlockDayMapper repeatBlockDayMapper;
     private final FamilyLineMapper familyLineMapper;
     
 	@Override
@@ -44,7 +46,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	@Override
 	public List<RepeatBlockPolicyResDto> getRepeatBlockPolicies(Long lineId, AuthUserDetails auth) {
-		 // OWNER 검증(세션에서 확인)
+		
+		// OWNER 검증(세션에서 확인)
 	    boolean isOwner = auth.getRoleNames().contains("ROLE_FAM_OWNER");
 	    if (!isOwner) {
 	        throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
@@ -62,12 +65,18 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     @Transactional
 	public RepeatBlockPolicyResDto createRepeatBlockPolicy(RepeatBlockPolicyReqDto request, AuthUserDetails auth) {
 
+		// OWNER 검증(세션에서 확인)
+	    boolean isOwner = auth.getRoleNames().contains("ROLE_FAM_OWNER");
+	    if (!isOwner) {
+	        throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
+	    }
+	    
 		// 반복적 차단 정보 생성
 		repeatBlockMapper.insertRepeatBlock(request);
 		
 		// 반복적 차단 요일, 시간 생성
         if (request.getDays() != null && !request.getDays().isEmpty()) {
-            repeatBlockMapper.insertRepeatBlockDays(request.getRepeatBlockId(), request.getDays());
+        	repeatBlockDayMapper.insertRepeatBlockDays(request.getRepeatBlockId(), request.getDays());
         }
         
         List<RepeatBlockDayResDto> dayResList = request.getDays() != null
@@ -97,7 +106,13 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	@Override
 	public RepeatBlockPolicyResDto deleteRepeatBlockPolicy(Long repeatBlockId, AuthUserDetails auth) {
-		
+
+		// OWNER 검증(세션에서 확인)
+	    boolean isOwner = auth.getRoleNames().contains("ROLE_FAM_OWNER");
+	    if (!isOwner) {
+	        throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
+	    }
+	    
 	    RepeatBlockPolicyResDto policy = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
 	    if (policy == null) {
 	    	// error code 로직 확인해서 변경 필요
@@ -112,7 +127,13 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	@Override
 	public ImmediateBlockResDto getImmediateBlockPolicy(Long lineId, AuthUserDetails auth) {
-		// TODO Auto-generated method stub
+
+		// OWNER 검증(세션에서 확인)
+	    boolean isOwner = auth.getRoleNames().contains("ROLE_FAM_OWNER");
+	    if (!isOwner) {
+	        throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
+	    }
+	    
 		return null;
 	}
 
