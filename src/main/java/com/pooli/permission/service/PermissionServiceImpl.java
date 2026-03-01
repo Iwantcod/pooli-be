@@ -59,7 +59,7 @@ public class PermissionServiceImpl implements PermissionService {
         permissionMapper.findById(permissionId)
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.PERMISSION_NOT_FOUND));
 
-        if (permissionMapper.existsByPermissionTitle(title)) {
+        if (permissionMapper.existsByPermissionTitleExcludingId(title, permissionId)) {
             throw new ApplicationException(PermissionErrorCode.DUPLICATE_PERMISSION_TITLE);
         }
 
