@@ -34,12 +34,14 @@ public class PermissionServiceImpl implements PermissionService {
     @Override
     @Transactional
     public PermissionResDto createPermission(PermissionReqDto reqDto) {
-        if (permissionMapper.existsByPermissionTitle(reqDto.getPermissionTitle())) {
+        String title = reqDto.getPermissionTitle().trim();
+
+        if (permissionMapper.existsByPermissionTitle(title)) {
             throw new ApplicationException(PermissionErrorCode.DUPLICATE_PERMISSION_TITLE);
         }
 
         Permission permission = Permission.builder()
-                .permissionTitle(reqDto.getPermissionTitle())
+                .permissionTitle(title)
                 .build();
         permissionMapper.insert(permission);
 
@@ -52,12 +54,14 @@ public class PermissionServiceImpl implements PermissionService {
     @Override
     @Transactional
     public PermissionResDto updatePermissionTitle(Integer permissionId, PermissionReqDto reqDto) {
+        String title = reqDto.getPermissionTitle().trim();
+
         permissionMapper.findById(permissionId)
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.PERMISSION_NOT_FOUND));
 
         permissionMapper.updateTitle(Permission.builder()
                 .permissionId(permissionId)
-                .permissionTitle(reqDto.getPermissionTitle())
+                .permissionTitle(title)
                 .build());
 
         return permissionMapper.findById(permissionId)
