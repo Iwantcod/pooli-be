@@ -46,7 +46,6 @@ public class AlarmSettingController {
                 서버 오류
                 - COMMON:5000 서버 내부 오류 발생
                 - COMMON:5001 데이터베이스 오류
-                - ALARM:5001 알람 설정 변경 중 오류 발생 
                 """)
 	})
 	@PatchMapping
@@ -76,7 +75,6 @@ public class AlarmSettingController {
                 서버 오류
                 - COMMON:5000 서버 내부 오류 발생
                 - COMMON:5001 데이터베이스 오류
-                - ALARM:5001 알람 설정 변경 중 오류 발생 
                 """)
 	})
 	@GetMapping

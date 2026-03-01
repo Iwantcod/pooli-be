@@ -1,10 +1,8 @@
 package com.pooli.notification.service;
 
-import com.pooli.common.exception.ApplicationException;
 import com.pooli.notification.domain.dto.response.AlarmSettingResDto;
 import com.pooli.notification.domain.entity.AlarmSetting;
 import com.pooli.notification.domain.enums.AlarmType;
-import com.pooli.notification.exception.AlarmSettingErrorCode;
 import com.pooli.notification.mapper.AlarmSettingMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
