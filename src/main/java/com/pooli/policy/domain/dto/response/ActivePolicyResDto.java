@@ -20,4 +20,8 @@ public class ActivePolicyResDto {
 
     @Schema(description = "정책 설명", example = "22:00부터 06:00까지 데이터 사용을 차단합니다.")
     private String description;
+    
+    @Schema(description = "신규 정책 여부", example = "true")
+    private Boolean isNew;
+    
 }

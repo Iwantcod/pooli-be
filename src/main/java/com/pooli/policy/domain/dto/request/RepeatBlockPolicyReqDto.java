@@ -11,6 +11,9 @@ import lombok.Setter;
 @Schema(description = "반복적 차단 정책 수정 요청")
 public class RepeatBlockPolicyReqDto {
 	
+	@Schema(description = "반복적 차단 정보 ID", example = "1")
+    private Long repeatBlockId;
+	
 	@Schema(description = "활성화 상태", example = "false")
 	private Boolean isActive;
 	
