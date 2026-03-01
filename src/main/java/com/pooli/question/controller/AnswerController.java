@@ -29,7 +29,7 @@ public class AnswerController {
             description = "사용자의 문의사항에 대한 답변을 생성한다"
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "답변 생성 성공"),
+            @ApiResponse(responseCode = "200", description = "답변 생성 성공"),
             @ApiResponse(responseCode = "400",
                     description = """
                 잘못된 요청
