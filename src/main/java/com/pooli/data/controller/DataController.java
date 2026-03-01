@@ -1,23 +1,40 @@
 package com.pooli.data.controller;
 
+import java.util.List;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.data.domain.dto.request.DataTransferReqDto;
 import com.pooli.data.domain.dto.response.AppDataUsageResDto;
 import com.pooli.data.domain.dto.response.DataBalancesResDto;
 import com.pooli.data.domain.dto.response.MonthlyDataUsageResDto;
+import com.pooli.data.service.DataService;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
+import jakarta.validation.constraints.NotNull;
+import lombok.RequiredArgsConstructor;
 
 @Tag(name = "Data", description = "데이터 관련 API")
+@Validated
 @RestController
+@RequiredArgsConstructor
 @RequestMapping("/api/data")
 public class DataController {
+	
+	private final DataService dataService;
 
     @Operation(
             summary = "데이터 이체",
@@ -37,8 +54,8 @@ public class DataController {
     }
 
     @Operation(
-            summary = "월별 데이터 사용량 조회",
-            description = "특정 회선의 최근 n개월 데이터 사용량 및 평균 사용량을 조회한다."
+            summary = "3개월 간 데이터 사용량 조회",
+            description = "특정 회선의 특정 월 기준 최근 3개월(해당 월 포함) 데이터 사용량 및 평균 사용량을 조회한다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
@@ -49,42 +66,19 @@ public class DataController {
     @GetMapping("/usages/monthly")
     public ResponseEntity<MonthlyDataUsageResDto> getMonthlyDataUsage(
             @Parameter(description = "회선 ID", example = "1")
-            @RequestParam Integer lineId,
+            @RequestParam(required = true) @NotNull Long lineId,
 
-            @Parameter(description = "조회 개월 수", example = "3")
-            @RequestParam Integer month
+            @Parameter(description = "조회 기준 월", example = "202601")
+            @RequestParam(required = true) @NotNull Integer month
     ) {
-
-        List<MonthlyDataUsageResDto.MonthlyUsageDto> usages = List.of(
-                MonthlyDataUsageResDto.MonthlyUsageDto.builder()
-                        .yearMonth("2026-01")
-                        .usedAmount(1000L)
-                        .build(),
-                MonthlyDataUsageResDto.MonthlyUsageDto.builder()
-                        .yearMonth("2026-02")
-                        .usedAmount(1500L)
-                        .build(),
-                MonthlyDataUsageResDto.MonthlyUsageDto.builder()
-                        .yearMonth("2026-03")
-                        .usedAmount(1100L)
-                        .build()
-        );
-
-        Long average = usages.stream()
-                .mapToLong(MonthlyDataUsageResDto.MonthlyUsageDto::getUsedAmount)
-                .sum() / usages.size();
-
-        MonthlyDataUsageResDto response = MonthlyDataUsageResDto.builder()
-                .usages(usages)
-                .averageAmount(average)
-                .build();
-
+    	
+    	MonthlyDataUsageResDto response = dataService.getMonthlyDataUsage(lineId , month);
         return ResponseEntity.ok(response);
     }
 
     @Operation(
-            summary = "앱 서비스별 데이터 사용량 조회",
-            description = "특정 회선의 앱 서비스별 데이터 사용량 및 총 사용량을 조회한다."
+            summary = "기준 월 앱 서비스별 데이터 사용량 조회",
+            description = "특정 회선의 당월 앱 서비스별 데이터 사용량 및 총 사용량을 조회한다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
@@ -94,34 +88,15 @@ public class DataController {
     })
     @GetMapping("/usages/apps")
     public ResponseEntity<AppDataUsageResDto> getAppDataUsage(
+    		@AuthenticationPrincipal AuthUserDetails principal,
             @Parameter(description = "회선 ID", example = "1")
-            @RequestParam Integer lineId
+            @RequestParam Long lineId,
+            @Parameter(description = "기준 월", example = "202601")
+    		@RequestParam Integer month
     ) {
-
-        List<AppDataUsageResDto.AppUsageDto> apps = List.of(
-                AppDataUsageResDto.AppUsageDto.builder()
-                        .appName("YouTube")
-                        .usedAmount(2000L)
-                        .build(),
-                AppDataUsageResDto.AppUsageDto.builder()
-                        .appName("Instagram")
-                        .usedAmount(1500L)
-                        .build(),
-                AppDataUsageResDto.AppUsageDto.builder()
-                        .appName("Netflix")
-                        .usedAmount(1700L)
-                        .build()
-        );
-
-        Long total = apps.stream()
-                .mapToLong(AppDataUsageResDto.AppUsageDto::getUsedAmount)
-                .sum();
-
-        AppDataUsageResDto response = AppDataUsageResDto.builder()
-                .totalUsedAmount(total)
-                .apps(apps)
-                .build();
-
+    	
+    	
+    	AppDataUsageResDto response = dataService.getAppDataUsage(lineId, month);
         return ResponseEntity.ok(response);
     }
 

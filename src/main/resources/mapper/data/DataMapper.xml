@@ -5,4 +5,39 @@
   
  <mapper namespace="com.pooli.data.mapper.DataMapper">
  
+	<select id="findRecentMonthlyUsageByLineId"
+	        resultType="com.pooli.data.domain.dto.response.MonthlyDataUsageResDto$MonthlyUsageDto">
+	    SELECT
+	        DATE_FORMAT(d.usage_date, '%Y-%m') AS yearMonth,
+	        COALESCE(SUM(d.total_usage_data), 0) AS usedAmount
+	    FROM DAILY_TOTAL_DATA d
+	    WHERE d.line_id = #{lineId}
+	      AND d.deleted_at IS NULL
+	      AND d.usage_date &gt;= DATE_SUB(
+	            STR_TO_DATE(CONCAT(#{month}, '01'), '%Y%m%d'),
+	            INTERVAL 2 MONTH
+	      )
+	      AND d.usage_date &lt; DATE_ADD(
+	            STR_TO_DATE(CONCAT(#{month}, '01'), '%Y%m%d'),
+	            INTERVAL 1 MONTH
+	      )
+	    GROUP BY DATE_FORMAT(d.usage_date, '%Y-%m')
+	    ORDER BY yearMonth DESC
+	</select>
+	 
+	<select id="findAppDataUsageByLineIdAndMonth"
+	              resultType="com.pooli.data.domain.dto.response.AppDataUsageResDto$AppUsageDto">
+          SELECT
+              a.application_name AS appName,
+              COALESCE(SUM(d.total_usage_data), 0) AS usedAmount
+          FROM DAILY_APP_TOTAL_DATA d
+          INNER JOIN APPLICATION a
+              ON a.application_id = d.application_id
+          WHERE d.line_id = #{lineId}
+            AND d.usage_date >= STR_TO_DATE(CONCAT(#{month}, '01'), '%Y%m%d')
+            AND d.usage_date &lt; DATE_ADD(STR_TO_DATE(CONCAT(#{month}, '01'), '%Y%m%d'), INTERVAL 1 MONTH)
+          GROUP BY a.application_id, a.application_name
+          ORDER BY usedAmount DESC
+      </select>
+ 
  </mapper>
