@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -74,7 +75,7 @@ public class MemberPermissionController {
             @ApiResponse(responseCode = "400", description = """
                     요청 값 오류
 
-                    - PERMISSION-4002: 권한 활성화 값(isEnable)이 누락되었습니다.
+                    - COMMON:4001: 권한 ID는 필수입니다. / 권한 활성화 여부(is_enable)는 필수입니다.
                     """),
             @ApiResponse(responseCode = "403", description = """
                     권한 없음
@@ -97,7 +98,7 @@ public class MemberPermissionController {
     public ResponseEntity<MemberPermissionResDto> updateMemberPermission(
             @Parameter(description = "가족 ID", example = "10") @RequestParam Long familyId,
             @Parameter(description = "회선 ID", example = "1001") @RequestParam Long lineId,
-            @RequestBody MemberPermissionUpsertReqDto memberPermissionUpsertReqDto) {
+            @Valid @RequestBody MemberPermissionUpsertReqDto memberPermissionUpsertReqDto) {
         return ResponseEntity.ok(memberPermissionService.updateMemberPermission(familyId, lineId,
                 memberPermissionUpsertReqDto));
     }

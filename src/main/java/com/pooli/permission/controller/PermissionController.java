@@ -101,6 +101,11 @@ public class PermissionController {
 
                     - PERMISSION-4400: 해당 권한 정보가 존재하지 않습니다.
                     """),
+            @ApiResponse(responseCode = "409", description = """
+                    중복 충돌
+
+                    - PERMISSION-4900: 이미 존재하는 권한 이름입니다.
+                    """),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @PreAuthorize("hasRole('ADMIN')")

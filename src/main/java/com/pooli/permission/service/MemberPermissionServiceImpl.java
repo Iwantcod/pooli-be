@@ -52,10 +52,6 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
     @Override
     @Transactional
     public MemberPermissionResDto updateMemberPermission(Long familyId, Long lineId, MemberPermissionUpsertReqDto reqDto) {
-        if (reqDto.getIsEnable() == null) {
-            throw new ApplicationException(PermissionErrorCode.PERMISSION_IS_ENABLE_MISSING);
-        }
-
         permissionMapper.findById(reqDto.getPermissionId())
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.PERMISSION_NOT_FOUND));
 
