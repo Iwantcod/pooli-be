@@ -46,6 +46,17 @@
           AND p.deleted_at IS NULL
     </select>
 
+    <!-- 권한명 기반 활성화 여부 조회 -->
+    <select id="isPermissionEnabledByTitle" resultType="boolean">
+        SELECT CASE WHEN COUNT(1) > 0 THEN TRUE ELSE FALSE END
+        FROM PERMISSION_LINE pl
+                 JOIN PERMISSION p ON pl.permission_id = p.permission_id
+        WHERE pl.line_id = #{lineId}
+          AND p.permission_title = #{permissionTitle}
+          AND p.deleted_at IS NULL
+          AND pl.is_enable = TRUE
+    </select>
+
     <!-- 구성원 권한 변경 (없으면 INSERT, 있으면 UPDATE) -->
     <insert id="upsert">
         INSERT INTO PERMISSION_LINE (line_id, permission_id, is_enable, created_at, updated_at)
