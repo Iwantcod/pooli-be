@@ -23,6 +23,7 @@ import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockDayResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
 import com.pooli.policy.exception.PolicyErrorCode;
+import com.pooli.policy.mapper.ImmediateBlockMapper;
 import com.pooli.policy.mapper.PolicyBackOfficeMapper;
 import com.pooli.policy.mapper.RepeatBlockDayMapper;
 import com.pooli.policy.mapper.RepeatBlockMapper;
@@ -36,6 +37,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     private final PolicyBackOfficeMapper policyBackOfficeMapper;
     private final RepeatBlockMapper repeatBlockMapper;
     private final RepeatBlockDayMapper repeatBlockDayMapper;
+    private final ImmediateBlockMapper immediateBlockMapper;
     private final FamilyLineMapper familyLineMapper;
     
 	@Override
@@ -134,14 +136,35 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	        throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
 	    }
 	    
-		return null;
+	    ImmediateBlockResDto immBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
+	       
+	    if(immBlock == null) {
+	    	return null;
+	    }
+	    
+	    return ImmediateBlockResDto.builder()
+	    		.lineId(lineId)
+	    		.blockEndAt(immBlock.getBlockEndAt())
+	    		.build();
+	
 	}
 
 	@Override
 	public ImmediateBlockResDto updateImmediateBlockPolicy(Long lineId, ImmediateBlockReqDto request,
 			AuthUserDetails auth) {
-		// TODO Auto-generated method stub
-		return null;
+		
+		// OWNER 검증(세션에서 확인)
+	    boolean isOwner = auth.getRoleNames().contains("ROLE_FAM_OWNER");
+	    if (!isOwner) {
+	        throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
+	    }
+	    		
+	    immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
+	    
+        return ImmediateBlockResDto.builder()
+        		.lineId(lineId)
+        		.blockEndAt(request.getBlockEndAt())
+        		.build();
 	}
 
 	@Override
