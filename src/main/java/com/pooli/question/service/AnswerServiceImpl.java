@@ -1,6 +1,10 @@
 package com.pooli.question.service;
 
 import com.pooli.common.exception.ApplicationException;
+import com.pooli.line.mapper.LineMapper;
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.domain.service.AlarmHistoryService;
 import com.pooli.question.domain.dto.request.AnswerCreateReqDto;
 import com.pooli.question.domain.dto.request.AttachmentReqDto;
 import com.pooli.question.domain.dto.response.AnswerCreateResDto;
@@ -23,6 +27,8 @@ public class AnswerServiceImpl implements AnswerService {
     private final AnswerMapper answerMapper;
     private final QuestionMapper questionMapper;
     private final QuestionValidationService questionValidationService;
+    private final AlarmHistoryService alarmHistoryService;
+    private final LineMapper lineMapper;
 
 
     @Transactional
@@ -62,7 +68,9 @@ public class AnswerServiceImpl implements AnswerService {
         }
 
         // 3. 질문 isAnswer 업데이트
+        Long questionUserId = lineMapper.findOwnerUserIdByLineId(question.getLineId());
         questionMapper.updateQuestionIsAnswer(req.getQuestionId(), true);
+        alarmHistoryService.createAlarm(questionUserId,AlarmCode.QUESTION, AlarmType.ANSWER, null);
 
         // 4. 응답 DTO 반환
         return AnswerCreateResDto.builder()
