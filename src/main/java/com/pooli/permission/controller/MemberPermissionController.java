@@ -65,8 +65,9 @@ public class MemberPermissionController {
     @GetMapping
     public ResponseEntity<MemberPermissionListResDto> getMemberPermissions(
             @Parameter(description = "가족 ID", example = "10") @RequestParam Long familyId,
-            @Parameter(description = "회선 ID", example = "1001") @RequestParam Long lineId) {
-        return ResponseEntity.ok(memberPermissionService.getMemberPermissions(familyId, lineId));
+            @Parameter(description = "회선 ID", example = "1001") @RequestParam Long lineId,
+            @AuthenticationPrincipal AuthUserDetails userDetails) {
+        return ResponseEntity.ok(memberPermissionService.getMemberPermissions(familyId, lineId, userDetails));
     }
 
     @Operation(summary = "구성원 권한 부여 변경", description = "가족관리자 또는 관리자가 familyId와 lineId를 기준으로 권한 식별자와 활성화 여부(is_enable)를 변경한다.")
@@ -98,8 +99,9 @@ public class MemberPermissionController {
     public ResponseEntity<MemberPermissionResDto> updateMemberPermission(
             @Parameter(description = "가족 ID", example = "10") @RequestParam Long familyId,
             @Parameter(description = "회선 ID", example = "1001") @RequestParam Long lineId,
-            @Valid @RequestBody MemberPermissionUpsertReqDto memberPermissionUpsertReqDto) {
+            @Valid @RequestBody MemberPermissionUpsertReqDto memberPermissionUpsertReqDto,
+            @AuthenticationPrincipal AuthUserDetails userDetails) {
         return ResponseEntity.ok(memberPermissionService.updateMemberPermission(familyId, lineId,
-                memberPermissionUpsertReqDto));
+                memberPermissionUpsertReqDto, userDetails));
     }
 }

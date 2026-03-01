@@ -1,6 +1,9 @@
 package com.pooli.permission.service;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
+import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.family.domain.enums.FamilyRole;
 import com.pooli.permission.domain.dto.request.MemberPermissionUpsertReqDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionListResDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionResDto;
@@ -38,7 +41,9 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
     //  구성원 권한 목록 조회
     @Override
     @Transactional(readOnly = true)
-    public MemberPermissionListResDto getMemberPermissions(Long familyId, Long lineId) {
+    public MemberPermissionListResDto getMemberPermissions(Long familyId, Long lineId, AuthUserDetails userDetails) {
+        validateFamilyOwnership(familyId, userDetails);
+
         familyLineMapper.findByFamilyIdAndLineId(familyId, lineId)
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.FAMILY_LINE_MAPPING_NOT_FOUND));
 
@@ -51,7 +56,9 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
     //  구성원 권한 변경
     @Override
     @Transactional
-    public MemberPermissionResDto updateMemberPermission(Long familyId, Long lineId, MemberPermissionUpsertReqDto reqDto) {
+    public MemberPermissionResDto updateMemberPermission(Long familyId, Long lineId, MemberPermissionUpsertReqDto reqDto, AuthUserDetails userDetails) {
+        validateFamilyOwnership(familyId, userDetails);
+
         permissionMapper.findById(reqDto.getPermissionId())
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.PERMISSION_NOT_FOUND));
 
@@ -65,5 +72,18 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
                 .filter(p -> p.getPermissionId().equals(reqDto.getPermissionId()))
                 .findFirst()
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.MEMBER_PERMISSION_APPLY_ERROR));
+    }
+
+    // ADMIN이면 통과, FAMILY_OWNER면 요청한 familyId에 본인이 OWNER로 속해있는지 DB 확인
+    private void validateFamilyOwnership(Long familyId, AuthUserDetails userDetails) {
+        boolean isAdmin = userDetails.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        if (isAdmin) {
+            return;
+        }
+
+        familyLineMapper.findByFamilyIdAndLineId(familyId, userDetails.getLineId())
+                .filter(fl -> fl.getRole() == FamilyRole.OWNER)
+                .orElseThrow(() -> new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN));
     }
 }
