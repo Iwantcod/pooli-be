@@ -1,6 +1,6 @@
 package com.pooli.notification.domain.entity;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import com.pooli.notification.domain.enums.AlarmCode;
 
@@ -20,7 +20,7 @@ public class AlarmHistory {
 	Long userId;
 	AlarmCode alarmCode;
 	String value;
-	LocalDate createdAt;
-	LocalDate deletedAt;
-	LocalDate readAt;
+	LocalDateTime  createdAt;
+	LocalDateTime deletedAt;
+	LocalDateTime  readAt;
 }
