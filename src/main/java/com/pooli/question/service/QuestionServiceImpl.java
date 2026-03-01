@@ -131,7 +131,7 @@ public class QuestionServiceImpl implements QuestionService {
 
         int offset = page * size;
 
-        //
+
         List<QuestionListResDto> content =
                 questionMapper.selectQuestionList(categoryIds, lineId, isAnswered, offset, size);
 
@@ -209,21 +209,13 @@ public class QuestionServiceImpl implements QuestionService {
 
         // 3️. 답변 조회
         AnswerResDto answerDto = null;
-        Answer answer = questionMapper.findAnswerByQuestionId(questionId);
+        Answer answer = answerMapper.findAnswerByQuestionId(questionId);
         if (answer != null) {
-            List<AttachmentResDto> answerAttachments = questionMapper.findAnswerAttachments(answer.getAnswerId())
+            List<AttachmentResDto> answerAttachments = answerMapper.findAnswerAttachments(answer.getAnswerId())
                     .stream()
                     .map(att -> AttachmentResDto.builder()
-                            .url(
-                                    att.getS3Key() != null
-                                            ? uploadService.generateGetPresignedUrl(att.getS3Key())
-                                            : null
-                            )
-                            .fileSize(
-                                    att.getFileSize() != null
-                                            ? att.getFileSize()
-                                            : null
-                            )
+                            .url(att.getS3Key() != null ? uploadService.generateGetPresignedUrl(att.getS3Key()) : null)
+                            .fileSize(att.getFileSize())
                             .build())
                     .toList();
 
@@ -244,11 +236,7 @@ public class QuestionServiceImpl implements QuestionService {
                 .title(question.getTitle())
                 .content(question.getContent())
                 .isAnswer(question.getIsAnswer())
-                .createdAt(
-                        question.getCreatedAt() != null
-                                ? question.getCreatedAt().toLocalDate()
-                                : null
-                )
+                .createdAt(question.getCreatedAt())
                 .attachments(questionAttachments)
                 .answer(answerDto)
                 .build();

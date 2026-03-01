@@ -34,10 +34,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @RequestMapping("/api/questions")
 public class QuestionController {
 
-	/*TodoList :
-			- Session에 따른 Common validation 추가 시 각자 Session에 따른 유효성 검사 추가 필요
-	* */
-
 	private final QuestionService questionService;
 
 	@Operation(

@@ -189,30 +189,13 @@
         AND deleted_at IS NULL
     </select>
 
-    <!-- 답변 조회 -->
-    <select id="findAnswerByQuestionId" resultType="com.pooli.question.domain.entity.Answer">
-        SELECT
-        answer_id,
-        user_id,
-        question_id,
-        content,
-        created_at
-        FROM answer
+
+    <!-- 질문 isAnswer 업데이트 -->
+    <update id="updateQuestionIsAnswer">
+        UPDATE question
+        SET is_answer = #{isAnswer}
         WHERE question_id = #{questionId}
         AND deleted_at IS NULL
-    </select>
-
-    <!-- 답변 첨부파일 조회 -->
-    <select id="findAnswerAttachments" resultType="com.pooli.question.domain.entity.AnswerAttachment">
-        SELECT
-        answer_attachment_id,
-        answer_id,
-        s3_key,
-        file_size,
-        created_at
-        FROM answer_attachment
-        WHERE answer_id = #{answerId}
-        AND deleted_at IS NULL
-    </select>
+    </update>
 
 </mapper>
