@@ -1,7 +1,6 @@
 package com.pooli.policy.service;
 
 import java.util.List;
-import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,7 +79,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	    if (days != null && !days.isEmpty()) {
 	        repeatBlockDayMapper.insertRepeatBlockDays(request.getRepeatBlockId(), days);
-	        System.out.println("이거 잘 들어갔나? : " + request.getRepeatBlockId() + " days : "+ days);
 	    }
 
 	    // DTO 반환
@@ -135,8 +133,12 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	    ImmediateBlockResDto immBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
 	       
+	    // 즉시 차단 정보가 없을 때
 	    if(immBlock == null) {
-	    	return null;
+	    	return ImmediateBlockResDto.builder()
+		    		.lineId(lineId)
+		    		.blockEndAt(null)
+		    		.build();
 	    }
 	    
 	    return ImmediateBlockResDto.builder()
@@ -151,11 +153,12 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 			AuthUserDetails auth) {
 
 	    immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
-	    
+	    			    
         return ImmediateBlockResDto.builder()
         		.lineId(lineId)
         		.blockEndAt(request.getBlockEndAt())
         		.build();
+        
 	}
 
 	@Override

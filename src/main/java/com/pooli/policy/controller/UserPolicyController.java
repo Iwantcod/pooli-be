@@ -1,6 +1,5 @@
 package com.pooli.policy.controller;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
@@ -379,11 +378,9 @@ public class UserPolicyController {
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
             @RequestParam("lineId") Long lineId
     ) {
-        ImmediateBlockResDto response = ImmediateBlockResDto.builder()
-                .lineId(lineId)
-                .blockEndAt(LocalDateTime.now())
-                .build();
-
+    	
+        ImmediateBlockResDto response = userPolicyService.getImmediateBlockPolicy(lineId, auth);
+        
         return ResponseEntity.ok(response);
     }
 
@@ -451,8 +448,8 @@ public class UserPolicyController {
             @RequestBody ImmediateBlockReqDto request
     ) {
 
-        ImmediateBlockResDto response = ImmediateBlockResDto.builder().build();
-
+        ImmediateBlockResDto response = userPolicyService.updateImmediateBlockPolicy(lineId, request, auth);
+        
         return ResponseEntity.ok(response);
     }
 
