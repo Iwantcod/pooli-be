@@ -453,9 +453,10 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/days/limits")
     public ResponseEntity<LimitPolicyResDto> updateDayLimitPolicy(
-            @RequestBody LimitPolicyUpdateReqDto request
+            @RequestBody LimitPolicyUpdateReqDto request,
+            @AuthenticationPrincipal AuthUserDetails auth
     ) {
-        LimitPolicyResDto answer = LimitPolicyResDto.builder().build();
+        LimitPolicyResDto answer = userPolicyService.updateDailyTotalLimitPolicyValue(request, auth);
         return ResponseEntity.ok(answer);
     }
     

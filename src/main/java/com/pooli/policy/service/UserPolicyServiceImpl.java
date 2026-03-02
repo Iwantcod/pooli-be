@@ -139,7 +139,26 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
     @Override
     public LimitPolicyResDto updateDailyTotalLimitPolicyValue(LimitPolicyUpdateReqDto request, AuthUserDetails auth) {
-        return null;
+        // 1. 대상 dailyLimit 레코드 조회
+        Optional<DailyLimit> dailyLimit = dailyLimitMapper.getExistDailyLimitById(request.getLimitPolicyId());
+        if(dailyLimit.isEmpty()) {
+            throw new ApplicationException(PolicyErrorCode.LIMIT_POLICY_NOT_FOUND);
+        }
+
+        // 2. 대상 lineId가 동일 가족에 속했는지 검증
+        checkIsSameFamilyGroup(dailyLimit.get().getLineId(), auth.getLineId());
+
+        // 3. update 진행
+        int def = dailyLimitMapper.updateDailyDataLimit(request);
+        if(def != 1) {
+            throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+        }
+
+        return LimitPolicyResDto.builder()
+                .dailyLimitId(dailyLimit.get().getDailyLimitId())
+                .dailyDataLimit(request.getPolicyValue())
+                .isDailyDataLimitActive(dailyLimit.get().getIsActive())
+                .build();
     }
 
     @Override
