@@ -32,18 +32,23 @@ import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockDayResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
 import com.pooli.policy.domain.enums.DayOfWeek;
+import com.pooli.policy.mapper.PolicyBackOfficeMapper;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 
 @Tag(name = "Policy", description = "정책 API")
 @RestController
 @RequestMapping("/api/policies")
+@RequiredArgsConstructor
 public class UserPolicyController {
 
+	private final PolicyBackOfficeMapper policyBackOfficeMapper;
+	
     @Operation(
             summary = "백오피스에서 '활성화'한 전체 정책 목록 조회",
             description = "사용자 권한 필요. 가족 대표가 가족 그룹에 적용할 수 있는 활성화 정책 목록을 조회합니다."
@@ -71,26 +76,10 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping
     public ResponseEntity<List<ActivePolicyResDto>> getActivePolicies() {
-        List<ActivePolicyResDto> response = List.of(
-                ActivePolicyResDto.builder()
-                        .policyId(1001L)
-                        .policyName("야간 사용 차단")
-                        .policyType("BLOCK")
-                        .description("22:00부터 06:00까지 데이터 사용을 차단합니다.")
-                        .build(),
-                ActivePolicyResDto.builder()
-                        .policyId(1002L)
-                        .policyName("일일 데이터 제한")
-                        .policyType("LIMIT")
-                        .description("회선별 일일 데이터 사용량을 제한합니다.")
-                        .build(),
-                ActivePolicyResDto.builder()
-                        .policyId(1003L)
-                        .policyName("게임 앱 제한")
-                        .policyType("APP")
-                        .description("선택한 게임 앱 정책을 제한합니다.")
-                        .build()
-        );
+    	
+    	
+    	List<ActivePolicyResDto> response = policyBackOfficeMapper.selectActivePolicies();
+    	
         return ResponseEntity.ok(response);
     }
 
@@ -140,7 +129,7 @@ public class UserPolicyController {
     @GetMapping("/lines/repeat-block")
     public ResponseEntity<List<RepeatBlockPolicyResDto>> getReBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
-            @RequestParam Long lineId
+            @RequestParam("lineId") Long lineId
     ) {
 
         List<RepeatBlockDayResDto> days = List.of(
@@ -291,7 +280,7 @@ public class UserPolicyController {
     @PatchMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> updateReBlockPolicies(
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
-            @RequestParam Long repeatBlockId,
+            @RequestParam("repeatBlockId") Long repeatBlockId,
             @RequestBody RepeatBlockPolicyReqDto request
     ) {
         RepeatBlockPolicyResDto response = RepeatBlockPolicyResDto.builder().build();
@@ -353,7 +342,7 @@ public class UserPolicyController {
     @DeleteMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> deleteReBlockPolicies(
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
-            @RequestParam Long repeatBlockId
+            @RequestParam("repeatBlockId") Long repeatBlockId
     ) {
 
         return ResponseEntity.ok().build();
@@ -405,7 +394,7 @@ public class UserPolicyController {
     @GetMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> getImBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
-            @RequestParam Long lineId
+            @RequestParam("lineId") Long lineId
     ) {
         ImmediateBlockResDto response = ImmediateBlockResDto.builder()
                 .lineId(lineId)
@@ -474,7 +463,7 @@ public class UserPolicyController {
     @PatchMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> updateImBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
+            @RequestParam("lineId") Long lineId,
             @RequestBody ImmediateBlockReqDto request
     ) {
 
@@ -528,7 +517,7 @@ public class UserPolicyController {
     @GetMapping("/lines/limits")
     public ResponseEntity<LimitPolicyResDto> getLimitPolicies(
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId
+            @RequestParam("lineId") Long lineId
     ) {
         return ResponseEntity.ok(LimitPolicyResDto.builder().build());
     }
@@ -586,7 +575,7 @@ public class UserPolicyController {
     @PatchMapping("/lines/days/limits/enable-toggles")
     public ResponseEntity<LimitPolicyResDto> toggleDayLimitPolicy(
             @Parameter(description = "회선 식별자", example = "1")
-            @RequestParam Long lineId
+            @RequestParam("lineId") Long lineId
     ) {
         LimitPolicyResDto answer = LimitPolicyResDto.builder().build();
         return ResponseEntity.ok(answer);
@@ -698,7 +687,7 @@ public class UserPolicyController {
     @PatchMapping("/lines/shares/limits/enable-toggles")
     public ResponseEntity<LimitPolicyResDto> toggleShareLimitPolicy(
             @Parameter(description = "회선 식별자", example = "1")
-            @RequestParam Long lineId
+            @RequestParam("lineId") Long lineId
     ) {
         LimitPolicyResDto answer = LimitPolicyResDto.builder().build();
         return ResponseEntity.ok(answer);
@@ -812,7 +801,7 @@ public class UserPolicyController {
     @GetMapping("/lines/apps")
     public ResponseEntity<List<AppPolicyResDto>> getAppPolicies(
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId
+            @RequestParam("lineId") Long lineId
     ) {
         List<AppPolicyResDto> response = List.of(
                 AppPolicyResDto.builder()
@@ -1055,7 +1044,7 @@ public class UserPolicyController {
     @PatchMapping("/lines/apps/enable-toggles")
     public ResponseEntity<Void> toggleAppPolicyEnable(
             @Parameter(description = "앱 정책 식별자", example = "154")
-            @RequestParam Long appPolicyId
+            @RequestParam("appPolicyId") Long appPolicyId
     ) {
         return ResponseEntity.ok().build();
     }
@@ -1106,7 +1095,7 @@ public class UserPolicyController {
     @DeleteMapping("/lines/apps")
     public ResponseEntity<Void> deleteAppPolicy(
             @Parameter(description = "앱 정책 식별자", example = "154")
-            @RequestParam Long appPolicyId
+            @RequestParam("appPolicyId") Long appPolicyId
     ) {
         return ResponseEntity.ok().build();
     }
@@ -1157,7 +1146,7 @@ public class UserPolicyController {
     @GetMapping("/lines/applied")
     public ResponseEntity<AppliedPolicyResDto> getAppliedPoliciesByLine(
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId
+            @RequestParam("lineId") Long lineId
     ) {
         return ResponseEntity.ok(AppliedPolicyResDto.builder().build());
     }
@@ -1176,9 +1165,9 @@ public class UserPolicyController {
     @PatchMapping("/lines/limits")
     public ResponseEntity<LimitPolicyResDto> updateLimitPolicy(
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
+            @RequestParam("lineId") Long lineId,
             @Parameter(description = "제한 정책 PK", example = "7201")
-            @RequestParam Long limitPolicyId,
+            @RequestParam("limitPolicyId") Long limitPolicyId,
             @RequestBody LimitPolicyUpdateReqDto request
     ) {
         LimitPolicyResDto response = LimitPolicyResDto.builder()
@@ -1200,9 +1189,9 @@ public class UserPolicyController {
     @PatchMapping("/lines/blocks")
     public ResponseEntity<BlockPolicyResDto> updateBlockPolicy(
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
+            @RequestParam("lineId") Long lineId,
             @Parameter(description = "차단 정책 PK", example = "7101")
-            @RequestParam Long blockPolicyId,
+            @RequestParam("blockPolicyId") Long blockPolicyId,
             @RequestBody BlockPolicyUpdateReqDto request
     ) {
         BlockPolicyResDto response = BlockPolicyResDto.builder()
@@ -1224,9 +1213,9 @@ public class UserPolicyController {
     @PatchMapping("/lines/apps")
     public ResponseEntity<AppPolicyResDto> updateAppPolicy(
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
+            @RequestParam("lineId") Long lineId,
             @Parameter(description = "앱 정책 PK", example = "7301")
-            @RequestParam Long appPolicyId,
+            @RequestParam("appPolicyId") Long appPolicyId,
             @RequestBody AppPolicyUpdateReqDto request
     ) {
         AppPolicyResDto response = AppPolicyResDto.builder()
@@ -1253,7 +1242,7 @@ public class UserPolicyController {
     @GetMapping("/lines/blocks")
     public ResponseEntity<List<BlockPolicyResDto>> getBlockPolicies(
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId
+            @RequestParam("lineId") Long lineId
     ) {
         List<BlockPolicyResDto> response = List.of(
                 BlockPolicyResDto.builder()

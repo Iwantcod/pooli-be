@@ -16,7 +16,7 @@ public class ActivePolicyResDto {
     private String policyName;
 
     @Schema(description = "정책 유형", example = "BLOCK")
-    private String policyType;
+    private int policyType;
 
     @Schema(description = "정책 설명", example = "22:00부터 06:00까지 데이터 사용을 차단합니다.")
     private String description;

@@ -2,18 +2,18 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
-<mapper namespace="com.pooli.policy.mapper.AppPolicyMapper">
+<mapper namespace="com.pooli.policy.mapper.PolicyBackOfficeMapper">
 
    <select id="selectActivePolicies"
             resultType="com.pooli.policy.domain.dto.response.ActivePolicyResDto">
 
-        SELECT
-            policy_id, 
-            policy_category_id, 
-            policy_name, 
-            is_new
-        FROM policy
-        WHERE is_active = true
+         SELECT
+	        policy_id AS policyId,
+	        policy_category_id AS policyType,
+	        policy_name,
+	        is_new AS isNew
+	    FROM policy
+	    WHERE is_active = true
 
     </select>
     
