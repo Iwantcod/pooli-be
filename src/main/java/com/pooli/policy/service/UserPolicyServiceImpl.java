@@ -48,12 +48,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	@Override
 	public List<RepeatBlockPolicyResDto> getRepeatBlockPolicies(Long lineId, AuthUserDetails auth) {
-		
-		// OWNER 검증(세션에서 확인)
-	    boolean isOwner = auth.getRoleNames().contains("ROLE_FAM_OWNER");
-	    if (!isOwner) {
-	        throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
-	    }
 	    
 	    // lineId 존재 확인
 	    familyLineMapper.findByLineId(lineId)
@@ -66,12 +60,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	@Override
     @Transactional
 	public RepeatBlockPolicyResDto createRepeatBlockPolicy(RepeatBlockPolicyReqDto request, AuthUserDetails auth) {
-
-		// OWNER 검증(세션에서 확인)
-	    boolean isOwner = auth.getRoleNames().contains("ROLE_FAM_OWNER");
-	    if (!isOwner) {
-	        throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
-	    }
 	    
 		// 반복적 차단 정보 생성
 		repeatBlockMapper.insertRepeatBlock(request);
@@ -109,12 +97,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	@Override
 	public RepeatBlockPolicyResDto deleteRepeatBlockPolicy(Long repeatBlockId, AuthUserDetails auth) {
 
-		// OWNER 검증(세션에서 확인)
-	    boolean isOwner = auth.getRoleNames().contains("ROLE_FAM_OWNER");
-	    if (!isOwner) {
-	        throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
-	    }
-	    
 	    RepeatBlockPolicyResDto policy = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
 	    if (policy == null) {
 	    	// error code 로직 확인해서 변경 필요
@@ -130,12 +112,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	@Override
 	public ImmediateBlockResDto getImmediateBlockPolicy(Long lineId, AuthUserDetails auth) {
 
-		// OWNER 검증(세션에서 확인)
-	    boolean isOwner = auth.getRoleNames().contains("ROLE_FAM_OWNER");
-	    if (!isOwner) {
-	        throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
-	    }
-	    
 	    ImmediateBlockResDto immBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
 	       
 	    if(immBlock == null) {
@@ -152,12 +128,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	@Override
 	public ImmediateBlockResDto updateImmediateBlockPolicy(Long lineId, ImmediateBlockReqDto request,
 			AuthUserDetails auth) {
-		
-		// OWNER 검증(세션에서 확인)
-	    boolean isOwner = auth.getRoleNames().contains("ROLE_FAM_OWNER");
-	    if (!isOwner) {
-	        throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
-	    }
 	    		
 	    immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
 	    
