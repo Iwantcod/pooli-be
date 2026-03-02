@@ -237,7 +237,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     }
 
     @Override
-    public List<AppPolicyResDto> getAppPolicies(Long lineId, AuthUserDetails auth) {
+    public List<AppPolicyResDto> getAppPolicies(Long lineId, AuthUserDetails auth, Integer pageNumber, Integer pageSize) {
         return List.of();
     }
 

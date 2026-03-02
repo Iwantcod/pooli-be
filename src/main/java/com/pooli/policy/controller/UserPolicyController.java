@@ -562,7 +562,11 @@ public class UserPolicyController {
     @GetMapping("/lines/apps")
     public ResponseEntity<List<AppPolicyResDto>> getAppPolicies(
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId
+            @RequestParam Long lineId,
+            @Parameter(description = "조회할 페이지 번호", example = "0")
+            @RequestParam Integer pageNumber,
+            @Parameter(description = "페이지 당 크기", example = "10")
+            @RequestParam Integer pageSize
     ) {
         List<AppPolicyResDto> response = List.of(
                 AppPolicyResDto.builder()

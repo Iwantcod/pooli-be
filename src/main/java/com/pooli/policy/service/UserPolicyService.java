@@ -117,7 +117,7 @@ public interface UserPolicyService {
      * 특정 구성원 앱 별 정책 조회
      * Controller: ResponseEntity<List<AppPolicyResDto>>
      */
-    List<AppPolicyResDto> getAppPolicies(Long lineId, AuthUserDetails auth);
+    List<AppPolicyResDto> getAppPolicies(Long lineId, AuthUserDetails auth, Integer pageNumber, Integer pageSize);
 
     /**
      * 특정 구성원 앱별 정책 신규 생성
