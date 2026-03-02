@@ -3,18 +3,23 @@ package com.pooli.family.controller;
 import com.pooli.family.domain.dto.request.CreateSharedPoolContributionReqDto;
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
 import com.pooli.family.domain.dto.response.*;
+import com.pooli.family.service.FamilySharedPoolsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "Shared Pool", description = "가족 공유데이터 관련 API")
 @RestController
 @RequestMapping("/api/shared-pools")
+@RequiredArgsConstructor
 public class FamilySharedPoolsController {
+
+    private final FamilySharedPoolsService familySharedPoolsService;
 
     @Operation(
             summary = "공유 데이터 담기 화면 개인 정보 조회",
@@ -30,11 +35,9 @@ public class FamilySharedPoolsController {
     @GetMapping("/my")
     public ResponseEntity<SharedPoolMyStatusResDto> getMySharedPoolStatus(
             @Parameter(description = "회선 ID", example = "10")
-            @RequestParam Integer lineId
+            @RequestParam("lineId") Long lineId
     ) {
-
-        SharedPoolMyStatusResDto response =SharedPoolMyStatusResDto.builder().build();
-
+        SharedPoolMyStatusResDto response = familySharedPoolsService.getMySharedPoolStatus(lineId);
         return ResponseEntity.ok(response);
     }
 
@@ -52,11 +55,9 @@ public class FamilySharedPoolsController {
     @GetMapping
     public ResponseEntity<FamilySharedPoolResDto> getFamilySharedPool(
             @Parameter(description = "가족 ID", example = "1")
-            @RequestParam Integer familyId
+            @RequestParam("familyId") Long familyId
     ) {
-
-        FamilySharedPoolResDto response =FamilySharedPoolResDto.builder().build();
-
+        FamilySharedPoolResDto response = familySharedPoolsService.getFamilySharedPool(familyId);
         return ResponseEntity.ok(response);
     }
 
@@ -75,6 +76,7 @@ public class FamilySharedPoolsController {
     public ResponseEntity<Void> contributeToSharedPool(
             @RequestBody CreateSharedPoolContributionReqDto request
     ) {
+        familySharedPoolsService.contributeToSharedPool(request);
         return ResponseEntity.ok().build();
     }
 
@@ -92,15 +94,12 @@ public class FamilySharedPoolsController {
     @GetMapping("/detail/remaining-amount")
     public ResponseEntity<SharedPoolDetailResDto> getSharedPoolDetail(
             @Parameter(description = "가족 식별자", example = "1")
-            @RequestParam Integer familyId,
+            @RequestParam("familyId") Long familyId,
 
             @Parameter(description = "회선 식별자", example = "10")
-            @RequestParam Integer lineId
+            @RequestParam("lineId") Long lineId
     ) {
-
-        SharedPoolDetailResDto response =SharedPoolDetailResDto.builder().build();
-
-
+        SharedPoolDetailResDto response = familySharedPoolsService.getSharedPoolDetail(familyId, lineId);
         return ResponseEntity.ok(response);
     }
 
@@ -118,11 +117,9 @@ public class FamilySharedPoolsController {
     @GetMapping("/main/remaining-amount")
     public ResponseEntity<SharedPoolMainResDto> getSharedPoolMain(
             @Parameter(description = "가족 식별자", example = "1")
-            @RequestParam Integer familyId
+            @RequestParam("familyId") Long familyId
     ) {
-
-        SharedPoolMainResDto response = SharedPoolMainResDto.builder().build();
-
+        SharedPoolMainResDto response = familySharedPoolsService.getSharedPoolMain(familyId);
         return ResponseEntity.ok(response);
     }
 
@@ -135,12 +132,12 @@ public class FamilySharedPoolsController {
             @ApiResponse(responseCode = "404", description = "데이터가 존재하지 않음"),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
-    @GetMapping("/limits")
+    @GetMapping("/limit")
     public ResponseEntity<SharedDataThresholdResDto> getSharedDataLimit(
             @Parameter(description = "가족 식별자", example = "1")
-            @RequestParam Long familyId
+            @RequestParam("familyId") Long familyId
     ) {
-        SharedDataThresholdResDto result = SharedDataThresholdResDto.builder().build();
+        SharedDataThresholdResDto result = familySharedPoolsService.getSharedDataThreshold(familyId);
         return ResponseEntity.ok(result);
     }
 
@@ -150,16 +147,17 @@ public class FamilySharedPoolsController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
-            @ApiResponse(responseCode = "401", description = "수정 권한 없음"),
+            @ApiResponse(responseCode = "400", description = "수정 권한 없음"),
             @ApiResponse(responseCode = "404", description = "가족 식별자에 해당하는 가족이 존재하지 않음"),
             @ApiResponse(responseCode = "500", description = "서버 오류"),
     })
-    @PatchMapping("/limits")
+    @PatchMapping("/limit")
     public ResponseEntity<Void> updateSharedDataLimit(
             @Parameter(description = "가족 식별자", example = "1")
-            @RequestParam Long familyId,
+            @RequestParam("familyId") Long familyId,
             @RequestBody UpdateSharedDataThresholdReqDto request
     ) {
+        familySharedPoolsService.updateSharedDataThreshold(familyId, request);
         return ResponseEntity.ok().build();
     }
 }

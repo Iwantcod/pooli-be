@@ -15,6 +15,6 @@ public class CreateSharedPoolContributionReqDto {
     @Schema(description = "회선 식별자", example = "10")
     private Integer lineId;
 
-    @Schema(description = "공유풀에 담을 데이터량(MB)", example = "500")
+    @Schema(description = "공유풀에 담을 데이터량(Byte)", example = "500")
     private Long amount;
 }
