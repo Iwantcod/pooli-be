@@ -14,4 +14,7 @@ public interface RepeatBlockDayMapper {
     int insertRepeatBlockDays(@Param("repeatBlockId") Long repeatBlockId,
                               @Param("days") List<RepeatBlockDayReqDto> days);
     
+    // 특정 구성원의 반복적 차단 정책 삭제
+	int deleteRepeatDayBlock(@Param("repeatBlockId") Long repeatBlockId);
+    
 }

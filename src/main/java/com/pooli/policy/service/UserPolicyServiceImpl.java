@@ -55,19 +55,21 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	@Transactional
 	public RepeatBlockPolicyResDto createRepeatBlockPolicy(RepeatBlockPolicyReqDto request, AuthUserDetails auth) {
 
+        Long lineId = auth.getLineId();
+
 	    List<RepeatBlockDayReqDto> days = request.getDays();
 
 	    // 반복적 차단 요일/시간 중복 체크
 	    if (days != null && !days.isEmpty()) {
 	        for (RepeatBlockDayReqDto day : days) {
 	            boolean exists = repeatBlockMapper.isDuplicatedRepeatBlocks(
+	            		lineId,
 	                    day.getDayOfWeek(),
 	                    day.getStartAt(),
 	                    day.getEndAt()
 	            );
 	            if (exists) {
-	            	// 중복되면 뭘 반환해야 하지...? dto에 중복 여부를 추가해야 하나?
-	                return null;
+	            	throw new ApplicationException(PolicyErrorCode.BLOCK_POLICY_CONFLICT); 
 	            }
 	        }
 	        
@@ -78,6 +80,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	    if (days != null && !days.isEmpty()) {
 	        repeatBlockDayMapper.insertRepeatBlockDays(request.getRepeatBlockId(), days);
+	        System.out.println("이거 잘 들어갔나? : " + request.getRepeatBlockId() + " days : "+ days);
 	    }
 
 	    // DTO 반환
@@ -93,6 +96,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	    return RepeatBlockPolicyResDto.builder()
 	            .repeatBlockId(request.getRepeatBlockId())
+	            .lineId(lineId)
 	            .isActive(request.getIsActive())
 	            .days(dayResList)
 	            .build();
@@ -109,14 +113,21 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	public RepeatBlockPolicyResDto deleteRepeatBlockPolicy(Long repeatBlockId, AuthUserDetails auth) {
 
 	    // 반복적 차단 정보 없음
-	    RepeatBlockPolicyResDto policy = Optional.ofNullable(
-	            repeatBlockMapper.selectRepeatBlockById(repeatBlockId)
-	    ).orElseThrow(() -> new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND));
+		RepeatBlockPolicyResDto exist = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
 	    
+		if (exist == null) {
+	        throw new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
+	    } 
+		
 	    // soft delete
 	    repeatBlockMapper.deleteRepeatBlock(repeatBlockId);
+	    repeatBlockDayMapper.deleteRepeatDayBlock(repeatBlockId);	    
 
-	    return policy;
+	    return RepeatBlockPolicyResDto.builder()
+	    		.repeatBlockId(repeatBlockId)
+	    		.lineId(auth.getLineId())
+	    		.isActive(false)
+	    		.build();
 	}
 
 	@Override

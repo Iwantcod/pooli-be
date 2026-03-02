@@ -39,30 +39,23 @@
     
     <!-- 반복적 차단 정보 중복 확인(요일, 시간) -->
 	<select id="isDuplicatedRepeatBlocks" resultType="boolean" parameterType="map">
-	    SELECT CASE WHEN COUNT(1) &gt; 0 THEN TRUE ELSE FALSE END
+    	SELECT CASE WHEN COUNT(1) > 0 THEN TRUE ELSE FALSE END
 	    FROM repeat_block_day d
-	    WHERE d.day_of_week = #{dayOfWeek}
-	      AND NOT (
-	          d.end_at &lt;= #{startAt} 
-	          OR d.start_at &gt;= #{endAt}
-	      )
+	    INNER JOIN repeat_block rb ON d.repeat_block_id = rb.repeat_block_id
+	    WHERE rb.line_id = #{lineId}
+	      AND d.day_of_week = #{dayOfWeek}
+	      AND d.start_at = #{startAt}
+	      AND d.end_at = #{endAt}
+	      AND rb.deleted_at IS NULL
+	      AND d.deleted_at IS NULL
 	</select>
 
     <!-- repeat_block 생성 -->
-    <insert id="insertRepeatBlock">
+    <insert id="insertRepeatBlock" useGeneratedKeys="true" keyProperty="repeatBlockId">
         INSERT INTO repeat_block (line_id, is_active, created_at)
         VALUES (#{lineId}, #{isActive}, NOW())
     </insert>
 
-    <!-- 위에 생성된 repeat_block을 바탕으로 repeat_block_day 생성(여러 요일 생성될 수 있음) -->
-    <insert id="insertRepeatBlockDays">
-        INSERT INTO repeat_block_day
-            (repeat_block_id, day_of_week, start_at, end_at, created_at)
-        VALUES
-        <foreach collection="days" item="day" separator=",">
-            (#{repeatBlockId}, #{day.dayOfWeek}, #{day.startAt}, #{day.endAt}, NOW())
-        </foreach>
-    </insert>
 	
 	<select id="selectRepeatBlockById" resultType="com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto">
         SELECT 
@@ -75,8 +68,8 @@
     </select>
     
 	<update id="deleteRepeatBlock">
-	  UPDATE repeat_block_day
-	  SET deleted_at = NOW()
+	  UPDATE repeat_block
+	  SET deleted_at = NOW(), is_active = false
 	  WHERE repeat_block_id = #{repeatBlockId}
 	    AND deleted_at IS NULL
 	</update>
