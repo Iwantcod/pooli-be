@@ -175,7 +175,6 @@ public class QuestionController {
 	@PreAuthorize("hasRole('ADMIN')")
 	@GetMapping("/admins")
 	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestionAdmin(
-			@AuthenticationPrincipal AuthUserDetails userDetails,
 			@RequestParam(required = false) List<Long> categoryIds,
 			@RequestParam(required = false) Boolean isAnswered,
 			@RequestParam(required = false) Long lineId,

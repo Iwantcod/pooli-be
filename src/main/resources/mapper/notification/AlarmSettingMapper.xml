@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.notification.mapper.AlarmSettingMapper">
+
+    <!-- 1. 존재 여부 조회 -->
+    <select id="findByUserId"
+            parameterType="long"
+            resultType="AlarmSetting">
+
+        SELECT *
+        FROM alarm_setting
+        WHERE user_id = #{userId}
+        AND deleted_at IS NULL
+
+    </select>
+
+
+    <!-- 2. 기본값 insert (전부 true) -->
+    <insert id="insertDefault" parameterType="long">
+
+        INSERT INTO alarm_setting (
+        user_id,
+        family_alarm,
+        user_alarm,
+        policy_change_alarm,
+        policy_limit_alarm,
+        permission_alarm,
+        question_alarm,
+        created_at,
+        updated_at
+        )
+        VALUES (
+        #{userId},
+        TRUE,
+        TRUE,
+        TRUE,
+        TRUE,
+        TRUE,
+        TRUE,
+        NOW(),
+        NOW()
+        )
+
+    </insert>
+
+
+    <!-- 3. 특정 컬럼만 update -->
+    <update id="updateAlarmColumn">
+
+        UPDATE alarm_setting
+        SET ${columnName} = #{enabled},
+        updated_at = NOW()
+        WHERE user_id = #{userId}
+        AND deleted_at IS NULL
+
+    </update>
+
+</mapper>

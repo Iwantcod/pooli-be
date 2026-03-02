@@ -1,6 +1,6 @@
 package com.pooli.notification.domain.entity;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -21,9 +21,9 @@ public class AlarmSetting {
 	Boolean policyLimitAlarm;
 	Boolean permissionAlarm;
 	Boolean questionAlarm;
-	LocalDate createdAt;
-	LocalDate deletedAt;
-	LocalDate updatedAt;
+	LocalDateTime  createdAt;
+	LocalDateTime  deletedAt;
+	LocalDateTime  updatedAt;
 	
 	
 }
