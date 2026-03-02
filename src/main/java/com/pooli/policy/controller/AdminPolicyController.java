@@ -51,7 +51,7 @@ public class AdminPolicyController {
    	                 """
    	         )
     })
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/all")
     public ResponseEntity<List<AdminPolicyResDto>> getAllPolicies() {
         List<AdminPolicyResDto> response = List.of(
@@ -124,7 +124,7 @@ public class AdminPolicyController {
                 """
         )
     })
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<PolicyActivationResDto> activatePolicy(@RequestBody PolicyActivationReqDto request) {
         PolicyActivationResDto response = PolicyActivationResDto.builder()
@@ -177,7 +177,7 @@ public class AdminPolicyController {
                 """
         )
     })
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping
     public ResponseEntity<PolicyDeactivationResDto> deactivatePolicy(
             @Parameter(description = "정책 식별자", example = "1003")
@@ -235,7 +235,7 @@ public class AdminPolicyController {
                 """
         )
     })
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/lines/apps/usage")
     public ResponseEntity<List<LineAppUsageResDto>> getLineAppUsage(
             @Parameter(description = "회선 식별자", example = "101")
