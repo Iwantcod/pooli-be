@@ -3,5 +3,71 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.pooli.policy.mapper.AppPolicyMapper">
+    <!-- 단일 테이블 조회 후 Entity Class에 결과 매핑 -->
+    <resultMap id="appPolicyResultMap"
+               type="com.pooli.policy.domain.entity.AppPolicy">
+        <constructor>
+            <arg column="app_policy_id"  javaType="java.lang.Long"/>
+            <arg column="line_id"        javaType="java.lang.Long"/>
+            <arg column="application_id" javaType="java.lang.Integer"/>
+            <arg column="data_limit"     javaType="java.lang.Long"/>
+            <arg column="speed_limit"    javaType="java.lang.Integer"/>
+            <arg column="is_active"      javaType="java.lang.Boolean"/>
+            <arg column="created_at"     javaType="java.time.LocalDateTime"/>
+            <arg column="deleted_at"     javaType="java.time.LocalDateTime"/>
+            <arg column="updated_at"     javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
 
+    <!-- 특정 앱 정책에 대한 정보(앱 이름, 화이트리스트 적용 여부)를 한 번에 조회 후 Dto Class에 결과 매핑 -->
+    <resultMap id="appPolicyResDtoResultMap"
+               type="com.pooli.policy.domain.dto.response.AppPolicyResDto">
+        <constructor>
+            <arg column="appPolicyId"       javaType="java.lang.Long"/>
+            <arg column="appId"             javaType="java.lang.Integer"/>
+            <arg column="appName"           javaType="java.lang.String"/>
+            <arg column="isActive"          javaType="java.lang.Boolean"/>
+            <arg column="dailyLimitData"    javaType="java.lang.Long"/>
+            <arg column="dailyLimitSpeed"   javaType="java.lang.Integer"/>
+            <arg column="isActiveWhiteList" javaType="java.lang.Boolean"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 정책 정보 및 앱 이름을 포함하여 조회 -->
+    <select id="findDtoExistByLineIdAndAppId" resultMap="appPolicyResDtoResultMap">
+        SELECT
+            ap.app_policy_id appPolicyId,
+            a.application_id appId,
+            a.application_name appName,
+            ap.is_active isActive,
+            ap.data_limit dailyLimitData,
+            ap.speed_limit dailyLimitSpeed,
+            w.is_active isActiveWhiteList
+        FROM APPLICATION a
+         LEFT JOIN APP_POLICY ap
+           ON ap.application_id = a.application_id
+             AND ap.line_id = #{lineId}
+             AND ap.deleted_at IS NULL
+         LEFT JOIN WHITELIST w
+           ON w.application_id = a.application_id
+             AND w.line_id = #{lineId}
+             AND w.deleted_at IS NULL
+        WHERE a.application_id = #{appId};
+    </select>
+
+    <update id="toggleExistIsActive">
+        UPDATE APP_POLICY
+        SET is_active = #{isActive}, updated_at = now()
+        WHERE app_policy_id = #{appPolicyId};
+    </update>
+
+    <insert id="insertAppPolicy"
+            parameterType="com.pooli.policy.domain.entity.AppPolicy"
+            useGeneratedKeys="true"
+            keyProperty="appPolicyId"
+            keyColumn="app_policy_id">
+        INSERT INTO APP_POLICY
+               (line_id,   application_id,   data_limit,   speed_limit,   is_active,   created_at)
+        values (#{lineId}, #{applicationId}, #{dataLimit}, #{speedLimit}, #{isActive}, now());
+    </insert>
 </mapper>

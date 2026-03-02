@@ -124,7 +124,7 @@ public interface UserPolicyService {
      * Controller: ResponseEntity<AppPolicyResDto>
      */
     @Deprecated
-    AppPolicyResDto createAppPolicy(AppPolicyCreateReqDto request, AuthUserDetails auth);
+    AppPolicyResDto createAppPolicy(AppPolicyActiveToggleReqDto request, AuthUserDetails auth);
 
     /**
      * 특정 구성원 앱별 정책의 제한 데이터량(단위: Byte) 수정
@@ -139,10 +139,10 @@ public interface UserPolicyService {
     AppPolicyResDto updateAppSpeedLimit(AppSpeedLimitUpdateReqDto request, AuthUserDetails auth);
 
     /**
-     * 구성원의 특정 앱 데이터 사용 정책 활성화/비활성화 토글 요청
-     * Controller: ResponseEntity<Void>
+     * 구성원의 특정 앱 데이터 사용 정책 활성화(or 신규생성)/비활성화 토글 요청
+     * Controller: ResponseEntity<AppPolicyResDto>
      */
-    void toggleAppPolicyActive(Long appPolicyId, AuthUserDetails auth);
+    AppPolicyResDto toggleAppPolicyActive(AppPolicyActiveToggleReqDto request, AuthUserDetails auth);
 
     /**
      * 구성원의 특정 앱 데이터 사용 정책 삭제

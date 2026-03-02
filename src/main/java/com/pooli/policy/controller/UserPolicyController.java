@@ -573,21 +573,21 @@ public class UserPolicyController {
                         .appPolicyId(7301L)
                         .appId(301)
                         .appName("YouTube")
-                        .enabled(true)
+                        .isActive(true)
                         .dailyLimitData(500L)
                         .build(),
                 AppPolicyResDto.builder()
                         .appPolicyId(7302L)
                         .appId(302)
                         .appName("Instagram")
-                        .enabled(true)
+                        .isActive(true)
                         .dailyLimitData(300L)
                         .build(),
                 AppPolicyResDto.builder()
                         .appPolicyId(7303L)
                         .appId(401)
                         .appName("GameX")
-                        .enabled(false)
+                        .isActive(false)
                         .dailyLimitData(0L)
                         .build()
         );
@@ -692,11 +692,12 @@ public class UserPolicyController {
     })
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/apps/enable-toggles")
-    public ResponseEntity<Void> toggleAppPolicyEnable(
-            @Parameter(description = "앱 정책 식별자", example = "154")
-            @RequestParam Long appPolicyId
+    public ResponseEntity<AppPolicyResDto> toggleAppPolicyEnable(
+            @RequestBody AppPolicyActiveToggleReqDto request,
+            @AuthenticationPrincipal AuthUserDetails auth
     ) {
-        return ResponseEntity.ok().build();
+        AppPolicyResDto answer = userPolicyService.toggleAppPolicyActive(request, auth);
+        return ResponseEntity.ok(answer);
     }
 
     @Operation(
@@ -891,7 +892,7 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PostMapping("/lines/apps")
     public ResponseEntity<AppPolicyResDto> createAppPolicy(
-            @RequestBody AppPolicyCreateReqDto request
+            @RequestBody AppPolicyActiveToggleReqDto request
     ) {
         AppPolicyResDto response = AppPolicyResDto.builder().build();
         return ResponseEntity.ok(response);
