@@ -235,9 +235,18 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	    ImmediateBlockResDto immediateBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
 	    
+	    // null 안전하게 처리
+	    ImmediateBlockResDto immBlock = (immediateBlock != null)
+	        ? ImmediateBlockResDto.builder()
+	            .lineId(lineId)                  
+	            .blockEndAt(immediateBlock.getBlockEndAt())
+	            .build()
+	        : null;                             
+
+	    
 	    return AppliedPolicyResDto.builder()
 	            .repeatBlockPolicyList(repeatBlockPolicyList)
-	            .immediateBlock(immediateBlock)
+	            .immediateBlock(immBlock)
 	            .build();
 
 	}

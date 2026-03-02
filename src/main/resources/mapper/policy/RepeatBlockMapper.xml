@@ -12,7 +12,6 @@
         <!-- 1:N - REPEAT_BLOCK_DAY 목록 -->
         <collection property="days"
                     ofType="com.pooli.policy.domain.dto.response.RepeatBlockDayResDto">
-            <id     property="repeatBlockDayId" column="repeat_block_day_id"/>
             <result property="dayOfWeek"        column="day_of_week"/>
             <result property="startAt"          column="start_at"/>
             <result property="endAt"            column="end_at"/>

@@ -1126,10 +1126,11 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/applied")
     public ResponseEntity<AppliedPolicyResDto> getAppliedPoliciesByLine(
+    		@AuthenticationPrincipal AuthUserDetails auth,
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam("lineId") Long lineId
     ) {
-        return ResponseEntity.ok(AppliedPolicyResDto.builder().build());
+    	return ResponseEntity.ok(userPolicyService.getAppliedPolicies(lineId, auth));
     }
 
     @Operation(
