@@ -37,6 +37,17 @@
         ORDER BY rb.repeat_block_id, rbd.day_of_week
     </select>
     
+    <!-- 반복적 차단 정보 중복 확인(요일, 시간) -->
+	<select id="isDuplicatedRepeatBlocks" resultType="boolean" parameterType="map">
+	    SELECT CASE WHEN COUNT(1) &gt; 0 THEN TRUE ELSE FALSE END
+	    FROM repeat_block_day d
+	    WHERE d.day_of_week = #{dayOfWeek}
+	      AND NOT (
+	          d.end_at &lt;= #{startAt} 
+	          OR d.start_at &gt;= #{endAt}
+	      )
+	</select>
+
     <!-- repeat_block 생성 -->
     <insert id="insertRepeatBlock">
         INSERT INTO repeat_block (line_id, is_active, created_at)
