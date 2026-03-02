@@ -70,7 +70,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
         // 2. 두 종류의 제한 정보 테이블에서 정보 조회
         Optional<DailyLimit> dailyLimit = dailyLimitMapper.getExistDailyLimitByLineId(lineId);
-        Optional<SharedLimit> sharedLimit = sharedLimitMapper.getActiveSharedLimitByLineId(lineId);
+        Optional<SharedLimit> sharedLimit = sharedLimitMapper.getExistSharedLimitByLineId(lineId);
 
         LimitPolicyResDto answer = LimitPolicyResDto.builder()
                 .dailyLimitId((dailyLimit.isPresent()) ? dailyLimit.get().getDailyLimitId() : null)
@@ -163,7 +163,53 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
     @Override
     public LimitPolicyResDto toggleSharedPoolLimitPolicy(Long lineId, AuthUserDetails auth) {
-        return null;
+        // 1. 조회 대상 lineId가 속한 가족그룹과, 요청을 보낸 사용자의 가족 그룹이 일치하는지 검증
+        checkIsSameFamilyGroup(lineId, auth.getLineId());
+
+        // 2. 제한 정책 존재 여부 조회
+        Optional<SharedLimit> sharedLimit = sharedLimitMapper.getExistSharedLimitByLineId(lineId);
+        if (sharedLimit.isPresent()) {
+            // 삭제 상태가 아닌 sharedLimit 레코드가 존재하는 경우
+            if(sharedLimit.get().getIsActive()) {
+                // 제한 정책이 활성화된 경우 비활성화
+                int def = sharedLimitMapper.deactivateSharedLimitBySharedLimitId(sharedLimit.get().getSharedLimitId());
+                if(def != 1) {
+                    throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+                }
+                return LimitPolicyResDto.builder()
+                        .dailyLimitId(sharedLimit.get().getSharedLimitId())
+                        .dailyDataLimit(sharedLimit.get().getSharedDataLimit())
+                        .isDailyDataLimitActive(false)
+                        .build();
+            } else {
+                // 비활성화된 경우 재활성화
+                int def = sharedLimitMapper.activateSharedLimitBySharedLimitId(sharedLimit.get().getSharedLimitId());
+                if(def != 1) {
+                    throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+                }
+                return LimitPolicyResDto.builder()
+                        .dailyLimitId(sharedLimit.get().getSharedLimitId())
+                        .dailyDataLimit(sharedLimit.get().getSharedDataLimit())
+                        .isDailyDataLimitActive(true)
+                        .build();
+            }
+        } else {
+            // sharedLimit 레코드가 없거나, 삭제 상태인 경우 새 레코드 insert
+            SharedLimit newSharedLimit = SharedLimit.builder()
+                    .lineId(lineId)
+                    .sharedDataLimit(-1L)  // 기본값: 무제한
+                    .isActive(true)         // 기본값: 활성화 상태
+                    .build();
+            int def = sharedLimitMapper.createSharedLimit(newSharedLimit);
+            if(def != 1) {
+                throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+            }
+            return LimitPolicyResDto.builder()
+                    .sharedLimitId(newSharedLimit.getSharedLimitId())
+                    .sharedDataLimit(newSharedLimit.getSharedDataLimit())
+                    .isSharedDataLimitActive(newSharedLimit.getIsActive())
+                    .build();
+        }
     }
 
     @Override

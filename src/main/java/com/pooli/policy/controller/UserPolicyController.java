@@ -489,9 +489,10 @@ public class UserPolicyController {
     @PatchMapping("/lines/shares/limits/enable-toggles")
     public ResponseEntity<LimitPolicyResDto> toggleShareLimitPolicy(
             @Parameter(description = "회선 식별자", example = "1")
-            @RequestParam Long lineId
+            @RequestParam Long lineId,
+            @AuthenticationPrincipal AuthUserDetails auth
     ) {
-        LimitPolicyResDto answer = LimitPolicyResDto.builder().build();
+        LimitPolicyResDto answer = userPolicyService.toggleSharedPoolLimitPolicy(lineId, auth);
         return ResponseEntity.ok(answer);
     }
 
