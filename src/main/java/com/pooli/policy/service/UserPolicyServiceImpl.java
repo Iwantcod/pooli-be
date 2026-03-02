@@ -214,7 +214,26 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
     @Override
     public LimitPolicyResDto updateSharedPoolLimitPolicyValue(LimitPolicyUpdateReqDto request, AuthUserDetails auth) {
-        return null;
+        // 1. 대상 sharedLimit 레코드 조회
+        Optional<SharedLimit> sharedLimit = sharedLimitMapper.getExistSharedLimitById(request.getLimitPolicyId());
+        if (sharedLimit.isEmpty()) {
+            throw new ApplicationException(PolicyErrorCode.LIMIT_POLICY_NOT_FOUND);
+        }
+
+        // 2. 대상 lineId가 동일 가족에 속했는지 검증
+        checkIsSameFamilyGroup(sharedLimit.get().getLineId(), auth.getLineId());
+
+        // 3. update 진행
+        int affectedRows = sharedLimitMapper.updateSharedDataLimit(request);
+        if (affectedRows != 1) {
+            throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+        }
+
+        return LimitPolicyResDto.builder()
+                .sharedLimitId(sharedLimit.get().getSharedLimitId())
+                .sharedDataLimit(request.getPolicyValue())
+                .isSharedDataLimitActive(sharedLimit.get().getIsActive())
+                .build();
     }
 
     @Override

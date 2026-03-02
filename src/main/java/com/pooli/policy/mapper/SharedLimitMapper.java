@@ -1,7 +1,6 @@
 package com.pooli.policy.mapper;
 
 import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
-import com.pooli.policy.domain.entity.DailyLimit;
 import com.pooli.policy.domain.entity.SharedLimit;
 import org.apache.ibatis.annotations.Mapper;
 
@@ -15,7 +14,7 @@ public interface SharedLimitMapper {
     // 특정 lineId의 삭제 상태가 아닌 SharedLimit 조회
     Optional<SharedLimit> getExistSharedLimitByLineId(Long lineId);
     // 특정 pk의 삭제 상태가 아닌 SharedLimit 조회
-    Optional<DailyLimit> getExistSharedLimitById(Long sharedLimitId);
+    Optional<SharedLimit> getExistSharedLimitById(Long sharedLimitId);
 
     /*
      =========== UPDATE ===========

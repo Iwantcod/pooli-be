@@ -526,9 +526,10 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/shares/limits")
     public ResponseEntity<LimitPolicyResDto> updateShareLimitPolicy(
-            @RequestBody LimitPolicyUpdateReqDto request
+            @RequestBody LimitPolicyUpdateReqDto request,
+            @AuthenticationPrincipal AuthUserDetails auth
     ) {
-        LimitPolicyResDto answer = LimitPolicyResDto.builder().build();
+        LimitPolicyResDto answer = userPolicyService.updateSharedPoolLimitPolicyValue(request, auth);
         return ResponseEntity.ok(answer);
     }
 

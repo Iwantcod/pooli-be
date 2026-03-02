@@ -34,7 +34,7 @@
     <update id="activateSharedLimitBySharedLimitId" parameterType="long">
         UPDATE SHARED_LIMIT
         SET is_active = 1,
-            updated_at = NOW()
+            updated_at = now()
         WHERE shared_limit_id = #{sharedLimitId}
           AND deleted_at IS NULL;
     </update>
@@ -43,7 +43,7 @@
     <update id="deactivateSharedLimitBySharedLimitId" parameterType="long">
         UPDATE SHARED_LIMIT
         SET is_active = 0,
-            updated_at = NOW()
+            updated_at = now()
         WHERE shared_limit_id = #{sharedLimitId}
           AND deleted_at IS NULL;
     </update>
@@ -52,7 +52,7 @@
     <update id="updateSharedDataLimit" parameterType="com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto">
         UPDATE SHARED_LIMIT
         SET shared_data_limit = #{policyValue},
-            updated_at = NOW()
+            updated_at = now()
         WHERE shared_limit_id = #{limitPolicyId}
           AND deleted_at IS NULL;
     </update>
