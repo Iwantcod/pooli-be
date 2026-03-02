@@ -47,6 +47,15 @@
 	      l.line_id ASC
 	  </select>
 
+
+	<select id="existsFamilyLine" resultType="boolean">
+	  SELECT EXISTS (
+	    SELECT 1 FROM FAMILY_LINE
+	    WHERE family_id = #{familyId}
+	      AND line_id = #{lineId}
+	  )
+	</select>
+
 	<select id="selectFamilyMembersSimple"
 	            resultType="com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto">
 		

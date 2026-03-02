@@ -132,7 +132,7 @@ public class FamilyController {
             @Valid @RequestBody UpdateVisibilityReqDto request
     ) {
     	
-    	familyService.updateVisibility(principal.getLineId(), request.getIsPublic());
+    	familyService.updateVisibility(principal.getLineId(), request);
         return ResponseEntity.ok().build();
     }
 }

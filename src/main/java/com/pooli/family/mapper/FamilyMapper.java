@@ -24,7 +24,9 @@ public interface FamilyMapper {
 	          @Param("familyId") Integer familyId,
 	          @Param("lineId") Long lineId);
 	
-	
+	Boolean existsFamilyLine(
+			@Param("familyId") Integer familyId,
+			@Param("lineId") Long lineId);
 	
 	
 	Boolean isPermissionEnabledByTitle(
