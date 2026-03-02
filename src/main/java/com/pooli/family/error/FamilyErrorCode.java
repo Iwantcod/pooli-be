@@ -6,7 +6,8 @@ import com.pooli.common.exception.ErrorCode;
 
 public enum FamilyErrorCode implements ErrorCode {
 	
-	FAM_NOT_FOUND(HttpStatus.NOT_FOUND, "FAMILY-4401", "해당 가족 관련 정보를 찾을 수 없습니다.");
+	FAM_NOT_FOUND(HttpStatus.NOT_FOUND, "FAMILY-4401", "해당 가족 관련 정보를 찾을 수 없습니다."),
+	FAM_CONFLICT(HttpStatus.CONFLICT, "FAMILY-4901", "이미 존재하는 정보입니다.");
 
 	
     private final HttpStatus httpStatus;
