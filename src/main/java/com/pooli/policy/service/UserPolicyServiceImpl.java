@@ -242,7 +242,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     }
 
     @Override
+    @Deprecated
     public AppPolicyResDto createAppPolicy(AppPolicyCreateReqDto request, AuthUserDetails auth) {
+        // 이 API는 앱 별 정책 활성화/비활성화 toggle API로 통합되었습니다.
+        // toggle API 요청 시 해당 앱에 대한 정책이 기존에 존재하지 않았다면, 신규 생성 동작을 수행합니다.
         return null;
     }
 

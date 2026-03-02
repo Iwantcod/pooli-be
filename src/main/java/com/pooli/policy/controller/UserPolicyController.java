@@ -595,43 +595,6 @@ public class UserPolicyController {
     }
 
     @Operation(
-            summary = "특정 구성원 앱별 정책 신규 생성",
-            description = "가족 대표자만 설정 가능합니다."
-    )
-    @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "요청 성공"),
-        @ApiResponse(
-                responseCode = "400",
-                description = """
-                    잘못된 요청
-                        
-	                - COMMON:4000 요청 형식 불일치
-	                - COMMON:4001 DTO 유효성 검증 실패
-	                - COMMON:4006 Content-Type 불일치
-	                """
-            ),
-        @ApiResponse(
-                responseCode = "403",
-                description = """
-                    가족 대표자 권한 없음
-                    
-                    - COMMON:4300 가족 대표자 권한이 없음
-                    """
-            ),
-        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
-        @ApiResponse(responseCode = "409", description = "정책 충돌"),
-        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
-    })
-    @PreAuthorize("hasRole('FAMILY_OWNER')")
-    @PostMapping("/lines/apps")
-    public ResponseEntity<AppPolicyResDto> createAppPolicy(
-            @RequestBody AppPolicyCreateReqDto request
-    ) {
-        AppPolicyResDto response = AppPolicyResDto.builder().build();
-        return ResponseEntity.ok(response);
-    }
-
-    @Operation(
             summary = "특정 구성원 앱별 정책의 제한 데이터량(단위: Byte) 수정",
             description = "가족 대표자 권한 필요, value 단위: Byte"
     )
@@ -703,7 +666,7 @@ public class UserPolicyController {
 
 
     @Operation(
-            summary = "구성원의 특정 앱 데이터 사용 정책 활성화/비활성화 토글 요청",
+            summary = "구성원의 특정 앱 데이터 사용 정책 활성화(or 신규생성)/비활성화 토글 요청",
             description = "가족 대표자 권한 필요"
     )
     @ApiResponses({
@@ -868,13 +831,7 @@ public class UserPolicyController {
             @RequestParam Long appPolicyId,
             @RequestBody AppPolicyUpdateReqDto request
     ) {
-        AppPolicyResDto response = AppPolicyResDto.builder()
-                .appPolicyId(appPolicyId)
-                .appId(resolveAppId(appPolicyId))
-                .appName(resolveAppName(appPolicyId))
-                .enabled(request.getEnabled() != null ? request.getEnabled() : Boolean.FALSE)
-                .dailyLimitData(request.getDailyLimitMb() != null ? request.getDailyLimitMb() : 0L)
-                .build();
+        AppPolicyResDto response = AppPolicyResDto.builder().build();
         return ResponseEntity.ok(response);
     }
 
@@ -902,30 +859,42 @@ public class UserPolicyController {
         return ResponseEntity.ok(response);
     }
 
-    private Integer resolveAppId(Long appPolicyId) {
-        if (Long.valueOf(7301L).equals(appPolicyId)) {
-            return 301;
-        }
-        if (Long.valueOf(7302L).equals(appPolicyId)) {
-            return 302;
-        }
-        if (Long.valueOf(7303L).equals(appPolicyId)) {
-            return 401;
-        }
-        return 0;
-    }
-
-    private String resolveAppName(Long appPolicyId) {
-        if (Long.valueOf(7301L).equals(appPolicyId)) {
-            return "YouTube";
-        }
-        if (Long.valueOf(7302L).equals(appPolicyId)) {
-            return "Instagram";
-        }
-        if (Long.valueOf(7303L).equals(appPolicyId)) {
-            return "GameX";
-        }
-        return "Unknown";
+    @Operation(
+            summary = "특정 구성원 앱별 정책 신규 생성",
+            description = "가족 대표자만 설정 가능합니다.",
+            deprecated = true
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+                    잘못된 요청
+                        
+	                - COMMON:4000 요청 형식 불일치
+	                - COMMON:4001 DTO 유효성 검증 실패
+	                - COMMON:4006 Content-Type 불일치
+	                """
+            ),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = """
+                    가족 대표자 권한 없음
+                    
+                    - COMMON:4300 가족 대표자 권한이 없음
+                    """
+            ),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "409", description = "정책 충돌"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
+    @PostMapping("/lines/apps")
+    public ResponseEntity<AppPolicyResDto> createAppPolicy(
+            @RequestBody AppPolicyCreateReqDto request
+    ) {
+        AppPolicyResDto response = AppPolicyResDto.builder().build();
+        return ResponseEntity.ok(response);
     }
 
 }

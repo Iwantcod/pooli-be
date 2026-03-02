@@ -123,6 +123,7 @@ public interface UserPolicyService {
      * 특정 구성원 앱별 정책 신규 생성
      * Controller: ResponseEntity<AppPolicyResDto>
      */
+    @Deprecated
     AppPolicyResDto createAppPolicy(AppPolicyCreateReqDto request, AuthUserDetails auth);
 
     /**
