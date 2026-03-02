@@ -24,7 +24,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @RequestMapping("/api/notifications/settings")
 public class AlarmSettingController {
 
-	final private AlarmSettingService alarmSettingService;
+	private final AlarmSettingService alarmSettingService;
 
 	@Operation(
 			summary = "알람 설정 변경",
