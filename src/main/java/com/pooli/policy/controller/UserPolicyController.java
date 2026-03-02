@@ -1,17 +1,11 @@
 package com.pooli.policy.controller;
 
-import com.pooli.policy.domain.dto.request.*;
-import com.pooli.policy.domain.dto.response.*;
-import com.pooli.policy.domain.enums.DayOfWeek;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -20,6 +14,30 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.pooli.policy.domain.dto.request.AppDataLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.AppPolicyCreateReqDto;
+import com.pooli.policy.domain.dto.request.AppPolicyUpdateReqDto;
+import com.pooli.policy.domain.dto.request.AppSpeedLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.BlockPolicyUpdateReqDto;
+import com.pooli.policy.domain.dto.request.ImmediateBlockReqDto;
+import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
+import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
+import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
+import com.pooli.policy.domain.dto.response.AppPolicyResDto;
+import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
+import com.pooli.policy.domain.dto.response.BlockPolicyResDto;
+import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
+import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockDayResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
+import com.pooli.policy.domain.enums.DayOfWeek;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 @Tag(name = "Policy", description = "정책 API")
 @RestController
@@ -50,6 +68,7 @@ public class UserPolicyController {
                 """
         )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping
     public ResponseEntity<List<ActivePolicyResDto>> getActivePolicies() {
         List<ActivePolicyResDto> response = List.of(
@@ -117,6 +136,7 @@ public class UserPolicyController {
                 """
         )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/repeat-block")
     public ResponseEntity<List<RepeatBlockPolicyResDto>> getReBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
@@ -201,6 +221,7 @@ public class UserPolicyController {
                 """
         )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PostMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> createReBlockPolicies(
             @RequestBody RepeatBlockPolicyReqDto request
@@ -266,6 +287,7 @@ public class UserPolicyController {
                 """
         )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> updateReBlockPolicies(
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
@@ -327,6 +349,7 @@ public class UserPolicyController {
                 """
         )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @DeleteMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> deleteReBlockPolicies(
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
@@ -378,6 +401,7 @@ public class UserPolicyController {
                     """
             )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> getImBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
@@ -446,6 +470,7 @@ public class UserPolicyController {
                     """
             )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> updateImBlockPolicies(
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
@@ -499,6 +524,7 @@ public class UserPolicyController {
                     """
             )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/limits")
     public ResponseEntity<LimitPolicyResDto> getLimitPolicies(
             @Parameter(description = "회선 식별자", example = "101")
@@ -556,6 +582,7 @@ public class UserPolicyController {
                     """
             )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/days/limits/enable-toggles")
     public ResponseEntity<LimitPolicyResDto> toggleDayLimitPolicy(
             @Parameter(description = "회선 식별자", example = "1")
@@ -616,6 +643,7 @@ public class UserPolicyController {
                     """
             )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/days/limits")
     public ResponseEntity<LimitPolicyResDto> updateDayLimitPolicy(
             @RequestBody LimitPolicyUpdateReqDto request
@@ -666,6 +694,7 @@ public class UserPolicyController {
 	                """
 	    )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/shares/limits/enable-toggles")
     public ResponseEntity<LimitPolicyResDto> toggleShareLimitPolicy(
             @Parameter(description = "회선 식별자", example = "1")
@@ -726,6 +755,7 @@ public class UserPolicyController {
                     """
             )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/shares/limits")
     public ResponseEntity<LimitPolicyResDto> updateShareLimitPolicy(
             @RequestBody LimitPolicyUpdateReqDto request
@@ -778,6 +808,7 @@ public class UserPolicyController {
                     """
             )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/apps")
     public ResponseEntity<List<AppPolicyResDto>> getAppPolicies(
             @Parameter(description = "회선 식별자", example = "101")
@@ -860,6 +891,7 @@ public class UserPolicyController {
                     """
             )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PostMapping("/lines/apps")
     public ResponseEntity<AppPolicyResDto> createAppPolicy(
             @RequestBody AppPolicyCreateReqDto request
@@ -913,6 +945,7 @@ public class UserPolicyController {
 	                """
 	        )
 	})
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/apps/limits")
     public ResponseEntity<AppPolicyResDto> updateAppPolicyLimit(
             @RequestBody AppDataLimitUpdateReqDto request
@@ -966,6 +999,7 @@ public class UserPolicyController {
 	                """
 	        )
 	})
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/apps/speeds")
     public ResponseEntity<AppPolicyResDto> updateAppPolicySpeed(
             @RequestBody AppSpeedLimitUpdateReqDto request
@@ -1017,6 +1051,7 @@ public class UserPolicyController {
             """
             )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/apps/enable-toggles")
     public ResponseEntity<Void> toggleAppPolicyEnable(
             @Parameter(description = "앱 정책 식별자", example = "154")
@@ -1067,6 +1102,7 @@ public class UserPolicyController {
             """
             )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @DeleteMapping("/lines/apps")
     public ResponseEntity<Void> deleteAppPolicy(
             @Parameter(description = "앱 정책 식별자", example = "154")
@@ -1117,6 +1153,7 @@ public class UserPolicyController {
             """
             )
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/applied")
     public ResponseEntity<AppliedPolicyResDto> getAppliedPoliciesByLine(
             @Parameter(description = "회선 식별자", example = "101")
@@ -1135,6 +1172,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/limits")
     public ResponseEntity<LimitPolicyResDto> updateLimitPolicy(
             @Parameter(description = "회선 식별자", example = "101")
@@ -1158,6 +1196,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/blocks")
     public ResponseEntity<BlockPolicyResDto> updateBlockPolicy(
             @Parameter(description = "회선 식별자", example = "101")
@@ -1181,6 +1220,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/apps")
     public ResponseEntity<AppPolicyResDto> updateAppPolicy(
             @Parameter(description = "회선 식별자", example = "101")
@@ -1209,6 +1249,7 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/blocks")
     public ResponseEntity<List<BlockPolicyResDto>> getBlockPolicies(
             @Parameter(description = "회선 식별자", example = "101")
