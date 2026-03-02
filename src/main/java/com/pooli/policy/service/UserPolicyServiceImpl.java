@@ -8,11 +8,13 @@ import com.pooli.policy.domain.dto.request.*;
 import com.pooli.policy.domain.dto.response.*;
 import com.pooli.policy.domain.entity.DailyLimit;
 import com.pooli.policy.domain.entity.SharedLimit;
+import com.pooli.policy.exception.PolicyErrorCode;
 import com.pooli.policy.mapper.DailyLimitMapper;
 import com.pooli.policy.mapper.SharedLimitMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -61,13 +63,14 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public LimitPolicyResDto getLimitPolicy(Long lineId, AuthUserDetails auth) {
         // 1. 조회 대상 lineId가 속한 가족그룹과, 요청을 보낸 사용자의 가족 그룹이 일치하는지 검증
         checkIsSameFamilyGroup(lineId, auth.getLineId());
 
         // 2. 두 종류의 제한 정보 테이블에서 정보 조회
-        Optional<DailyLimit> dailyLimit = dailyLimitMapper.getDailyLimitByLineId(lineId);
-        Optional<SharedLimit> sharedLimit = sharedLimitMapper.getSharedLimitByLineId(lineId);
+        Optional<DailyLimit> dailyLimit = dailyLimitMapper.getExistDailyLimitByLineId(lineId);
+        Optional<SharedLimit> sharedLimit = sharedLimitMapper.getActiveSharedLimitByLineId(lineId);
 
         LimitPolicyResDto answer = LimitPolicyResDto.builder()
                 .dailyLimitId((dailyLimit.isPresent()) ? dailyLimit.get().getDailyLimitId() : null)
@@ -83,8 +86,55 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     }
 
     @Override
+    @Transactional
     public LimitPolicyResDto toggleDailyTotalLimitPolicy(Long lineId, AuthUserDetails auth) {
-        return null;
+        // 1. 조회 대상 lineId가 속한 가족그룹과, 요청을 보낸 사용자의 가족 그룹이 일치하는지 검증
+        checkIsSameFamilyGroup(lineId, auth.getLineId());
+
+        // 2. 제한 정책 존재 여부 조회
+        Optional<DailyLimit> dailyLimit = dailyLimitMapper.getExistDailyLimitByLineId(lineId);
+        if (dailyLimit.isPresent()) {
+            // 삭제 상태가 아닌 dailyLimit 레코드가 존재하는 경우
+            if(dailyLimit.get().getIsActive()) {
+                // 제한 정책이 활성화된 경우 비활성화
+                int def = dailyLimitMapper.deactivateDailyLimitByDailyLimitId(dailyLimit.get().getDailyLimitId());
+                if(def != 1) {
+                    throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+                }
+                return LimitPolicyResDto.builder()
+                        .dailyLimitId(dailyLimit.get().getDailyLimitId())
+                        .dailyDataLimit(dailyLimit.get().getDailyDataLimit())
+                        .isDailyDataLimitActive(false)
+                        .build();
+            } else {
+                // 비활성화된 경우 재활성화
+                int def = dailyLimitMapper.activateDailyLimitByDailyLimitId(dailyLimit.get().getDailyLimitId());
+                if(def != 1) {
+                    throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+                }
+                return LimitPolicyResDto.builder()
+                        .dailyLimitId(dailyLimit.get().getDailyLimitId())
+                        .dailyDataLimit(dailyLimit.get().getDailyDataLimit())
+                        .isDailyDataLimitActive(true)
+                        .build();
+            }
+        } else {
+            // dailyLimit 레코드가 없거나, 삭제 상태인 경우 새 레코드 insert
+            DailyLimit newDailyLimit = DailyLimit.builder()
+                    .lineId(lineId)
+                    .dailyDataLimit(-1L) // 기본값: 무제한
+                    .isActive(true) // 기본값: 활성화 상태
+                    .build();
+            int def = dailyLimitMapper.createDailyLimit(newDailyLimit);
+            if(def != 1) {
+                throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+            }
+            return LimitPolicyResDto.builder()
+                    .dailyLimitId(newDailyLimit.getDailyLimitId())
+                    .dailyDataLimit(newDailyLimit.getDailyDataLimit())
+                    .isDailyDataLimitActive(newDailyLimit.getIsActive())
+                    .build();
+        }
     }
 
     @Override

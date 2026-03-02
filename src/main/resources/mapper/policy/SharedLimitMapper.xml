@@ -15,7 +15,7 @@
         </constructor>
     </resultMap>
 
-    <select id="getSharedLimitByLineId" resultMap="sharedLimitResultMap" parameterType="long">
+    <select id="getActiveSharedLimitByLineId" resultMap="sharedLimitResultMap" parameterType="long">
         SELECT *
         FROM SHARED_LIMIT
         WHERE line_id = #{lineId} AND deleted_at IS NULL;

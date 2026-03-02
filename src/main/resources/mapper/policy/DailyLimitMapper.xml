@@ -15,9 +15,31 @@
         </constructor>
     </resultMap>
 
-    <select id="getDailyLimitByLineId" resultMap="dailyLimitResultMap" parameterType="long">
+    <select id="getExistDailyLimitByLineId" resultMap="dailyLimitResultMap" parameterType="long">
         SELECT *
         FROM DAILY_LIMIT
         WHERE line_id = #{lineId} AND deleted_at IS NULL;
     </select>
+
+    <update id="activateDailyLimitByDailyLimitId" parameterType="long">
+        UPDATE DAILY_LIMIT
+        SET is_active = 1, updated_at = now()
+        WHERE daily_limit_id = #{dailyLimitId} AND deleted_at IS NULL;
+    </update>
+
+    <update id="deactivateDailyLimitByDailyLimitId" parameterType="long">
+        UPDATE DAILY_LIMIT
+        SET is_active = 0, updated_at = now()
+        WHERE daily_limit_id = #{dailyLimitId} AND deleted_at IS NULL;
+    </update>
+    
+    <insert id="createDailyLimit"
+            parameterType="com.pooli.policy.domain.entity.DailyLimit"
+            useGeneratedKeys="true"
+            keyProperty="dailyLimitId"
+            keyColumn="daily_limit_id">
+        INSERT INTO DAILY_LIMIT (line_id,   daily_data_limit,  is_active,   created_at)
+                         VALUES (#{lineId}, #{dailyDataLimit}, #{isActive}, now());
+
+    </insert>
 </mapper>
