@@ -14,6 +14,8 @@ import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.PermissionLineMapper;
 import com.pooli.permission.mapper.PermissionMapper;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -72,6 +74,10 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
     public MemberPermissionResDto updateMemberPermission(Long familyId, Long lineId, MemberPermissionUpsertReqDto reqDto, AuthUserDetails userDetails) {
         validateFamilyOwnership(familyId, userDetails);
 
+        // upsert 전 lineId가 해당 familyId 소속인지 검증 (타 가족 lineId 쓰기 방지)
+        familyLineMapper.findByFamilyIdAndLineId(familyId, lineId)
+                .orElseThrow(() -> new ApplicationException(PermissionErrorCode.FAMILY_LINE_MAPPING_NOT_FOUND));
+
         permissionMapper.findById(reqDto.getPermissionId())
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.PERMISSION_NOT_FOUND));
 
@@ -92,6 +98,31 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
     @Transactional
     public MemberPermissionListResDto bulkUpdateMemberPermissions(Long familyId, List<MemberPermissionBulkUpsertReqDto> reqList, AuthUserDetails userDetails) {
         validateFamilyOwnership(familyId, userDetails);
+
+        // Fix2: 빈 배열이면 DB 호출 없이 현재 상태 반환 (SQL foreach 오류 방지)
+        if (reqList.isEmpty()) {
+            return MemberPermissionListResDto.builder()
+                    .memberPermissions(permissionLineMapper.findByFamilyId(familyId))
+                    .build();
+        }
+
+        // Fix5: 요청된 permissionId가 실제 존재하는지 검증
+        Set<Integer> permissionIds = reqList.stream()
+                .map(MemberPermissionBulkUpsertReqDto::getPermissionId)
+                .collect(Collectors.toSet());
+        for (Integer permissionId : permissionIds) {
+            permissionMapper.findById(permissionId)
+                    .orElseThrow(() -> new ApplicationException(PermissionErrorCode.PERMISSION_NOT_FOUND));
+        }
+
+        // Fix1: 요청된 lineId가 모두 해당 familyId 소속인지 검증
+        Set<Long> lineIds = reqList.stream()
+                .map(MemberPermissionBulkUpsertReqDto::getLineId)
+                .collect(Collectors.toSet());
+        for (Long lineId : lineIds) {
+            familyLineMapper.findByFamilyIdAndLineId(familyId, lineId)
+                    .orElseThrow(() -> new ApplicationException(PermissionErrorCode.FAMILY_LINE_MAPPING_NOT_FOUND));
+        }
 
         permissionLineMapper.bulkUpsert(reqList);
 

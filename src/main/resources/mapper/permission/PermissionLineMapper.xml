@@ -47,16 +47,17 @@
     </select>
 
     <!-- 가족 전체 구성원 권한 목록 조회 (familyId 기준) -->
+    <!-- CROSS JOIN + LEFT JOIN: PERMISSION_LINE row가 없는 (구성원, 권한) 조합도 반환 (기본 false) -->
     <select id="findByFamilyId" resultMap="memberPermissionResultMap">
         SELECT fl.family_id,
-               pl.line_id,
-               pl.permission_id,
+               fl.line_id,
+               p.permission_id,
                p.permission_title,
-               pl.is_enable,
+               COALESCE(pl.is_enable, false) AS is_enable,
                pl.created_at
-        FROM PERMISSION_LINE pl
-                 JOIN PERMISSION p ON pl.permission_id = p.permission_id
-                 JOIN FAMILY_LINE fl ON pl.line_id = fl.line_id
+        FROM FAMILY_LINE fl
+                 CROSS JOIN PERMISSION p
+                 LEFT JOIN PERMISSION_LINE pl ON pl.line_id = fl.line_id AND pl.permission_id = p.permission_id
         WHERE fl.family_id = #{familyId}
           AND p.deleted_at IS NULL
     </select>

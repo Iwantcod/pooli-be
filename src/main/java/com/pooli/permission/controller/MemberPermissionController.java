@@ -13,10 +13,12 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "MemberPermission", description = "구성원 권한 관련 API")
+@Validated
 @RestController
 @RequestMapping("/api/member-permissions")
 @RequiredArgsConstructor
@@ -109,7 +112,7 @@ public class MemberPermissionController {
     @PatchMapping("/bulk")
     public ResponseEntity<MemberPermissionListResDto> bulkUpdateMemberPermissions(
             @Parameter(description = "가족 ID", example = "10") @RequestParam Long familyId,
-            @Valid @RequestBody List<MemberPermissionBulkUpsertReqDto> reqList,
+            @NotEmpty @Valid @RequestBody List<@Valid MemberPermissionBulkUpsertReqDto> reqList,
             @AuthenticationPrincipal AuthUserDetails userDetails) {
         return ResponseEntity.ok(memberPermissionService.bulkUpdateMemberPermissions(familyId, reqList, userDetails));
     }
