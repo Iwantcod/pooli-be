@@ -102,6 +102,13 @@ public enum CommonErrorCode implements ErrorCode {
             "COMMON:4302",
             "접근 권한이 없습니다."
     ),
+    
+  //회선 접근 권한 없음
+    USER_FORBIDDEN(
+            HttpStatus.FORBIDDEN,
+            "COMMON:4303",
+            "사용자 권한이 없습니다."
+    ),
     /* 500 Internal Server Error */
 
     // 서버 내 오류 발생
