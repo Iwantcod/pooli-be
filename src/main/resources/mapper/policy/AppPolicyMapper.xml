@@ -13,6 +13,7 @@
             <arg column="data_limit"     javaType="java.lang.Long"/>
             <arg column="speed_limit"    javaType="java.lang.Integer"/>
             <arg column="is_active"      javaType="java.lang.Boolean"/>
+            <arg column="is_whitelist"   javaType="java.lang.Boolean"/>
             <arg column="created_at"     javaType="java.time.LocalDateTime"/>
             <arg column="deleted_at"     javaType="java.time.LocalDateTime"/>
             <arg column="updated_at"     javaType="java.time.LocalDateTime"/>
@@ -51,18 +52,35 @@
         WHERE a.application_id = #{appId};
     </select>
 
+    <!-- pk 로 Entity 조회 -->
+    <select id="findEntityExistById" resultMap="appPolicyResultMap">
+        SELECT
+            app_policy_id,
+            line_id,
+            application_id,
+            data_limit,
+            speed_limit,
+            is_active,
+            created_at,
+            deleted_at,
+            updated_at,
+            is_whitelist
+        FROM APP_POLICY
+        WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
+    </select>
+
     <!-- pk로 삭제되지 않은 레코드의 is_active 값 update -->
     <update id="updateIsActive">
         UPDATE APP_POLICY
         SET is_active = #{isActive}, updated_at = now()
-        WHERE app_policy_id = #{appPolicyId};
+        WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
     </update>
 
     <!-- pk로 삭제되지 않은 레코드의 is_whitelist 값 update -->
     <update id="updateIsWhitelist">
         UPDATE APP_POLICY
         SET is_whitelist = #{isWhitelist}, updated_at = now()
-        WHERE app_policy_id = #{appPolicyId};
+        WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
     </update>
 
     <!-- pk로 레코드 삭제처리 -->

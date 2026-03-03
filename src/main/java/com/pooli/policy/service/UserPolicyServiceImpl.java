@@ -292,7 +292,20 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     @Override
     @Transactional
     public void deleteAppPolicy(Long appPolicyId, AuthUserDetails auth) {
+        // 삭제 대상 app policy 레코드 조회
+        Optional<AppPolicy> appPolicy = appPolicyMapper.findEntityExistById(appPolicyId);
+        if(appPolicy.isEmpty()) {
+            // 없다면 예외 발생
+            throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
+        }
+        // 대상 레코드의 회선과 동일 가족에 속했는지 검증
+        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId());
 
+        // soft delete
+        int ret = appPolicyMapper.setDeleted(appPolicyId);
+        if(ret != 1) {
+            throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+        }
     }
 
     @Override
