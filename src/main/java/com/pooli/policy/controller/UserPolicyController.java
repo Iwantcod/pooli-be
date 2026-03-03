@@ -571,6 +571,7 @@ public class UserPolicyController {
         List<AppPolicyResDto> response = List.of(
                 AppPolicyResDto.builder()
                         .appPolicyId(7301L)
+                        .lineId(101L)
                         .appId(301)
                         .appName("YouTube")
                         .isActive(true)
@@ -578,6 +579,7 @@ public class UserPolicyController {
                         .build(),
                 AppPolicyResDto.builder()
                         .appPolicyId(7302L)
+                        .lineId(101L)
                         .appId(302)
                         .appName("Instagram")
                         .isActive(true)
@@ -585,6 +587,7 @@ public class UserPolicyController {
                         .build(),
                 AppPolicyResDto.builder()
                         .appPolicyId(7303L)
+                        .lineId(101L)
                         .appId(401)
                         .appName("GameX")
                         .isActive(false)

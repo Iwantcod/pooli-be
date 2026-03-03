@@ -12,6 +12,9 @@ public class AppPolicyResDto {
     @Schema(description = "앱 정책 PK", example = "7301")
     private Long appPolicyId;
 
+    @Schema(description = "회선 식별자", example = "101")
+    private Long lineId;
+
     @Schema(description = "앱 식별자", example = "301")
     private Integer appId;
 

@@ -311,6 +311,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 }
                 return AppPolicyResDto.builder()
                         .appPolicyId(newAppPolicy.getAppPolicyId())
+                        .lineId(request.getLineId())
                         .appId(request.getApplicationId())
                         .appName(appPolicy.get().getAppName())
                         .isActive(newAppPolicy.getIsActive())

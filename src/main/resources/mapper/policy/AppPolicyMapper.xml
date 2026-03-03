@@ -25,6 +25,7 @@
                type="com.pooli.policy.domain.dto.response.AppPolicyResDto">
         <constructor>
             <arg column="appPolicyId"       javaType="java.lang.Long"/>
+            <arg column="lineId"            javaType="java.lang.Long"/>
             <arg column="appId"             javaType="java.lang.Integer"/>
             <arg column="appName"           javaType="java.lang.String"/>
             <arg column="isActive"          javaType="java.lang.Boolean"/>
@@ -38,6 +39,7 @@
     <select id="findDtoExistByLineIdAndAppId" resultMap="appPolicyResDtoResultMap">
         SELECT
             ap.app_policy_id appPolicyId,
+            ap.line_id lineId,
             a.application_id appId,
             a.application_name appName,
             ap.is_active isActive,
