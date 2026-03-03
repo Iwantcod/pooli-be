@@ -5,7 +5,9 @@ import java.util.List;
 
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.service.AlarmHistoryService;
 import io.swagger.v3.oas.annotations.Parameter;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,8 +27,11 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 @Tag(name = "notification", description = "알람 관련 API")
 @RestController
+@RequiredArgsConstructor
 @RequestMapping("/api/notifications")
 public class NotiReadController {
+
+	private final AlarmHistoryService alarmHistoryService;
 
 	@Operation(
 	    summary = "알림 목록 조회",
@@ -48,24 +53,20 @@ public class NotiReadController {
 	        @RequestParam(name = "pageSize") Integer size,
 
 			@Parameter(description = "읽었는지 여부", example = "true")
-	        @RequestParam(name = "isRead", required = false) Boolean isRead){
-		
-	    NotiSendResDto noti = NotiSendResDto.builder()
-        .alarmHistoryId(1L)
-        .lineId(2L)
-        .alarmCode(AlarmCode.POLICY_LIMIT)
-        .value(null)  
-        .isRead(isRead != null ? isRead : false)
-        .build();
-		
-		// PagingResDto 빌더로 생성
-		PagingResDto<NotiSendResDto> response = PagingResDto.<NotiSendResDto>builder()
-		        .page(page)
-		        .page(size)
-		        .totalElements(1L)
-		        .totalPages(1)    
-		        .content(List.of(noti)) 
-		        .build();
+	        @RequestParam(name = "isRead", required = false) Boolean isRead,
+
+			@Parameter(description = "알람 코드", example = "POLICY_CHANGE")
+			@RequestParam(name = "code", required = false) AlarmCode code
+			){
+
+		PagingResDto<NotiSendResDto> response =
+				alarmHistoryService.getNotifications(
+						userDetails.getLineId(),
+						page,
+						size,
+						isRead,
+						code
+				);
 
 		return ResponseEntity.ok(response);
 	}

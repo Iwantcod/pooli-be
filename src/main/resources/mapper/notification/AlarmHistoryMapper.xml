@@ -5,6 +5,7 @@
 
 <mapper namespace="com.pooli.notification.mapper.AlarmHistoryMapper">
 
+    <!-- 알람 단건 insert -->
     <insert id="insertAlarmHistory">
         INSERT INTO ALARM_HISTORY (
         line_id,
@@ -24,6 +25,7 @@
         )
     </insert>
 
+    <!-- 알람 다건 insert -->
     <insert id="insertNotificationAlarms">
         INSERT INTO ALARM_HISTORY (
         line_id,
@@ -45,5 +47,67 @@
             )
         </foreach>
     </insert>
+
+
+    <select id="findAlarmHistoryPage"
+            resultType="com.pooli.notification.domain.dto.response.NotiSendResDto">
+
+        SELECT
+        alarm_history_id AS alarmHistoryId,
+        line_id AS lineId,
+        alarm_code AS alarmCode,
+        value,
+        CASE
+        WHEN read_at IS NULL THEN FALSE
+        ELSE TRUE
+        END AS isRead,
+        created_at AS createdAt
+        FROM ALARM_HISTORY
+        WHERE line_id = #{lineId}
+        AND deleted_at IS NULL
+
+        <if test="isRead != null">
+            <choose>
+                <when test="isRead == true">
+                    AND read_at IS NOT NULL
+                </when>
+                <otherwise>
+                    AND read_at IS NULL
+                </otherwise>
+            </choose>
+        </if>
+
+        <if test="code != null">
+            AND alarm_code = #{code}
+        </if>
+
+        ORDER BY created_at DESC
+        LIMIT #{size} OFFSET #{offset}
+
+    </select>
+
+    <select id="countAlarmHistory" resultType="long">
+
+        SELECT COUNT(*)
+        FROM ALARM_HISTORY
+        WHERE line_id = #{lineId}
+        AND deleted_at IS NULL
+
+        <if test="isRead != null">
+            <choose>
+                <when test="isRead == true">
+                    AND read_at IS NOT NULL
+                </when>
+                <otherwise>
+                    AND read_at IS NULL
+                </otherwise>
+            </choose>
+        </if>
+
+        <if test="code != null">
+            AND alarm_code = #{code}
+        </if>
+
+    </select>
 
 </mapper>
