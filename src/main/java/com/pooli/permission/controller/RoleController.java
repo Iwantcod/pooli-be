@@ -103,9 +103,7 @@ public class RoleController {
 
         AuthUserDetails updatedUserDetails = AuthUserDetails.builder()
                 .userId(userDetails.getUserId())
-                .userName(userDetails.getUsername())
                 .email(userDetails.getEmail())
-                .password(userDetails.getPassword())
                 .lineId(userDetails.getLineId())
                 .authorities(updatedAuthorities)
                 .build();
