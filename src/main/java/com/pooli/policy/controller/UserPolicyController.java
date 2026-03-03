@@ -659,9 +659,10 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/apps/speeds")
     public ResponseEntity<AppPolicyResDto> updateAppPolicySpeed(
-            @RequestBody AppSpeedLimitUpdateReqDto request
+            @RequestBody AppSpeedLimitUpdateReqDto request,
+            @AuthenticationPrincipal AuthUserDetails auth
     ) {
-        AppPolicyResDto response = AppPolicyResDto.builder().build();
+        AppPolicyResDto response = userPolicyService.updateAppSpeedLimit(request, auth);
         return ResponseEntity.ok(response);
     }
 

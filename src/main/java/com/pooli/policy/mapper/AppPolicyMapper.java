@@ -30,6 +30,8 @@ public interface AppPolicyMapper {
     int updateIsWhitelist(@Param("appPolicyId") Long appPolicyId, @Param("isWhitelist") Boolean isWhitelist);
     // pk로 삭제되지 않은 레코드의 data_limit 값 update
     int updateDataLimit(@Param("appPolicyId") Long appPolicyId, @Param("value") Long value);
+    // pk로 삭제되지 않은 레코드의 speed_limit 값 update
+    int updateSpeedLimit(@Param("appPolicyId") Long appPolicyId, @Param("value") Integer value);
 
     /*
     =================== DELETE ====================

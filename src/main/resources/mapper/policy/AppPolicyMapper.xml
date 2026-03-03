@@ -90,6 +90,13 @@
         WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
     </update>
 
+    <!-- pk로 삭제되지 않은 레코드의 speed_limit 값 update -->
+    <update id="updateSpeedLimit">
+        UPDATE APP_POLICY
+        SET speed_limit = #{value}, updated_at = now()
+        WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
+    </update>
+
     <!-- pk로 레코드 삭제처리 -->
     <update id="setDeleted" parameterType="long">
         UPDATE APP_POLICY
