@@ -1,0 +1,10 @@
+ALTER TABLE ALARM_HISTORY
+    MODIFY alarm_code ENUM(
+    'FAMILY',
+    'USER',
+    'POLICY_CHANGE',
+    'POLICY_LIMIT',
+    'PERMISSION',
+    'QUESTION',
+    'OTHERS'
+    ) NOT NULL COMMENT 'enum';
