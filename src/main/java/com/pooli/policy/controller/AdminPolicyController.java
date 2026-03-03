@@ -343,8 +343,6 @@ public class AdminPolicyController {
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @PostMapping("/categories")
     public ResponseEntity<AdminPolicyCateResDto> createCategory(
-            @Parameter(description = "정책 식별자", example = "1003")
-            @RequestParam("policyId") Integer policyId, 
             @RequestBody AdminCategoryReqDto request
     ) {
         return null;
@@ -391,8 +389,8 @@ public class AdminPolicyController {
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @PatchMapping("/categories")
     public ResponseEntity<AdminPolicyCateResDto> updateCategory(
-            @Parameter(description = "정책 식별자", example = "1003")
-            @RequestParam("policyId") Integer policyId,
+    		@Parameter(description = "정책 카테고리 식별자", example = "1003")
+            @RequestParam("policyCategoryId") Integer policyCategoryId,
             @RequestBody AdminCategoryReqDto request
     ) {
 
@@ -437,8 +435,8 @@ public class AdminPolicyController {
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @DeleteMapping("/categories")
     public ResponseEntity<AdminPolicyCateResDto> deleteCategory(
-            @Parameter(description = "정책 식별자", example = "1003")
-            @RequestParam("policyId") Integer policyId
+            @Parameter(description = "정책 카테고리 식별자", example = "1003")
+            @RequestParam("policyCategoryId") Integer policyCategoryId
     ) {
         return null;
     }

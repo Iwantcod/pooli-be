@@ -2,11 +2,12 @@ package com.pooli.policy.service;
 
 import java.util.List;
 
+import com.pooli.policy.domain.dto.request.AdminCategoryReqDto;
 import com.pooli.policy.domain.dto.request.AdminPolicyActiveReqDto;
+import com.pooli.policy.domain.dto.request.AdminPolicyReqDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyResDto;
-import com.pooli.policy.domain.dto.response.LineAppUsageResDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyActiveResDto;
-import com.pooli.policy.domain.dto.response.PolicyDeactivationResDto;
+import com.pooli.policy.domain.dto.response.AdminPolicyCateResDto;
 
 public class AdminPolicyServiceImpl implements AdminPolicyService{
 
@@ -17,21 +18,53 @@ public class AdminPolicyServiceImpl implements AdminPolicyService{
 	}
 
 	@Override
-	public AdminPolicyActiveResDto activatePolicy(AdminPolicyActiveReqDto request) {
+	public AdminPolicyResDto createPolicy(AdminPolicyReqDto request) {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
-	public PolicyDeactivationResDto deactivatePolicy(Long policyId) {
+	public AdminPolicyResDto updatePolicy(Integer policyId, AdminPolicyReqDto request) {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
-	public List<LineAppUsageResDto> getLineAppUsageStatistics(Long lineId) {
+	public AdminPolicyActiveResDto deletePolicy(Integer policyId) {
 		// TODO Auto-generated method stub
 		return null;
 	}
+
+	@Override
+	public AdminPolicyActiveResDto updateActivationPolicy(Integer policyId, AdminPolicyActiveReqDto request) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public AdminPolicyCateResDto getCategories() {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public AdminPolicyCateResDto createCategory(AdminCategoryReqDto request) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public AdminPolicyCateResDto updateCategory(Integer policyCategoryId, AdminCategoryReqDto request) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public AdminPolicyCateResDto deleteCategory(Integer policyCategoryId) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+
 
 }
