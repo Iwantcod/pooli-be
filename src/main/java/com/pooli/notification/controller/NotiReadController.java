@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.notification.domain.enums.AlarmCode;
+import io.swagger.v3.oas.annotations.Parameter;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,8 +40,14 @@ public class NotiReadController {
 	@GetMapping
 	public ResponseEntity<PagingResDto<NotiSendResDto>> getNotifications(
 			@AuthenticationPrincipal AuthUserDetails userDetails,
+
+			@Parameter(description = "페이지 넘버", example = "0")
 			@RequestParam(name = "pageNumber") Integer page,
+
+			@Parameter(description = "페이지 사이즈", example = "20")
 	        @RequestParam(name = "pageSize") Integer size,
+
+			@Parameter(description = "읽었는지 여부", example = "true")
 	        @RequestParam(name = "isRead", required = false) Boolean isRead){
 		
 	    NotiSendResDto noti = NotiSendResDto.builder()
