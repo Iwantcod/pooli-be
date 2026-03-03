@@ -60,15 +60,14 @@ public class FamilyController {
     public ResponseEntity<FamilyMembersResDto> getFamilyMembers(
     	    @AuthenticationPrincipal 
     	    AuthUserDetails principal,
-    	    @RequestParam(required = true)
+    	    @RequestParam(required = true, name = "familyId")
     		@NotNull
             @Parameter(description = "가족 ID", example = "1")
             Integer familyId
     ) {
     	
 
-        FamilyMembersResDto response = familyService.getFamilyMembers(familyId, principal.getLineId());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(familyService.getFamilyMembers(familyId, principal));
     }
     
     
@@ -95,15 +94,13 @@ public class FamilyController {
     @GetMapping("/members-simple")
     public ResponseEntity<List<FamilyMembersSimpleResDto>> getFamilyMembersSimple(
     	    @AuthenticationPrincipal AuthUserDetails principal,
-    	    @RequestParam(required = true) 
+    	    @RequestParam(required = true, name = "familyId") 
     	    @NotNull
             @Parameter(description = "가족 식별자", example = "1")
     	    Integer familyId
     ) {
     	
-
-        List<FamilyMembersSimpleResDto> response = familyService.getFamilyMembersSimple(familyId, principal.getLineId());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(familyService.getFamilyMembersSimple(familyId, principal));
     }
     
     
@@ -132,7 +129,7 @@ public class FamilyController {
             @Valid @RequestBody UpdateVisibilityReqDto request
     ) {
     	
-    	familyService.updateVisibility(principal.getLineId(), request);
+    	familyService.updateVisibility(request,principal);
         return ResponseEntity.ok().build();
     }
 }
