@@ -235,8 +235,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     @Override
     @Transactional
     public AppPolicyResDto updateAppDataLimit(AppDataLimitUpdateReqDto request, AuthUserDetails auth) {
-        // 1. 대상 appPolicy 레코드 조회
-        Optional<AppPolicy> appPolicy = appPolicyMapper.findEntityExistById(request.getAppPolicyId());
+        // 1. 대상 appPolicy DTO 조회
+        Optional<AppPolicyResDto> appPolicy = appPolicyMapper.findDtoExistById(request.getAppPolicyId());
         if (appPolicy.isEmpty()) {
             throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
         }
@@ -250,16 +250,17 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
-        // 4. 응답 DTO 반환
-        return appPolicyMapper.findDtoExistByLineIdAndAppId(appPolicy.get().getLineId(), appPolicy.get().getApplicationId())
-                .orElseThrow(() -> new ApplicationException(CommonErrorCode.DATABASE_ERROR));
+        // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
+        return appPolicy.get().toBuilder()
+                .dailyLimitData(request.getValue())
+                .build();
     }
 
     @Override
     @Transactional
     public AppPolicyResDto updateAppSpeedLimit(AppSpeedLimitUpdateReqDto request, AuthUserDetails auth) {
-        // 1. 대상 appPolicy 레코드 조회
-        Optional<AppPolicy> appPolicy = appPolicyMapper.findEntityExistById(request.getAppPolicyId());
+        // 1. 대상 appPolicy DTO 조회
+        Optional<AppPolicyResDto> appPolicy = appPolicyMapper.findDtoExistById(request.getAppPolicyId());
         if (appPolicy.isEmpty()) {
             throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
         }
@@ -273,9 +274,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
-        // 4. 응답 DTO 반환
-        return appPolicyMapper.findDtoExistByLineIdAndAppId(appPolicy.get().getLineId(), appPolicy.get().getApplicationId())
-                .orElseThrow(() -> new ApplicationException(CommonErrorCode.DATABASE_ERROR));
+        // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
+        return appPolicy.get().toBuilder()
+                .dailyLimitSpeed(request.getValue())
+                .build();
     }
 
     @Override

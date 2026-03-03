@@ -16,6 +16,8 @@ public interface AppPolicyMapper {
     Optional<AppPolicy> findEntityExistByLineIdAndAppId(@Param("lineId") Long lineId, @Param("appId") Integer appId);
     // lineId, appId로 삭제되지 않은 레코드 조회(조회 결과: dto)
     Optional<AppPolicyResDto> findDtoExistByLineIdAndAppId(@Param("lineId") Long lineId, @Param("appId") Integer appId);
+    // pk 로 Dto 조회
+    Optional<AppPolicyResDto> findDtoExistById(Long appPolicyId);
     // pk 로 Entity 조회
     Optional<AppPolicy> findEntityExistById(Long appPolicyId);
 
