@@ -4,4 +4,21 @@
 
 <mapper namespace="com.pooli.policy.mapper.RepeatBlockDayMapper">
 
+  <!-- repeat_block_day 생성(여러 요일 생성될 수 있음) -->
+    <insert id="insertRepeatBlockDays">
+        INSERT INTO repeat_block_day
+            (repeat_block_id, day_of_week, start_at, end_at, created_at)
+        VALUES
+        <foreach collection="days" item="day" separator=",">
+            (#{repeatBlockId}, #{day.dayOfWeek}, #{day.startAt}, #{day.endAt}, NOW())
+        </foreach>
+    </insert>
+    
+   	<update id="deleteRepeatDayBlock">
+	  UPDATE repeat_block_day
+	  SET deleted_at = NOW()
+	  WHERE repeat_block_id = #{repeatBlockId}
+	    AND deleted_at IS NULL
+	</update>
+
 </mapper>

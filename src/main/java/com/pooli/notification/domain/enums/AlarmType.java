@@ -1,5 +1,10 @@
 package com.pooli.notification.domain.enums;
 
 public enum AlarmType {
-    ANSWER;
+    FAMILY,
+    USER,
+    POLICY_CHANGE,
+    POLICY_LIMIT,
+    PERMISSION,
+    QUESTION;
 }

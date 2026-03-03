@@ -37,6 +37,15 @@
           AND deleted_at IS NULL
     </select>
 
+    <!-- 권한 이름 중복 확인 (자기 자신 제외) -->
+    <select id="existsByPermissionTitleExcludingId" resultType="boolean">
+        SELECT COUNT(*) > 0
+        FROM PERMISSION
+        WHERE permission_title = #{permissionTitle}
+          AND permission_id != #{permissionId}
+          AND deleted_at IS NULL
+    </select>
+
     <!-- 권한 생성 -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="permissionId">
         INSERT INTO PERMISSION (permission_title, created_at, updated_at)
