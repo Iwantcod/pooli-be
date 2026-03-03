@@ -313,6 +313,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     }
 
     @Override
+    @Transactional
     public void deleteAppPolicy(Long appPolicyId, AuthUserDetails auth) {
 
     }

@@ -729,8 +729,10 @@ public class UserPolicyController {
     @DeleteMapping("/lines/apps")
     public ResponseEntity<Void> deleteAppPolicy(
             @Parameter(description = "앱 정책 식별자", example = "154")
-            @RequestParam Long appPolicyId
+            @RequestParam Long appPolicyId,
+            @AuthenticationPrincipal AuthUserDetails auth
     ) {
+        userPolicyService.deleteAppPolicy(appPolicyId, auth);
         return ResponseEntity.ok().build();
     }
 

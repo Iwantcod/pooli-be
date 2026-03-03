@@ -4,4 +4,19 @@ import org.apache.ibatis.annotations.Mapper;
 
 @Mapper
 public interface WhitelistMapper {
+    /*
+    =================== SELECT ====================
+     */
+
+    /*
+    =================== UPDATE ====================
+     */
+
+    /*
+    =================== DELETE ====================
+     */
+
+    /*
+    =================== INSERT ====================
+     */
 }
