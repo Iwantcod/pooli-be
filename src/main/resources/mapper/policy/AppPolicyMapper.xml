@@ -83,6 +83,13 @@
         WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
     </update>
 
+    <!-- pk로 삭제되지 않은 레코드의 data_limit 값 update -->
+    <update id="updateDataLimit">
+        UPDATE APP_POLICY
+        SET data_limit = #{value}, updated_at = now()
+        WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
+    </update>
+
     <!-- pk로 레코드 삭제처리 -->
     <update id="setDeleted" parameterType="long">
         UPDATE APP_POLICY

@@ -28,6 +28,8 @@ public interface AppPolicyMapper {
 
     // pk로 삭제되지 않은 레코드의 is_whitelist 값 update
     int updateIsWhitelist(@Param("appPolicyId") Long appPolicyId, @Param("isWhitelist") Boolean isWhitelist);
+    // pk로 삭제되지 않은 레코드의 data_limit 값 update
+    int updateDataLimit(@Param("appPolicyId") Long appPolicyId, @Param("value") Long value);
 
     /*
     =================== DELETE ====================

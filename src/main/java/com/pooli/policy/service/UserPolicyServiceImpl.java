@@ -234,7 +234,24 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
     @Override
     public AppPolicyResDto updateAppDataLimit(AppDataLimitUpdateReqDto request, AuthUserDetails auth) {
-        return null;
+        // 1. 대상 appPolicy 레코드 조회
+        Optional<AppPolicy> appPolicy = appPolicyMapper.findEntityExistById(request.getAppPolicyId());
+        if (appPolicy.isEmpty()) {
+            throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
+        }
+
+        // 2. 대상 lineId가 동일 가족에 속했는지 검증
+        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId());
+
+        // 3. update 진행
+        int ret = appPolicyMapper.updateDataLimit(request.getAppPolicyId(), request.getValue());
+        if (ret != 1) {
+            throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+        }
+
+        // 4. 응답 DTO 반환
+        return appPolicyMapper.findDtoExistByLineIdAndAppId(appPolicy.get().getLineId(), appPolicy.get().getApplicationId())
+                .orElseThrow(() -> new ApplicationException(CommonErrorCode.DATABASE_ERROR));
     }
 
     @Override

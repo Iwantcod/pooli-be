@@ -623,10 +623,11 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/apps/limits")
     public ResponseEntity<AppPolicyResDto> updateAppPolicyLimit(
-            @RequestBody AppDataLimitUpdateReqDto request
+            @RequestBody AppDataLimitUpdateReqDto request,
+            @AuthenticationPrincipal AuthUserDetails auth
     ) {
-        AppPolicyResDto response = AppPolicyResDto.builder().build();
-        return ResponseEntity.ok(response);
+        AppPolicyResDto answer = userPolicyService.updateAppDataLimit(request, auth);
+        return ResponseEntity.ok(answer);
     }
 
     @Operation(
