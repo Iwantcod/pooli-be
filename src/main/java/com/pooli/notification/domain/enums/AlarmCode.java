@@ -7,5 +7,5 @@ public enum AlarmCode {
     POLICY_LIMIT,
     PERMISSION,
     QUESTION,
-    OTHER;
+    OTHERS;
 }

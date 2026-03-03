@@ -1,8 +1,10 @@
 package com.pooli.notification.service;
 
+import com.pooli.common.exception.ApplicationException;
 import com.pooli.notification.domain.dto.response.AlarmSettingResDto;
 import com.pooli.notification.domain.entity.AlarmSetting;
 import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.exception.NotificationErrorCode;
 import com.pooli.notification.mapper.AlarmSettingMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -44,6 +46,9 @@ public class AlarmSettingServiceImpl implements AlarmSettingService{
             case POLICY_LIMIT -> "policy_limit_alarm";
             case PERMISSION -> "permission_alarm";
             case QUESTION -> "question_alarm";
+            case OTHERS -> throw new ApplicationException(
+                    NotificationErrorCode.INVALID_ALARM_CODE
+            );
         };
     }
 

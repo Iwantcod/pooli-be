@@ -1,8 +1,14 @@
 package com.pooli.notification.service;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.pooli.common.exception.ApplicationException;
+import com.pooli.notification.domain.dto.request.NotiSendReqDto;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.domain.enums.NotificationTargetType;
+import com.pooli.notification.exception.NotificationErrorCode;
 import com.pooli.notification.mapper.AlarmHistoryMapper;
+import com.pooli.notification.mapper.NotificationLineMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +24,7 @@ import java.util.Map;
 public class AlarmHistoryServiceImpl implements AlarmHistoryService {
     private final AlarmHistoryMapper alarmHistoryMapper;
     private final ObjectMapper objectMapper;
+    private final NotificationLineMapper notificationLineMapper;
 
     @Transactional
     public void createAlarm(
@@ -55,38 +62,79 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
     @Transactional
     @Override
-    public void createNotificationAlarms(
-            List<Long> lineIds, Map<String, Object> values
-    ) {
+    public void sendNotification(NotiSendReqDto request) {
 
-        if (lineIds == null || lineIds.isEmpty()) {
-            return;
+        List<Long> lineIds = request.getLineId();
+
+        if (request.getTargetType() == NotificationTargetType.DIRECT) {
+            if (lineIds == null || lineIds.isEmpty()) {
+                throw new ApplicationException(NotificationErrorCode.LINE_ID_REQUIRED);
+            }
+        } else {
+            if (lineIds != null && !lineIds.isEmpty()) {
+                throw new ApplicationException(NotificationErrorCode.INVALID_TARGET_CONDITION);
+            }
         }
 
-        if (values == null) {
-            values = new HashMap<>();
+        List<Long> targetLineIds = List.of();
+
+        switch (request.getTargetType()) {
+
+            case DIRECT -> {
+                List<Long> existingLineIds =
+                        notificationLineMapper.findExistingLineIds(lineIds);
+
+                if (existingLineIds.size() != lineIds.size()) {
+                    throw new ApplicationException(
+                            NotificationErrorCode.NOTIFICATION_TARGET_NOT_FOUND
+                    );
+                }
+
+                targetLineIds = existingLineIds;
+            }
+
+            case ALL -> targetLineIds = notificationLineMapper.findAllLineIds();
+
+            case OWNER -> targetLineIds =
+                    notificationLineMapper.findLineIdsByRole("OWNER");
+
+            case MEMBER -> targetLineIds =
+                    notificationLineMapper.findLineIdsByRole("MEMBER");
         }
 
-        // 🔥 type은 무조건 NOTIFICATION
-        values.put("type", "NOTIFICATION");
-
+        if (targetLineIds == null || targetLineIds.isEmpty()) {
+            throw new ApplicationException(
+                    NotificationErrorCode.NOTIFICATION_TARGET_NOT_FOUND
+            );
+        }
         try {
-            String jsonValue = objectMapper.writeValueAsString(values);
+            ObjectNode jsonNode;
 
-            int result = alarmHistoryMapper.insertNotificationAlarms(
-                    lineIds,
-                    alarmCode.name(),
+            if (request.getValue() == null) {
+                jsonNode = objectMapper.createObjectNode();
+            } else if (request.getValue().isObject()) {
+                jsonNode = (ObjectNode) request.getValue();
+            } else {
+                throw new ApplicationException(
+                        NotificationErrorCode.INVALID_TARGET_CONDITION
+                );
+            }
+
+            jsonNode.put("type", "NOTIFICATION");
+
+            String jsonValue = objectMapper.writeValueAsString(jsonNode);
+
+            alarmHistoryMapper.insertNotificationAlarms(
+                    targetLineIds,
+                    AlarmCode.OTHERS.name(),
                     jsonValue
             );
 
-            if (result != lineIds.size()) {
-                System.out.println("일부 알림 저장 실패");
-            }
-
-        } catch (JsonProcessingException e) {
-            System.out.println("알림 JSON 변환 실패 : " + e.getMessage());
+        } catch (Exception e) {
+            throw new ApplicationException(
+                    NotificationErrorCode.NOTIFICATION_SAVE_FAILED
+            );
         }
     }
-
 
 }
