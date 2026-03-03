@@ -1,10 +1,12 @@
 package com.pooli.permission.controller;
 
 import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.permission.domain.dto.request.MemberPermissionBulkUpsertReqDto;
 import com.pooli.permission.domain.dto.request.MemberPermissionUpsertReqDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionListResDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionResDto;
 import com.pooli.permission.service.MemberPermissionService;
+import java.util.List;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -46,6 +48,24 @@ public class MemberPermissionController {
         return ResponseEntity.ok(memberPermissionService.getMyPermissions(userDetails.getLineId()));
     }
 
+    @Operation(summary = "가족 전체 구성원 권한 목록 조회", description = "가족관리자 또는 관리자가 familyId를 기준으로 가족 내 전체 구성원의 권한 목록을 한 번에 조회한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "403", description = """
+                    권한 없음
+
+                    - COMMON:4302: 접근 권한이 없습니다.
+                    """),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
+    @PreAuthorize("hasRole('ADMIN') or hasRole('FAMILY_OWNER')")
+    @GetMapping("/family")
+    public ResponseEntity<MemberPermissionListResDto> getFamilyMemberPermissions(
+            @Parameter(description = "가족 ID", example = "10") @RequestParam Long familyId,
+            @AuthenticationPrincipal AuthUserDetails userDetails) {
+        return ResponseEntity.ok(memberPermissionService.getFamilyMemberPermissions(familyId, userDetails));
+    }
+
     @Operation(summary = "구성원 권한 목록 조회", description = "가족관리자 또는 관리자가 familyId와 lineId를 기준으로 구성원의 권한 목록을 조회한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
@@ -68,6 +88,30 @@ public class MemberPermissionController {
             @Parameter(description = "회선 ID", example = "1001") @RequestParam Long lineId,
             @AuthenticationPrincipal AuthUserDetails userDetails) {
         return ResponseEntity.ok(memberPermissionService.getMemberPermissions(familyId, lineId, userDetails));
+    }
+
+    @Operation(summary = "구성원 권한 일괄 변경", description = "가족관리자 또는 관리자가 familyId를 기준으로 여러 구성원의 권한을 한 번에 변경한다. 적용 버튼 클릭 시 사용한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "일괄 변경 성공"),
+            @ApiResponse(responseCode = "400", description = """
+                    요청 값 오류
+
+                    - COMMON:4001: 회선 ID는 필수입니다. / 권한 ID는 필수입니다. / 권한 활성화 여부(is_enable)는 필수입니다.
+                    """),
+            @ApiResponse(responseCode = "403", description = """
+                    권한 없음
+
+                    - COMMON:4302: 접근 권한이 없습니다.
+                    """),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
+    @PreAuthorize("hasRole('ADMIN') or hasRole('FAMILY_OWNER')")
+    @PatchMapping("/bulk")
+    public ResponseEntity<MemberPermissionListResDto> bulkUpdateMemberPermissions(
+            @Parameter(description = "가족 ID", example = "10") @RequestParam Long familyId,
+            @Valid @RequestBody List<MemberPermissionBulkUpsertReqDto> reqList,
+            @AuthenticationPrincipal AuthUserDetails userDetails) {
+        return ResponseEntity.ok(memberPermissionService.bulkUpdateMemberPermissions(familyId, reqList, userDetails));
     }
 
     @Operation(summary = "구성원 권한 부여 변경", description = "가족관리자 또는 관리자가 familyId와 lineId를 기준으로 권한 식별자와 활성화 여부(is_enable)를 변경한다.")

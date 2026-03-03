@@ -4,6 +4,7 @@ import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.family.domain.enums.FamilyRole;
+import com.pooli.permission.domain.dto.request.MemberPermissionBulkUpsertReqDto;
 import com.pooli.permission.domain.dto.request.MemberPermissionUpsertReqDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionListResDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionResDto;
@@ -33,6 +34,18 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.LINE_NOT_FOUND));
 
         List<MemberPermissionResDto> permissions = permissionLineMapper.findByLineId(lineId);
+        return MemberPermissionListResDto.builder()
+                .memberPermissions(permissions)
+                .build();
+    }
+
+    // 가족 전체 구성원 권한 목록 조회
+    @Override
+    @Transactional(readOnly = true)
+    public MemberPermissionListResDto getFamilyMemberPermissions(Long familyId, AuthUserDetails userDetails) {
+        validateFamilyOwnership(familyId, userDetails);
+
+        List<MemberPermissionResDto> permissions = permissionLineMapper.findByFamilyId(familyId);
         return MemberPermissionListResDto.builder()
                 .memberPermissions(permissions)
                 .build();
@@ -72,6 +85,20 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
                 .filter(p -> p.getPermissionId().equals(reqDto.getPermissionId()))
                 .findFirst()
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.MEMBER_PERMISSION_APPLY_ERROR));
+    }
+
+    // 구성원 권한 일괄 변경
+    @Override
+    @Transactional
+    public MemberPermissionListResDto bulkUpdateMemberPermissions(Long familyId, List<MemberPermissionBulkUpsertReqDto> reqList, AuthUserDetails userDetails) {
+        validateFamilyOwnership(familyId, userDetails);
+
+        permissionLineMapper.bulkUpsert(reqList);
+
+        List<MemberPermissionResDto> permissions = permissionLineMapper.findByFamilyId(familyId);
+        return MemberPermissionListResDto.builder()
+                .memberPermissions(permissions)
+                .build();
     }
 
     // ADMIN이면 통과, FAMILY_OWNER면 요청한 familyId에 본인이 OWNER로 속해있는지 DB 확인
