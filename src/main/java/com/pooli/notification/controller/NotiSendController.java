@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.pooli.notification.mapper.AlarmHistoryMapper;
 import com.pooli.notification.service.AlarmHistoryService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -56,7 +57,8 @@ public class NotiSendController {
 	})
 	@PreAuthorize("hasRole('ADMIN')")
 	@PostMapping
-	public ResponseEntity<Void> sendAlarm(@RequestBody NotiSendReqDto request) {
+	public ResponseEntity<Void> sendAlarm(
+			@Valid  @RequestBody NotiSendReqDto request) {
 		alarmHistoryService.sendNotification(request);
 		return ResponseEntity.status(HttpStatus.CREATED).build();
 	}
