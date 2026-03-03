@@ -1,0 +1,164 @@
+# Context7 Dependency Map (Codex-Optimized)
+schema_version: "1.1"
+project: "pooli"
+source_file: "build.gradle"
+resolved_from: "gradle dependency report"
+generated_on: "2026-03-03"
+
+resolution_source:
+  tool: "gradle"
+  recommended_commands:
+    - "./gradlew dependencies --configuration runtimeClasspath"
+    - "./gradlew dependencies --configuration testRuntimeClasspath"
+    - "./gradlew dependencyInsight --dependency spring-security --configuration runtimeClasspath"
+    - "./gradlew dependencyInsight --dependency mybatis --configuration runtimeClasspath"
+  notes:
+    - "Manage project_versions (declared/intent) separately from resolved_versions (actual resolved)."
+    - "BOM/dependency-management can override transitive versions."
+
+dependencies:
+  - key: spring_boot
+    name: "Spring Boot"
+    context7:
+      primary_library_id: "/spring-projects/spring-boot"
+      library_kind: "repo"
+      fallback_library_ids: []
+    project_versions:
+      main: "3.5.10"
+    artifacts:
+      - "org.springframework.boot:spring-boot-starter-data-jdbc"
+      - "org.springframework.boot:spring-boot-starter-data-redis"
+      - "org.springframework.boot:spring-boot-starter-security"
+      - "org.springframework.boot:spring-boot-starter-web"
+      - "org.springframework.boot:spring-boot-starter-actuator"
+      - "org.springframework.boot:spring-boot-starter-validation"
+    resolved_versions:
+      "org.springframework.boot:spring-boot": "3.5.10"
+    codex_usage:
+      prompt_prefix: "Spring Boot 3.5.10 기준으로 설명해주세요."
+      use_library: "/spring-projects/spring-boot"
+
+  - key: spring_security
+    name: "Spring Security"
+    context7:
+      primary_library_id: "/spring-projects/spring-security"
+      library_kind: "repo"
+      fallback_library_ids:
+        - "/websites/spring_io_spring-security_reference_6_5"
+    project_versions:
+      main: "6.5.7"
+    artifacts:
+      - "org.springframework.security:spring-security-config"
+      - "org.springframework.security:spring-security-web"
+      - "org.springframework.security:spring-security-test"
+    resolved_versions:
+      "org.springframework.security:spring-security-config": "6.5.7"
+      "org.springframework.security:spring-security-web": "6.5.7"
+      "org.springframework.security:spring-security-test": "6.5.7"
+    codex_usage:
+      prompt_prefix: "Spring Security 6.5.7 기준으로 설명해주세요."
+      use_library: "/spring-projects/spring-security"
+      fallback_use_library: "/websites/spring_io_spring-security_reference_6_5"
+
+  - key: mybatis
+    name: "MyBatis"
+    context7:
+      primary_library_id: "/mybatis/mybatis-3"
+      library_kind: "repo"
+      fallback_library_ids: []
+    project_versions:
+      starter: "3.0.5"
+      core: "3.5.19"
+    artifacts:
+      - "org.mybatis.spring.boot:mybatis-spring-boot-starter"
+      - "org.mybatis:mybatis"
+      - "org.mybatis:mybatis-spring"
+      - "org.mybatis.spring.boot:mybatis-spring-boot-starter-test"
+    resolved_versions:
+      "org.mybatis.spring.boot:mybatis-spring-boot-starter": "3.0.5"
+      "org.mybatis:mybatis": "3.5.19"
+      "org.mybatis:mybatis-spring": "3.0.5"
+      "org.mybatis.spring.boot:mybatis-spring-boot-starter-test": "3.0.5"
+    codex_usage:
+      prompt_prefix: "MyBatis(core 3.5.19 / starter 3.0.5) 기준으로 설명해주세요."
+      use_library: "/mybatis/mybatis-3"
+
+  - key: redis
+    name: "Redis (Spring Data Redis + Lettuce)"
+    context7:
+      primary_library_id: "/spring-projects/spring-data-redis"
+      library_kind: "repo"
+      fallback_library_ids: []
+    project_versions:
+      starter: "3.5.10"
+      spring_data_redis: "3.5.8"
+      lettuce: "6.6.0.RELEASE"
+    artifacts:
+      - "org.springframework.boot:spring-boot-starter-data-redis"
+      - "org.springframework.data:spring-data-redis"
+      - "io.lettuce:lettuce-core"
+    resolved_versions:
+      "org.springframework.boot:spring-boot-starter-data-redis": "3.5.10"
+      "org.springframework.data:spring-data-redis": "3.5.8"
+      "io.lettuce:lettuce-core": "6.6.0.RELEASE"
+    codex_usage:
+      prompt_prefix: "Spring Data Redis 3.5.8 + Lettuce 6.6.0.RELEASE 기준으로 설명해주세요."
+      use_library: "/spring-projects/spring-data-redis"
+
+  - key: jdbc
+    name: "JDBC (Spring Data JDBC + Spring JDBC)"
+    context7:
+      primary_library_id: "/spring-projects/spring-framework"
+      library_kind: "repo"
+      fallback_library_ids: []
+    project_versions:
+      starter: "3.5.10"
+      spring_jdbc: "6.2.15"
+    artifacts:
+      - "org.springframework.boot:spring-boot-starter-data-jdbc"
+      - "org.springframework:spring-jdbc"
+    resolved_versions:
+      "org.springframework.boot:spring-boot-starter-data-jdbc": "3.5.10"
+      "org.springframework:spring-jdbc": "6.2.15"
+    codex_usage:
+      prompt_prefix: "Spring JDBC 6.2.15 (Spring Framework) 기준으로 설명해주세요."
+      use_library: "/spring-projects/spring-framework"
+
+  - key: junit
+    name: "JUnit"
+    context7:
+      primary_library_id: "/junit-team/junit5"
+      library_kind: "repo"
+      fallback_library_ids: []
+    project_versions:
+      junit_jupiter: "5.12.2"
+      junit_platform_launcher: "1.12.2"
+    artifacts:
+      - "org.junit.jupiter:junit-jupiter"
+      - "org.junit.platform:junit-platform-launcher"
+    resolved_versions:
+      "org.junit.jupiter:junit-jupiter": "5.12.2"
+      "org.junit.platform:junit-platform-launcher": "1.12.2"
+    codex_usage:
+      prompt_prefix: "JUnit Jupiter 5.12.2 기준으로 설명해주세요."
+      use_library: "/junit-team/junit5"
+
+  - key: aws_sdk_java_v2
+    name: "AWS SDK for Java v2"
+    context7:
+      primary_library_id: "/aws/aws-sdk-java-v2"
+      library_kind: "repo"
+      fallback_library_ids:
+        - "/websites/aws_amazon_sdk-for-java"
+    project_versions:
+      bom: "2.25.30"
+      s3: "2.25.30"
+    artifacts:
+      - "software.amazon.awssdk:bom"
+      - "software.amazon.awssdk:s3"
+    resolved_versions:
+      "software.amazon.awssdk:bom": "2.25.30"
+      "software.amazon.awssdk:s3": "2.25.30"
+    codex_usage:
+      prompt_prefix: "AWS SDK for Java v2 2.25.30 기준으로 설명해주세요."
+      use_library: "/aws/aws-sdk-java-v2"
