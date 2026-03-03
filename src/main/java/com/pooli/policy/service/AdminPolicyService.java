@@ -1,9 +1,9 @@
 package com.pooli.policy.service;
 
-import com.pooli.policy.domain.dto.request.PolicyActivationReqDto;
+import com.pooli.policy.domain.dto.request.AdminPolicyActiveReqDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyResDto;
 import com.pooli.policy.domain.dto.response.LineAppUsageResDto;
-import com.pooli.policy.domain.dto.response.PolicyActivationResDto;
+import com.pooli.policy.domain.dto.response.AdminPolicyActiveResDto;
 import com.pooli.policy.domain.dto.response.PolicyDeactivationResDto;
 
 import java.util.List;
@@ -22,7 +22,7 @@ public interface AdminPolicyService {
      * Controller: ResponseEntity<PolicyActivationResDto>
      * Params: Body(PolicyActivationReqDto)
      */
-    PolicyActivationResDto activatePolicy(PolicyActivationReqDto request);
+    AdminPolicyActiveResDto activatePolicy(AdminPolicyActiveReqDto request);
 
     /**
      * 정책 삭제 및 비활성화

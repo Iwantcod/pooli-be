@@ -1,9 +1,9 @@
 package com.pooli.policy.controller;
 
-import com.pooli.policy.domain.dto.request.PolicyActivationReqDto;
+import com.pooli.policy.domain.dto.request.AdminPolicyActiveReqDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyResDto;
 import com.pooli.policy.domain.dto.response.LineAppUsageResDto;
-import com.pooli.policy.domain.dto.response.PolicyActivationResDto;
+import com.pooli.policy.domain.dto.response.AdminPolicyActiveResDto;
 import com.pooli.policy.domain.dto.response.PolicyDeactivationResDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -126,8 +126,8 @@ public class AdminPolicyController {
     })
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @PostMapping
-    public ResponseEntity<PolicyActivationResDto> activatePolicy(@RequestBody PolicyActivationReqDto request) {
-        PolicyActivationResDto response = PolicyActivationResDto.builder()
+    public ResponseEntity<AdminPolicyActiveResDto> activatePolicy(@RequestBody AdminPolicyActiveReqDto request) {
+        AdminPolicyActiveResDto response = AdminPolicyActiveResDto.builder()
                 .policyId(request.getPolicyId())
                 .active(true)
                 .activatedAt(LocalDateTime.now().toString())
