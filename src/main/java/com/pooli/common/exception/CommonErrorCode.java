@@ -71,6 +71,15 @@ public enum CommonErrorCode implements ErrorCode {
             "페이지 크기(size)가 올바르지 않습니다."
     ),
 
+    
+
+	/* 401 UnAuthorized */
+    UNAUTHORIZED(
+            HttpStatus.UNAUTHORIZED,
+            "COMMON:4101",
+            "로그인이 필요합니다."
+    ),
+    
 
 	/* 403 Forbidden */
 
@@ -92,6 +101,13 @@ public enum CommonErrorCode implements ErrorCode {
             HttpStatus.FORBIDDEN,
             "COMMON:4302",
             "접근 권한이 없습니다."
+    ),
+    
+  //회선 접근 권한 없음
+    USER_FORBIDDEN(
+            HttpStatus.FORBIDDEN,
+            "COMMON:4303",
+            "사용자 권한이 없습니다."
     ),
     /* 500 Internal Server Error */
 
