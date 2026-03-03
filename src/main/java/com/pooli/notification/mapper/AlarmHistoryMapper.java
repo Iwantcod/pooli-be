@@ -7,7 +7,7 @@ import org.apache.ibatis.annotations.Param;
 public interface AlarmHistoryMapper {
 
     int insertAlarmHistory(
-            @Param("userId") Long userId,
+            @Param("lineId") Long lineId,
             @Param("alarmCode") String alarmCode,
             @Param("value") String value
     );

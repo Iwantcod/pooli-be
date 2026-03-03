@@ -2,11 +2,12 @@ package com.pooli.notification.service;
 
 import com.pooli.notification.domain.dto.response.AlarmSettingResDto;
 import com.pooli.notification.domain.entity.AlarmSetting;
-import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.mapper.AlarmSettingMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 
 @Service
 @RequiredArgsConstructor
@@ -16,7 +17,7 @@ public class AlarmSettingServiceImpl implements AlarmSettingService{
 
     @Transactional
     @Override
-    public void updateAlarmSetting(Long userId, AlarmType type, Boolean enabled) {
+    public void updateAlarmSetting(Long userId, AlarmCode code, Boolean enabled) {
 
         // 1. 존재 여부 확인
         AlarmSetting setting = alarmSettingMapper.findByUserId(userId);
@@ -27,7 +28,7 @@ public class AlarmSettingServiceImpl implements AlarmSettingService{
         }
 
         // 3. 컬럼명 매핑
-        String columnName = mapToColumnName(type);
+        String columnName = mapToColumnName(code);
 
         // 4. 해당 컬럼만 업데이트
         alarmSettingMapper.updateAlarmColumn(userId, columnName, enabled);
@@ -35,8 +36,8 @@ public class AlarmSettingServiceImpl implements AlarmSettingService{
 
     }
 
-    private String mapToColumnName(AlarmType type) {
-        return switch (type) {
+    private String mapToColumnName(AlarmCode code) {
+        return switch (code) {
             case FAMILY -> "family_alarm";
             case USER -> "user_alarm";
             case POLICY_CHANGE -> "policy_change_alarm";

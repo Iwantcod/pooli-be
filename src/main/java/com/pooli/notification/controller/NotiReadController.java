@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.notification.domain.enums.AlarmCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,7 +16,6 @@ import org.springframework.web.bind.annotation.RestController;
 import com.pooli.common.dto.PagingResDto;
 import com.pooli.notification.domain.dto.response.NotiSendResDto;
 import com.pooli.notification.domain.dto.response.UnreadCountsResDto;
-import com.pooli.notification.domain.enums.AlarmCode;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -46,7 +46,7 @@ public class NotiReadController {
 	    NotiSendResDto noti = NotiSendResDto.builder()
         .alarmHistoryId(1L)
         .lineId(2L)
-        .alarmCode(AlarmCode.LIMIT)
+        .alarmCode(AlarmCode.POLICY_LIMIT)
         .value(null)  
         .isRead(isRead != null ? isRead : false)
         .build();

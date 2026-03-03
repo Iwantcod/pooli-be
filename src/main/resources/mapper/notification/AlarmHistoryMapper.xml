@@ -6,8 +6,8 @@
 <mapper namespace="com.pooli.notification.mapper.AlarmHistoryMapper">
 
     <insert id="insertAlarmHistory">
-        INSERT INTO alram_history (
-        user_id,
+        INSERT INTO ALARM_HISTORY (
+        line_id,
         alarm_code,
         value,
         created_at,
@@ -15,7 +15,7 @@
         read_at
         )
         VALUES (
-        #{userId},
+        #{lineId},
         #{alarmCode},
         #{value},
         NOW(6),

@@ -10,6 +10,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -20,7 +21,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
     @Transactional
     public void createAlarm(
-            Long userId,
+            Long lineId,
             AlarmCode alarmCode,
             AlarmType alarmType,
             Map<String, Object> values
@@ -37,14 +38,49 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
             String jsonValue = objectMapper.writeValueAsString(values);
 
             int result = alarmHistoryMapper.insertAlarmHistory(
-                    userId,
+                    lineId,
                     alarmCode.name(),
                     jsonValue
             );
 
             if (result != 1) {
-                System.out.println(userId + "가 " + alarmCode.name() + " : 알람 저장 실패");
+                System.out.println("회선 Id :" + lineId + "의 " + alarmCode.name() + " : 알람 저장 실패");
                 // MongoDB 기록
+            }
+
+        } catch (JsonProcessingException e) {
+            System.out.println("알림 JSON 변환 실패 : " + e.getMessage());
+        }
+    }
+
+    @Transactional
+    @Override
+    public void createNotificationAlarms(
+            List<Long> lineIds, Map<String, Object> values
+    ) {
+
+        if (lineIds == null || lineIds.isEmpty()) {
+            return;
+        }
+
+        if (values == null) {
+            values = new HashMap<>();
+        }
+
+        // 🔥 type은 무조건 NOTIFICATION
+        values.put("type", "NOTIFICATION");
+
+        try {
+            String jsonValue = objectMapper.writeValueAsString(values);
+
+            int result = alarmHistoryMapper.insertNotificationAlarms(
+                    lineIds,
+                    alarmCode.name(),
+                    jsonValue
+            );
+
+            if (result != lineIds.size()) {
+                System.out.println("일부 알림 저장 실패");
             }
 
         } catch (JsonProcessingException e) {
