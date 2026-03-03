@@ -21,13 +21,13 @@ public interface AdminPolicyService {
     AdminPolicyResDto updatePolicy(Integer policyId, AdminPolicyReqDto request);
 
     // 정책 삭제
-    AdminPolicyActiveResDto deletePolicy(Integer policyId);
+    AdminPolicyResDto deletePolicy(Integer policyId);
 
     // 정책 활성화/비활성화 상태 변경
     AdminPolicyActiveResDto updateActivationPolicy(Integer policyId, AdminPolicyActiveReqDto request);
 
     // 정책 카테고리 조회
-    AdminPolicyCateResDto getCategories();
+    List<AdminPolicyCateResDto> getCategories();
 
     // 정책 카테고리 추가
     AdminPolicyCateResDto createCategory(AdminCategoryReqDto request);
