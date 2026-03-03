@@ -261,7 +261,7 @@ public class UserPolicyController {
             @RequestParam("repeatBlockId") Long repeatBlockId,
             @RequestBody RepeatBlockPolicyReqDto request
     ) {
-        RepeatBlockPolicyResDto response = RepeatBlockPolicyResDto.builder().build();
+        RepeatBlockPolicyResDto response = userPolicyService.updateRepeatBlockPolicy(repeatBlockId, request, auth);
 
         return ResponseEntity.ok(response);
     }

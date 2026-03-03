@@ -55,6 +55,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	public RepeatBlockPolicyResDto createRepeatBlockPolicy(RepeatBlockPolicyReqDto request, AuthUserDetails auth) {
 
         Long lineId = auth.getLineId();
+        
 
 	    List<RepeatBlockDayReqDto> days = request.getDays();
 
@@ -103,8 +104,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	@Override
 	public RepeatBlockPolicyResDto updateRepeatBlockPolicy(Long repeatBlockId, RepeatBlockPolicyReqDto request,
 			AuthUserDetails auth) {
-		// 로직 결정 후 작성하기
-		return null;
+		// 반복 차단 요일 및 시간대 정보를 삭제한 후 새로 삽입하기
+		deleteRepeatBlockPolicy(repeatBlockId, auth);
+		return createRepeatBlockPolicy(request, auth);
 	}
 
 	@Override
