@@ -254,7 +254,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             if(appPolicy.get().getAppPolicyId() != null) {
                 // 3-1. 기존 정책이 존재한다면 is_active를 반대값으로 설정(toggle)
                 int ret = appPolicyMapper.updateIsActive(appPolicy.get().getAppPolicyId(), !appPolicy.get().getIsActive());
-                // 만약 상태가 false로 전환되는 경우, '정책 예외' 값도 false로 설정
                 if(ret != 1) {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
                 }
@@ -279,6 +278,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                         .appId(request.getApplicationId())
                         .appName(appPolicy.get().getAppName())
                         .isActive(newAppPolicy.getIsActive())
+                        .isWhiteList(false)
                         .dailyLimitData(newAppPolicy.getDataLimit())
                         .dailyLimitSpeed(newAppPolicy.getSpeedLimit())
                         .build();

@@ -28,5 +28,5 @@ public class AppPolicyResDto {
     private Integer dailyLimitSpeed;
 
     @Schema(description = "정책 예외 설정 여부", example = "false")
-    private Boolean isActiveWhiteList;
+    private Boolean isWhiteList;
 }

@@ -30,7 +30,8 @@ public interface AppPolicyMapper {
     /*
     =================== DELETE ====================
      */
-
+    // pk로 레코드 삭제처리
+    int setDeleted(Long appPolicyId);
 
     /*
     =================== INSERT ====================
