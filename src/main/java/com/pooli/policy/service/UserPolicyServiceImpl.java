@@ -330,6 +330,31 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
     @Override
     @Transactional
+    public AppPolicyResDto toggleAppPolicyWhitelist(Long appPolicyId, AuthUserDetails auth) {
+        // 1. 대상 appPolicy DTO 조회
+        Optional<AppPolicyResDto> appPolicy = appPolicyMapper.findDtoExistById(appPolicyId);
+        if (appPolicy.isEmpty()) {
+            throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
+        }
+
+        // 2. 대상 lineId가 동일 가족에 속했는지 검증
+        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId());
+
+        // 3. isWhiteList 토글 update 진행
+        boolean newIsWhiteList = !Boolean.TRUE.equals(appPolicy.get().getIsWhiteList());
+        int ret = appPolicyMapper.updateIsWhitelist(appPolicyId, newIsWhiteList);
+        if (ret != 1) {
+            throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+        }
+
+        // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
+        return appPolicy.get().toBuilder()
+                .isWhiteList(newIsWhiteList)
+                .build();
+    }
+
+    @Override
+    @Transactional
     public void deleteAppPolicy(Long appPolicyId, AuthUserDetails auth) {
         // 삭제 대상 app policy 레코드 조회
         Optional<AppPolicy> appPolicy = appPolicyMapper.findEntityExistById(appPolicyId);

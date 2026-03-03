@@ -145,6 +145,12 @@ public interface UserPolicyService {
     AppPolicyResDto toggleAppPolicyActive(AppPolicyActiveToggleReqDto request, AuthUserDetails auth);
 
     /**
+     * 구성원의 특정 앱 데이터 사용 정책 화이트리스트 적용 여부 토글 요청
+     * Controller: ResponseEntity<AppPolicyResDto>
+     */
+    AppPolicyResDto toggleAppPolicyWhitelist(Long appPolicyId, AuthUserDetails auth);
+
+    /**
      * 구성원의 특정 앱 데이터 사용 정책 삭제
      * Controller: ResponseEntity<Void>
      */

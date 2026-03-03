@@ -706,6 +706,42 @@ public class UserPolicyController {
     }
 
     @Operation(
+            summary = "구성원의 특정 앱 데이터 사용 정책 화이트리스트 적용 여부 토글 요청",
+            description = "가족 대표자 권한 필요"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "요청 성공"),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+            잘못된 요청
+            - COMMON:4002 RequestParam 유효성 검증 실패
+            - COMMON:4003 RequestParam 타입 불일치
+            - COMMON:4004 필수 RequestParam 누락
+            """
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = """
+            권한이 없음
+            - COMMON:4300 가족 대표자 권한이 없습니다.
+            """
+            ),
+            @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PreAuthorize("hasRole('FAMILY_OWNER')")
+    @PatchMapping("/lines/apps/whitelist-toggles")
+    public ResponseEntity<AppPolicyResDto> toggleAppPolicyWhitelist(
+            @Parameter(description = "앱 정책 식별자", example = "154")
+            @RequestParam Long appPolicyId,
+            @AuthenticationPrincipal AuthUserDetails auth
+    ) {
+        AppPolicyResDto answer = userPolicyService.toggleAppPolicyWhitelist(appPolicyId, auth);
+        return ResponseEntity.ok(answer);
+    }
+
+    @Operation(
             summary = "구성원의 특정 앱 데이터 사용 정책 삭제",
             description = "가족 대표자 권한 필요"
     )
