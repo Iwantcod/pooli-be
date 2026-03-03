@@ -18,7 +18,7 @@
           resultType="com.pooli.line.domain.dto.response.LineSimpleResDto">
     SELECT
         line_id AS lineId,
-        phone
+        phone AS phoneNumber
     FROM
         line
     WHERE
@@ -31,7 +31,7 @@
   
   
   <select id="selectIndividualThresholdByLineId"
-            parameterType="int"
+            parameterType="long"
             resultType="com.pooli.line.domain.dto.response.IndividualThresholdResDto">
       SELECT
           individual_threshold AS individualThreshold,

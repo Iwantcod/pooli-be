@@ -82,7 +82,7 @@ public class LineController {
     @PatchMapping
     public ResponseEntity<Void> switchLine(
 	    		@AuthenticationPrincipal AuthUserDetails principal,
-	            @NotNull @RequestParam Long lineId,
+	            @NotNull @RequestParam(required = true, name = "lineId") Long lineId,
 	            HttpServletRequest request,
 	            HttpServletResponse response
     		){
@@ -117,11 +117,10 @@ public class LineController {
     		@AuthenticationPrincipal AuthUserDetails principal,
             @Parameter(description = "회선 ID", example = "1")
     		@NotNull
-            @RequestParam Long lineId
+            @RequestParam(required = true, name = "lineId") Long lineId
     ) {
     	
-        IndividualThresholdResDto response = lineService.getIndividualThreshold(principal.getLineId());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(lineService.getIndividualThreshold(lineId,principal));
     }
 
     @Operation(

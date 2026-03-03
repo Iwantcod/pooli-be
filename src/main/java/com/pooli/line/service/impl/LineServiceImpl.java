@@ -2,6 +2,7 @@ package com.pooli.line.service.impl;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
+import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.line.domain.dto.request.UpdateIndividualThresholdReqDto;
 import com.pooli.line.domain.dto.response.IndividualThresholdResDto;
 import com.pooli.line.domain.dto.response.LineSimpleResDto;
@@ -66,7 +68,9 @@ public class LineServiceImpl implements LineService {
 	}
 
 	@Override
-	public IndividualThresholdResDto getIndividualThreshold(Long lineId) {
+	public IndividualThresholdResDto getIndividualThreshold(Long lineId, AuthUserDetails principal) {
+		
+		if(!Objects.equals(lineId, principal.getLineId())) throw new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN);
 		
 		IndividualThresholdResDto result = lineMapper.selectIndividualThresholdByLineId(lineId);
 		
@@ -80,6 +84,8 @@ public class LineServiceImpl implements LineService {
 
 	@Override
 	public Void updateIndividualThreshold(Long lineId, UpdateIndividualThresholdReqDto request) {
+		
+		if(!Objects.equals(lineId, request.getLineId())) throw new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN);
 		
 		int result = lineMapper.updateIndividualThreshold(lineId, request.getIndividualThreshold(), request.getIsThresholdActive());
 		
