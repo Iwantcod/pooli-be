@@ -1,0 +1,22 @@
+DROP TABLE IF EXISTS ALRAM_HISTORY;
+DROP TABLE IF EXISTS ALARM_HISTORY;
+
+CREATE TABLE ALARM_HISTORY (
+       alarm_history_id BIGINT NOT NULL AUTO_INCREMENT,
+       line_id BIGINT NOT NULL,
+       alarm_code ENUM('LIMIT','POLICY','PERMISSION','QUESTION') NOT NULL COMMENT 'enum',
+       value TEXT COMMENT 'json',
+       created_at DATETIME(6) NOT NULL,
+       deleted_at DATETIME(6) DEFAULT NULL,
+       read_at DATETIME(6) DEFAULT NULL,
+       PRIMARY KEY (alarm_history_id),
+
+       KEY FK_LINE_TO_ALARM_HISTORY_1 (line_id),
+
+       CONSTRAINT FK_LINE_TO_ALARM_HISTORY_1
+           FOREIGN KEY (line_id)
+               REFERENCES line (line_id)
+
+) ENGINE=InnoDB
+DEFAULT CHARSET=utf8mb4
+COLLATE=utf8mb4_0900_ai_ci;
