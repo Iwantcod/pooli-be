@@ -13,7 +13,8 @@ public interface FamilyMapper {
 	
 	FamilyMembersResDto selectFamilyMembersHeader(
 		      @Param("familyId") Integer familyId,
-		      @Param("lineId") Long lineId
+		      @Param("lineId") Long lineId,
+		      @Param("permissionTitle") String permissionTitle
     );
 
 	List<FamilyMembersResDto.FamilyMemberDto> selectFamilyMembers(

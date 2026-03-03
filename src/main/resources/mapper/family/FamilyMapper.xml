@@ -9,7 +9,18 @@
 	<select id="selectFamilyMembersHeader"
           resultType="com.pooli.family.domain.dto.response.FamilyMembersResDto">
 	    SELECT
-	      fl.is_public AS isEnable,
+	      CASE
+	        WHEN EXISTS (
+	          SELECT 1
+	          FROM PERMISSION_LINE pl
+	          JOIN PERMISSION p ON p.permission_id = pl.permission_id
+	          WHERE pl.line_id = #{lineId}
+	            AND p.permission_title = #{permissionTitle}
+	            AND pl.is_enable = TRUE
+	        )
+	        THEN TRUE
+	        ELSE FALSE
+	      END AS isEnable,
 	      f.family_id AS familyId,
 	      f.pool_total_data AS sharedPoolTotalData
 	    FROM FAMILY_LINE fl
@@ -50,30 +61,39 @@
 
 	<select id="existsFamilyLine" resultType="boolean">
 	  SELECT EXISTS (
-	    SELECT 1 FROM FAMILY_LINE
-	    WHERE family_id = #{familyId}
-	      AND line_id = #{lineId}
+	    SELECT 1
+	      FROM FAMILY_LINE fl
+	      JOIN FAMILY f ON f.family_id = fl.family_id
+	      WHERE fl.family_id = #{familyId}
+	        AND fl.line_id = #{lineId}
+	        AND f.deleted_at IS NULL
 	  )
 	</select>
 
 	<select id="selectFamilyMembersSimple"
 	            resultType="com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto">
 		
-		SELECT
-        l.line_id   AS lineId,
-        u.user_id   AS userId,
-        u.user_name AS userName,
-        l.phone     AS phone
-      FROM FAMILY_LINE fl
-      JOIN LINE l  ON fl.line_id = l.line_id
-      JOIN USERS u ON l.user_id = u.user_id
-      WHERE fl.family_id = #{familyId}
-        AND EXISTS (
-          SELECT 1
-          FROM FAMILY_LINE fl2
-          WHERE fl2.family_id = #{familyId}
-            AND fl2.line_id = #{lineId}
-        )
+	    SELECT
+	      l.line_id   AS lineId,
+	      u.user_id   AS userId,
+	      u.user_name AS userName,
+	      l.phone     AS phone
+	    FROM FAMILY_LINE fl
+	    JOIN LINE l  ON fl.line_id = l.line_id
+	    JOIN USERS u ON l.user_id = u.user_id
+	    JOIN FAMILY f ON f.family_id = fl.family_id
+	    WHERE fl.family_id = #{familyId}
+	      AND l.deleted_at IS NULL
+	      AND f.deleted_at IS NULL
+	      AND EXISTS (
+	        SELECT 1
+	        FROM FAMILY_LINE fl2
+	        WHERE fl2.family_id = #{familyId}
+	          AND fl2.line_id = #{lineId}
+	      )
+	    ORDER BY
+	      CASE WHEN l.line_id = #{lineId} THEN 0 ELSE 1 END,
+	      l.line_id ASC
 	            
     </select>
     
