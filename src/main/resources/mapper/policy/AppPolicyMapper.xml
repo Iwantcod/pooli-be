@@ -55,9 +55,15 @@
         WHERE a.application_id = #{appId};
     </select>
 
-    <update id="toggleExistIsActive">
+    <update id="updateIsActive">
         UPDATE APP_POLICY
         SET is_active = #{isActive}, updated_at = now()
+        WHERE app_policy_id = #{appPolicyId};
+    </update>
+
+    <update id="updateIsWhitelist">
+        UPDATE APP_POLICY
+        SET is_whitelist = #{isWhitelist}, updated_at = now()
         WHERE app_policy_id = #{appPolicyId};
     </update>
 

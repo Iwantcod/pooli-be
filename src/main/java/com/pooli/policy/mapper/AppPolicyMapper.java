@@ -22,7 +22,10 @@ public interface AppPolicyMapper {
     =================== UPDATE ====================
      */
     // pk로 삭제되지 않은 레코드의 is_active 값 update
-    int toggleExistIsActive(@Param("appPolicyId") Long appPolicyId, @Param("isActive") Boolean isActive);
+    int updateIsActive(@Param("appPolicyId") Long appPolicyId, @Param("isActive") Boolean isActive);
+
+    // pk로 삭제되지 않은 레코드의 is_whitelist 값 update
+    int updateIsWhitelist(@Param("appPolicyId") Long appPolicyId, @Param("isWhitelist") Boolean isWhitelist);
 
     /*
     =================== DELETE ====================
