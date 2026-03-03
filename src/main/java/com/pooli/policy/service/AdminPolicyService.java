@@ -29,7 +29,7 @@ public interface AdminPolicyService {
      * Controller: ResponseEntity<PolicyDeactivationResDto>
      * Params: URL(policyId)
      */
-    PolicyDeactivationResDto deactivatePolicy(Long policyId);
+    PolicyDeactivationResDto deactivatePolicy(Integer policyId);
 
     /**
      * 특정 구성원 앱별 사용량 통계 조회
