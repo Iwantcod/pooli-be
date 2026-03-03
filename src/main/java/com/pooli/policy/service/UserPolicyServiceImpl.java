@@ -7,12 +7,10 @@ import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.policy.domain.dto.request.*;
 import com.pooli.policy.domain.dto.response.*;
 import com.pooli.policy.domain.entity.AppPolicy;
-import com.pooli.policy.domain.entity.DailyLimit;
-import com.pooli.policy.domain.entity.SharedLimit;
+import com.pooli.policy.domain.entity.LineLimit;
 import com.pooli.policy.exception.PolicyErrorCode;
 import com.pooli.policy.mapper.AppPolicyMapper;
-import com.pooli.policy.mapper.DailyLimitMapper;
-import com.pooli.policy.mapper.SharedLimitMapper;
+import com.pooli.policy.mapper.LineLimitMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,8 +24,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class UserPolicyServiceImpl implements UserPolicyService {
     private final FamilyLineMapper familyLineMapper;
-    private final DailyLimitMapper dailyLimitMapper;
-    private final SharedLimitMapper sharedLimitMapper;
+    private final LineLimitMapper lineLimitMapper;
     private final AppPolicyMapper appPolicyMapper;
 
     @Override
@@ -72,20 +69,18 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         checkIsSameFamilyGroup(lineId, auth.getLineId());
 
         // 2. 두 종류의 제한 정보 테이블에서 정보 조회
-        Optional<DailyLimit> dailyLimit = dailyLimitMapper.getExistDailyLimitByLineId(lineId);
-        Optional<SharedLimit> sharedLimit = sharedLimitMapper.getExistSharedLimitByLineId(lineId);
-
-        LimitPolicyResDto answer = LimitPolicyResDto.builder()
-                .dailyLimitId((dailyLimit.isPresent()) ? dailyLimit.get().getDailyLimitId() : null)
-                .dailyDataLimit((dailyLimit.isPresent()) ? dailyLimit.get().getDailyDataLimit() : null)
-                .isDailyDataLimitActive((dailyLimit.isPresent()) ? dailyLimit.get().getIsActive() : null)
-                .sharedLimitId((sharedLimit.isPresent()) ? sharedLimit.get().getSharedLimitId() : null)
-                .sharedDataLimit((sharedLimit.isPresent()) ? sharedLimit.get().getSharedDataLimit() : null)
-                .isSharedDataLimitActive((sharedLimit.isPresent()) ? sharedLimit.get().getIsActive() : null)
-                .build();
-
-        // 3. ResDto 조립 후 return
-        return answer;
+        Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitByLineId(lineId);
+        if (lineLimit.isPresent()) {
+            return LimitPolicyResDto.builder()
+                    .lineLimitId(lineLimit.get().getLimitId())
+                    .dailyDataLimit(lineLimit.get().getDailyDataLimit())
+                    .isDailyDataLimitActive(lineLimit.get().getIsDailyLimitActive())
+                    .sharedDataLimit(lineLimit.get().getSharedDataLimit())
+                    .isSharedDataLimitActive(lineLimit.get().getIsSharedLimitActive())
+                    .build();
+        } else {
+            return LimitPolicyResDto.builder().build();
+        }
     }
 
     @Override
@@ -95,48 +90,24 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         checkIsSameFamilyGroup(lineId, auth.getLineId());
 
         // 2. 제한 정책 존재 여부 조회
-        Optional<DailyLimit> dailyLimit = dailyLimitMapper.getExistDailyLimitByLineId(lineId);
-        if (dailyLimit.isPresent()) {
-            // 삭제 상태가 아닌 dailyLimit 레코드가 존재하는 경우
-            if(dailyLimit.get().getIsActive()) {
-                // 제한 정책이 활성화된 경우 비활성화
-                int def = dailyLimitMapper.deactivateDailyLimitByDailyLimitId(dailyLimit.get().getDailyLimitId());
-                if(def != 1) {
-                    throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
-                }
-                return LimitPolicyResDto.builder()
-                        .dailyLimitId(dailyLimit.get().getDailyLimitId())
-                        .dailyDataLimit(dailyLimit.get().getDailyDataLimit())
-                        .isDailyDataLimitActive(false)
-                        .build();
-            } else {
-                // 비활성화된 경우 재활성화
-                int def = dailyLimitMapper.activateDailyLimitByDailyLimitId(dailyLimit.get().getDailyLimitId());
-                if(def != 1) {
-                    throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
-                }
-                return LimitPolicyResDto.builder()
-                        .dailyLimitId(dailyLimit.get().getDailyLimitId())
-                        .dailyDataLimit(dailyLimit.get().getDailyDataLimit())
-                        .isDailyDataLimitActive(true)
-                        .build();
-            }
-        } else {
-            // dailyLimit 레코드가 없거나, 삭제 상태인 경우 새 레코드 insert
-            DailyLimit newDailyLimit = DailyLimit.builder()
-                    .lineId(lineId)
-                    .dailyDataLimit(-1L) // 기본값: 무제한
-                    .isActive(true) // 기본값: 활성화 상태
-                    .build();
-            int def = dailyLimitMapper.createDailyLimit(newDailyLimit);
+        Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitByLineId(lineId);
+        if (lineLimit.isPresent()) {
+            // 삭제 상태가 아닌 lineLimit 레코드가 존재하는 경우
+            boolean newDailyLimitActive = !lineLimit.get().getIsDailyLimitActive();
+            int def = lineLimitMapper.updateIsDailyLimitActiveById(lineLimit.get().getLimitId(), newDailyLimitActive);
             if(def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
             return LimitPolicyResDto.builder()
-                    .dailyLimitId(newDailyLimit.getDailyLimitId())
-                    .dailyDataLimit(newDailyLimit.getDailyDataLimit())
-                    .isDailyDataLimitActive(newDailyLimit.getIsActive())
+                    .lineLimitId(lineLimit.get().getLimitId())
+                    .dailyDataLimit(lineLimit.get().getDailyDataLimit())
+                    .isDailyDataLimitActive(newDailyLimitActive)
+                    .sharedDataLimit(lineLimit.get().getSharedDataLimit())
+                    .isSharedDataLimitActive(lineLimit.get().getIsSharedLimitActive())
                     .build();
+        } else {
+            // lineLimit 레코드가 없거나, 삭제 상태인 경우 새 레코드 insert
+            return insertNewLineLimit(lineId);
         }
     }
 
@@ -144,24 +115,26 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     @Transactional
     public LimitPolicyResDto updateDailyTotalLimitPolicyValue(LimitPolicyUpdateReqDto request, AuthUserDetails auth) {
         // 1. 대상 dailyLimit 레코드 조회
-        Optional<DailyLimit> dailyLimit = dailyLimitMapper.getExistDailyLimitById(request.getLimitPolicyId());
-        if(dailyLimit.isEmpty()) {
+        Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitById(request.getLimitPolicyId());
+        if(lineLimit.isEmpty()) {
             throw new ApplicationException(PolicyErrorCode.LIMIT_POLICY_NOT_FOUND);
         }
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(dailyLimit.get().getLineId(), auth.getLineId());
+        checkIsSameFamilyGroup(lineLimit.get().getLineId(), auth.getLineId());
 
         // 3. update 진행
-        int def = dailyLimitMapper.updateDailyDataLimit(request);
+        int def = lineLimitMapper.updateDailyDataLimit(request);
         if(def != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
         return LimitPolicyResDto.builder()
-                .dailyLimitId(dailyLimit.get().getDailyLimitId())
+                .lineLimitId(lineLimit.get().getLimitId())
                 .dailyDataLimit(request.getPolicyValue())
-                .isDailyDataLimitActive(dailyLimit.get().getIsActive())
+                .isDailyDataLimitActive(lineLimit.get().getIsDailyLimitActive())
+                .sharedDataLimit(lineLimit.get().getSharedDataLimit())
+                .isSharedDataLimitActive(lineLimit.get().getIsSharedLimitActive())
                 .build();
     }
 
@@ -172,73 +145,77 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         checkIsSameFamilyGroup(lineId, auth.getLineId());
 
         // 2. 제한 정책 존재 여부 조회
-        Optional<SharedLimit> sharedLimit = sharedLimitMapper.getExistSharedLimitByLineId(lineId);
-        if (sharedLimit.isPresent()) {
-            // 삭제 상태가 아닌 sharedLimit 레코드가 존재하는 경우
-            if(sharedLimit.get().getIsActive()) {
-                // 제한 정책이 활성화된 경우 비활성화
-                int def = sharedLimitMapper.deactivateSharedLimitBySharedLimitId(sharedLimit.get().getSharedLimitId());
-                if(def != 1) {
-                    throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
-                }
-                return LimitPolicyResDto.builder()
-                        .dailyLimitId(sharedLimit.get().getSharedLimitId())
-                        .dailyDataLimit(sharedLimit.get().getSharedDataLimit())
-                        .isDailyDataLimitActive(false)
-                        .build();
-            } else {
-                // 비활성화된 경우 재활성화
-                int def = sharedLimitMapper.activateSharedLimitBySharedLimitId(sharedLimit.get().getSharedLimitId());
-                if(def != 1) {
-                    throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
-                }
-                return LimitPolicyResDto.builder()
-                        .dailyLimitId(sharedLimit.get().getSharedLimitId())
-                        .dailyDataLimit(sharedLimit.get().getSharedDataLimit())
-                        .isDailyDataLimitActive(true)
-                        .build();
-            }
-        } else {
-            // sharedLimit 레코드가 없거나, 삭제 상태인 경우 새 레코드 insert
-            SharedLimit newSharedLimit = SharedLimit.builder()
-                    .lineId(lineId)
-                    .sharedDataLimit(-1L)  // 기본값: 무제한
-                    .isActive(true)         // 기본값: 활성화 상태
-                    .build();
-            int def = sharedLimitMapper.createSharedLimit(newSharedLimit);
+        Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitByLineId(lineId);
+        if (lineLimit.isPresent()) {
+            // 삭제 상태가 아닌 lineLimit 레코드가 존재하는 경우
+            boolean newSharedLimitActive = !lineLimit.get().getIsSharedLimitActive();
+            int def = lineLimitMapper.updateIsSharedLimitActiveById(lineLimit.get().getLimitId(), newSharedLimitActive);
             if(def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
             return LimitPolicyResDto.builder()
-                    .sharedLimitId(newSharedLimit.getSharedLimitId())
-                    .sharedDataLimit(newSharedLimit.getSharedDataLimit())
-                    .isSharedDataLimitActive(newSharedLimit.getIsActive())
+                    .lineLimitId(lineLimit.get().getLimitId())
+                    .dailyDataLimit(lineLimit.get().getDailyDataLimit())
+                    .isDailyDataLimitActive(lineLimit.get().getIsDailyLimitActive())
+                    .sharedDataLimit(lineLimit.get().getSharedDataLimit())
+                    .isSharedDataLimitActive(newSharedLimitActive)
                     .build();
+        } else {
+            // lineLimit 레코드가 없거나, 삭제 상태인 경우 새 레코드 insert
+            return insertNewLineLimit(lineId);
         }
+    }
+
+    /**
+     * 새로운 LineLimit 레코드 삽입 후 DTO return
+     * @param lineId 회선 식별자
+     * @return LimitPolicyResDto
+     */
+    private LimitPolicyResDto insertNewLineLimit(Long lineId) {
+        LineLimit newLineLimit = LineLimit.builder()
+                .lineId(lineId)
+                .dailyDataLimit(-1L)
+                .isDailyLimitActive(true)
+                .sharedDataLimit(-1L)
+                .isSharedLimitActive(true)
+                .build();
+        int def = lineLimitMapper.createLineLimit(newLineLimit);
+        if(def != 1) {
+            throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+        }
+        return LimitPolicyResDto.builder()
+                .lineLimitId(newLineLimit.getLimitId())
+                .dailyDataLimit(newLineLimit.getDailyDataLimit())
+                .isDailyDataLimitActive(newLineLimit.getIsDailyLimitActive())
+                .sharedDataLimit(newLineLimit.getSharedDataLimit())
+                .isSharedDataLimitActive(newLineLimit.getIsSharedLimitActive())
+                .build();
     }
 
     @Override
     @Transactional
     public LimitPolicyResDto updateSharedPoolLimitPolicyValue(LimitPolicyUpdateReqDto request, AuthUserDetails auth) {
-        // 1. 대상 sharedLimit 레코드 조회
-        Optional<SharedLimit> sharedLimit = sharedLimitMapper.getExistSharedLimitById(request.getLimitPolicyId());
-        if (sharedLimit.isEmpty()) {
+        // 1. 대상 lineLimit 레코드 조회
+        Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitById(request.getLimitPolicyId());
+        if (lineLimit.isEmpty()) {
             throw new ApplicationException(PolicyErrorCode.LIMIT_POLICY_NOT_FOUND);
         }
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(sharedLimit.get().getLineId(), auth.getLineId());
+        checkIsSameFamilyGroup(lineLimit.get().getLineId(), auth.getLineId());
 
         // 3. update 진행
-        int affectedRows = sharedLimitMapper.updateSharedDataLimit(request);
-        if (affectedRows != 1) {
+        int def = lineLimitMapper.updateSharedDataLimit(request);
+        if (def != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
         return LimitPolicyResDto.builder()
-                .sharedLimitId(sharedLimit.get().getSharedLimitId())
+                .lineLimitId(lineLimit.get().getLimitId())
+                .dailyDataLimit(lineLimit.get().getDailyDataLimit())
+                .isDailyDataLimitActive(lineLimit.get().getIsDailyLimitActive())
                 .sharedDataLimit(request.getPolicyValue())
-                .isSharedDataLimitActive(sharedLimit.get().getIsActive())
+                .isSharedDataLimitActive(lineLimit.get().getIsSharedLimitActive())
                 .build();
     }
 
