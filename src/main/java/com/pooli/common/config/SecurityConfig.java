@@ -15,6 +15,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+import com.pooli.auth.exception.CustomAccessDeniedHandler;
 import com.pooli.auth.exception.CustomAuthenticationEntryPoint;
 
 @EnableMethodSecurity
@@ -26,7 +27,8 @@ public class SecurityConfig {
         @Qualifier("corsConfigurationSource") CorsConfigurationSource corsConfigurationSource,
         CsrfTokenRepository csrfTokenRepository,
         CsrfCustomizer csrfCustomizer,
-        CustomAuthenticationEntryPoint customAuthenticationEntryPoint
+        CustomAuthenticationEntryPoint customAuthenticationEntryPoint,
+        CustomAccessDeniedHandler customAccessDeniedHandler
     ) throws Exception {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource))
@@ -35,6 +37,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
             .exceptionHandling(ex -> ex
                 .authenticationEntryPoint(customAuthenticationEntryPoint) // 미로그인(401)
+                .accessDeniedHandler(customAccessDeniedHandler) // 권한 체크(403)
             )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
