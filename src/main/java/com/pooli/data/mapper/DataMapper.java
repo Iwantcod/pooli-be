@@ -6,6 +6,8 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.pooli.data.domain.dto.response.AppDataUsageResDto.AppUsageDto;
+import com.pooli.data.domain.dto.response.DataBalancesResDto;
+import com.pooli.data.domain.dto.response.DataUsageResDto;
 import com.pooli.data.domain.dto.response.MonthlyDataUsageResDto.MonthlyUsageDto;
 
 @Mapper
@@ -20,5 +22,14 @@ public interface DataMapper {
             @Param("lineId") Long lineId,
             @Param("month") Integer month
     );
-
+    
+    DataBalancesResDto findDataSummaryByLineId(
+    		@Param("lineId") Long lineId
+	);
+    
+    
+    DataUsageResDto findDataUsageAggregateByLineIdAndMonth(
+            @Param("lineId") Long lineId,
+            @Param("yearMonth") Integer yearMonth
+    );
 }
