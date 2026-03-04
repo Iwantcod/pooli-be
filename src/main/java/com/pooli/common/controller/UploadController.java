@@ -1,5 +1,6 @@
 package com.pooli.common.controller;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.dto.request.PresignedUrlReqDto;
 import com.pooli.common.dto.response.PresignedUrlResDto;
 import com.pooli.common.service.UploadService;
@@ -11,6 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -58,8 +60,9 @@ public class UploadController {
     })
     @PostMapping("/presigned-urls")
     public PresignedUrlResDto createPresignedUrls(
+            @AuthenticationPrincipal AuthUserDetails userDetails,
             @Valid @RequestBody PresignedUrlReqDto request
     ) {
-        return uploadService.generatePresignedUrls(request);
+        return uploadService.generatePresignedUrls(request, userDetails);
     }
 }
