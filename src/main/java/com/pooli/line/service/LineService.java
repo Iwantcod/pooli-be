@@ -18,9 +18,9 @@ public interface LineService {
 	Void switchLine(AuthUserDetails principal, Long lineId,
             HttpServletRequest request, HttpServletResponse response);
 	
-	IndividualThresholdResDto getIndividualThreshold(Long lineId, AuthUserDetails principal);
+	IndividualThresholdResDto getIndividualThreshold(AuthUserDetails principal);
 	
-	Void updateIndividualThreshold(Long lineId, UpdateIndividualThresholdReqDto request);
+	Void updateIndividualThreshold(AuthUserDetails principal, UpdateIndividualThresholdReqDto request);
 	
 	
 	List<LineUserSummaryResDto> getLinesListByPhone(String phone);

@@ -77,11 +77,9 @@ public class LineServiceImpl implements LineService {
 	}
 
 	@Override
-	public IndividualThresholdResDto getIndividualThreshold(Long lineId, AuthUserDetails principal) {
+	public IndividualThresholdResDto getIndividualThreshold(AuthUserDetails principal) {
 		
-		if(!Objects.equals(lineId, principal.getLineId())) throw new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN);
-		
-		IndividualThresholdResDto result = lineMapper.selectIndividualThresholdByLineId(lineId);
+		IndividualThresholdResDto result = lineMapper.selectIndividualThresholdByLineId(principal.getLineId());
 		
 		if(result == null) {
 			throw new ApplicationException(LineErrorCode.LINE_NOT_FOUND);
@@ -92,11 +90,9 @@ public class LineServiceImpl implements LineService {
 	}
 
 	@Override
-	public Void updateIndividualThreshold(Long lineId, UpdateIndividualThresholdReqDto request) {
+	public Void updateIndividualThreshold(AuthUserDetails principal, UpdateIndividualThresholdReqDto request) {
 		
-		if(!Objects.equals(lineId, request.getLineId())) throw new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN);
-		
-		int result = lineMapper.updateIndividualThreshold(lineId, request.getIndividualThreshold(), request.getIsThresholdActive());
+		int result = lineMapper.updateIndividualThreshold(principal.getLineId(), request.getIndividualThreshold(), request.getIsThresholdActive());
 		
 		if(result == 0) {
 			throw new ApplicationException(LineErrorCode.LINE_NOT_FOUND);

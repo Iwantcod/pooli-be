@@ -39,7 +39,6 @@ import lombok.RequiredArgsConstructor;
 public class LineController {
 	
 	private final LineService lineService;
-	private final LineOwnershipValidator ownershipValidator;
 	
 	/**
 	 * getLines()
@@ -167,13 +166,10 @@ public class LineController {
     })
     @GetMapping("/thresholds")
     public ResponseEntity<IndividualThresholdResDto> getIndividualThreshold(
-    		@AuthenticationPrincipal AuthUserDetails principal,
-            @Parameter(description = "회선 ID", example = "1")
-    		@NotNull
-            @RequestParam(required = true, name = "lineId") Long lineId
+    		@AuthenticationPrincipal AuthUserDetails principal
     ) {
     	
-        return ResponseEntity.ok(lineService.getIndividualThreshold(lineId,principal));
+        return ResponseEntity.ok(lineService.getIndividualThreshold(principal));
     }
 
     /**
@@ -215,14 +211,14 @@ public class LineController {
     		@AuthenticationPrincipal AuthUserDetails principal,
     		@RequestBody UpdateIndividualThresholdReqDto request
     ) {
-    	lineService.updateIndividualThreshold(principal.getLineId(), request);
+    	lineService.updateIndividualThreshold(principal, request);
         return ResponseEntity.ok().build();
     }
     
     
     @Operation(
             summary = "전화번호 회선 검색",
-            description = "전화번호를 통해 회선 및 해당 유저에 대한 요약 정ㅂ"
+            description = "전화번호를 통해 회선 및 해당 유저에 대한 요약 정보"
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "임계치 수정 성공"),
