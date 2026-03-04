@@ -39,8 +39,16 @@ public class NotiReadController {
 	)
 	@ApiResponses({
         @ApiResponse(responseCode = "200", description = "조회 성공"),
-        @ApiResponse(responseCode = "404", description = "알람 정보가 존재하지 않음"),
-        @ApiResponse(responseCode = "500", description = "서버 오류"),   
+			@ApiResponse(responseCode = "400",
+					description = """
+					잘못된 요청
+					- COMMON:4002 RequestParam 유효성 검증 실패
+					 - COMMON:4003 RequestParam 타입 불일치
+					 - COMMON:4004 필수 RequestParam 누락
+					 - COMMON:4008 페이지 크기(size)가 올바르지 않습니다.
+					 - COMMON:4007 페이지 번호가 올바르지 않습니다.
+					"""),
+			@ApiResponse(responseCode = "500", description = "서버 오류")
 	})
 	@GetMapping
 	public ResponseEntity<PagingResDto<NotiSendResDto>> getNotifications(
@@ -78,15 +86,18 @@ public class NotiReadController {
 	)
 	@ApiResponses({
         @ApiResponse(responseCode = "200", description = "조회 성공"),
-        @ApiResponse(responseCode = "404", description = "알람 정보가 존재하지 않음"),
         @ApiResponse(responseCode = "500", description = "서버 오류"),   
 	})
 	@GetMapping("/unread-counts")
-	public ResponseEntity<UnreadCountsResDto> getUnreadCounts(){
-		
-		return ResponseEntity.ok(
-				UnreadCountsResDto.builder().build()
-			);
+	public ResponseEntity<UnreadCountsResDto> getUnreadCounts(
+			@AuthenticationPrincipal AuthUserDetails userDetails
+	){
+		UnreadCountsResDto response =
+				alarmHistoryService.getUnreadCounts(
+						userDetails.getLineId()
+				);
+
+		return ResponseEntity.ok(response);
 	}
 	
 	@Operation(

@@ -34,4 +34,6 @@ public interface AlarmHistoryMapper {
             @Param("isRead") Boolean isRead,
             @Param("code") String code
     );
+
+    Long countUnreadByLineId(@Param("lineId") Long lineId);
 }

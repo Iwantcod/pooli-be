@@ -6,6 +6,7 @@ import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.notification.domain.dto.request.NotiSendReqDto;
 import com.pooli.notification.domain.dto.response.NotiSendResDto;
+import com.pooli.notification.domain.dto.response.UnreadCountsResDto;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.domain.enums.NotificationTargetType;
@@ -184,6 +185,18 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
                 .size(size)
                 .totalElements(totalElements)
                 .totalPages(totalPages)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public UnreadCountsResDto getUnreadCounts(Long lineId) {
+
+        Long count = alarmHistoryMapper.countUnreadByLineId(lineId);
+
+        return UnreadCountsResDto.builder()
+                .lineId(lineId)
+                .unreadCount(count != null ? count : 0L)
                 .build();
     }
 

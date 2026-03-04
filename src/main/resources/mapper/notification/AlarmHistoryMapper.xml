@@ -110,4 +110,13 @@
 
     </select>
 
+    <!-- 미읽음 개수 조회 -->
+    <select id="countUnreadByLineId" resultType="long">
+        SELECT COUNT(*)
+        FROM ALARM_HISTORY
+        WHERE line_id = #{lineId}
+        AND deleted_at IS NULL
+        AND read_at IS NULL
+    </select>
+
 </mapper>
