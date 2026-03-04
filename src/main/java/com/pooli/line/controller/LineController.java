@@ -40,7 +40,13 @@ public class LineController {
 	private final LineService lineService;
 	private final LineOwnershipValidator ownershipValidator;
 	
-
+	/**
+	 * getLines()
+	 * - 로그인 유저 소유의 회선 목록 조회
+	 * 
+	 * @param principal : 로그인 세션 정보
+	 * @return
+	 */
     @Operation(
             summary = "유저 회선 조회",
             description = "유저가 가지고 있는 회선들을 조회한다."
@@ -67,6 +73,17 @@ public class LineController {
     }
     
     
+    /**
+     * 
+     * switchLine()
+     * - 특정 회선으로 사용자 세션 정보 변경
+     * 
+     * @param principal : 로그인 세션 정보
+     * @param lineId : 변경 대상 회선 식별자
+     * @param request
+     * @param response
+     * @return
+     */
     @Operation(
             summary = "유저 회선 변경",
             description = "유저가 가지고 있는 회선 중 특정 회선으로 세션 정보를 변경한다."
@@ -111,6 +128,15 @@ public class LineController {
     	
     }
 
+    /**
+     * 
+     * getIndividualThreshold
+     * - 유저 회선 별 개인 임계치 활성화 여부 및 임계치 조회
+     * 
+     * @param principal
+     * @param lineId
+     * @return
+     */
     @Operation(
             summary = "유저 회선별 개인 임계치 조회",
             description = "유저 회선별 설정된 개인 임계치를 조회한다."
@@ -150,6 +176,14 @@ public class LineController {
         return ResponseEntity.ok(lineService.getIndividualThreshold(lineId,principal));
     }
 
+    /**
+     * updateIndividualThreshold
+     * - 유저 회선별 설정된 개인 임계치 활성화 여부 / 임계치 값을 수정
+     * 
+     * @param principal
+     * @param request
+     * @return
+     */
     @Operation(
             summary = "유저 회선별 개인 임계치 수정",
             description = "유저 회선별 설정된 개인 임계치를 수정합니다."
