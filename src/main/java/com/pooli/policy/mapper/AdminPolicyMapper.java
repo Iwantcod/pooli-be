@@ -17,25 +17,25 @@ public interface AdminPolicyMapper {
     List<AdminPolicyResDto> selectAllPolicies();
 
     // 정책 추가
-    int insertPolicy(AdminPolicyReqDto request);
+    int insertPolicy(@Param("request")AdminPolicyReqDto request);
 
     // 정책 수정
-    int updatePolicy(@Param("policyId") Integer policyId, AdminPolicyReqDto request);
+    int updatePolicy(@Param("policyId") Integer policyId, @Param("request") AdminPolicyReqDto request);
 
     // 정책 삭제 (Soft Delete)
     int deletePolicy(@Param("policyId") Integer policyId);
 
     // 정책 활성/비활성 상태 변경
-    int updatePolicyActiveStatus(@Param("policyId") Integer policyId, AdminPolicyActiveReqDto request);
+    int updatePolicyActiveStatus(@Param("policyId") Integer policyId, @Param("request") AdminPolicyActiveReqDto request);
     
     // 정책 카테고리 목록 조회
     List<AdminPolicyCateResDto> selectAllCategories();
 
     // 정책 카테고리 추가
-    int insertCategory(AdminCategoryReqDto request);
+    int insertCategory(@Param("request") AdminCategoryReqDto request);
 
     // 정책 카테고리 수정
-    int updateCategory(@Param("policyCategoryId") Integer policyCategoryId, AdminCategoryReqDto request);
+    int updateCategory(@Param("policyCategoryId") Integer policyCategoryId, @Param("request") AdminCategoryReqDto request);
 
     // 정책 카테고리 삭제 (Soft Delete)
     int deleteCategory(@Param("policyCategoryId") Integer policyCategoryId);
