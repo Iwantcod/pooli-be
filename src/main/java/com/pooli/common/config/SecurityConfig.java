@@ -1,5 +1,6 @@
 package com.pooli.common.config;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -12,8 +13,10 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.cors.CorsConfigurationSource;
+
+import com.pooli.auth.exception.CustomAccessDeniedHandler;
+import com.pooli.auth.exception.CustomAuthenticationEntryPoint;
 
 @EnableMethodSecurity
 @Configuration
@@ -23,13 +26,19 @@ public class SecurityConfig {
         HttpSecurity http,
         @Qualifier("corsConfigurationSource") CorsConfigurationSource corsConfigurationSource,
         CsrfTokenRepository csrfTokenRepository,
-        CsrfCustomizer csrfCustomizer
+        CsrfCustomizer csrfCustomizer,
+        CustomAuthenticationEntryPoint customAuthenticationEntryPoint,
+        CustomAccessDeniedHandler customAccessDeniedHandler
     ) throws Exception {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource))
             .httpBasic(httpBasic -> httpBasic.disable())
             .formLogin(form -> form.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint(customAuthenticationEntryPoint) // 미로그인(401)
+                .accessDeniedHandler(customAccessDeniedHandler) // 권한 체크(403)
+            )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
                     "/swagger-ui.html",

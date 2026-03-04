@@ -2,9 +2,10 @@ package com.pooli.notification.controller;
 
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.notification.domain.dto.response.AlarmSettingResDto;
-import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.service.AlarmSettingService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import org.springframework.web.bind.annotation.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -49,14 +50,17 @@ public class AlarmSettingController {
                 """)
 	})
 	@PatchMapping
-	public ResponseEntity<Void> toggleAlarm(
+	public ResponseEntity<Void> updateAlarm(
 			@AuthenticationPrincipal AuthUserDetails userDetails,
-			@RequestParam AlarmType type,
+
+			@Parameter(description = "알람 코드", example = "POLICY_CHANGE")
+			@RequestParam AlarmCode code,
+
 			@Valid @RequestBody AlarmSettingReqDto request
 	) {
 		alarmSettingService.updateAlarmSetting(
 				userDetails.getUserId(),
-				type,
+				code,
 				request.getEnabled()
 		);
 

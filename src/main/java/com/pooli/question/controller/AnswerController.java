@@ -5,6 +5,7 @@ import com.pooli.question.domain.dto.request.AnswerCreateReqDto;
 import com.pooli.question.domain.dto.response.AnswerCreateResDto;
 import com.pooli.question.service.AnswerService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -81,6 +82,7 @@ public class AnswerController {
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping
     public ResponseEntity<Void> deleteAnswer(
+            @Parameter(description = "답변 id", example = "10")
             @RequestParam Long answerId
     ) {
         answerService.deleteAnswer(answerId);
