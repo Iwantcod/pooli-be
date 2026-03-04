@@ -19,7 +19,7 @@ public interface PermissionLineMapper {
     List<MemberPermissionResDto> findByFamilyIdAndLineId(@Param("familyId") Long familyId, @Param("lineId") Long lineId);
 
     // 권한명 기반 활성화 여부 조회
-    Boolean isPermissionEnabledByTitle(@Param("lineId") Long lineId, @Param("permissionTitle") String permissionTitle);
+    Boolean isPermissionEnabledByTitle(@Param("lineId") Long lineId);
 
     // 가족 전체 구성원 권한 목록 조회 (familyId 기준, PERMISSION JOIN)
     List<MemberPermissionResDto> findByFamilyId(Long familyId);

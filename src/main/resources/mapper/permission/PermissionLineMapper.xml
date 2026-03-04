@@ -52,10 +52,11 @@
         FROM PERMISSION_LINE pl
                  JOIN PERMISSION p ON pl.permission_id = p.permission_id
         WHERE pl.line_id = #{lineId}
-          AND p.permission_title = #{permissionTitle}
+          AND p.permission_id = 2
           AND p.deleted_at IS NULL
           AND pl.is_enable = TRUE
-
+    </select>
+    
     <!-- 가족 전체 구성원 권한 목록 조회 (familyId 기준) -->
     <!-- CROSS JOIN + LEFT JOIN: PERMISSION_LINE row가 없는 (구성원, 권한) 조합도 반환 (기본 false) -->
     <select id="findByFamilyId" resultMap="memberPermissionResultMap">
