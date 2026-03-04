@@ -41,11 +41,11 @@ public class PermissionController {
             @ApiResponse(responseCode = "403", description = """
                     권한 없음
 
-                    - COMMON:4302: 접근 권한이 없습니다.
+                    - COMMON:4301: 관리자 권한이 없습니다.
                     """),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @GetMapping
     public ResponseEntity<PermissionListResDto> getPermissions() {
         return ResponseEntity.ok(permissionService.getPermissions());
@@ -64,7 +64,7 @@ public class PermissionController {
             @ApiResponse(responseCode = "403", description = """
                     권한 없음
 
-                    - COMMON:4302: 접근 권한이 없습니다.
+                    - COMMON:4301: 관리자 권한이 없습니다.
                     """),
             @ApiResponse(responseCode = "409", description = """
                     중복 충돌
@@ -73,7 +73,7 @@ public class PermissionController {
                     """),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @PostMapping
     public ResponseEntity<PermissionResDto> createPermission(
             @Valid @RequestBody PermissionReqDto permissionReqDto) {
@@ -94,7 +94,7 @@ public class PermissionController {
             @ApiResponse(responseCode = "403", description = """
                     권한 없음
 
-                    - COMMON:4302: 접근 권한이 없습니다.
+                    - COMMON:4301: 관리자 권한이 없습니다.
                     """),
             @ApiResponse(responseCode = "404", description = """
                     권한 정보 없음
@@ -108,7 +108,7 @@ public class PermissionController {
                     """),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @PatchMapping
     public ResponseEntity<PermissionResDto> updatePermissionTitle(
             @Parameter(description = "권한 ID", example = "1")
@@ -125,7 +125,7 @@ public class PermissionController {
             @ApiResponse(responseCode = "403", description = """
                     권한 없음
 
-                    - COMMON:4302: 접근 권한이 없습니다.
+                    - COMMON:4301: 관리자 권한이 없습니다.
                     """),
             @ApiResponse(responseCode = "404", description = """
                     권한 정보 없음
@@ -134,7 +134,7 @@ public class PermissionController {
                     """),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @DeleteMapping
     public ResponseEntity<SimpleMessageResDto> deletePermission(
             @Parameter(description = "권한 ID", example = "1")

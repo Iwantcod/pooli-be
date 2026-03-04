@@ -67,7 +67,7 @@ public class MemberPermissionController {
                     """),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
-    @PreAuthorize("hasRole('ADMIN') or hasRole('FAMILY_OWNER')")
+    @PreAuthorize("@authz.requireAdminOrOwner(authentication)")
     @GetMapping("/family")
     public ResponseEntity<MemberPermissionListResDto> getFamilyMemberPermissions(
             @Parameter(description = "가족 ID", example = "10") @RequestParam Long familyId,
@@ -96,7 +96,7 @@ public class MemberPermissionController {
                     """),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
-    @PreAuthorize("hasRole('ADMIN') or hasRole('FAMILY_OWNER')")
+    @PreAuthorize("@authz.requireAdminOrOwner(authentication)")
     @GetMapping
     public ResponseEntity<MemberPermissionListResDto> getMemberPermissions(
             @Parameter(description = "가족 ID", example = "10") @RequestParam Long familyId,
@@ -130,7 +130,7 @@ public class MemberPermissionController {
                     """),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
-    @PreAuthorize("hasRole('ADMIN') or hasRole('FAMILY_OWNER')")
+    @PreAuthorize("@authz.requireAdminOrOwner(authentication)")
     @PatchMapping
     public ResponseEntity<MemberPermissionListResDto> bulkUpdateMemberPermissions(
             @Parameter(description = "가족 ID", example = "10") @RequestParam Long familyId,
@@ -163,7 +163,7 @@ public class MemberPermissionController {
 //                    - PERMISSION-5000: 구성원 권한 반영 중 오류가 발생했습니다.
 //                    """)
 //    })
-//    @PreAuthorize("hasRole('ADMIN') or hasRole('FAMILY_OWNER')")
+//    @PreAuthorize("@authz.requireAdminOrOwner(authentication)")
 //    @PatchMapping
 //    public ResponseEntity<MemberPermissionResDto> updateMemberPermission(
 //            @Parameter(description = "가족 ID", example = "10") @RequestParam Long familyId,

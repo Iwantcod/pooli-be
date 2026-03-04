@@ -84,7 +84,7 @@ public class RoleController {
                             """
             )
     })
-    @PreAuthorize("hasRole('ADMIN') or hasRole('FAMILY_OWNER')")
+    @PreAuthorize("@authz.requireAdminOrOwner(authentication)")
     @PatchMapping("/representative")
     public ResponseEntity<RepresentativeRoleTransferResDto> transferRepresentativeRole(
             @AuthenticationPrincipal AuthUserDetails userDetails,
