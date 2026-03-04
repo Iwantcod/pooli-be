@@ -67,10 +67,10 @@
             </if>
 
             <choose>
-                <when test="policyScope == @com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto$PolicyScope@ALL">
+                <when test="policyScope == @com.pooli.policy.domain.enums.PolicyScope@ALL">
                 </when>
 
-                <when test="policyScope == @com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto$PolicyScope@APPLIED">
+                <when test="policyScope == @com.pooli.policy.domain.enums.PolicyScope@APPLIED">
                     AND (
                         ap.app_policy_id IS NOT NULL
                         AND ap.is_active = 1
@@ -79,7 +79,7 @@
                     )
                 </when>
 
-                <when test="policyScope == @com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto$PolicyScope@NONE">
+                <when test="policyScope == @com.pooli.policy.domain.enums.PolicyScope@NONE">
                     AND (
                         ap.app_policy_id IS NULL
                         OR ap.is_active = 0
@@ -87,7 +87,7 @@
                     )
                 </when>
 
-                <when test="policyScope == @com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto$PolicyScope@WHITELIST">
+                <when test="policyScope == @com.pooli.policy.domain.enums.PolicyScope@WHITELIST">
                     AND (
                         ap.app_policy_id IS NOT NULL
                         AND ap.is_active = 1
@@ -130,7 +130,7 @@
         <include refid="appPolicyFilterFromWhere"/>
 
         <choose>
-            <when test="sortType == @com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto$SortType@NAME">
+            <when test="sortType == @com.pooli.policy.domain.enums.SortType@NAME">
                 ORDER BY a.application_name DESC,
                          a.application_id DESC
             </when>

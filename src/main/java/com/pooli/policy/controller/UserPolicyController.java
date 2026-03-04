@@ -24,6 +24,8 @@ import com.pooli.policy.domain.dto.response.BlockPolicyResDto;
 import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
 import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
+import com.pooli.policy.domain.enums.PolicyScope;
+import com.pooli.policy.domain.enums.SortType;
 import com.pooli.policy.service.UserPolicyService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -562,13 +564,13 @@ public class UserPolicyController {
             @Parameter(description = "앱 이름 검색 키워드", example = "You")
             @RequestParam(required = false) String keyword,
             @Parameter(description = "정책 상태 필터", example = "ALL")
-            @RequestParam(required = false, defaultValue = "ALL") AppPolicySearchCondReqDto.PolicyScope policyScope,
+            @RequestParam(required = false, defaultValue = "ALL") PolicyScope policyScope,
             @Parameter(description = "데이터 제한 적용 앱만 조회 여부", example = "false")
             @RequestParam(required = false, defaultValue = "false") boolean dataLimit,
             @Parameter(description = "속도 제한 적용 앱만 조회 여부", example = "false")
             @RequestParam(required = false, defaultValue = "false") boolean speedLimit,
             @Parameter(description = "정렬 기준", example = "ACTIVE")
-            @RequestParam(required = false, defaultValue = "ACTIVE") AppPolicySearchCondReqDto.SortType sortType,
+            @RequestParam(required = false, defaultValue = "ACTIVE") SortType sortType,
             @AuthenticationPrincipal AuthUserDetails auth
     ) {
         AppPolicySearchCondReqDto request = AppPolicySearchCondReqDto.builder()

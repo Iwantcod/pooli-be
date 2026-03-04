@@ -1,5 +1,7 @@
 package com.pooli.policy.domain.dto.request;
 
+import com.pooli.policy.domain.enums.PolicyScope;
+import com.pooli.policy.domain.enums.SortType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -38,16 +40,4 @@ public class AppPolicySearchCondReqDto {
     private Integer pageSize;
 
     private Integer offset;
-
-    public enum PolicyScope {
-        ALL,
-        APPLIED,
-        NONE,
-        WHITELIST
-    }
-
-    public enum SortType {
-        ACTIVE,
-        NAME
-    }
 }

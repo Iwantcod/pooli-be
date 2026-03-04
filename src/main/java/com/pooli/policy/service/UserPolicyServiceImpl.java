@@ -26,6 +26,8 @@ import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
 import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockDayResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
+import com.pooli.policy.domain.enums.PolicyScope;
+import com.pooli.policy.domain.enums.SortType;
 import com.pooli.policy.exception.PolicyErrorCode;
 import com.pooli.policy.mapper.AppPolicyMapper;
 import com.pooli.policy.mapper.LineLimitMapper;
@@ -358,12 +360,12 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.INVALID_PAGE_SIZE);
         }
 
-        AppPolicySearchCondReqDto.PolicyScope policyScope = request.getPolicyScope() != null
+        PolicyScope policyScope = request.getPolicyScope() != null
                 ? request.getPolicyScope()
-                : AppPolicySearchCondReqDto.PolicyScope.ALL;
-        AppPolicySearchCondReqDto.SortType sortType = request.getSortType() != null
+                : PolicyScope.ALL;
+        SortType sortType = request.getSortType() != null
                 ? request.getSortType()
-                : AppPolicySearchCondReqDto.SortType.ACTIVE;
+                : SortType.ACTIVE;
         String keyword = request.getKeyword() != null && request.getKeyword().isBlank()
                 ? null
                 : request.getKeyword();
