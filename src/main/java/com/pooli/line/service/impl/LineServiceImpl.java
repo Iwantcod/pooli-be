@@ -14,9 +14,11 @@ import org.springframework.stereotype.Service;
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.common.util.MaskingUtils;
 import com.pooli.line.domain.dto.request.UpdateIndividualThresholdReqDto;
 import com.pooli.line.domain.dto.response.IndividualThresholdResDto;
 import com.pooli.line.domain.dto.response.LineSimpleResDto;
+import com.pooli.line.domain.dto.response.LineUserSummaryResDto;
 import com.pooli.line.error.LineErrorCode;
 import com.pooli.line.mapper.LineMapper;
 import com.pooli.line.service.LineService;
@@ -101,6 +103,32 @@ public class LineServiceImpl implements LineService {
 		}
 		
 		return null;
+	}
+
+	@Override
+	public List<LineUserSummaryResDto> getLinesListByPhone(String phone) {
+		
+		if (phone == null || !phone.matches("^\\d{4}$")) {
+		    throw new ApplicationException(CommonErrorCode.INVALID_REQUEST_PARAM);
+		}
+
+		List<LineUserSummaryResDto> list = lineMapper.selectLineUserSummaryListByPhoneSuffix(phone);
+
+	    if (list.isEmpty()) {
+	        throw new ApplicationException(LineErrorCode.LINE_NOT_FOUND);
+	    }
+
+	    List<LineUserSummaryResDto> maskedList = new ArrayList<>();
+	      
+	    return list.stream()
+	              .map(item -> LineUserSummaryResDto.builder()
+	                      .lineId(item.getLineId())
+	                      .phone(MaskingUtils.maskingPhoneNumber(item.getPhone()))
+	                      .userId(item.getUserId())
+	                      .userName(item.getUserName())
+	                      .email(item.getEmail())
+	                      .build())
+	              .toList();
 	}
 
 

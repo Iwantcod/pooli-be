@@ -18,6 +18,7 @@ import com.pooli.common.validator.LineOwnershipValidator;
 import com.pooli.line.domain.dto.request.UpdateIndividualThresholdReqDto;
 import com.pooli.line.domain.dto.response.IndividualThresholdResDto;
 import com.pooli.line.domain.dto.response.LineSimpleResDto;
+import com.pooli.line.domain.dto.response.LineUserSummaryResDto;
 import com.pooli.line.service.LineService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -68,8 +69,7 @@ public class LineController {
              @AuthenticationPrincipal AuthUserDetails principal
     ) {
     	
-        List<LineSimpleResDto> response = lineService.getLines(principal.getUserId(), principal.getLineId());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(lineService.getLines(principal.getUserId(), principal.getLineId()));
     }
     
     
@@ -216,7 +216,48 @@ public class LineController {
     		@RequestBody UpdateIndividualThresholdReqDto request
     ) {
     	lineService.updateIndividualThreshold(principal.getLineId(), request);
-
         return ResponseEntity.ok().build();
     }
+    
+    
+    @Operation(
+            summary = "전화번호 회선 검색",
+            description = "전화번호를 통해 회선 및 해당 유저에 대한 요약 정ㅂ"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "임계치 수정 성공"),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+                        잘못된 요청
+                        
+                        - COMMON:4002 RequestParam 유효성 검증 실패
+                        - COMMON:4003 RequestParam 타입 불일치
+                        - COMMON:4004 필수 RequestParam 누락
+                        """
+                ),
+            @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = """
+                        권한 부족
+                        
+                        - COMMON:4301 관리자 권한 필요
+                        """
+                ),
+            @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
+    @PreAuthorize("@authz.requireAdmin(authentication)")
+    @GetMapping("/by-phone")
+    public ResponseEntity<List<LineUserSummaryResDto>> getLinesListByPhone(
+    		@Parameter(description = "회선 전화번호(뒷자리만)", example = "2222")
+    		@NotNull
+            @RequestParam(required = true, name = "phone") String phone
+    ) {
+
+        return ResponseEntity.ok(lineService.getLinesListByPhone(phone));
+    }
+    
+    
 }

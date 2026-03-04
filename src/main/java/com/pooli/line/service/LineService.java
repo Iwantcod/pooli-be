@@ -6,6 +6,7 @@ import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.line.domain.dto.request.UpdateIndividualThresholdReqDto;
 import com.pooli.line.domain.dto.response.IndividualThresholdResDto;
 import com.pooli.line.domain.dto.response.LineSimpleResDto;
+import com.pooli.line.domain.dto.response.LineUserSummaryResDto;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -20,4 +21,7 @@ public interface LineService {
 	IndividualThresholdResDto getIndividualThreshold(Long lineId, AuthUserDetails principal);
 	
 	Void updateIndividualThreshold(Long lineId, UpdateIndividualThresholdReqDto request);
+	
+	
+	List<LineUserSummaryResDto> getLinesListByPhone(String phone);
 }
