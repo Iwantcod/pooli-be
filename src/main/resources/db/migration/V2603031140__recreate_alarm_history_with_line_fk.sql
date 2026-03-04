@@ -15,7 +15,7 @@ CREATE TABLE ALARM_HISTORY (
 
        CONSTRAINT FK_LINE_TO_ALARM_HISTORY_1
            FOREIGN KEY (line_id)
-               REFERENCES line (line_id)
+               REFERENCES LINE (line_id)
 
 ) ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4

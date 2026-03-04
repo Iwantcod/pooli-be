@@ -62,6 +62,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	@Override
 	public List<RepeatBlockPolicyResDto> getRepeatBlockPolicies(Long lineId, AuthUserDetails auth) {
+	    checkIsSameFamilyGroup(lineId, auth.getLineId());
 
 	    return repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
 	}
@@ -70,7 +71,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	@Transactional
 	public RepeatBlockPolicyResDto createRepeatBlockPolicy(RepeatBlockPolicyReqDto request, AuthUserDetails auth) {
 
-        Long lineId = auth.getLineId();
+        Long lineId = request.getLineId() != null ? request.getLineId() : auth.getLineId();
+        checkIsSameFamilyGroup(lineId, auth.getLineId());
+        request.setLineId(lineId);
 
 
 	    List<RepeatBlockDayReqDto> days = request.getDays();
@@ -120,6 +123,14 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	@Override
 	public RepeatBlockPolicyResDto updateRepeatBlockPolicy(Long repeatBlockId, RepeatBlockPolicyReqDto request,
 			AuthUserDetails auth) {
+	    RepeatBlockPolicyResDto exist = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
+	    if (exist == null) {
+	        throw new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
+	    }
+	    checkIsSameFamilyGroup(exist.getLineId(), auth.getLineId());
+	    request.setLineId(exist.getLineId());
+	    request.setRepeatBlockId(repeatBlockId);
+
 		// 반복 차단 요일 및 시간대 정보를 삭제한 후 새로 삽입하기
 		deleteRepeatBlockPolicy(repeatBlockId, auth);
 		return createRepeatBlockPolicy(request, auth);
@@ -134,6 +145,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 		if (exist == null) {
 	        throw new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
 	    }
+		checkIsSameFamilyGroup(exist.getLineId(), auth.getLineId());
 
 	    // soft delete
 	    repeatBlockMapper.deleteRepeatBlock(repeatBlockId);
@@ -148,6 +160,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	@Override
 	public ImmediateBlockResDto getImmediateBlockPolicy(Long lineId, AuthUserDetails auth) {
+	    checkIsSameFamilyGroup(lineId, auth.getLineId());
 
 	    ImmediateBlockResDto immBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
 
@@ -169,6 +182,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	@Override
 	public ImmediateBlockResDto updateImmediateBlockPolicy(Long lineId, ImmediateBlockReqDto request,
 			AuthUserDetails auth) {
+	    checkIsSameFamilyGroup(lineId, auth.getLineId());
 
 	    immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
 
@@ -521,6 +535,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	@Override
 	public AppliedPolicyResDto getAppliedPolicies(Long lineId, AuthUserDetails auth) {
+		checkIsSameFamilyGroup(lineId, auth.getLineId());
 
 		// 제한 정책, 앱 정보 받아와서 추가하기(return에도)
 	    List<RepeatBlockPolicyResDto> repeatBlockPolicyList = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);

@@ -23,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
+import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.policy.domain.dto.request.ImmediateBlockReqDto;
 import com.pooli.policy.domain.dto.request.RepeatBlockDayReqDto;
 import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
@@ -48,6 +49,8 @@ class UserPolicyServiceImplTest {
     private RepeatBlockDayMapper repeatBlockDayMapper;
     @Mock
     private ImmediateBlockMapper immediateBlockMapper;
+    @Mock
+    private FamilyLineMapper familyLineMapper;
 
     @InjectMocks
     private UserPolicyServiceImpl userPolicyService;
@@ -83,6 +86,8 @@ class UserPolicyServiceImplTest {
         void getRepeatBlockPolicies_success() {
             // given
             Long lineId = 1L;
+            when(authUserDetails.getLineId()).thenReturn(lineId);
+            when(familyLineMapper.findAllFamilyIdByLineId(lineId)).thenReturn(List.of(lineId));
             RepeatBlockPolicyResDto policy = RepeatBlockPolicyResDto.builder()
                     .repeatBlockId(10L)
                     .lineId(lineId)
@@ -104,6 +109,7 @@ class UserPolicyServiceImplTest {
             // given
             Long lineId = 1L;
             when(authUserDetails.getLineId()).thenReturn(lineId);
+            when(familyLineMapper.findAllFamilyIdByLineId(lineId)).thenReturn(List.of(lineId));
             
             RepeatBlockDayReqDto dayReq = new RepeatBlockDayReqDto();
             dayReq.setDayOfWeek(DayOfWeek.MON);
@@ -139,6 +145,7 @@ class UserPolicyServiceImplTest {
             // given
             Long lineId = 1L;
             when(authUserDetails.getLineId()).thenReturn(lineId);
+            when(familyLineMapper.findAllFamilyIdByLineId(lineId)).thenReturn(List.of(lineId));
 
             RepeatBlockDayReqDto dayReq = new RepeatBlockDayReqDto();
             dayReq.setDayOfWeek(DayOfWeek.MON);
@@ -161,8 +168,11 @@ class UserPolicyServiceImplTest {
         void deleteRepeatBlockPolicy_success() {
             // given
             Long repeatBlockId = 10L;
-            when(authUserDetails.getLineId()).thenReturn(1L);
-            when(repeatBlockMapper.selectRepeatBlockById(repeatBlockId)).thenReturn(RepeatBlockPolicyResDto.builder().build());
+            Long lineId = 1L;
+            when(authUserDetails.getLineId()).thenReturn(lineId);
+            when(familyLineMapper.findAllFamilyIdByLineId(lineId)).thenReturn(List.of(lineId));
+            when(repeatBlockMapper.selectRepeatBlockById(repeatBlockId))
+                    .thenReturn(RepeatBlockPolicyResDto.builder().lineId(lineId).build());
 
             // when
             RepeatBlockPolicyResDto result = userPolicyService.deleteRepeatBlockPolicy(repeatBlockId, authUserDetails);
@@ -197,6 +207,8 @@ class UserPolicyServiceImplTest {
         void getImmediateBlockPolicy_exists() {
             // given
             Long lineId = 1L;
+            when(authUserDetails.getLineId()).thenReturn(lineId);
+            when(familyLineMapper.findAllFamilyIdByLineId(lineId)).thenReturn(List.of(lineId));
             LocalDateTime endAt = LocalDateTime.of(2026, 3, 4, 20, 1, 9, 3);
             ImmediateBlockResDto mockRes = ImmediateBlockResDto.builder()
                     .lineId(lineId)
@@ -217,6 +229,8 @@ class UserPolicyServiceImplTest {
         void getImmediateBlockPolicy_notExists() {
             // given
             Long lineId = 1L;
+            when(authUserDetails.getLineId()).thenReturn(lineId);
+            when(familyLineMapper.findAllFamilyIdByLineId(lineId)).thenReturn(List.of(lineId));
             when(immediateBlockMapper.selectImmediateBlockPolicy(lineId)).thenReturn(null);
 
             // when
@@ -232,6 +246,8 @@ class UserPolicyServiceImplTest {
         void updateImmediateBlockPolicy_success() {
             // given
             Long lineId = 1L;
+            when(authUserDetails.getLineId()).thenReturn(lineId);
+            when(familyLineMapper.findAllFamilyIdByLineId(lineId)).thenReturn(List.of(lineId));
             ImmediateBlockReqDto req = new ImmediateBlockReqDto();
             req.setBlockEndAt(LocalDateTime.of(2026, 3, 4, 20, 1, 9, 3));
 
@@ -249,6 +265,8 @@ class UserPolicyServiceImplTest {
     void getAppliedPolicies_success() {
         // given
         Long lineId = 1L;
+        when(authUserDetails.getLineId()).thenReturn(lineId);
+        when(familyLineMapper.findAllFamilyIdByLineId(lineId)).thenReturn(List.of(lineId));
         RepeatBlockPolicyResDto repeatPolicy = RepeatBlockPolicyResDto.builder().repeatBlockId(10L).build();
         ImmediateBlockResDto immBlock = ImmediateBlockResDto.builder().blockEndAt(LocalDateTime.of(2026, 3, 4, 12, 0)).build();
 
