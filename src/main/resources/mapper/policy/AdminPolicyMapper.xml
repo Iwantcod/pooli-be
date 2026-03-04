@@ -28,11 +28,11 @@
 
     <!-- 정책 수정 (동적 SQL: 값이 있는 필드만 업데이트) -->
     <update id="updatePolicy">
-         UPDATE policy
+        UPDATE policy
         SET
             policy_category_id = #{request.policyCategoryId},
             policy_name = #{request.policyName},
-            is_active = true,
+            is_active = false,
             updated_at = NOW()
         WHERE policy_id = #{policyId}
           AND deleted_at IS NULL;
