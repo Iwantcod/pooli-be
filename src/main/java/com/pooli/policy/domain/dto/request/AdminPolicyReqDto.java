@@ -9,6 +9,9 @@ import lombok.Setter;
 @Schema(description = "관리자 - 정책 생성 요청 dto")
 public class AdminPolicyReqDto {
 	
+    @Schema(description = "정책 ID (입력 시 무시됨, 반환 시 채워짐)", hidden = true)
+    private Integer policyId;
+
 	@Schema(description = "정책 이름", example = "반복적 차단 정책")	
 	private String policyName;
 

@@ -1,26 +1,43 @@
 package com.pooli.policy.mapper;
 
-import java.util.List;
-
-import org.apache.ibatis.annotations.Mapper;
-
+import com.pooli.policy.domain.dto.request.AdminCategoryReqDto;
 import com.pooli.policy.domain.dto.request.AdminPolicyActiveReqDto;
+import com.pooli.policy.domain.dto.request.AdminPolicyReqDto;
+import com.pooli.policy.domain.dto.response.AdminPolicyCateResDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyResDto;
-import com.pooli.policy.domain.dto.response.LineAppUsageResDto;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 @Mapper
 public interface AdminPolicyMapper {
 
-	// 전체 정책 목록 조회(활성/비활성 모두 포함)
-	List<AdminPolicyResDto> selectAllPolicies();
-	  
-	// 정책 추가 및 활성화
-	int insertPolicy(AdminPolicyActiveReqDto request);
+    // 전체 정책 목록 조회
+    List<AdminPolicyResDto> selectAllPolicies();
 
-	// 정책 삭제 및 비활성화
-	int deletePolicy(Long policyId);
+    // 정책 추가
+    int insertPolicy(@Param("request")AdminPolicyReqDto request);
 
-	// 특정 구성원 앱별 사용량 통계 조회
-	List<LineAppUsageResDto> selectLineAppUsageStatistics(Long lineId);
+    // 정책 수정
+    int updatePolicy(@Param("policyId") Integer policyId, @Param("request") AdminPolicyReqDto request);
+
+    // 정책 삭제 (Soft Delete)
+    int deletePolicy(@Param("policyId") Integer policyId);
+
+    // 정책 활성/비활성 상태 변경
+    int updatePolicyActiveStatus(@Param("policyId") Integer policyId, @Param("request") AdminPolicyActiveReqDto request);
+    
+    // 정책 카테고리 목록 조회
+    List<AdminPolicyCateResDto> selectAllCategories();
+
+    // 정책 카테고리 추가
+    int insertCategory(@Param("request") AdminCategoryReqDto request);
+
+    // 정책 카테고리 수정
+    int updateCategory(@Param("policyCategoryId") Integer policyCategoryId, @Param("request") AdminCategoryReqDto request);
+
+    // 정책 카테고리 삭제 (Soft Delete)
+    int deleteCategory(@Param("policyCategoryId") Integer policyCategoryId);
 
 }

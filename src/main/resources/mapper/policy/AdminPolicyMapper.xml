@@ -3,75 +3,95 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="com.pooli.policy.mapper.AdminPolicyMapper">
-	<!-- repeatBlockDay랑 묶어서 함께 반환 -->
-    <resultMap id="repeatBlockResultMap"
-               type="com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto">
-        <id     property="repeatBlockId" column="repeat_block_id"/>
-        <result property="lineId"        column="line_id"/>
-        <result property="isActive"      column="is_active"/>
-        <!-- 1:N - REPEAT_BLOCK_DAY 목록 -->
-        <collection property="days"
-                    ofType="com.pooli.policy.domain.dto.response.RepeatBlockDayResDto">
-            <result property="dayOfWeek"        column="day_of_week"/>
-            <result property="startAt"          column="start_at"/>
-            <result property="endAt"            column="end_at"/>
-        </collection>
-    </resultMap>
-    
-    <select id="selectRepeatBlocksByLineId" resultMap="repeatBlockResultMap">
-        SELECT
-            rb.repeat_block_id,
-            rb.line_id,
-            rb.is_active,
-            rbd.repeat_block_day_id,
-            rbd.day_of_week,
-            rbd.start_at,
-            rbd.end_at
-        FROM REPEAT_BLOCK rb
-        LEFT JOIN REPEAT_BLOCK_DAY rbd
-            ON rb.repeat_block_id = rbd.repeat_block_id
-            AND rbd.deleted_at IS NULL
-        WHERE rb.line_id = #{lineId}
-          AND rb.deleted_at IS NULL
-        ORDER BY rb.repeat_block_id, rbd.day_of_week
-    </select>
-    
-    <!-- 반복적 차단 정보 중복 확인(요일, 시간) -->
-	<select id="isDuplicatedRepeatBlocks" resultType="boolean" parameterType="map">
-    	SELECT CASE WHEN COUNT(1) > 0 THEN TRUE ELSE FALSE END
-	    FROM repeat_block_day d
-	    INNER JOIN repeat_block rb ON d.repeat_block_id = rb.repeat_block_id
-	    WHERE rb.line_id = #{lineId}
-	      AND d.day_of_week = #{dayOfWeek}
-	      AND d.start_at = #{startAt}
-	      AND d.end_at = #{endAt}
-	      AND rb.deleted_at IS NULL
-	      AND d.deleted_at IS NULL
-	</select>
 
-    <!-- repeat_block 생성 -->
-    <insert id="insertRepeatBlock" useGeneratedKeys="true" keyProperty="repeatBlockId">
-        INSERT INTO repeat_block (line_id, is_active, created_at)
-        VALUES (#{lineId}, #{isActive}, NOW())
+    <!-- 전체 정책 목록 조회 -->
+    <select id="selectAllPolicies" resultType="com.pooli.policy.domain.dto.response.AdminPolicyResDto">
+     SELECT
+            p.policy_id AS policyId,
+            p.policy_name AS policyName,
+            p.policy_category_id AS policyCategoryId,
+            pc.policy_category_name AS policyCategoryName,
+            p.is_active AS isActive,
+            p.updated_at AS updatedAt
+        FROM policy p
+        LEFT JOIN policy_category pc ON p.policy_category_id = pc.policy_category_id
+        WHERE p.deleted_at IS NULL
+          AND (pc.deleted_at IS NULL OR pc.deleted_at IS NOT NULL)
+        ORDER BY p.policy_id DESC
+    </select>
+
+    <!-- 정책 추가 -->
+    <insert id="insertPolicy" useGeneratedKeys="true" keyProperty="policyId">
+        INSERT INTO policy (policy_category_id, policy_name, is_active, is_new, created_at)
+        VALUES (#{policyCategoryId}, #{policyName}, false, true, NOW())
     </insert>
 
-	
-	<select id="selectRepeatBlockById" resultType="com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto">
-        SELECT 
-            repeat_block_id AS repeatBlockId,
-            line_id AS lineId,
-            is_active AS isActive
-        FROM repeat_block
-        WHERE repeat_block_id = #{repeatBlockId}
+    <!-- 정책 수정 (동적 SQL: 값이 있는 필드만 업데이트) -->
+    <update id="updatePolicy">
+        UPDATE policy
+        SET
+            policy_category_id = #{request.policyCategoryId},
+            policy_name = #{request.policyName},
+            is_active = false,
+            updated_at = NOW()
+        WHERE policy_id = #{policyId}
+          AND deleted_at IS NULL;
+    </update>
+
+    <!-- 정책 삭제 (Soft Delete) -->
+    <update id="deletePolicy">
+        UPDATE policy
+        SET
+            deleted_at = NOW()
+        WHERE policy_id = #{policyId}
           AND deleted_at IS NULL
+    </update>
+
+    <!-- 정책 활성/비활성 상태 변경 (동적 SQL) -->
+    <update id="updatePolicyActiveStatus">
+        UPDATE policy
+        <set>
+            <if test="request.isActive != null">is_active = #{request.isActive},</if>
+            updated_at = NOW()
+        </set>
+        WHERE policy_id = #{policyId}
+          AND deleted_at IS NULL
+    </update>
+
+    <!-- 정책 카테고리 목록 조회 -->
+    <select id="selectAllCategories" resultType="com.pooli.policy.domain.dto.response.AdminPolicyCateResDto">
+        SELECT
+            policy_category_id AS policyCategoryId,
+            policy_category_name AS policyCategoryName
+        FROM policy_category
+        WHERE deleted_at IS NULL
+        ORDER BY policy_category_id ASC
     </select>
-    
-	<update id="deleteRepeatBlock">
-	  UPDATE repeat_block
-	  SET deleted_at = NOW(), is_active = false
-	  WHERE repeat_block_id = #{repeatBlockId}
-	    AND deleted_at IS NULL
-	</update>
-	 
-	
+
+    <!-- 정책 카테고리 추가 -->
+    <insert id="insertCategory" useGeneratedKeys="true" keyProperty="policyCategoryId">
+        INSERT INTO policy_category (policy_category_name, created_at)
+        VALUES (#{request.policyCategoryName}, NOW())
+    </insert>
+
+    <!-- 정책 카테고리 수정 (동적 SQL) -->
+    <update id="updateCategory">
+        UPDATE policy_category
+        <set>
+            <if test="request.policyCategoryName != null">policy_category_name = #{request.policyCategoryName},</if>
+            updated_at = NOW()
+        </set>
+        WHERE policy_category_id = #{policyCategoryId}
+          AND deleted_at IS NULL
+    </update>
+
+    <!-- 정책 카테고리 삭제 (Soft Delete) -->
+    <update id="deleteCategory">
+        UPDATE policy_category
+        SET
+            deleted_at = NOW()
+        WHERE policy_category_id = #{policyCategoryId}
+          AND deleted_at IS NULL
+    </update>
+
 </mapper>

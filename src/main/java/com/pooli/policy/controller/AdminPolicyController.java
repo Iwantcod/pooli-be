@@ -64,7 +64,7 @@ public class AdminPolicyController {
     @GetMapping()
     public ResponseEntity<List<AdminPolicyResDto>> getAllPolicies() {
 
-    	return null;
+    	 return ResponseEntity.ok(adminPolicyService.getAllPolicies());
     }
 
     @Operation(
@@ -114,8 +114,10 @@ public class AdminPolicyController {
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @PostMapping
     public ResponseEntity<AdminPolicyResDto> createPolicy(@RequestBody AdminPolicyReqDto request) {
-        
-        return null;
+    	   
+    	AdminPolicyResDto response = adminPolicyService.createPolicy(request);
+           
+        return ResponseEntity.ok(response);
     }
     
     @Operation(
@@ -161,7 +163,9 @@ public class AdminPolicyController {
     		@RequestParam("policyId") Integer policyId,
     		@RequestBody AdminPolicyReqDto request) {
         
-        return null;
+    	AdminPolicyResDto response = adminPolicyService.updatePolicy(policyId, request);
+        
+        return ResponseEntity.ok(response);
     }
     
 
@@ -209,11 +213,13 @@ public class AdminPolicyController {
     })
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @DeleteMapping
-    public ResponseEntity<AdminPolicyActiveResDto> deletePolicy(
+    public ResponseEntity<AdminPolicyResDto> deletePolicy(
             @Parameter(description = "정책 식별자", example = "1003")
             @RequestParam("policyId") Integer policyId
     ) {
-        return null;
+    	AdminPolicyResDto response = adminPolicyService.deletePolicy(policyId);
+        
+        return ResponseEntity.ok(response);
     }
     
     @Operation(
@@ -269,7 +275,9 @@ public class AdminPolicyController {
             @RequestBody AdminPolicyActiveReqDto request,
             @RequestParam("policyId") Integer policyId
     ) {
-        return null;
+    	AdminPolicyActiveResDto response = adminPolicyService.updateActivationPolicy(policyId, request);    			
+        
+        return ResponseEntity.ok(response);
     }
 
     @Operation(
@@ -298,8 +306,8 @@ public class AdminPolicyController {
     })
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @GetMapping("/categories")
-    public ResponseEntity<AdminPolicyCateResDto> getCategories() {
-        return null;
+    public ResponseEntity<List<AdminPolicyCateResDto>> getCategories() {
+    	return ResponseEntity.ok(adminPolicyService.getCategories());
     }
 
     
@@ -343,11 +351,11 @@ public class AdminPolicyController {
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @PostMapping("/categories")
     public ResponseEntity<AdminPolicyCateResDto> createCategory(
-            @Parameter(description = "정책 식별자", example = "1003")
-            @RequestParam("policyId") Integer policyId, 
             @RequestBody AdminCategoryReqDto request
     ) {
-        return null;
+    	AdminPolicyCateResDto response = adminPolicyService.createCategory(request);   			
+        
+        return ResponseEntity.ok(response);
     }
 
     
@@ -391,12 +399,13 @@ public class AdminPolicyController {
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @PatchMapping("/categories")
     public ResponseEntity<AdminPolicyCateResDto> updateCategory(
-            @Parameter(description = "정책 식별자", example = "1003")
-            @RequestParam("policyId") Integer policyId,
+    		@Parameter(description = "정책 카테고리 식별자", example = "1003")
+            @RequestParam("policyCategoryId") Integer policyCategoryId,
             @RequestBody AdminCategoryReqDto request
     ) {
-
-        return null;
+    	AdminPolicyCateResDto response = adminPolicyService.updateCategory(policyCategoryId, request); 			
+        
+        return ResponseEntity.ok(response);
     }
 
     
@@ -437,10 +446,12 @@ public class AdminPolicyController {
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     @DeleteMapping("/categories")
     public ResponseEntity<AdminPolicyCateResDto> deleteCategory(
-            @Parameter(description = "정책 식별자", example = "1003")
-            @RequestParam("policyId") Integer policyId
+            @Parameter(description = "정책 카테고리 식별자", example = "1003")
+            @RequestParam("policyCategoryId") Integer policyCategoryId
     ) {
-        return null;
+    	AdminPolicyCateResDto response = adminPolicyService.deleteCategory(policyCategoryId);		
+        
+        return ResponseEntity.ok(response);
     }
 
    
