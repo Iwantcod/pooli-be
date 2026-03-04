@@ -62,7 +62,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	@Override
 	public List<RepeatBlockPolicyResDto> getRepeatBlockPolicies(Long lineId, AuthUserDetails auth) {
-	    checkIsSameFamilyGroup(lineId, auth.getLineId());
+	    checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
 	    return repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
 	}
@@ -72,7 +72,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	public RepeatBlockPolicyResDto createRepeatBlockPolicy(RepeatBlockPolicyReqDto request, AuthUserDetails auth) {
 
         Long lineId = request.getLineId() != null ? request.getLineId() : auth.getLineId();
-        checkIsSameFamilyGroup(lineId, auth.getLineId());
+        checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
         request.setLineId(lineId);
 
 
@@ -127,7 +127,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	    if (exist == null) {
 	        throw new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
 	    }
-	    checkIsSameFamilyGroup(exist.getLineId(), auth.getLineId());
+	    checkIsSameFamilyGroup(exist.getLineId(), auth.getLineId(), auth);
 	    request.setLineId(exist.getLineId());
 	    request.setRepeatBlockId(repeatBlockId);
 
@@ -145,7 +145,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 		if (exist == null) {
 	        throw new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
 	    }
-		checkIsSameFamilyGroup(exist.getLineId(), auth.getLineId());
+		checkIsSameFamilyGroup(exist.getLineId(), auth.getLineId(), auth);
 
 	    // soft delete
 	    repeatBlockMapper.deleteRepeatBlock(repeatBlockId);
@@ -160,7 +160,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	@Override
 	public ImmediateBlockResDto getImmediateBlockPolicy(Long lineId, AuthUserDetails auth) {
-	    checkIsSameFamilyGroup(lineId, auth.getLineId());
+	    checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
 	    ImmediateBlockResDto immBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
 
@@ -182,7 +182,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	@Override
 	public ImmediateBlockResDto updateImmediateBlockPolicy(Long lineId, ImmediateBlockReqDto request,
 			AuthUserDetails auth) {
-	    checkIsSameFamilyGroup(lineId, auth.getLineId());
+	    checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
 	    immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
 
@@ -197,7 +197,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     @Transactional(readOnly = true)
     public LimitPolicyResDto getLimitPolicy(Long lineId, AuthUserDetails auth) {
         // 1. 조회 대상 lineId가 속한 가족그룹과, 요청을 보낸 사용자의 가족 그룹이 일치하는지 검증
-        checkIsSameFamilyGroup(lineId, auth.getLineId());
+        checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
         // 2. 두 종류의 제한 정보 테이블에서 정보 조회
         Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitByLineId(lineId);
@@ -218,7 +218,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     @Transactional
     public LimitPolicyResDto toggleDailyTotalLimitPolicy(Long lineId, AuthUserDetails auth) {
         // 1. 조회 대상 lineId가 속한 가족그룹과, 요청을 보낸 사용자의 가족 그룹이 일치하는지 검증
-        checkIsSameFamilyGroup(lineId, auth.getLineId());
+        checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
         // 2. 제한 정책 존재 여부 조회
         Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitByLineId(lineId);
@@ -252,7 +252,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(lineLimit.get().getLineId(), auth.getLineId());
+        checkIsSameFamilyGroup(lineLimit.get().getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int def = lineLimitMapper.updateDailyDataLimit(request);
@@ -273,7 +273,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     @Transactional
     public LimitPolicyResDto toggleSharedPoolLimitPolicy(Long lineId, AuthUserDetails auth) {
         // 1. 조회 대상 lineId가 속한 가족그룹과, 요청을 보낸 사용자의 가족 그룹이 일치하는지 검증
-        checkIsSameFamilyGroup(lineId, auth.getLineId());
+        checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
         // 2. 제한 정책 존재 여부 조회
         Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitByLineId(lineId);
@@ -333,7 +333,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(lineLimit.get().getLineId(), auth.getLineId());
+        checkIsSameFamilyGroup(lineLimit.get().getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int def = lineLimitMapper.updateSharedDataLimit(request);
@@ -381,7 +381,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 .pageSize(request.getPageSize())
                 .offset(request.getPageNumber() * request.getPageSize())
                 .build();
-        checkIsSameFamilyGroup(query.getLineId(), auth.getLineId());
+        checkIsSameFamilyGroup(query.getLineId(), auth.getLineId(), auth);
         return appPolicyMapper.findApplicationsWithPolicy(query);
     }
 
@@ -403,7 +403,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId());
+        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int ret = appPolicyMapper.updateDataLimit(request.getAppPolicyId(), request.getValue());
@@ -427,7 +427,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId());
+        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int ret = appPolicyMapper.updateSpeedLimit(request.getAppPolicyId(), request.getValue());
@@ -445,7 +445,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     @Transactional
     public AppPolicyResDto toggleAppPolicyActive(AppPolicyActiveToggleReqDto request, AuthUserDetails auth) {
         // 1. 대상 lineId와 같은 가족인지 검증
-        checkIsSameFamilyGroup(request.getLineId(), auth.getLineId());
+        checkIsSameFamilyGroup(request.getLineId(), auth.getLineId(), auth);
 
         // 2. 대상 앱의 정보 및 정책 정보를 함께 조회(정책이 없어도 조회결과 존재)
         Optional<AppPolicyResDto> appPolicy = appPolicyMapper.findDtoExistByLineIdAndAppId(request.getLineId(), request.getApplicationId());
@@ -499,7 +499,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId());
+        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
 
         // 3. isWhiteList 토글 update 진행
         boolean newIsWhiteList = !Boolean.TRUE.equals(appPolicy.get().getIsWhiteList());
@@ -524,7 +524,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
         }
         // 대상 레코드의 회선과 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId());
+        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
 
         // soft delete
         int ret = appPolicyMapper.setDeleted(appPolicyId);
@@ -535,7 +535,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 	@Override
 	public AppliedPolicyResDto getAppliedPolicies(Long lineId, AuthUserDetails auth) {
-		checkIsSameFamilyGroup(lineId, auth.getLineId());
+		checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
 		// 제한 정책, 앱 정보 받아와서 추가하기(return에도)
 	    List<RepeatBlockPolicyResDto> repeatBlockPolicyList = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
@@ -561,9 +561,13 @@ public class UserPolicyServiceImpl implements UserPolicyService {
      * 대상 lineId가 API 요청자와 동일한 가족 그룹에 속해있는지 검증
      * @param targetLineId 대상 lineId
      * @param myLineId API 요청자 lineId
+     * @param auth 세션 정보를 담은 인증 객체(AuthUserDetails)
      * @throws ApplicationException '접근 권한 없음' 예외 throws
      */
-    private void checkIsSameFamilyGroup(Long targetLineId, Long myLineId) throws ApplicationException {
+    private void checkIsSameFamilyGroup(Long targetLineId, Long myLineId, AuthUserDetails auth) throws ApplicationException {
+        if(auth.getRoleNames().contains("ROLE_ADMIN")) {
+            return;
+        }
         List<Long> myFamilyLineIdList = familyLineMapper.findAllFamilyIdByLineId(myLineId);
 
         if(!myFamilyLineIdList.contains(targetLineId)){
