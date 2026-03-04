@@ -144,6 +144,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
     @Transactional(readOnly = true)
     @Override
     public PagingResDto<NotiSendResDto> getNotifications(
+            Long userId,
             Long lineId,
             Integer page,
             Integer size,
@@ -162,6 +163,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
         List<NotiSendResDto> content =
                 alarmHistoryMapper.findAlarmHistoryPage(
+                        userId,
                         lineId,
                         isRead,
                         code != null ? code.name() : null,
@@ -171,6 +173,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
         Long totalElements =
                 alarmHistoryMapper.countAlarmHistory(
+                        userId,
                         lineId,
                         isRead,
                         code != null ? code.name() : null
@@ -190,9 +193,9 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
     @Transactional(readOnly = true)
     @Override
-    public UnreadCountsResDto getUnreadCounts(Long lineId) {
+    public UnreadCountsResDto getUnreadCounts(Long userId, Long lineId) {
 
-        Long count = alarmHistoryMapper.countUnreadByLineId(lineId);
+        Long count = alarmHistoryMapper.countUnreadByLineId(userId,lineId);
 
         return UnreadCountsResDto.builder()
                 .lineId(lineId)
