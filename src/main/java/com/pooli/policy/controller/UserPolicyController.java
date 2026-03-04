@@ -90,7 +90,6 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/repeat-block")
     public ResponseEntity<List<RepeatBlockPolicyResDto>> getReBlockPolicies(
     		@AuthenticationPrincipal AuthUserDetails auth,
@@ -264,7 +263,6 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> getImBlockPolicies(
     		@AuthenticationPrincipal AuthUserDetails auth,
@@ -348,7 +346,6 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/limits")
     public ResponseEntity<LimitPolicyResDto> getLimitPolicies(
             @Parameter(description = "회선 식별자", example = "101")
@@ -553,7 +550,6 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/apps")
     public ResponseEntity<List<AppPolicyResDto>> getAppPolicies(
             @Parameter(description = "회선 식별자", example = "101")
@@ -794,7 +790,6 @@ public class UserPolicyController {
             @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
-    @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/applied")
     public ResponseEntity<AppliedPolicyResDto> getAppliedPoliciesByLine(
     		@AuthenticationPrincipal AuthUserDetails auth,
