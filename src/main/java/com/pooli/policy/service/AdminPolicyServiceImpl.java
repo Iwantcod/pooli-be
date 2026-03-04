@@ -32,6 +32,7 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
     public AdminPolicyResDto createPolicy(AdminPolicyReqDto request) {
         adminPolicyMapper.insertPolicy(request);
         return AdminPolicyResDto.builder()
+                .policyId(request.getPolicyId())
                 .policyName(request.getPolicyName())
                 .policyCategoryId(request.getPolicyCategoryId())
                 .isActive(false)
