@@ -33,7 +33,7 @@ public class NotiSendController {
 	@Operation(summary = "공지 알람 전송",
 			description = "관리자가 알람을 보내는 기능")
 	@ApiResponses({
-			@ApiResponse(responseCode = "200", description = "알람 전송 성공"),
+			@ApiResponse(responseCode = "201", description = "알람 전송 성공"),
 			@ApiResponse(responseCode = "403", description = """
                     권한 없음
 
