@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.common.dto.PagingResDto;
 import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
 import com.pooli.policy.domain.dto.response.AppPolicyResDto;
 import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
@@ -551,7 +552,7 @@ public class UserPolicyController {
         @ApiResponse(responseCode = "500", description = "서버 내부 오류")
     })
     @GetMapping("/lines/apps")
-    public ResponseEntity<List<AppPolicyResDto>> getAppPolicies(
+    public ResponseEntity<PagingResDto<AppPolicyResDto>> getAppPolicies(
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId,
             @Parameter(description = "조회할 페이지 번호", example = "0")
@@ -581,7 +582,7 @@ public class UserPolicyController {
                 .sortType(sortType)
                 .build();
 
-        List<AppPolicyResDto> answer = userPolicyService.getAppPolicies(request, auth);
+        PagingResDto<AppPolicyResDto> answer = userPolicyService.getAppPolicies(request, auth);
         return ResponseEntity.ok(answer);
     }
 

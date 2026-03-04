@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.common.dto.PagingResDto;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.permission.mapper.FamilyLineMapper;
@@ -35,10 +36,7 @@ import com.pooli.policy.mapper.RepeatBlockMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -352,11 +350,11 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<AppPolicyResDto> getAppPolicies(AppPolicySearchCondReqDto request, AuthUserDetails auth) {
+    public PagingResDto<AppPolicyResDto> getAppPolicies(AppPolicySearchCondReqDto request, AuthUserDetails auth) {
         if (request.getPageNumber() == null || request.getPageNumber() < 0) {
             throw new ApplicationException(CommonErrorCode.INVALID_PAGE_NUMBER);
         }
-        if (request.getPageSize() == null || request.getPageSize() < 0 || request.getPageSize() > 100) {
+        if (request.getPageSize() == null || request.getPageSize() <= 0 || request.getPageSize() > 100) {
             throw new ApplicationException(CommonErrorCode.INVALID_PAGE_SIZE);
         }
 
@@ -382,7 +380,19 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 .offset(request.getPageNumber() * request.getPageSize())
                 .build();
         checkIsSameFamilyGroup(query.getLineId(), auth.getLineId(), auth);
-        return appPolicyMapper.findApplicationsWithPolicy(query);
+
+        List<AppPolicyResDto> content = appPolicyMapper.findApplicationsWithPolicy(query);
+        Long totalElements = appPolicyMapper.countApplicationsWithPolicy(query);
+
+        int totalPages = (query.getPageSize() == 0) ? 0 : (int) Math.ceil((double) totalElements / query.getPageSize());
+
+        return PagingResDto.<AppPolicyResDto>builder()
+                .content(content)
+                .page(query.getPageNumber())
+                .size(query.getPageSize())
+                .totalElements(totalElements)
+                .totalPages(totalPages)
+                .build();
     }
 
     @Override

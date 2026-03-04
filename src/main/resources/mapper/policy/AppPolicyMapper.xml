@@ -54,19 +54,7 @@
         WHERE a.application_id = #{appId};
     </select>
 
-    <!-- 동적 필터/정렬/페이지네이션 기반 앱 정책 목록 조회 -->
-    <select id="findApplicationsWithPolicy"
-            parameterType="com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto"
-            resultMap="appPolicyResDtoResultMap">
-        SELECT
-            ap.app_policy_id   AS appPolicyId,
-            ap.line_id         AS lineId,
-            a.application_id   AS appId,
-            a.application_name AS appName,
-            ap.is_active       AS isActive,
-            ap.data_limit      AS dailyLimitData,
-            ap.speed_limit     AS dailyLimitSpeed,
-            ap.is_whitelist    AS isActiveWhiteList
+    <sql id="appPolicyFilterFromWhere">
         FROM APPLICATION a
         LEFT JOIN APP_POLICY ap
           ON ap.application_id = a.application_id
@@ -124,6 +112,22 @@
                 )
             </if>
         </where>
+    </sql>
+
+    <!-- 동적 필터/정렬/페이지네이션 기반 앱 정책 목록 조회 -->
+    <select id="findApplicationsWithPolicy"
+            parameterType="com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto"
+            resultMap="appPolicyResDtoResultMap">
+        SELECT
+            ap.app_policy_id   AS appPolicyId,
+            ap.line_id         AS lineId,
+            a.application_id   AS appId,
+            a.application_name AS appName,
+            ap.is_active       AS isActive,
+            ap.data_limit      AS dailyLimitData,
+            ap.speed_limit     AS dailyLimitSpeed,
+            ap.is_whitelist    AS isActiveWhiteList
+        <include refid="appPolicyFilterFromWhere"/>
 
         <choose>
             <when test="sortType == @com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto$SortType@NAME">
@@ -138,6 +142,13 @@
         </choose>
 
         LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <select id="countApplicationsWithPolicy"
+            parameterType="com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto"
+            resultType="long">
+        SELECT COUNT(*)
+        <include refid="appPolicyFilterFromWhere"/>
     </select>
 
     <!-- pk 로 Entity 조회 -->

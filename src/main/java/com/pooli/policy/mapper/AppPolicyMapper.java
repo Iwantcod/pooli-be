@@ -24,6 +24,8 @@ public interface AppPolicyMapper {
     Optional<AppPolicy> findEntityExistById(Long appPolicyId);
     // 동적 조건 기반 앱 정책 목록 조회
     List<AppPolicyResDto> findApplicationsWithPolicy(AppPolicySearchCondReqDto request);
+    // 동적 조건 기반 앱 정책 목록 전체 건수 조회
+    Long countApplicationsWithPolicy(AppPolicySearchCondReqDto request);
 
 
     /*

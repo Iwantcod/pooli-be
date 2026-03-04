@@ -1,6 +1,7 @@
 package com.pooli.policy.service;
 
 import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.common.dto.PagingResDto;
 import com.pooli.policy.domain.dto.request.*;
 import com.pooli.policy.domain.dto.response.*;
 
@@ -115,9 +116,9 @@ public interface UserPolicyService {
 
     /**
      * 특정 구성원 앱 별 정책 조회
-     * Controller: ResponseEntity<List<AppPolicyResDto>>
+     * Controller: ResponseEntity<PagingResDto<AppPolicyResDto>>
      */
-    List<AppPolicyResDto> getAppPolicies(AppPolicySearchCondReqDto request, AuthUserDetails auth);
+    PagingResDto<AppPolicyResDto> getAppPolicies(AppPolicySearchCondReqDto request, AuthUserDetails auth);
 
     /**
      * 특정 구성원 앱별 정책 신규 생성
