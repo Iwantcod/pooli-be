@@ -1,8 +1,5 @@
 package com.pooli.notification.controller;
 
-import java.time.LocalDateTime;
-import java.util.List;
-
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.service.AlarmHistoryService;
@@ -107,43 +104,42 @@ public class NotiReadController {
 	    description = "사용자가 읽지 않은 알림의 상태를 모두 읽음으로 변경한다."
 	)
 	@ApiResponses({
-        @ApiResponse(responseCode = "200", description = "조회 성공"),
-        @ApiResponse(responseCode = "404", description = "알람 정보가 존재하지 않음"),
-        @ApiResponse(responseCode = "500", description = "서버 오류"),   
+        @ApiResponse(responseCode = "200", description = "성공"),
+        @ApiResponse(responseCode = "405", description = "COMMON:4005 지원하지 않는 HTTP 메서드"),
+        @ApiResponse(responseCode = "500", description = "서버 오류"),
 	})
 	@PatchMapping("/read-all")
-	public ResponseEntity<UnreadCountsResDto> allRead(){
-	Long lineId = 2L; // 일단 임의로 회선 id 변경함
-	UnreadCountsResDto response = UnreadCountsResDto.builder()
-	            .lineId(lineId)
-	            .unreadCount(0L)
-	            .build();
-
-	    return ResponseEntity.ok(response);
+	public ResponseEntity<UnreadCountsResDto> allRead(
+			@AuthenticationPrincipal AuthUserDetails userDetails
+	) {
+		UnreadCountsResDto response = alarmHistoryService.readAll(userDetails.getLineId());
+		return ResponseEntity.ok(response);
 	}
-	
-	
+
+
 	@Operation(
-	    summary = "단건 알림의 상태 읽음으로 변경",
-	    description = "사용자가 읽지 않은 알림의 상태를 모두 읽음으로 변경한다."
+	    summary = "단건 알림 상태 읽음으로 변경",
+	    description = "alarmHistoryId에 해당하는 알림 하나를 읽음으로 변경한다."
 	)
 	@ApiResponses({
-        @ApiResponse(responseCode = "200", description = "조회 성공"),
-        @ApiResponse(responseCode = "404", description = "알람 정보가 존재하지 않음"),
-        @ApiResponse(responseCode = "500", description = "서버 오류"),   
+        @ApiResponse(responseCode = "200", description = "성공"),
+        @ApiResponse(responseCode = "400", description = """
+                잘못된 요청
+               
+                - COMMON:4003 RequestParam 타입 불일치 (alarmHistoryId에 숫자가 아닌 값)
+                - COMMON:4004 필수 RequestParam 누락 (alarmHistoryId 미입력)
+                """),
+        @ApiResponse(responseCode = "404", description = "NOTI:4402 알람 정보가 존재하지 않음"),
+        @ApiResponse(responseCode = "405", description = "COMMON:4005 지원하지 않는 HTTP 메서드"),
+        @ApiResponse(responseCode = "500", description = "서버 오류"),
 	})
-	@PatchMapping()
-	public ResponseEntity<NotiSendResDto> oneRead(@RequestParam(name="alarmHistoryId") Long alarmHistoryId){
-	Long lineId = 2L; // 일단 임의로 회선 id, 읽음 상태 변경함
-	NotiSendResDto response = NotiSendResDto.builder()
-	            .alarmHistoryId(alarmHistoryId)   
-	            .lineId(lineId)
-	            .alarmCode(AlarmCode.PERMISSION)     
-	            .value(null)
-	            .isRead(true)                      
-	            .createdAt(LocalDateTime.now())
-	            .build();
-
-	    return ResponseEntity.ok(response);
+	@PatchMapping
+	public ResponseEntity<NotiSendResDto> oneRead(
+			@AuthenticationPrincipal AuthUserDetails userDetails,
+			@Parameter(description = "알림 ID", example = "1")
+			@RequestParam(name = "alarmHistoryId") Long alarmHistoryId
+	) {
+		NotiSendResDto response = alarmHistoryService.readOne(alarmHistoryId, userDetails.getLineId());
+		return ResponseEntity.ok(response);
 	}
 }

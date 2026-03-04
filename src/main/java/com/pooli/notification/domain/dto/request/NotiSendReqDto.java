@@ -7,12 +7,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.NotificationTargetType;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
-
-import javax.management.Notification;
 
 @Getter
 @Setter

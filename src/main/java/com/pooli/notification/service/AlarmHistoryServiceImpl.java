@@ -209,4 +209,37 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
                 .build();
     }
 
+    @Transactional
+    @Override
+    public NotiSendResDto readOne(Long alarmHistoryId, Long lineId) {
+
+        // 알람이 존재하는지 먼저 확인 (삭제되지 않은 것, 본인 소유)
+        NotiSendResDto alarm = alarmHistoryMapper.findOneByAlarmHistoryIdAndLineId(alarmHistoryId, lineId);
+        if (alarm == null) {
+            throw new ApplicationException(NotificationErrorCode.ALARM_HISTORY_NOT_FOUND);
+        }
+
+        // 이미 읽은 경우에는 UPDATE 없이 그대로 반환 (멱등성)
+        if (Boolean.TRUE.equals(alarm.getIsRead())) {
+            return alarm;
+        }
+
+        alarmHistoryMapper.updateReadOne(alarmHistoryId, lineId);
+
+        return alarmHistoryMapper.findOneByAlarmHistoryIdAndLineId(alarmHistoryId, lineId);
+    }
+
+    @Transactional
+    @Override
+    public UnreadCountsResDto readAll(Long lineId) {
+
+        int readCount = alarmHistoryMapper.updateReadAll(lineId);
+
+        return UnreadCountsResDto.builder()
+                .lineId(lineId)
+                .unreadCount(0L)
+                .readCount((long) readCount)
+                .build();
+    }
+
 }
