@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.policy.mapper.LineLimitMapper">
+    <resultMap id="lineLimitResultMap" type="com.pooli.policy.domain.entity.LineLimit">
+        <constructor>
+            <arg column="limit_id"                  javaType="java.lang.Long"/>
+            <arg column="line_id"                   javaType="java.lang.Long"/>
+            <arg column="daily_data_limit"          javaType="java.lang.Long"/>
+            <arg column="is_daily_limit_active"     javaType="java.lang.Boolean"/>
+            <arg column="shared_data_limit"         javaType="java.lang.Long"/>
+            <arg column="is_shared_limit_active"    javaType="java.lang.Boolean"/>
+            <arg column="created_at"                javaType="java.time.LocalDateTime"/>
+            <arg column="deleted_at"                javaType="java.time.LocalDateTime"/>
+            <arg column="updated_at"                javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 특정 lineId의 삭제 상태가 아닌 lineLimit 조회 -->
+    <select id="getExistLineLimitByLineId" resultMap="lineLimitResultMap" parameterType="long">
+        SELECT
+            limit_id,
+            line_id,
+            daily_data_limit,
+            is_daily_limit_active,
+            shared_data_limit,
+            is_shared_limit_active,
+            created_at,
+            deleted_at,
+            updated_at
+        FROM LINE_LIMIT
+        WHERE line_id = #{lineId} AND deleted_at IS NULL;
+    </select>
+
+    <!-- 특정 pk의 삭제 상태가 아닌 LineLimit 조회 -->
+    <select id="getExistLineLimitById" resultMap="lineLimitResultMap" parameterType="long">
+        SELECT
+            limit_id,
+            line_id,
+            daily_data_limit,
+            is_daily_limit_active,
+            shared_data_limit,
+            is_shared_limit_active,
+            created_at,
+            deleted_at,
+            updated_at
+        FROM LINE_LIMIT
+        WHERE limit_id = #{limitId} AND deleted_at IS NULL;
+    </select>
+
+    <!-- 특정 lineId의 삭제 상태가 아닌 LineLimit의 is_daily_limit_active update -->
+    <update id="updateIsDailyLimitActiveById">
+        UPDATE LINE_LIMIT
+        SET is_daily_limit_active = #{isActive}, updated_at = now()
+        WHERE limit_id = #{limitId} AND deleted_at IS NULL;
+    </update>
+
+    <!-- 특정 lineId의 삭제 상태가 아닌 LineLimit의 is_shared_limit_active update -->
+    <update id="updateIsSharedLimitActiveById">
+        UPDATE LINE_LIMIT
+        SET is_shared_limit_active = #{isActive}, updated_at = now()
+        WHERE limit_id = #{limitId} AND deleted_at IS NULL;
+    </update>
+
+    <!-- 특정 lineId의 삭제 상태가 아닌 LineLimit 레코드의 daily_data_limit update -->
+    <update id="updateDailyDataLimit" parameterType="com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto">
+        UPDATE LINE_LIMIT
+        SET daily_data_limit = #{policyValue}, updated_at = now()
+        WHERE limit_id = #{limitPolicyId} AND deleted_at IS NULL;
+    </update>
+
+    <!-- 특정 lineId의 삭제 상태가 아닌 LineLimit 레코드의 shared_data_limit update -->
+    <update id="updateSharedDataLimit" parameterType="com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto">
+        UPDATE LINE_LIMIT
+        SET shared_data_limit = #{policyValue}, updated_at = now()
+        WHERE limit_id = #{limitPolicyId} AND deleted_at IS NULL;
+    </update>
+
+    <!-- 새 LineLimit 레코드 insert -->
+    <insert id="createLineLimit"
+            parameterType="com.pooli.policy.domain.entity.LineLimit"
+            useGeneratedKeys="true"
+            keyProperty="limitId"
+            keyColumn="limit_id">
+        INSERT INTO LINE_LIMIT (line_id,   daily_data_limit,  is_daily_limit_active,   shared_data_limit,  is_shared_limit_active, created_at)
+                        VALUES (#{lineId}, #{dailyDataLimit}, #{isDailyLimitActive},   #{sharedDataLimit}, #{isSharedLimitActive}, now());
+
+    </insert>
+</mapper>

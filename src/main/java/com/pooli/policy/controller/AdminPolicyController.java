@@ -35,7 +35,7 @@ import lombok.RequiredArgsConstructor;
 public class AdminPolicyController {
 
 	private final AdminPolicyService adminPolicyService;
-	
+
     @Operation(
             summary = "관리자 기능: 전체 정책 목록 조회",
             description = "관리자 전용. 활성화/비활성화 포함 전체 정책 목록을 조회합니다."
@@ -114,12 +114,12 @@ public class AdminPolicyController {
     @PreAuthorize("@authz.requireAdmin(authentication)")
     @PostMapping
     public ResponseEntity<AdminPolicyResDto> createPolicy(@RequestBody AdminPolicyReqDto request) {
-    	   
+
     	AdminPolicyResDto response = adminPolicyService.createPolicy(request);
-           
+
         return ResponseEntity.ok(response);
     }
-    
+
     @Operation(
             summary = "관리자 기능: 정책 수정",
             description = "관리자 전용. 백오피스에서 정책을 수정합니다."
@@ -162,12 +162,12 @@ public class AdminPolicyController {
     public ResponseEntity<AdminPolicyResDto> updatePolicy(
     		@RequestParam("policyId") Integer policyId,
     		@RequestBody AdminPolicyReqDto request) {
-        
+
     	AdminPolicyResDto response = adminPolicyService.updatePolicy(policyId, request);
-        
+
         return ResponseEntity.ok(response);
     }
-    
+
 
     @Operation(
             summary = "관리자 기능: 정책 삭제",
@@ -218,10 +218,10 @@ public class AdminPolicyController {
             @RequestParam("policyId") Integer policyId
     ) {
     	AdminPolicyResDto response = adminPolicyService.deletePolicy(policyId);
-        
+
         return ResponseEntity.ok(response);
     }
-    
+
     @Operation(
             summary = "관리자 기능: 정책 활성화/비활성화",
             description = "관리자 전용. 백오피스에서 정책의 활성화 상태를 변경합니다."
@@ -275,8 +275,8 @@ public class AdminPolicyController {
             @RequestBody AdminPolicyActiveReqDto request,
             @RequestParam("policyId") Integer policyId
     ) {
-    	AdminPolicyActiveResDto response = adminPolicyService.updateActivationPolicy(policyId, request);    			
-        
+    	AdminPolicyActiveResDto response = adminPolicyService.updateActivationPolicy(policyId, request);
+
         return ResponseEntity.ok(response);
     }
 
@@ -310,7 +310,7 @@ public class AdminPolicyController {
     	return ResponseEntity.ok(adminPolicyService.getCategories());
     }
 
-    
+
     @Operation(
             summary = "관리자 기능: 정책 카테고리 추가",
             description = "관리자 전용. 백오피스에서 정책의 카테고리를 추가합니다."
@@ -353,12 +353,12 @@ public class AdminPolicyController {
     public ResponseEntity<AdminPolicyCateResDto> createCategory(
             @RequestBody AdminCategoryReqDto request
     ) {
-    	AdminPolicyCateResDto response = adminPolicyService.createCategory(request);   			
-        
+    	AdminPolicyCateResDto response = adminPolicyService.createCategory(request);
+
         return ResponseEntity.ok(response);
     }
 
-    
+
     @Operation(
             summary = "관리자 기능: 정책 카테고리 수정",
             description = "관리자 전용. 백오피스에서 정책의 카테고리를 수정합니다."
@@ -403,12 +403,12 @@ public class AdminPolicyController {
             @RequestParam("policyCategoryId") Integer policyCategoryId,
             @RequestBody AdminCategoryReqDto request
     ) {
-    	AdminPolicyCateResDto response = adminPolicyService.updateCategory(policyCategoryId, request); 			
-        
+    	AdminPolicyCateResDto response = adminPolicyService.updateCategory(policyCategoryId, request);
+
         return ResponseEntity.ok(response);
     }
 
-    
+
     @Operation(
             summary = "관리자 기능: 정책 카테고리 삭제",
             description = "관리자 전용. 백오피스에서 정책의 카테고리를 삭제합니다."
@@ -449,10 +449,10 @@ public class AdminPolicyController {
             @Parameter(description = "정책 카테고리 식별자", example = "1003")
             @RequestParam("policyCategoryId") Integer policyCategoryId
     ) {
-    	AdminPolicyCateResDto response = adminPolicyService.deleteCategory(policyCategoryId);		
-        
+    	AdminPolicyCateResDto response = adminPolicyService.deleteCategory(policyCategoryId);
+
         return ResponseEntity.ok(response);
     }
 
-   
+
 }

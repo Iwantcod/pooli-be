@@ -79,6 +79,12 @@ public enum PolicyErrorCode implements ErrorCode {
             "POLICY:4405",
             "해당 정책 정보가 존재하지 않습니다."
     ),
+
+    LIMIT_POLICY_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "POLICY:4406",
+            "해당 제한 정책 정보가 존재하지 않습니다."
+    ),
     
     
     /* 409(conflict) */
