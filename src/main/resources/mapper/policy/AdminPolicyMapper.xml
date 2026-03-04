@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.policy.mapper.AdminPolicyMapper">
+	<!-- repeatBlockDay랑 묶어서 함께 반환 -->
+    <resultMap id="repeatBlockResultMap"
+               type="com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto">
+        <id     property="repeatBlockId" column="repeat_block_id"/>
+        <result property="lineId"        column="line_id"/>
+        <result property="isActive"      column="is_active"/>
+        <!-- 1:N - REPEAT_BLOCK_DAY 목록 -->
+        <collection property="days"
+                    ofType="com.pooli.policy.domain.dto.response.RepeatBlockDayResDto">
+            <result property="dayOfWeek"        column="day_of_week"/>
+            <result property="startAt"          column="start_at"/>
+            <result property="endAt"            column="end_at"/>
+        </collection>
+    </resultMap>
+    
+    <select id="selectRepeatBlocksByLineId" resultMap="repeatBlockResultMap">
+        SELECT
+            rb.repeat_block_id,
+            rb.line_id,
+            rb.is_active,
+            rbd.repeat_block_day_id,
+            rbd.day_of_week,
+            rbd.start_at,
+            rbd.end_at
+        FROM REPEAT_BLOCK rb
+        LEFT JOIN REPEAT_BLOCK_DAY rbd
+            ON rb.repeat_block_id = rbd.repeat_block_id
+            AND rbd.deleted_at IS NULL
+        WHERE rb.line_id = #{lineId}
+          AND rb.deleted_at IS NULL
+        ORDER BY rb.repeat_block_id, rbd.day_of_week
+    </select>
+    
+    <!-- 반복적 차단 정보 중복 확인(요일, 시간) -->
+	<select id="isDuplicatedRepeatBlocks" resultType="boolean" parameterType="map">
+    	SELECT CASE WHEN COUNT(1) > 0 THEN TRUE ELSE FALSE END
+	    FROM repeat_block_day d
+	    INNER JOIN repeat_block rb ON d.repeat_block_id = rb.repeat_block_id
+	    WHERE rb.line_id = #{lineId}
+	      AND d.day_of_week = #{dayOfWeek}
+	      AND d.start_at = #{startAt}
+	      AND d.end_at = #{endAt}
+	      AND rb.deleted_at IS NULL
+	      AND d.deleted_at IS NULL
+	</select>
+
+    <!-- repeat_block 생성 -->
+    <insert id="insertRepeatBlock" useGeneratedKeys="true" keyProperty="repeatBlockId">
+        INSERT INTO repeat_block (line_id, is_active, created_at)
+        VALUES (#{lineId}, #{isActive}, NOW())
+    </insert>
+
+	
+	<select id="selectRepeatBlockById" resultType="com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto">
+        SELECT 
+            repeat_block_id AS repeatBlockId,
+            line_id AS lineId,
+            is_active AS isActive
+        FROM repeat_block
+        WHERE repeat_block_id = #{repeatBlockId}
+          AND deleted_at IS NULL
+    </select>
+    
+	<update id="deleteRepeatBlock">
+	  UPDATE repeat_block
+	  SET deleted_at = NOW(), is_active = false
+	  WHERE repeat_block_id = #{repeatBlockId}
+	    AND deleted_at IS NULL
+	</update>
+	 
+	
+</mapper>
