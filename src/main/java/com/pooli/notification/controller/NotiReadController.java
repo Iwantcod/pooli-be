@@ -103,6 +103,7 @@ public class NotiReadController {
 	)
 	@ApiResponses({
         @ApiResponse(responseCode = "200", description = "성공"),
+        @ApiResponse(responseCode = "405", description = "지원하지 않는 HTTP 메서드 - COMMON:4005"),
         @ApiResponse(responseCode = "500", description = "서버 오류"),
 	})
 	@PatchMapping("/read-all")
@@ -120,7 +121,14 @@ public class NotiReadController {
 	)
 	@ApiResponses({
         @ApiResponse(responseCode = "200", description = "성공"),
+        @ApiResponse(responseCode = "400", description = """
+                잘못된 요청
+               
+                - COMMON:4003 RequestParam 타입 불일치 (alarmHistoryId에 숫자가 아닌 값)
+                - COMMON:4004 필수 RequestParam 누락 (alarmHistoryId 미입력)
+                """),
         @ApiResponse(responseCode = "404", description = "알람 정보가 존재하지 않음 - NOTI:4402"),
+        @ApiResponse(responseCode = "405", description = "지원하지 않는 HTTP 메서드 - COMMON:4005"),
         @ApiResponse(responseCode = "500", description = "서버 오류"),
 	})
 	@PatchMapping
