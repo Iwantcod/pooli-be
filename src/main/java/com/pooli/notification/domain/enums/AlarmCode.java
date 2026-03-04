@@ -3,26 +3,8 @@ package com.pooli.notification.domain.enums;
 public enum AlarmCode {
     FAMILY,
     USER,
-    /*
-    =============== 회선 별 데이터 사용 제한 정책 ================
-     */
-    POLICY_CREATE_SHAREDATA_LIMIT,
-    POLICY_UPDATE_SHAREDATA_LIMIT,
-    POLICY_DELETE_SHAREDATA_LIMIT,
-    POLICY_CREATE_DAYDATA_LIMIT,
-    POLICY_UPDATE_DAYDATA_LIMIT,
-    POLICY_DELETE_DAYDATA_LIMIT,
-    /*
-    =============== 앱별 데이터 제한 정책 ================
-     */
-    POLICY_CREATE_APP_USAGE_LIMIT,
-    POLICY_UPDATE_APP_USAGE_LIMIT,
-    POLICY_DELETE_APP_USAGE_LIMIT,
-    POLICY_CREATE_DATA_SPEED_LIMIT,
-    POLICY_UPDATE_DATA_SPEED_LIMIT,
-    POLICY_DELETE_DATA_SPEED_LIMIT,
     POLICY_CHANGE,
-    POLICY_LIMIT,
+    POLICY_LIMIT, // 제한 정책 및 차단 정책 총칭
     PERMISSION,
     QUESTION,
     OTHERS;

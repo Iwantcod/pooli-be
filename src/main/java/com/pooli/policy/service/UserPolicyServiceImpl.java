@@ -2,6 +2,7 @@ package com.pooli.policy.service;
 
 import java.util.List;
 
+import com.pooli.notification.service.AlarmHistoryService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +46,8 @@ import java.util.Optional;
 @Slf4j
 @RequiredArgsConstructor
 public class UserPolicyServiceImpl implements UserPolicyService {
+    private final AlarmHistoryService alarmHistoryService;
+
     private final FamilyLineMapper familyLineMapper;
     private final LineLimitMapper lineLimitMapper;
     private final AppPolicyMapper appPolicyMapper;
