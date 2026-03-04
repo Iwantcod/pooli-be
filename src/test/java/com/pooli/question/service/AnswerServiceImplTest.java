@@ -84,7 +84,7 @@ public class AnswerServiceImplTest {
             verify(answerMapper).insertAnswerAttachment(any());
             verify(questionMapper).updateQuestionIsAnswer(questionId, true);
             verify(alarmHistoryService)
-                    .createAlarm(question.getLineId(), AlarmCode.QUESTION, AlarmType.ANSWER, null);
+                    .createAlarm(question.getLineId(), AlarmCode.QUESTION, AlarmType.ANSWER);
         }
 
         @Test

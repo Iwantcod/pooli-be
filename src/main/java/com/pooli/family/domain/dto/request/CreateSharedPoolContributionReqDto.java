@@ -9,12 +9,6 @@ import lombok.Setter;
 @Schema(description = "공유풀 데이터 담기 요청 DTO")
 public class CreateSharedPoolContributionReqDto {
 
-    @Schema(description = "가족 식별자", example = "1")
-    private Integer familyId;
-
-    @Schema(description = "회선 식별자", example = "10")
-    private Integer lineId;
-
-    @Schema(description = "공유풀에 담을 데이터량(MB)", example = "500")
+    @Schema(description = "공유풀에 담을 데이터량(Byte)", example = "500000000")
     private Long amount;
 }
