@@ -11,19 +11,19 @@ import lombok.*;
 public class FamilySharedPoolResDto {
     // 이거 MB로 줄까? KB가 기준일까?
 
-    @Schema(description = "총 공유풀량(bite)", example = "20000")
+    @Schema(description = "총 공유풀량(Byte)", example = "20000")
     private Long poolTotalData;
 
-    @Schema(description = "공유풀 잔여량(bite)", example = "8500")
+    @Schema(description = "공유풀 잔여량(Byte)", example = "8500")
     private Long poolRemainingData;
 
-    @Schema(description = "공유풀 기본 제공량(bite)", example = "8500")
-    private Long pool_base_data;
+    @Schema(description = "공유풀 기본 제공량(Byte)", example = "8500")
+    private Long poolBaseData;
 
     // 하위 항목은 Long인지 Integer도 괜찮은지 고민
-    @Schema(description = "당월 공유풀 사용량(bite)", example = "11500")
+    @Schema(description = "당월 공유풀 사용량(Byte)", example = "11500")
     private Long monthlyUsageAmount;
 
-    @Schema(description = "당월 공유풀 제공량(bite)", example = "20000")
+    @Schema(description = "당월 공유풀 제공량(Byte)", example = "20000")
     private Long monthlyContributionAmount;
 }
