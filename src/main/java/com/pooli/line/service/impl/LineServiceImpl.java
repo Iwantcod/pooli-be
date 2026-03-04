@@ -52,7 +52,7 @@ public class LineServiceImpl implements LineService {
 		if (ownerUserId == null) {
 			throw new ApplicationException(LineErrorCode.LINE_NOT_FOUND); // LINE:4401
 		} else if(!Objects.equals(ownerUserId, principal.getUserId())) {
-			throws new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN); // LINE:4302
+			throw new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN); // LINE:4302
 		}
 		
 		AuthUserDetails updated = AuthUserDetails.builder()
