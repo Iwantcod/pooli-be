@@ -37,7 +37,10 @@ public interface AlarmHistoryMapper {
             @Param("code") String code
     );
 
-    Long countUnreadByLineId(@Param("lineId") Long lineId);
+    Long countUnreadByLineId(
+            @Param("userId") Long userId,
+            @Param("lineId") Long lineId
+    );
 
     int updateReadOne(
             @Param("alarmHistoryId") Long alarmHistoryId,
