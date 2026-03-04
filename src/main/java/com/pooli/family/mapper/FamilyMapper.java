@@ -31,8 +31,7 @@ public interface FamilyMapper {
 	
 	
 	Boolean isPermissionEnabledByTitle(
-	     @Param("lineId") Long lineId,
-	     @Param("title") String title
+	     @Param("lineId") Long lineId
 	);
 	
 	int updateFamilyLineVisibility(

@@ -36,7 +36,16 @@ public class FamilyController {
 	
 	private final FamilyService familyService;
 	
-	
+	/**
+	 * 
+	 * getFamilyMembers()
+	 * - 메인 대시보드의 가족별 가족 구성원 요약 정보 조회 API
+	 * 
+	 * 
+	 * @param principal : 로그인 세션 정보
+	 * @param familyId : 조회 대상 가족 식별자
+	 * @return
+	 */
     @Operation(
             summary = "메인 대시보드 가족별 가족 구성원 정보 조회",
             description = "메인 대시보드에서 특정 가족의 요약 정보를 조회합니다."
@@ -77,7 +86,15 @@ public class FamilyController {
     }
     
     
-
+    /**
+     * 
+     * getFamilyMembersSimple()
+     * - 특정 가족 결합의 구성 회선 및 유저 정보 목록 조회
+     * 
+     * @param principal : 로그인 세션 정보
+     * @param familyId : 조회 대상 가족 식별자
+     * @return
+     */
     @Operation(
             summary = "가족 결합 구성원(단말) 목록 조회",
             description = "familyId에 해당하는 가족 결합에 포함된 구성원(단말) 목록을 조회합니다."
@@ -124,7 +141,15 @@ public class FamilyController {
     }
     
     
-
+    /**
+     * 
+     * updateVisibility()
+     * 앱별 사용량 데이터 가족 공개 여부 설정 변경
+     * 
+     * @param principal : 로그인 세션 정보
+     * @param request : 설정 변경 정보 ( 대상 회선 식별자 , 변경 값)
+     * @return
+     */
     @Operation(
             summary = "앱별 사용량 데이터 가족 공개 여부 설정 변경",
             description = "lineId에 해당하는 회선의 앱별 사용량 데이터를 "

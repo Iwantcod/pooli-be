@@ -104,7 +104,7 @@
 	      FROM PERMISSION_LINE pl
 	      JOIN PERMISSION p ON p.permission_id = pl.permission_id
 	      WHERE pl.line_id = #{lineId}
-	        AND p.permission_title = #{title}
+	        AND p.permission_id = 2
 	        AND pl.is_enable = TRUE
 	    )
 	</select>

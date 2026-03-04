@@ -77,7 +77,7 @@ public class FamilyServiceImpl implements FamilyService {
 		}
 		
 		// Permission 여부 확인
-		Boolean permissionId = familyMapper.isPermissionEnabledByTitle(principal.getLineId(), "가족원 정보 공개 여부");
+		Boolean permissionId = familyMapper.isPermissionEnabledByTitle(principal.getLineId());
 		
 		if (!Boolean.TRUE.equals(permissionId)) {
 			throw new ApplicationException(FamilyErrorCode.FAM_NOT_FOUND);
