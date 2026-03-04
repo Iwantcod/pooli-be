@@ -29,10 +29,10 @@ public class MonthlyDataUsageResDto {
     @Schema(description = "월별 사용량 DTO")
     public static class MonthlyUsageDto {
 
-        @Schema(description = "연월", example = "2026-03")
+        @Schema(description = "연월", example = "202603")
         private String yearMonth;
 
-        @Schema(description = "사용량(bite)", example = "1500")
+        @Schema(description = "사용량(byte)", example = "1500")
         private Long usedAmount;
 
     }
