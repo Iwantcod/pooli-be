@@ -29,6 +29,9 @@ public class AdminPolicyResDto {
 	@Schema(description = "정책 활성화 여부", example = "false")	
 	private Boolean isActive;
 
+	@Schema(description = "신규 정책 여부", example = "true")	
+	private Boolean isNew;
+	
     @Schema(description = "최종 수정일", example = "2024-03-03T23:00:00")
     private java.time.LocalDateTime updatedAt;
 
