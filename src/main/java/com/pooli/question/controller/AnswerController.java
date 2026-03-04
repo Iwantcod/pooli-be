@@ -5,6 +5,7 @@ import com.pooli.question.domain.dto.request.AnswerCreateReqDto;
 import com.pooli.question.domain.dto.response.AnswerCreateResDto;
 import com.pooli.question.service.AnswerService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,7 +30,7 @@ public class AnswerController {
             description = "사용자의 문의사항에 대한 답변을 생성한다"
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "답변 생성 성공"),
+            @ApiResponse(responseCode = "200", description = "답변 생성 성공"),
             @ApiResponse(responseCode = "400",
                     description = """
                 잘못된 요청
@@ -81,6 +82,7 @@ public class AnswerController {
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping
     public ResponseEntity<Void> deleteAnswer(
+            @Parameter(description = "답변 id", example = "10")
             @RequestParam Long answerId
     ) {
         answerService.deleteAnswer(answerId);

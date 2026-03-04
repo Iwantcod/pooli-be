@@ -6,6 +6,7 @@ import java.util.List;
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.question.domain.dto.response.*;
 import com.pooli.question.service.QuestionService;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -99,6 +100,7 @@ public class QuestionController {
 	@DeleteMapping
 	public ResponseEntity<Void> deleteQuestion(
 			@AuthenticationPrincipal AuthUserDetails userDetails,
+			@Parameter(description = "문의 id", example = "10")
 			@RequestParam(name="questionId") Long questionId) {
 
 		questionService.deleteQuestion(questionId, userDetails);
@@ -134,9 +136,17 @@ public class QuestionController {
 	@GetMapping("/users")
 	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestion(
 			@AuthenticationPrincipal AuthUserDetails userDetails,
+
+			@Parameter(description = "카테고리 id들", example = "[1, 2, 3]")
 			@RequestParam(name="categoryIds", required = false) List<Long> categoryIds,
+
+			@Parameter(description = "답변 여부", example = "true")
 			@RequestParam(name="isAnswered", required = false) Boolean isAnswered,
+
+			@Parameter(description = "페이지 넘버", example = "0")
 			@RequestParam(name="pageNumber") Integer page,
+
+			@Parameter(description = "페이지 사이즈", example = "20")
 			@RequestParam(name="pageSize") Integer size
 	) {
 
@@ -175,11 +185,19 @@ public class QuestionController {
 	@PreAuthorize("hasRole('ADMIN')")
 	@GetMapping("/admins")
 	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestionAdmin(
-			@AuthenticationPrincipal AuthUserDetails userDetails,
+			@Parameter(description = "카테고리 id들", example = "[1, 2, 3]")
 			@RequestParam(required = false) List<Long> categoryIds,
+
+			@Parameter(description = "답변 여부", example = "true")
 			@RequestParam(required = false) Boolean isAnswered,
+
+			@Parameter(description = "회선 id", example = "1002")
 			@RequestParam(required = false) Long lineId,
+
+			@Parameter(description = "페이지 넘버", example = "0")
 			@RequestParam Integer pageNumber,
+
+			@Parameter(description = "페이지 사이즈", example = "20")
 			@RequestParam Integer pageSize
 	) {
 		return ResponseEntity.ok(
@@ -214,6 +232,8 @@ public class QuestionController {
 	@GetMapping("/details")
 	public ResponseEntity<QuestionResDto> selectDetailQuestion(
 			@AuthenticationPrincipal AuthUserDetails userDetails,
+
+			@Parameter(description = "문의 id", example = "1")
 			@RequestParam(name="questionId") Long questionId
 			) {
 

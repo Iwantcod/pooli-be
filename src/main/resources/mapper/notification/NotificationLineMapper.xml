@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.notification.mapper.NotificationLineMapper">
+    <select id="findAllLineIds" resultType="long">
+        SELECT line_id
+        FROM line
+        WHERE deleted_at IS NULL
+    </select>
+
+    <select id="findLineIdsByRole" resultType="long">
+        SELECT DISTINCT fl.line_id
+        FROM family_line fl
+        JOIN line l ON fl.line_id = l.line_id
+        WHERE fl.role = #{role}
+        AND l.deleted_at IS NULL
+    </select>
+
+    <select id="findExistingLineIds" resultType="long">
+        SELECT line_id
+        FROM line
+        WHERE line_id IN
+        <foreach collection="lineIds"
+                 item="id"
+                 open="("
+                 separator=","
+                 close=")">
+            #{id}
+        </foreach>
+        AND deleted_at IS NULL
+    </select>
+
+</mapper>

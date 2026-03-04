@@ -1,8 +1,11 @@
 package com.pooli.notification.domain.enums;
 
 public enum AlarmCode {
-	LIMIT, 
-	POLICY, 
-	PERMISSION,
-	QUESTION
+    FAMILY,
+    USER,
+    POLICY_CHANGE,
+    POLICY_LIMIT,
+    PERMISSION,
+    QUESTION,
+    OTHERS;
 }
