@@ -59,8 +59,26 @@ public class DataController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청 파라미터"),
-            @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+                        잘못된 요청
+                        
+                        - COMMON:4002 RequestParam 유효성 검증 실패
+                        - COMMON:4003 RequestParam 타입 불일치
+                        - COMMON:4004 필수 RequestParam 누락
+                        - DATA:4001 yearMonth는 YYYYMM 형식이어야 합니다
+                        """
+                ),
+            @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = """
+                        리소스 없음
+                        
+                        - DATA:4001 해당 데이터가 존재하지 않습니다
+                        """
+                ),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @GetMapping("/usages/monthly")
@@ -81,8 +99,26 @@ public class DataController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청 파라미터"),
-            @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+                        잘못된 요청
+                        
+                        - COMMON:4002 RequestParam 유효성 검증 실패
+                        - COMMON:4003 RequestParam 타입 불일치
+                        - COMMON:4004 필수 RequestParam 누락
+                        - DATA:4001 yearMonth는 YYYYMM 형식이어야 합니다                        
+                        """
+                ),
+            @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = """
+                        리소스 없음
+                        
+                        - DATA:4001 해당 데이터가 존재하지 않습니다
+                        """
+                ),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @GetMapping("/usages/apps")
@@ -105,8 +141,25 @@ public class DataController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청 파라미터"),
-            @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+                        잘못된 요청
+                        
+                        - COMMON:4002 RequestParam 유효성 검증 실패
+                        - COMMON:4003 RequestParam 타입 불일치
+                        - COMMON:4004 필수 RequestParam 누락
+                        """
+                ),
+            @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = """
+                        리소스 없음
+                        
+                        - DATA:4001 해당 데이터가 존재하지 않습니다
+                        """
+                ),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @GetMapping("/usages/balances")
@@ -127,7 +180,17 @@ public class DataController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청 파라미터"),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+                        잘못된 요청
+                        
+                        - COMMON:4002 RequestParam 유효성 검증 실패
+                        - COMMON:4003 RequestParam 타입 불일치
+                        - COMMON:4004 필수 RequestParam 누락
+                        - DATA:4001 yearMonth는 YYYYMM 형식이어야 합니다
+                        """
+                ),
             @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })

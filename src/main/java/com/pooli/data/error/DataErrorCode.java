@@ -9,13 +9,13 @@ public enum DataErrorCode implements ErrorCode {
 	
 	DATA_NOT_FOUND(
             HttpStatus.NOT_FOUND,
-            "DATA:4001",
+            "DATA:4401",
             "해당 데이터가 존재하지 않습니다."
     ),
 	INVALID_MONTH(
             HttpStatus.BAD_REQUEST,
-            "DATA:4002",
-            "month는 YYYYMM 형식이어야 합니다."
+            "DATA:4001",
+            "yearMonth는 YYYYMM 형식이어야 합니다."
     );
 
     private final HttpStatus httpStatus;
