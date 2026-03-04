@@ -2,6 +2,8 @@ package com.pooli.policy.service;
 
 import java.util.List;
 
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -232,6 +234,12 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             if(def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
+            if(newDailyLimitActive) {
+                alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT, null);
+            } else {
+                alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DAYDATA_LIMIT, null);
+            }
+
             return LimitPolicyResDto.builder()
                     .lineLimitId(lineLimit.get().getLimitId())
                     .dailyDataLimit(lineLimit.get().getDailyDataLimit())
@@ -263,6 +271,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
+        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_UPDATE_DAYDATA_LIMIT, null);
+
         return LimitPolicyResDto.builder()
                 .lineLimitId(lineLimit.get().getLimitId())
                 .dailyDataLimit(request.getPolicyValue())
@@ -286,6 +296,11 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             int def = lineLimitMapper.updateIsSharedLimitActiveById(lineLimit.get().getLimitId(), newSharedLimitActive);
             if(def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+            }
+            if(newSharedLimitActive) {
+                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT, null);
+            } else {
+                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT, null);
             }
             return LimitPolicyResDto.builder()
                     .lineLimitId(lineLimit.get().getLimitId())
@@ -317,6 +332,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if(def != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT, null);
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT, null);
+
         return LimitPolicyResDto.builder()
                 .lineLimitId(newLineLimit.getLimitId())
                 .dailyDataLimit(newLineLimit.getDailyDataLimit())
@@ -344,6 +362,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
+        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT, null);
         return LimitPolicyResDto.builder()
                 .lineLimitId(lineLimit.get().getLimitId())
                 .dailyDataLimit(lineLimit.get().getDailyDataLimit())
