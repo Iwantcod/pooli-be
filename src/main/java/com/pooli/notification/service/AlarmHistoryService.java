@@ -15,6 +15,7 @@ public interface AlarmHistoryService {
     void sendNotification(NotiSendReqDto request);
 
     PagingResDto<NotiSendResDto> getNotifications(
+            Long userId,
             Long lineId,
             Integer page,
             Integer size,
@@ -22,7 +23,7 @@ public interface AlarmHistoryService {
             AlarmCode code
     );
 
-    UnreadCountsResDto getUnreadCounts(Long lineId);
+    UnreadCountsResDto getUnreadCounts(Long userId, Long lineId);
 
     NotiSendResDto readOne(Long alarmHistoryId, Long lineId);
 

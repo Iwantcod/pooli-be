@@ -66,6 +66,7 @@ public class NotiReadController {
 
 		PagingResDto<NotiSendResDto> response =
 				alarmHistoryService.getNotifications(
+						userDetails.getUserId(),
 						userDetails.getLineId(),
 						page,
 						size,
@@ -91,6 +92,7 @@ public class NotiReadController {
 	){
 		UnreadCountsResDto response =
 				alarmHistoryService.getUnreadCounts(
+						userDetails.getUserId(),
 						userDetails.getLineId()
 				);
 

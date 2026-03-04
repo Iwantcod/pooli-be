@@ -49,74 +49,138 @@
     </insert>
 
 
+    <select id="countAlarmHistory" resultType="long">
+
+        SELECT COUNT(*)
+        FROM ALARM_HISTORY ah
+
+        LEFT JOIN alarm_setting s
+        ON s.user_id = #{userId}
+        AND s.deleted_at IS NULL
+
+        WHERE ah.line_id = #{lineId}
+        AND ah.deleted_at IS NULL
+
+        AND (
+        ah.alarm_code = 'OTHERS'
+        OR
+        s.user_id IS NULL
+        OR
+        (
+        (ah.alarm_code = 'FAMILY' AND s.family_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'USER' AND s.user_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'POLICY_CHANGE' AND s.policy_change_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'POLICY_LIMIT' AND s.policy_limit_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'PERMISSION' AND s.permission_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'QUESTION' AND s.question_alarm = TRUE)
+        )
+        )
+
+    </select>
+
     <select id="findAlarmHistoryPage"
             resultType="com.pooli.notification.domain.dto.response.NotiSendResDto">
 
         SELECT
-        alarm_history_id AS alarmHistoryId,
-        line_id AS lineId,
-        alarm_code AS alarmCode,
-        value,
+        ah.alarm_history_id AS alarmHistoryId,
+        ah.line_id AS lineId,
+        ah.alarm_code AS alarmCode,
+        ah.value,
         CASE
-        WHEN read_at IS NULL THEN FALSE
+        WHEN ah.read_at IS NULL THEN FALSE
         ELSE TRUE
         END AS isRead,
-        created_at AS createdAt
-        FROM ALARM_HISTORY
-        WHERE line_id = #{lineId}
-        AND deleted_at IS NULL
+        ah.created_at AS createdAt
+
+        FROM ALARM_HISTORY ah
+
+        LEFT JOIN alarm_setting s
+        ON s.user_id = #{userId}
+        AND s.deleted_at IS NULL
+
+        WHERE ah.line_id = #{lineId}
+        AND ah.deleted_at IS NULL
+
+        <!-- 알람 세팅 기준으로 조회 -->
+        AND (
+            ah.alarm_code = 'OTHERS'
+            OR
+            s.user_id IS NULL
+            OR
+            (
+                (ah.alarm_code = 'FAMILY' AND s.family_alarm = TRUE)
+                OR
+                (ah.alarm_code = 'USER' AND s.user_alarm = TRUE)
+                OR
+                (ah.alarm_code = 'POLICY_CHANGE' AND s.policy_change_alarm = TRUE)
+                OR
+                (ah.alarm_code = 'POLICY_LIMIT' AND s.policy_limit_alarm = TRUE)
+                OR
+                (ah.alarm_code = 'PERMISSION' AND s.permission_alarm = TRUE)
+                OR
+                (ah.alarm_code = 'QUESTION' AND s.question_alarm = TRUE)
+            )
+        )
 
         <if test="isRead != null">
             <choose>
                 <when test="isRead == true">
-                    AND read_at IS NOT NULL
+                    AND ah.read_at IS NOT NULL
                 </when>
                 <otherwise>
-                    AND read_at IS NULL
+                    AND ah.read_at IS NULL
                 </otherwise>
             </choose>
         </if>
 
         <if test="code != null">
-            AND alarm_code = #{code}
+            AND ah.alarm_code = #{code}
         </if>
 
-        ORDER BY created_at DESC
+        ORDER BY ah.created_at DESC
         LIMIT #{size} OFFSET #{offset}
-
-    </select>
-
-    <select id="countAlarmHistory" resultType="long">
-
-        SELECT COUNT(*)
-        FROM ALARM_HISTORY
-        WHERE line_id = #{lineId}
-        AND deleted_at IS NULL
-
-        <if test="isRead != null">
-            <choose>
-                <when test="isRead == true">
-                    AND read_at IS NOT NULL
-                </when>
-                <otherwise>
-                    AND read_at IS NULL
-                </otherwise>
-            </choose>
-        </if>
-
-        <if test="code != null">
-            AND alarm_code = #{code}
-        </if>
 
     </select>
 
     <!-- 미읽음 개수 조회 -->
     <select id="countUnreadByLineId" resultType="long">
+
         SELECT COUNT(*)
-        FROM ALARM_HISTORY
-        WHERE line_id = #{lineId}
-        AND deleted_at IS NULL
-        AND read_at IS NULL
+        FROM ALARM_HISTORY ah
+
+        LEFT JOIN alarm_setting s
+        ON s.user_id = #{userId}
+        AND s.deleted_at IS NULL
+
+        WHERE ah.line_id = #{lineId}
+        AND ah.deleted_at IS NULL
+        AND ah.read_at IS NULL
+
+        AND (
+        ah.alarm_code = 'OTHERS'
+        OR
+        s.user_id IS NULL
+        OR
+        (
+        (ah.alarm_code = 'FAMILY' AND s.family_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'USER' AND s.user_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'POLICY_CHANGE' AND s.policy_change_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'POLICY_LIMIT' AND s.policy_limit_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'PERMISSION' AND s.permission_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'QUESTION' AND s.question_alarm = TRUE)
+        )
+        )
+
     </select>
 
     <!-- 단건 읽음 처리 -->

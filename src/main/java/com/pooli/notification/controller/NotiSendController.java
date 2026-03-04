@@ -33,11 +33,11 @@ public class NotiSendController {
 	@Operation(summary = "공지 알람 전송",
 			description = "관리자가 알람을 보내는 기능")
 	@ApiResponses({
-			@ApiResponse(responseCode = "200", description = "알람 전송 성공"),
+			@ApiResponse(responseCode = "201", description = "알람 전송 성공"),
 			@ApiResponse(responseCode = "403", description = """
                     권한 없음
 
-                    - COMMON:4302: 접근 권한이 없습니다.
+                    - COMMON:4301: 관리자 권한이 없습니다.
                     """),
 			@ApiResponse(responseCode = "400",
 					description = """
@@ -55,7 +55,7 @@ public class NotiSendController {
                     """),
 			@ApiResponse(responseCode = "500", description = "서버 오류")
 	})
-	@PreAuthorize("hasRole('ADMIN')")
+	@PreAuthorize("@authz.requireAdmin(authentication)")
 	@PostMapping
 	public ResponseEntity<Void> sendAlarm(
 			@Valid  @RequestBody NotiSendReqDto request) {

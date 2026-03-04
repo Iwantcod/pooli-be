@@ -19,9 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -70,25 +68,30 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
         List<Long> lineIds = request.getLineId();
 
-        if (request.getTargetType() == NotificationTargetType.DIRECT) {
-            if (lineIds == null || lineIds.isEmpty()) {
-                throw new ApplicationException(NotificationErrorCode.LINE_ID_REQUIRED);
-            }
-        } else {
-            if (lineIds != null && !lineIds.isEmpty()) {
-                throw new ApplicationException(NotificationErrorCode.INVALID_TARGET_CONDITION);
-            }
+        if (request.getTargetType() != NotificationTargetType.DIRECT
+                && lineIds != null && !lineIds.isEmpty()) {
+            throw new ApplicationException(NotificationErrorCode.INVALID_TARGET_CONDITION);
         }
 
-        List<Long> targetLineIds = List.of();
+        List<Long> targetLineIds;
 
         switch (request.getTargetType()) {
 
             case DIRECT -> {
-                List<Long> existingLineIds =
-                        notificationLineMapper.findExistingLineIds(lineIds);
 
-                if (existingLineIds.size() != lineIds.size()) {
+                if (lineIds == null || lineIds.isEmpty()) {
+                    throw new ApplicationException(NotificationErrorCode.LINE_ID_REQUIRED);
+                }
+
+                // 1. 중복 제거
+                Set<Long> uniqueLineIds = new HashSet<>(lineIds);
+
+                // 2. 존재하는 ID 조회
+                List<Long> existingLineIds =
+                        notificationLineMapper.findExistingLineIds(new ArrayList<>(uniqueLineIds));
+
+                // 3. 존재 여부 검증
+                if (existingLineIds.size() != uniqueLineIds.size()) {
                     throw new ApplicationException(
                             NotificationErrorCode.NOTIFICATION_TARGET_NOT_FOUND
                     );
@@ -96,7 +99,6 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
                 targetLineIds = existingLineIds;
             }
-
             case ALL -> targetLineIds = notificationLineMapper.findAllLineIds();
 
             case OWNER -> targetLineIds =
@@ -104,6 +106,10 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
             case MEMBER -> targetLineIds =
                     notificationLineMapper.findLineIdsByRole("MEMBER");
+
+            default -> throw new ApplicationException(
+                    NotificationErrorCode.INVALID_TARGET_CONDITION
+            );
         }
 
         if (targetLineIds == null || targetLineIds.isEmpty()) {
@@ -144,6 +150,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
     @Transactional(readOnly = true)
     @Override
     public PagingResDto<NotiSendResDto> getNotifications(
+            Long userId,
             Long lineId,
             Integer page,
             Integer size,
@@ -162,6 +169,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
         List<NotiSendResDto> content =
                 alarmHistoryMapper.findAlarmHistoryPage(
+                        userId,
                         lineId,
                         isRead,
                         code != null ? code.name() : null,
@@ -171,6 +179,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
         Long totalElements =
                 alarmHistoryMapper.countAlarmHistory(
+                        userId,
                         lineId,
                         isRead,
                         code != null ? code.name() : null
@@ -190,9 +199,9 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
     @Transactional(readOnly = true)
     @Override
-    public UnreadCountsResDto getUnreadCounts(Long lineId) {
+    public UnreadCountsResDto getUnreadCounts(Long userId, Long lineId) {
 
-        Long count = alarmHistoryMapper.countUnreadByLineId(lineId);
+        Long count = alarmHistoryMapper.countUnreadByLineId(userId,lineId);
 
         return UnreadCountsResDto.builder()
                 .lineId(lineId)

@@ -1,5 +1,6 @@
 package com.pooli.common.validator;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.dto.request.PresignedUrlReqDto;
 import com.pooli.common.dto.request.UploadFileReqDto;
 import com.pooli.common.exception.ApplicationException;
@@ -24,13 +25,16 @@ public class UploadValidationServiceImpl implements UploadValidationService{
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
 
     @Override
-    public void validateRequest(PresignedUrlReqDto request) {
+    public void validateRequest(PresignedUrlReqDto request, AuthUserDetails userDetails) {
 
         if (request == null || request.getFiles() == null || request.getFiles().isEmpty()) {
             throw new ApplicationException(UploadErrorCode.INVALID_UPLOAD_REQUEST);
         }
 
-        if (request.getFiles().size() > 3) {
+        boolean isAdmin = userDetails.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+
+        if (!isAdmin && request.getFiles().size() > 3) {
             throw new ApplicationException(UploadErrorCode.FILE_COUNT_EXCEEDED);
         }
 

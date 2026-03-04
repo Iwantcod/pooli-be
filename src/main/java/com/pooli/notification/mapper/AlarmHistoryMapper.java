@@ -22,6 +22,7 @@ public interface AlarmHistoryMapper {
     );
 
     List<NotiSendResDto> findAlarmHistoryPage(
+            @Param("userId") Long userId,
             @Param("lineId") Long lineId,
             @Param("isRead") Boolean isRead,
             @Param("code") String code,
@@ -30,6 +31,7 @@ public interface AlarmHistoryMapper {
     );
 
     Long countAlarmHistory(
+            @Param("userId") Long userId,
             @Param("lineId") Long lineId,
             @Param("isRead") Boolean isRead,
             @Param("code") String code
