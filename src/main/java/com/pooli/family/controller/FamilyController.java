@@ -74,15 +74,11 @@ public class FamilyController {
     @GetMapping("/members")
     public ResponseEntity<FamilyMembersResDto> getFamilyMembers(
     	    @AuthenticationPrincipal 
-    	    AuthUserDetails principal,
-    	    @RequestParam(required = true, name = "familyId")
-    		@NotNull
-            @Parameter(description = "가족 ID", example = "1")
-            Integer familyId
+    	    AuthUserDetails principal
     ) {
     	
 
-        return ResponseEntity.ok(familyService.getFamilyMembers(familyId, principal));
+        return ResponseEntity.ok(familyService.getFamilyMembers(principal));
     }
     
     
@@ -130,14 +126,10 @@ public class FamilyController {
     })
     @GetMapping("/members-simple")
     public ResponseEntity<List<FamilyMembersSimpleResDto>> getFamilyMembersSimple(
-    	    @AuthenticationPrincipal AuthUserDetails principal,
-    	    @RequestParam(required = true, name = "familyId") 
-    	    @NotNull
-            @Parameter(description = "가족 식별자", example = "1")
-    	    Integer familyId
+    	    @AuthenticationPrincipal AuthUserDetails principal
     ) {
     	
-        return ResponseEntity.ok(familyService.getFamilyMembersSimple(familyId, principal));
+        return ResponseEntity.ok(familyService.getFamilyMembersSimple(principal));
     }
     
     

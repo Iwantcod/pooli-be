@@ -7,56 +7,51 @@
 
 
 	<select id="selectFamilyMembersHeader"
-          resultType="com.pooli.family.domain.dto.response.FamilyMembersResDto">
-	    SELECT
-	      CASE
-	        WHEN EXISTS (
-	          SELECT 1
-	          FROM PERMISSION_LINE pl
-	          JOIN PERMISSION p ON p.permission_id = pl.permission_id
-	          WHERE pl.line_id = #{lineId}
-	            AND p.permission_title = #{permissionTitle}
-	            AND pl.is_enable = TRUE
-	        )
-	        THEN TRUE
-	        ELSE FALSE
-	      END AS isEnable,
-	      f.family_id AS familyId,
-	      f.pool_total_data AS sharedPoolTotalData
-	    FROM FAMILY_LINE fl
-	    JOIN FAMILY f ON f.family_id = fl.family_id
-	    WHERE fl.family_id = #{familyId}
-	      AND fl.line_id = #{lineId}
-	  </select>
+	         resultType="com.pooli.family.domain.dto.response.FamilyMembersResDto">
+	   SELECT
+	     CASE
+	       WHEN EXISTS (
+	         SELECT 1
+	         FROM PERMISSION_LINE pl
+	         JOIN PERMISSION p ON p.permission_id = pl.permission_id
+	         WHERE pl.line_id = #{lineId}
+	           AND p.permission_id = 1
+	           AND pl.is_enable = TRUE
+	       )
+	       THEN TRUE
+	       ELSE FALSE
+	     END AS isEnable,
+	     f.family_id AS familyId,
+	     f.pool_total_data AS sharedPoolTotalData
+	   FROM FAMILY_LINE fl
+	   JOIN FAMILY f ON f.family_id = fl.family_id
+	   WHERE fl.line_id = #{lineId}
+	</select>
 	
-	  <select id="selectFamilyMembers"
-	          resultType="com.pooli.family.domain.dto.response.FamilyMembersResDto$FamilyMemberDto">
+	<select id="selectFamilyMembersSimpleByLineId"
+	          resultType="com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto">
+	
 	    SELECT
-	      u.user_id AS userId,
-	      l.line_id AS lineId,
-	      p.plan_id AS planId,
+	      l.line_id   AS lineId,
+	      u.user_id   AS userId,
 	      u.user_name AS userName,
-	      l.phone AS phone,
-	      p.plan_name AS planName,
-	      l.remaining_data AS remainingData,
-	      p.basic_data_amount AS basicDataAmount,
-	      fl.role AS role,
-	      f.pool_total_data AS sharedPoolTotalAmount,
-	      f.pool_remaining_data AS sharedPoolRemainingAmount
+	      l.phone     AS phone
 	    FROM FAMILY_LINE fl
-	    JOIN LINE l  ON l.line_id = fl.line_id
-	    JOIN USERS u ON u.user_id = l.user_id
-	    JOIN PLAN p  ON p.plan_id = l.plan_id
+	    JOIN LINE l  ON fl.line_id = l.line_id
+	    JOIN USERS u ON l.user_id = u.user_id
 	    JOIN FAMILY f ON f.family_id = fl.family_id
-	    WHERE fl.family_id = #{familyId}
+	    WHERE fl.family_id = (
+	      SELECT fl2.family_id
+	      FROM FAMILY_LINE fl2
+	      WHERE fl2.line_id = #{lineId}
+	    )
+	      AND l.deleted_at IS NULL
+	      AND f.deleted_at IS NULL
 	    ORDER BY
-	      CASE fl.role
-	        WHEN 'OWNER' THEN 0
-	        WHEN 'MEMBER' THEN 1
-	        ELSE 2
-	      END,
+	      CASE WHEN l.line_id = #{lineId} THEN 0 ELSE 1 END,
 	      l.line_id ASC
-	  </select>
+	
+	</select>
 
 
 	<select id="existsFamilyLine" resultType="boolean">

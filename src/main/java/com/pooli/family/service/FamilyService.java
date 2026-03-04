@@ -11,9 +11,9 @@ import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 
 public interface FamilyService {
 	
-	FamilyMembersResDto getFamilyMembers(Integer familyId,AuthUserDetails principal);
+	FamilyMembersResDto getFamilyMembers(AuthUserDetails principal);
 	
-	List<FamilyMembersSimpleResDto> getFamilyMembersSimple(Integer familyId, AuthUserDetails principal);
+	List<FamilyMembersSimpleResDto> getFamilyMembersSimple(AuthUserDetails principal);
 	
 	Void updateVisibility(UpdateVisibilityReqDto request, AuthUserDetails principal);
 }

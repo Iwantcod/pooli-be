@@ -12,18 +12,16 @@ import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 public interface FamilyMapper {
 	
 	FamilyMembersResDto selectFamilyMembersHeader(
-		      @Param("familyId") Integer familyId,
-		      @Param("lineId") Long lineId,
-		      @Param("permissionTitle") String permissionTitle
+		      @Param("lineId") Long lineId
     );
 
 	List<FamilyMembersResDto.FamilyMemberDto> selectFamilyMembers(
         @Param("familyId") Integer familyId
     );
 	
-	List<FamilyMembersSimpleResDto> selectFamilyMembersSimple(
-	          @Param("familyId") Integer familyId,
-	          @Param("lineId") Long lineId);
+	List<FamilyMembersSimpleResDto> selectFamilyMembersSimpleByLineId(
+		      @Param("lineId") Long lineId
+		  );
 	
 	Boolean existsFamilyLine(
 			@Param("familyId") Integer familyId,

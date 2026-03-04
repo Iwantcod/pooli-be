@@ -28,15 +28,15 @@ public class FamilyServiceImpl implements FamilyService {
 
 	@Override
 	@Transactional(readOnly = true)
-	public FamilyMembersResDto getFamilyMembers(Integer familyId, AuthUserDetails principal) {
+	public FamilyMembersResDto getFamilyMembers(AuthUserDetails principal) {
 		
-		FamilyMembersResDto header = familyMapper.selectFamilyMembersHeader(familyId, principal.getLineId(), "상세 페이지 열람");
+		FamilyMembersResDto header = familyMapper.selectFamilyMembersHeader(principal.getLineId());
 		if (header == null) {
 			throw new ApplicationException(FamilyErrorCode.FAM_NOT_FOUND);
 		}
 		
 		List<FamilyMembersResDto.FamilyMemberDto> members =
-		    familyMapper.selectFamilyMembers(familyId);
+		    familyMapper.selectFamilyMembers(header.getFamilyId());
 		
 		return FamilyMembersResDto.builder()
 		      .isEnable(header.getIsEnable())
@@ -48,21 +48,13 @@ public class FamilyServiceImpl implements FamilyService {
 
 	@Override
 	@Transactional(readOnly = true)
-	public List<FamilyMembersSimpleResDto> getFamilyMembersSimple(Integer familyId, AuthUserDetails principal) {
+	public List<FamilyMembersSimpleResDto> getFamilyMembersSimple(AuthUserDetails principal) {
 		
-		// 현재 로그인한 계정이 해당 가족 정보에 접근 가능한가(가족 구성원인가)
-		Boolean isMember = familyMapper.existsFamilyLine(familyId, principal.getLineId());
-	      if (!Boolean.TRUE.equals(isMember)) {
-	          throw new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN);
-	      }
+		List<FamilyMembersSimpleResDto> list = familyMapper.selectFamilyMembersSimpleByLineId(principal.getLineId());
 		
-		
-		List<FamilyMembersSimpleResDto> list = familyMapper.selectFamilyMembersSimple(familyId, principal.getLineId());
-		
-		if(list.isEmpty()) {
-			throw new ApplicationException(FamilyErrorCode.FAM_NOT_FOUND);
+		if (list.isEmpty()) {
+		    throw new ApplicationException(FamilyErrorCode.FAM_NOT_FOUND);
 		}
-		
 		
 		return list;
 	}
@@ -90,8 +82,6 @@ public class FamilyServiceImpl implements FamilyService {
 	    }
 	    
 		return null;
-	    
-		
 	}
 
 }
