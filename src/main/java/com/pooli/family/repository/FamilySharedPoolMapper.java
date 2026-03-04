@@ -4,6 +4,8 @@ import com.pooli.family.domain.entity.SharedPoolDomain;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 @Mapper
 public interface FamilySharedPoolMapper {
 
@@ -38,4 +40,7 @@ public interface FamilySharedPoolMapper {
 
     // 세션의 lineId로 familyId를 조회
     Long selectFamilyIdByLineId(@Param("lineId") Long lineId);
+
+    // 알람 전송용: 가족의 모든 멤버 lineId 조회
+    List<Long> selectLineIdsByFamilyId(@Param("familyId") Long familyId);
 }

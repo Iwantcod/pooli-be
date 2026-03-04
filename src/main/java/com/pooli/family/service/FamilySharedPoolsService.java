@@ -7,15 +7,22 @@ import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
 import com.pooli.family.domain.dto.response.*;
 import com.pooli.family.domain.entity.SharedPoolDomain;
 import com.pooli.family.repository.FamilySharedPoolMapper;
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.service.AlarmHistoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class FamilySharedPoolsService {
 
     private final FamilySharedPoolMapper sharedPoolMapper;
+    private final AlarmHistoryService alarmHistoryService;
 
     // 세션의 lineId로 familyId를 DB에서 조회하는 헬퍼 메서드
     public Long getFamilyIdByLineId(Long lineId) {
@@ -76,6 +83,10 @@ public class FamilySharedPoolsService {
 
         // 3. 충전 이력 기록 (당월 데이터 통합을 위해 DUPLICATE 처리됨)
         sharedPoolMapper.insertContribution(familyId, lineId, amount);
+
+        // 4. 알람: 가족 전체 (본인 제외)에게 데이터 담기 알림
+        sendAlarmToFamily(familyId, lineId, AlarmType.SHARED_POOL_CONTRIBUTION,
+                Map.of("amount", String.valueOf(amount)));
     }
 
     public SharedPoolDetailResDto getSharedPoolDetail(Long familyId, Long lineId) {
@@ -134,5 +145,23 @@ public class FamilySharedPoolsService {
 
     public void updateSharedDataThreshold(Long familyId, UpdateSharedDataThresholdReqDto request) {
         sharedPoolMapper.updateSharedDataThreshold(familyId, request.getNewFamilyThreshold());
+
+        // 알람: 가족 전체에게 임계치 변경 알림
+        sendAlarmToFamily(familyId, null, AlarmType.SHARED_POOL_THRESHOLD_CHANGE,
+                Map.of("newThreshold", String.valueOf(request.getNewFamilyThreshold())));
+    }
+
+    /**
+     * 가족 구성원 전체에게 알람을 전송하는 헬퍼 메서드
+     * @param excludeLineId 본인 제외 (null이면 전체에게 보냄)
+     */
+    private void sendAlarmToFamily(Long familyId, Long excludeLineId, AlarmType alarmType, Map<String, String> values) {
+        List<Long> familyLineIds = sharedPoolMapper.selectLineIdsByFamilyId(familyId);
+        for (Long targetLineId : familyLineIds) {
+            if (excludeLineId != null && targetLineId.equals(excludeLineId)) {
+                continue;
+            }
+            alarmHistoryService.createAlarm(targetLineId, AlarmCode.FAMILY, alarmType, values);
+        }
     }
 }

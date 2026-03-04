@@ -12,6 +12,7 @@ import java.util.Map;
 
 public interface AlarmHistoryService {
     void createAlarm(Long userId, AlarmCode alarmCode, AlarmType alarmType);
+    void createAlarm(Long userId, AlarmCode alarmCode, AlarmType alarmType, Map<String, String> values);
     void sendNotification(NotiSendReqDto request);
 
     PagingResDto<NotiSendResDto> getNotifications(
