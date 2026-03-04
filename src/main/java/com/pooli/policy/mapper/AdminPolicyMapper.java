@@ -16,6 +16,9 @@ public interface AdminPolicyMapper {
     // 전체 정책 목록 조회
     List<AdminPolicyResDto> selectAllPolicies();
 
+    // 정책 단건 조회
+    AdminPolicyResDto selectPolicyById(@Param("policyId") Integer policyId);
+    
     // 정책 추가
     int insertPolicy(@Param("request")AdminPolicyReqDto request);
 
@@ -31,6 +34,9 @@ public interface AdminPolicyMapper {
     // 정책 카테고리 목록 조회
     List<AdminPolicyCateResDto> selectAllCategories();
 
+    // 정책 카테고리 단건 추가
+    AdminPolicyCateResDto selectCategoryById(@Param("policyCategoryId") Integer policyCategoryId);
+    
     // 정책 카테고리 추가
     int insertCategory(@Param("request") AdminCategoryReqDto request);
 

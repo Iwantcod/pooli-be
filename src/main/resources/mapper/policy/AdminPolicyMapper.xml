@@ -6,7 +6,7 @@
 
     <!-- 전체 정책 목록 조회 -->
     <select id="selectAllPolicies" resultType="com.pooli.policy.domain.dto.response.AdminPolicyResDto">
-     SELECT
+     	SELECT
             p.policy_id AS policyId,
             p.policy_name AS policyName,
             p.policy_category_id AS policyCategoryId,
@@ -21,6 +21,23 @@
         ORDER BY p.policy_id DESC
     </select>
 
+    <!-- 정책 단건 조회 -->
+    <select id="selectPolicyById" resultType="com.pooli.policy.domain.dto.response.AdminPolicyResDto">
+		SELECT
+		    p.policy_id AS policyId,
+		    p.policy_name AS policyName,
+		    p.policy_category_id AS policyCategoryId,
+		    pc.policy_category_name AS policyCategoryName,
+		    p.is_active AS isActive,
+		    p.is_new AS isNew,
+		    p.updated_at AS updatedAt
+		FROM policy p
+		LEFT JOIN policy_category pc
+		    ON p.policy_category_id = pc.policy_category_id
+		WHERE p.deleted_at IS NULL
+		  AND p.policy_id = #{policyId};
+    </select>
+    
     <!-- 정책 추가 -->
     <insert id="insertPolicy" useGeneratedKeys="true" keyProperty="policyId">
         INSERT INTO policy (policy_category_id, policy_name, is_active, is_new, created_at)
@@ -80,6 +97,17 @@
         FROM policy_category
         WHERE deleted_at IS NULL
         ORDER BY policy_category_id ASC
+    </select>
+    
+     <!-- 정책 카테고리 단건 조회 -->
+    <select id="selectCategoryById" resultType="com.pooli.policy.domain.dto.response.AdminPolicyCateResDto">
+        SELECT
+		    pc.policy_category_id AS policyCategoryId,
+		    pc.policy_category_name AS policyCategoryName,
+		    pc.updated_at AS updatedAt
+		FROM policy_category pc
+		WHERE pc.deleted_at IS NULL
+		  AND pc.policy_category_id = #{policyCategoryId};
     </select>
 
     <!-- 정책 카테고리 추가 -->

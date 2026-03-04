@@ -60,8 +60,8 @@ public class AdminPolicyController {
    	                 """
    	         )
     })
-    @PreAuthorize("hasRole('ADMIN')")
-    @GetMapping("/all")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
+    @GetMapping()
     public ResponseEntity<List<AdminPolicyResDto>> getAllPolicies() {
 
     	 return ResponseEntity.ok(adminPolicyService.getAllPolicies());
@@ -111,7 +111,7 @@ public class AdminPolicyController {
                 """
         )
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @PostMapping
     public ResponseEntity<AdminPolicyResDto> createPolicy(@RequestBody AdminPolicyReqDto request) {
 
@@ -157,7 +157,7 @@ public class AdminPolicyController {
                 """
         )
     })
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @PatchMapping
     public ResponseEntity<AdminPolicyResDto> updatePolicy(
     		@RequestParam("policyId") Integer policyId,
@@ -211,7 +211,7 @@ public class AdminPolicyController {
                 """
         )
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @DeleteMapping
     public ResponseEntity<AdminPolicyResDto> deletePolicy(
             @Parameter(description = "정책 식별자", example = "1003")
@@ -268,7 +268,7 @@ public class AdminPolicyController {
                 """
         )
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @PatchMapping("/activation")
     public ResponseEntity<AdminPolicyActiveResDto> updateActivationPolicy(
             @Parameter(description = "정책 식별자", example = "1003")
@@ -304,7 +304,7 @@ public class AdminPolicyController {
                 """
         )
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @GetMapping("/categories")
     public ResponseEntity<List<AdminPolicyCateResDto>> getCategories() {
     	return ResponseEntity.ok(adminPolicyService.getCategories());
@@ -348,7 +348,7 @@ public class AdminPolicyController {
                 """
         )
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @PostMapping("/categories")
     public ResponseEntity<AdminPolicyCateResDto> createCategory(
             @RequestBody AdminCategoryReqDto request
@@ -396,7 +396,7 @@ public class AdminPolicyController {
                 """
         )
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @PatchMapping("/categories")
     public ResponseEntity<AdminPolicyCateResDto> updateCategory(
     		@Parameter(description = "정책 카테고리 식별자", example = "1003")
@@ -443,7 +443,7 @@ public class AdminPolicyController {
                 """
         )
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @DeleteMapping("/categories")
     public ResponseEntity<AdminPolicyCateResDto> deleteCategory(
             @Parameter(description = "정책 카테고리 식별자", example = "1003")

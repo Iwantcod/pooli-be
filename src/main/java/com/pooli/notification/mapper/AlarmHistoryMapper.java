@@ -41,4 +41,16 @@ public interface AlarmHistoryMapper {
             @Param("userId") Long userId,
             @Param("lineId") Long lineId
     );
+
+    int updateReadOne(
+            @Param("alarmHistoryId") Long alarmHistoryId,
+            @Param("lineId") Long lineId
+    );
+
+    int updateReadAll(@Param("lineId") Long lineId);
+
+    NotiSendResDto findOneByAlarmHistoryIdAndLineId(
+            @Param("alarmHistoryId") Long alarmHistoryId,
+            @Param("lineId") Long lineId
+    );
 }
