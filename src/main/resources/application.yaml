@@ -1,6 +1,7 @@
 spring:
   config:
     import: optional:file:.env[.properties]
+
   application:
     name: pooli-be
   datasource:

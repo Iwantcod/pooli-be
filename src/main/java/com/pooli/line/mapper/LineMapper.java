@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Param;
 
 import com.pooli.line.domain.dto.response.IndividualThresholdResDto;
 import com.pooli.line.domain.dto.response.LineSimpleResDto;
+import com.pooli.line.domain.dto.response.LineUserSummaryResDto;
 
 @Mapper
 public interface LineMapper {
@@ -20,19 +21,28 @@ public interface LineMapper {
      */
     Long findOwnerUserIdByLineId(@Param("lineId") Long lineId);
 	
-	List<LineSimpleResDto> selectLinesByUserId(
-	          @Param("userId") Integer userId,
-	          @Param("lineId") Integer lineId
+	List<LineSimpleResDto> selectLinesByUserIdOrderByLineId(
+	          @Param("userId") Long userId,
+	          @Param("lineId") Long lineId
 	  );
 	
 	IndividualThresholdResDto selectIndividualThresholdByLineId(
-            @Param("lineId") Integer lineId
+            @Param("lineId") Long lineId
     );
 	
 	
 	int updateIndividualThreshold(
-	          @Param("lineId") Integer lineId,
+	          @Param("lineId") Long lineId,
 	          @Param("individualThreshold") Integer individualThreshold,
 	          @Param("isThresholdActive") Boolean isThresholdActive
+	  );
+	
+	
+	List<LineUserSummaryResDto> selectLineUserSummaryListByPhoneSuffix(
+	          @Param("phoneSuffix") String phoneSuffix
+	);
+	
+	List<LineSimpleResDto> selectLinesByUserId(
+	          @Param("userId") Long userId
 	  );
 }
