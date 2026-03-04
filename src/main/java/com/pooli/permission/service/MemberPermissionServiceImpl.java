@@ -10,6 +10,9 @@ import com.pooli.permission.domain.dto.response.MemberPermissionListResDto;
 import com.pooli.permission.domain.dto.response.MemberPermissionResDto;
 import com.pooli.permission.domain.entity.PermissionLine;
 import com.pooli.permission.exception.PermissionErrorCode;
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.service.AlarmHistoryService;
 import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.PermissionLineMapper;
 import com.pooli.permission.mapper.PermissionMapper;
@@ -29,6 +32,7 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
     private final FamilyLineMapper familyLineMapper;
     private final PermissionLineMapper permissionLineMapper;
     private final PermissionMapper permissionMapper;
+    private final AlarmHistoryService alarmHistoryService;
 
     // 내 권한 상태 조회
     @Override
@@ -138,6 +142,12 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
         }
 
         permissionLineMapper.bulkUpsert(reqList);
+
+        reqList.stream()
+                .map(MemberPermissionBulkUpsertReqDto::getLineId)
+                .distinct()
+                .forEach(targetId ->
+                        alarmHistoryService.createAlarm(targetId, AlarmCode.PERMISSION, AlarmType.PERMISSION_CHANGED));
 
         List<MemberPermissionResDto> permissions = permissionLineMapper.findByFamilyId(familyId);
         return MemberPermissionListResDto.builder()

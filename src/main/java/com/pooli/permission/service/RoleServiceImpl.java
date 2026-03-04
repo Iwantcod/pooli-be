@@ -7,6 +7,9 @@ import com.pooli.common.exception.ApplicationException;
 import com.pooli.family.domain.entity.FamilyLine;
 import com.pooli.family.domain.enums.FamilyRole;
 import com.pooli.line.domain.entity.Line;
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.service.AlarmHistoryService;
 import com.pooli.permission.domain.dto.response.RepresentativeRoleTransferResDto;
 import com.pooli.permission.exception.PermissionErrorCode;
 import com.pooli.permission.mapper.FamilyLineMapper;
@@ -20,6 +23,7 @@ public class RoleServiceImpl implements RoleService {
 
     private final LineUserPermissionMapper lineUserPermissionMapper;
     private final FamilyLineMapper familyLineMapper;
+    private final AlarmHistoryService alarmHistoryService;
 
     @Override
     @Transactional
@@ -60,6 +64,10 @@ public class RoleServiceImpl implements RoleService {
                 .lineId(targetFamilyLine.getLineId())
                 .role(FamilyRole.OWNER)
                 .build());
+
+        familyLineMapper.findAllFamilyIdByLineId(currentFamilyLine.getLineId())
+                .forEach(lineId ->
+                        alarmHistoryService.createAlarm(lineId, AlarmCode.PERMISSION, AlarmType.ROLE_TRANSFERRED));
 
         return RepresentativeRoleTransferResDto.builder()
                 .currentOwnerUserId(currentUserId)
