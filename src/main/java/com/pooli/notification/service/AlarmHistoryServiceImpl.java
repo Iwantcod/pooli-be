@@ -39,6 +39,8 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
         // 1. values가 있는지 확인하고 type을 Map에 추가
         if (values == null) {
             values = new HashMap<>();
+        }else {
+            values = new HashMap<>(values); // immutable map 들어와도 안전
         }
         // AlarmType의 이름을 문자열로 넣어 나중에 JSON 파싱이 쉽도록 합니다.
         values.put("type", alarmType.name());
