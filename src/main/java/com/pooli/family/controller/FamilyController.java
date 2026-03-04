@@ -53,7 +53,13 @@ public class FamilyController {
                         - COMMON:4004 필수 RequestParam 누락
                         """
                 ),
-            @ApiResponse(responseCode = "404", description = "가족 구성원 정보를 찾을 수 없음"),
+            @ApiResponse(responseCode = "404",
+                    description = """
+                    잘못된 요청
+                    
+                    - FAMILY:4401, 해당 가족 관련 정보를 찾을 수 없습니다.
+                    """
+                ),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @GetMapping("/members")
@@ -88,7 +94,21 @@ public class FamilyController {
                         - COMMON:4004 필수 RequestParam 누락
                         """
                 ),
-            @ApiResponse(responseCode = "404", description = "해당 정보를 찾을 수 없음"),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = """
+                		권한 부족
+                        
+                        - COMMON:4302 권한 부족
+                        """
+                ),
+            @ApiResponse(responseCode = "404",
+			            description = """
+			            리소스 없음
+			            
+			            - FAMILY:4401, 해당 가족 관련 정보를 찾을 수 없습니다.
+			            """
+			        ),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @GetMapping("/members-simple")
@@ -120,7 +140,28 @@ public class FamilyController {
                         - COMMON:4001 요청 DTO 필드 유효성 검증 실패
                         """
             ),
-            @ApiResponse(responseCode = "404", description = "해당 정보를 찾을 수 없음"),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = """
+                		권한 부족
+                        
+                        - COMMON:4302 권한 부족
+                        """
+                ),
+            @ApiResponse(responseCode = "404",
+			            description = """
+			            리소스 없음
+			            
+			            - FAMILY:4401, 해당 가족 관련 정보를 찾을 수 없습니다.
+			            """
+			        ),
+            @ApiResponse(responseCode = "404",
+			            description = """
+			            리소스 없음
+			            
+			            - FAMILY:4901, 이미 존재하는 정보입니다.
+			            """
+			        ),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @PatchMapping("/visibility")
