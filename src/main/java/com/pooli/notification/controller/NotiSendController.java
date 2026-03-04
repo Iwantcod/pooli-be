@@ -37,7 +37,7 @@ public class NotiSendController {
 			@ApiResponse(responseCode = "403", description = """
                     권한 없음
 
-                    - COMMON:4302: 접근 권한이 없습니다.
+                    - COMMON:4301: 관리자 권한이 없습니다.
                     """),
 			@ApiResponse(responseCode = "400",
 					description = """
@@ -55,7 +55,7 @@ public class NotiSendController {
                     """),
 			@ApiResponse(responseCode = "500", description = "서버 오류")
 	})
-	@PreAuthorize("hasRole('ADMIN')")
+	@PreAuthorize("@authz.requireAdmin(authentication)")
 	@PostMapping
 	public ResponseEntity<Void> sendAlarm(
 			@Valid  @RequestBody NotiSendReqDto request) {
