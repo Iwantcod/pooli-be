@@ -235,9 +235,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
             if(newDailyLimitActive) {
-                alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT, null);
+                alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT);
             } else {
-                alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DAYDATA_LIMIT, null);
+                alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DAYDATA_LIMIT);
             }
 
             return LimitPolicyResDto.builder()
@@ -271,7 +271,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
-        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DAYDATA_LIMIT, null);
+        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DAYDATA_LIMIT);
 
         return LimitPolicyResDto.builder()
                 .lineLimitId(lineLimit.get().getLimitId())
@@ -298,9 +298,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
             if(newSharedLimitActive) {
-                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT, null);
+                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
             } else {
-                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT, null);
+                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
             }
             return LimitPolicyResDto.builder()
                     .lineLimitId(lineLimit.get().getLimitId())
@@ -332,8 +332,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if(def != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
-        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT, null);
-        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT, null);
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT);
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
 
         return LimitPolicyResDto.builder()
                 .lineLimitId(newLineLimit.getLimitId())
@@ -362,7 +362,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
-        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT, null);
+        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
         return LimitPolicyResDto.builder()
                 .lineLimitId(lineLimit.get().getLimitId())
                 .dailyDataLimit(lineLimit.get().getDailyDataLimit())
@@ -445,7 +445,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_APP_USAGE_LIMIT, null);
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_APP_USAGE_LIMIT);
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
         return appPolicy.get().toBuilder()
                 .dailyLimitData(request.getValue())
@@ -469,7 +469,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DATA_SPEED_LIMIT, null);
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DATA_SPEED_LIMIT);
 
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
         return appPolicy.get().toBuilder()
@@ -494,11 +494,11 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
                 }
                 if(newIsAcvice) {
-                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT, null);
-                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT, null);
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
                 } else {
-                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT, null);
-                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT, null);
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
                 }
                 return appPolicy.get().toBuilder()
                         .isActive(!appPolicy.get().getIsActive())
@@ -518,8 +518,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 }
 
                 // 알람 전송
-                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT, null);
-                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT, null);
+                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
+                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
 
                 return AppPolicyResDto.builder()
                         .appPolicyId(newAppPolicy.getAppPolicyId())
@@ -559,9 +559,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
         // 알람 전송
         if(newIsWhiteList) {
-            alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_ADD_WHITELIST, null);
+            alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_ADD_WHITELIST);
         } else {
-            alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_WHITELIST, null);
+            alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_WHITELIST);
         }
 
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
@@ -589,8 +589,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 알람 전송
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT, null);
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT, null);
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
     }
 
 	@Override
