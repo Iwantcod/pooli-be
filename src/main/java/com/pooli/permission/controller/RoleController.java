@@ -88,11 +88,11 @@ public class RoleController {
     @PatchMapping("/representative")
     public ResponseEntity<RepresentativeRoleTransferResDto> transferRepresentativeRole(
             @AuthenticationPrincipal AuthUserDetails userDetails,
-            @Parameter(description = "변경 대상 사용자 ID", example = "202") @RequestParam Long changeUserId,
+            @Parameter(description = "변경 대상 회선 ID", example = "1002") @RequestParam Long changeLineId,
             HttpServletRequest request,
             HttpServletResponse response) {
         RepresentativeRoleTransferResDto result =
-                roleService.transferRepresentativeRole(userDetails.getUserId(), changeUserId);
+                roleService.transferRepresentativeRole(userDetails.getLineId(), changeLineId);
 
         // 역할 양도 후 현재 사용자 세션의 ROLE_FAMILY_OWNER → ROLE_FAMILY_MEMBER 교체
         List<GrantedAuthority> updatedAuthorities = userDetails.getAuthorities().stream()
