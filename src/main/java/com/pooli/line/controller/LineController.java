@@ -3,6 +3,7 @@ package com.pooli.line.controller;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,7 +47,14 @@ public class LineController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "회선 조회 성공"),
-            @ApiResponse(responseCode = "404", description = "유저 정보를 찾을 수 없음"),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = """
+                        리소스 없음
+                        
+                        - LINE:4401 관련 회선 정보가 존재하지 않습니다
+                        """
+                ),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @GetMapping
@@ -75,10 +83,20 @@ public class LineController {
                         - COMMON:4004 필수 RequestParam 누락
                         """
                 ),
-            @ApiResponse(responseCode = "403", description = "회선 소유 권한 없음"),
-            @ApiResponse(responseCode = "404", description = "유저 정보를 찾을 수 없음"),
+            @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = """
+                        권한 부족
+                        
+                        - COMMON:4302 접근 권한 없음
+                        - COMMON:4303 사용자 권한이 없음
+                        """
+                ),
+            @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
+    @PreAuthorize("@authz.requireUser(authentication)")
     @PatchMapping
     public ResponseEntity<Void> switchLine(
 	    		@AuthenticationPrincipal AuthUserDetails principal,
@@ -109,6 +127,15 @@ public class LineController {
                         - COMMON:4004 필수 RequestParam 누락
                         """
                 ),
+            @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = """
+                        권한 부족
+                        
+                        - COMMON:4302 접근 권한 없음
+                        """
+                ),
             @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
@@ -134,9 +161,16 @@ public class LineController {
                     description = """
                         잘못된 요청
                         
-                        - COMMON:4002 RequestParam 유효성 검증 실패
-                        - COMMON:4003 RequestParam 타입 불일치
-                        - COMMON:4004 필수 RequestParam 누락
+                        - COMMON:4001 요청 DTO 필드 유효성 검증 실패
+                        """
+                ),
+            @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = """
+                        권한 부족
+                        
+                        - COMMON:4302 접근 권한 없음
                         """
                 ),
             @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
