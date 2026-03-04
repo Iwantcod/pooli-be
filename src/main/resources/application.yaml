@@ -15,6 +15,7 @@ spring:
     enabled: ${FLYWAY_ENABLED}
     locations: classpath:db/migration
     baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE}
+    out-of-order: true
   security:
     user:
       name: ${SPRING_SECURITY_USER}

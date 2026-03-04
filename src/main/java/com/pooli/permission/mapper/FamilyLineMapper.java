@@ -1,6 +1,8 @@
 package com.pooli.permission.mapper;
 
 import com.pooli.family.domain.entity.FamilyLine;
+
+import java.util.List;
 import java.util.Optional;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -16,4 +18,7 @@ public interface FamilyLineMapper {
 
     // 역할 변경 (OWNER <-> MEMBER)
     void updateRole(FamilyLine familyLine);
+
+    // '특정 회선이 속한 가족 그룹'에 속한 모든 회선 식별자 조회
+    List<Long> findAllFamilyIdByLineId(Long lineId);
 }

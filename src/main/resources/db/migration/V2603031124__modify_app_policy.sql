@@ -1,0 +1,3 @@
+-- APP_POLICY 테이블에 '화이트리스트 적용 여부' 컬럼 추가
+
+ALTER TABLE APP_POLICY ADD COLUMN `is_whitelist` BOOLEAN NOT NULL DEFAULT FALSE;

@@ -1,6 +1,7 @@
 package com.pooli.policy.service;
 
 import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.common.dto.PagingResDto;
 import com.pooli.policy.domain.dto.request.*;
 import com.pooli.policy.domain.dto.response.*;
 
@@ -115,15 +116,16 @@ public interface UserPolicyService {
 
     /**
      * 특정 구성원 앱 별 정책 조회
-     * Controller: ResponseEntity<List<AppPolicyResDto>>
+     * Controller: ResponseEntity<PagingResDto<AppPolicyResDto>>
      */
-    List<AppPolicyResDto> getAppPolicies(Long lineId, AuthUserDetails auth);
+    PagingResDto<AppPolicyResDto> getAppPolicies(AppPolicySearchCondReqDto request, AuthUserDetails auth);
 
     /**
      * 특정 구성원 앱별 정책 신규 생성
      * Controller: ResponseEntity<AppPolicyResDto>
      */
-    AppPolicyResDto createAppPolicy(AppPolicyCreateReqDto request, AuthUserDetails auth);
+    @Deprecated
+    AppPolicyResDto createAppPolicy(AppPolicyActiveToggleReqDto request, AuthUserDetails auth);
 
     /**
      * 특정 구성원 앱별 정책의 제한 데이터량(단위: Byte) 수정
@@ -138,10 +140,16 @@ public interface UserPolicyService {
     AppPolicyResDto updateAppSpeedLimit(AppSpeedLimitUpdateReqDto request, AuthUserDetails auth);
 
     /**
-     * 구성원의 특정 앱 데이터 사용 정책 활성화/비활성화 토글 요청
-     * Controller: ResponseEntity<Void>
+     * 구성원의 특정 앱 데이터 사용 정책 활성화(or 신규생성)/비활성화 토글 요청
+     * Controller: ResponseEntity<AppPolicyResDto>
      */
-    void toggleAppPolicyActive(Long appPolicyId, AuthUserDetails auth);
+    AppPolicyResDto toggleAppPolicyActive(AppPolicyActiveToggleReqDto request, AuthUserDetails auth);
+
+    /**
+     * 구성원의 특정 앱 데이터 사용 정책 화이트리스트 적용 여부 토글 요청
+     * Controller: ResponseEntity<AppPolicyResDto>
+     */
+    AppPolicyResDto toggleAppPolicyWhitelist(Long appPolicyId, AuthUserDetails auth);
 
     /**
      * 구성원의 특정 앱 데이터 사용 정책 삭제

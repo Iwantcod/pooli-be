@@ -69,7 +69,7 @@ public class AnswerServiceImpl implements AnswerService {
 
         // 3. 질문 isAnswer 업데이트
         questionMapper.updateQuestionIsAnswer(req.getQuestionId(), true);
-        alarmHistoryService.createAlarm(question.getLineId(), AlarmCode.QUESTION, AlarmType.ANSWER, null);
+        alarmHistoryService.createAlarm(question.getLineId(), AlarmCode.QUESTION, AlarmType.ANSWER);
 
         // 4. 응답 DTO 반환
         return AnswerCreateResDto.builder()
