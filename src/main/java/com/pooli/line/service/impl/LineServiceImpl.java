@@ -37,7 +37,7 @@ public class LineServiceImpl implements LineService {
 	@Override
 	public List<LineSimpleResDto> getLines(Long userId, Long lineId) {
 		
-		List<LineSimpleResDto> list = lineMapper.selectLinesByUserId(userId, lineId);
+		List<LineSimpleResDto> list = lineMapper.selectLinesByUserIdOrderByLineId(userId, lineId);
 		
 		if(list.isEmpty()) {
 			throw new ApplicationException(LineErrorCode.LINE_NOT_FOUND);
@@ -125,6 +125,17 @@ public class LineServiceImpl implements LineService {
 	                      .email(item.getEmail())
 	                      .build())
 	              .toList();
+	}
+
+	@Override
+	public List<LineSimpleResDto> getLinesListByUserId(Long userId) {
+		List<LineSimpleResDto> list = lineMapper.selectLinesByUserId(userId);
+		
+		if(list.isEmpty()) {
+			throw new ApplicationException(LineErrorCode.LINE_NOT_FOUND);
+		}
+		
+		return list;
 	}
 
 

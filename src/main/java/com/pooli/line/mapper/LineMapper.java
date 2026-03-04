@@ -21,7 +21,7 @@ public interface LineMapper {
      */
     Long findOwnerUserIdByLineId(@Param("lineId") Long lineId);
 	
-	List<LineSimpleResDto> selectLinesByUserId(
+	List<LineSimpleResDto> selectLinesByUserIdOrderByLineId(
 	          @Param("userId") Long userId,
 	          @Param("lineId") Long lineId
 	  );
@@ -41,4 +41,8 @@ public interface LineMapper {
 	List<LineUserSummaryResDto> selectLineUserSummaryListByPhoneSuffix(
 	          @Param("phoneSuffix") String phoneSuffix
 	);
+	
+	List<LineSimpleResDto> selectLinesByUserId(
+	          @Param("userId") Long userId
+	  );
 }

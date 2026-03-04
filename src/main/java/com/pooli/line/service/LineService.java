@@ -22,6 +22,7 @@ public interface LineService {
 	
 	Void updateIndividualThreshold(AuthUserDetails principal, UpdateIndividualThresholdReqDto request);
 	
-	
 	List<LineUserSummaryResDto> getLinesListByPhone(String phone);
+	
+	List<LineSimpleResDto> getLinesListByUserId(Long userId);
 }

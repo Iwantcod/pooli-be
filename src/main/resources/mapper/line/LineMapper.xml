@@ -14,7 +14,7 @@
     </select>
  
  
-   <select id="selectLinesByUserId"
+   <select id="selectLinesByUserIdOrderByLineId"
           resultType="com.pooli.line.domain.dto.response.LineSimpleResDto">
 	    SELECT
 	        line_id AS lineId,
@@ -66,6 +66,18 @@
 	      AND u.deleted_at IS NULL
 	      AND RIGHT(REPLACE(l.phone, '-', ''), 4) = #{phoneSuffix}
 	    ORDER BY l.line_id ASC
+	</select>
+	
+	<select id="selectLinesByUserId"
+          resultType="com.pooli.line.domain.dto.response.LineSimpleResDto">
+	    SELECT
+	        line_id AS lineId,
+	        phone AS phoneNumber
+	    FROM
+	        line
+	    WHERE
+	        user_id = #{userId}
+	        AND deleted_at IS NULL
 	</select>
  
  

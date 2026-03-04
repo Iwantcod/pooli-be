@@ -52,16 +52,17 @@ public class LineController {
             description = "유저가 가지고 있는 회선들을 조회한다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "회선 조회 성공"),
-            @ApiResponse(
-                    responseCode = "404",
-                    description = """
-                        리소스 없음
-                        
-                        - LINE:4401 관련 회선 정보가 존재하지 않습니다
-                        """
-                ),
-            @ApiResponse(responseCode = "500", description = "서버 오류")
+        @ApiResponse(responseCode = "200", description = "회선 조회 성공"),
+        @ApiResponse(responseCode = "401", description = "인증 실패"),
+        @ApiResponse(
+                responseCode = "404",
+                description = """
+                    리소스 없음
+                    
+                    - LINE:4401 관련 회선 정보가 존재하지 않습니다
+                    """
+            ),
+        @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @GetMapping
     public ResponseEntity<List<LineSimpleResDto>> getLines(
@@ -251,8 +252,54 @@ public class LineController {
     		@NotNull
             @RequestParam(required = true, name = "phone") String phone
     ) {
-
         return ResponseEntity.ok(lineService.getLinesListByPhone(phone));
+    }
+    
+    /**
+     * 
+     * getLinesListByUserId()
+     * - 특정 사용자의 식별자를 통한 전체 회선 검색
+     * 
+     * @param userId
+     * @return
+     */
+    @Operation(
+            summary = "특정 사용자의 전체 회선 검색",
+            description = "사용자 식별자를 통해 해당 사용자의 회선 "
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "임계치 수정 성공"),
+        @ApiResponse(
+                responseCode = "400",
+                description = """
+                    잘못된 요청
+                    
+                    - COMMON:4002 RequestParam 유효성 검증 실패
+                    - COMMON:4003 RequestParam 타입 불일치
+                    - COMMON:4004 필수 RequestParam 누락
+                    """
+            ),
+        @ApiResponse(responseCode = "401", description = "인증 실패"),
+        @ApiResponse(
+                responseCode = "403",
+                description = """
+                    권한 부족
+                    
+                    - COMMON:4301 관리자 권한 필요
+                    """
+            ),
+        @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
+        @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
+    @PreAuthorize("@authz.requireAdmin(authentication)")
+    @GetMapping("/by-user")
+    public ResponseEntity<List<LineSimpleResDto>> getLinesListByUserId(
+    		@Parameter(description = "사용자 식별자", example = "1")
+    		@NotNull
+            @RequestParam(required = true, name = "userId") Long userId
+    ) {
+
+        return ResponseEntity.ok(lineService.getLinesListByUserId(userId));
     }
     
     
