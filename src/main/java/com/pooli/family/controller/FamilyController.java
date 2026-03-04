@@ -42,10 +42,10 @@ public class FamilyController {
     @GetMapping("/members")
     public ResponseEntity<FamilyMembersResDto> getFamilyMembers(
             @Parameter(description = "가족 ID", example = "1")
-            @RequestParam("familyId") Integer familyId,
+            @RequestParam Integer familyId,
 
             @Parameter(description = "회선 ID", example = "10")
-            @RequestParam("lineId") Integer lineId
+            @RequestParam Integer lineId
     ) {
 
         FamilyMembersResDto response = FamilyMembersResDto.builder().build();
@@ -66,7 +66,7 @@ public class FamilyController {
     @GetMapping("/members-simple")
     public ResponseEntity<FamilyMembersSimpleResDto> getFamilyMembers(
             @Parameter(description = "가족 식별자", example = "1")
-            @RequestParam("familyId") Integer familyId
+            @RequestParam Integer familyId
     ) {
 
         FamilyMembersSimpleResDto response = FamilyMembersSimpleResDto.builder().build();

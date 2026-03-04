@@ -12,15 +12,7 @@ import java.util.List;
 @Schema(description = "가족 결합 구성원(단말) 조회 응답 DTO")
 public class FamilyMembersSimpleResDto {
 
-    @Schema(description = "가족 구성원 목록")
-    private List<MemberSimpleDto> members;
-
-    @Getter
-    @Builder
-    @AllArgsConstructor(access = AccessLevel.PRIVATE)
-    @NoArgsConstructor(access = AccessLevel.PRIVATE)
-    @Schema(description = "단일 가족 구성원 정보")
-    public static class MemberSimpleDto {
+   
         @Schema(description = "회선 식별자", example = "10")
         private Long lineId;
 
@@ -32,6 +24,6 @@ public class FamilyMembersSimpleResDto {
 
         @Schema(description = "전화번호", example = "01012345678")
         private String phone;
-    }
+    
 
 }
