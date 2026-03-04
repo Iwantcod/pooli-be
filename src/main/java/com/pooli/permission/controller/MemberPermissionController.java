@@ -51,28 +51,33 @@ public class MemberPermissionController {
         return ResponseEntity.ok(memberPermissionService.getMyPermissions(userDetails.getLineId()));
     }
 
-    @Operation(summary = "가족 전체 구성원 권한 목록 조회", description = "가족관리자 또는 관리자가 familyId를 기준으로 가족 내 전체 구성원의 권한 목록을 한 번에 조회한다.")
+    @Operation(summary = "가족 전체 구성원 권한 목록 조회", description = "가족관리자 또는 관리자가 lineId를 기준으로 가족 내 전체 구성원의 권한 목록을 한 번에 조회한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "400", description = """
                     요청 파라미터 오류
 
-                    - COMMON:4003: familyId 타입이 올바르지 않습니다.
-                    - COMMON:4004: familyId가 누락되었습니다.
+                    - COMMON:4003: lineId 타입이 올바르지 않습니다.
+                    - COMMON:4004: lineId가 누락되었습니다.
                     """),
             @ApiResponse(responseCode = "403", description = """
                     권한 없음
 
                     - COMMON:4302: 접근 권한이 없습니다.
                     """),
+            @ApiResponse(responseCode = "404", description = """
+                    회선 정보 없음
+
+                    - PERMISSION-4401: 대상 회선 정보가 존재하지 않습니다.
+                    """),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
     @PreAuthorize("@authz.requireAdminOrOwner(authentication)")
     @GetMapping("/family")
     public ResponseEntity<MemberPermissionListResDto> getFamilyMemberPermissions(
-            @Parameter(description = "가족 ID", example = "10") @RequestParam Long familyId,
+            @Parameter(description = "회선 ID", example = "1001") @RequestParam Long lineId,
             @AuthenticationPrincipal AuthUserDetails userDetails) {
-        return ResponseEntity.ok(memberPermissionService.getFamilyMemberPermissions(familyId, userDetails));
+        return ResponseEntity.ok(memberPermissionService.getFamilyMemberPermissions(lineId, userDetails));
     }
 
     @Operation(summary = "구성원 권한 목록 조회", description = "가족관리자 또는 관리자가 familyId와 lineId를 기준으로 구성원의 권한 목록을 조회한다.")

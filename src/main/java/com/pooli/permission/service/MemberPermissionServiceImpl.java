@@ -44,7 +44,11 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
     // 가족 전체 구성원 권한 목록 조회
     @Override
     @Transactional(readOnly = true)
-    public MemberPermissionListResDto getFamilyMemberPermissions(Long familyId, AuthUserDetails userDetails) {
+    public MemberPermissionListResDto getFamilyMemberPermissions(Long lineId, AuthUserDetails userDetails) {
+        Long familyId = familyLineMapper.findByLineId(lineId)
+                .orElseThrow(() -> new ApplicationException(PermissionErrorCode.LINE_NOT_FOUND))
+                .getFamilyId();
+
         validateFamilyOwnership(familyId, userDetails);
 
         List<MemberPermissionResDto> permissions = permissionLineMapper.findByFamilyId(familyId);
