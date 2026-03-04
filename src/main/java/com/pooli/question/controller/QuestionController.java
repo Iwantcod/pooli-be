@@ -86,7 +86,7 @@ public class QuestionController {
 				description = """
 						권한 없음
 						
-						 - COMMON:4302 해당 회선에 대한 접근 권한이 없습니다.
+						 - COMMON:4302 접근 권한이 없습니다.
 					"""),
 	    @ApiResponse(responseCode = "404", description = "QUESTION:4042:해당 문의사항이 존재하지 않습니다."),
 		@ApiResponse(responseCode = "500",
@@ -127,7 +127,7 @@ public class QuestionController {
 				description = """
 						권한 없음
 						
-						 - COMMON:4302 해당 회선에 대한 접근 권한이 없습니다.
+						 - COMMON:4302 접근 권한이 없습니다.
 					"""),
 	    @ApiResponse(responseCode = "404", description = "문의사항 정보가 존재하지 않음"),
 	    @ApiResponse(responseCode = "500", description = "서버 오류"),
@@ -182,7 +182,7 @@ public class QuestionController {
 			@ApiResponse(responseCode = "500", description = "서버 오류"),
 
 	})
-	@PreAuthorize("hasRole('ADMIN')")
+	@PreAuthorize("@authz.requireAdmin(authentication)")
 	@GetMapping("/admins")
 	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestionAdmin(
 			@Parameter(description = "카테고리 id들", example = "[1, 2, 3]")
@@ -223,7 +223,7 @@ public class QuestionController {
 				description = """
 					권한 없음
 					
-					 - COMMON:4302 해당 회선에 대한 접근 권한이 없습니다.
+					 - COMMON:4302 접근 권한이 없습니다.
 				"""),
 	    @ApiResponse(responseCode = "404", description = "문의사항 상세 정보가 존재하지 않음"),
 	    @ApiResponse(responseCode = "500", description = "서버 오류"),
