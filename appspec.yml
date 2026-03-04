@@ -1,0 +1,24 @@
+version: 0.0
+os: linux
+
+files:
+  - source: docker-compose.yml
+    destination: /srv/pooli
+  - source: deploy
+    destination: /srv/pooli/deploy
+
+hooks:
+  BeforeInstall:
+    - location: deploy/scripts/01_prepare.sh
+      timeout: 300
+      runas: root
+
+  ApplicationStart:
+    - location: deploy/scripts/02_start.sh
+      timeout: 900
+      runas: root
+
+  ValidateService:
+    - location: deploy/scripts/03_validate.sh
+      timeout: 300
+      runas: root

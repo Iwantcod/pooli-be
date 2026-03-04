@@ -1,5 +1,6 @@
 package com.pooli.family.controller;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.family.domain.dto.request.CreateSharedPoolContributionReqDto;
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
 import com.pooli.family.domain.dto.response.*;
@@ -11,6 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "Shared Pool", description = "가족 공유데이터 관련 API")
@@ -155,9 +157,10 @@ public class FamilySharedPoolsController {
     public ResponseEntity<Void> updateSharedDataLimit(
             @Parameter(description = "가족 식별자", example = "1")
             @RequestParam("familyId") Long familyId,
-            @RequestBody UpdateSharedDataThresholdReqDto request
+            @RequestBody UpdateSharedDataThresholdReqDto request,
+            @AuthenticationPrincipal AuthUserDetails userDetails
     ) {
-        familySharedPoolsService.updateSharedDataThreshold(familyId, request);
+        familySharedPoolsService.updateSharedDataThreshold(familyId, request, userDetails.getUserId());
         return ResponseEntity.ok().build();
     }
 }

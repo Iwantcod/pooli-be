@@ -38,4 +38,7 @@ public interface FamilySharedPoolMapper {
 
     // GET /api/shared-pools/detail 용: 해당 lineId의 공유풀 데이터 사용 제한량 조회
     Long selectSharedDataLimit(@Param("lineId") Long lineId);
+
+    // PATCH /api/shared-pools/limit 검증용: 해당 userId가 familyId의 대표자(OWNER)인지 확인
+    int countFamilyOwner(@Param("familyId") Long familyId, @Param("userId") Long userId);
 }

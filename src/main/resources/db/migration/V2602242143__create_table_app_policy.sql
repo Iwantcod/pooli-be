@@ -12,5 +12,5 @@ CREATE TABLE `APP_POLICY` (
     `updated_at`    	DATETIME(6)	NULL,
     PRIMARY KEY (app_policy_id),
     FOREIGN KEY (line_id) REFERENCES LINE (line_id),
-    FOREIGN KEY (application_id) REFERENCES Application (application_id)
+    FOREIGN KEY (application_id) REFERENCES APPLICATION (application_id)
 );

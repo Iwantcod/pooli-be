@@ -14,9 +14,9 @@ import lombok.NoArgsConstructor;
 @Schema(description = "가족관리자 역할 양도 응답 DTO")
 public class RepresentativeRoleTransferResDto {
 
-    @Schema(description = "현재 대표 사용자 ID", example = "101")
-    private Long currentUserId;
+    @Schema(description = "기존 대표 사용자 ID", example = "101")
+    private Long currentOwnerUserId;
 
-    @Schema(description = "변경 대상 사용자 ID", example = "202")
-    private Long changeUserId;
+    @Schema(description = "새 대표 사용자 ID", example = "202")
+    private Long changeOwnerUserId;
 }

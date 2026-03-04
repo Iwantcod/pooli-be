@@ -2,6 +2,7 @@ package com.pooli.family.service;
 
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.family.exception.SharedPoolErrorCode;
 import com.pooli.family.domain.dto.request.CreateSharedPoolContributionReqDto;
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
 import com.pooli.family.domain.dto.response.*;
@@ -21,7 +22,7 @@ public class FamilySharedPoolsService {
         SharedPoolDomain domain = sharedPoolMapper.selectMySharedPoolStatus(lineId);
         
         if (domain == null) {
-            throw new ApplicationException(CommonErrorCode.NOT_FOUND);
+            throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
         return SharedPoolMyStatusResDto.builder()
@@ -34,7 +35,7 @@ public class FamilySharedPoolsService {
         SharedPoolDomain domain = sharedPoolMapper.selectFamilySharedPool(familyId);
 
         if (domain == null) {
-            throw new ApplicationException(CommonErrorCode.NOT_FOUND);
+            throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
         return FamilySharedPoolResDto.builder()
@@ -56,16 +57,16 @@ public class FamilySharedPoolsService {
         // 검증 1: 해당 lineId가 familyId의 구성원인지 확인
         int memberCount = sharedPoolMapper.countFamilyLineMembership(Long.valueOf(familyId), Long.valueOf(lineId));
         if (memberCount == 0) {
-            throw new ApplicationException(CommonErrorCode.INVALID_REQUEST, "해당 회선은 이 가족의 구성원이 아닙니다.");
+            throw new ApplicationException(SharedPoolErrorCode.NOT_FAMILY_MEMBER);
         }
 
         // 검증 3: 잔여 데이터가 충전량보다 충분한지 확인
         Long remainingData = sharedPoolMapper.selectRemainingData(Long.valueOf(lineId));
         if (remainingData == null) {
-            throw new ApplicationException(CommonErrorCode.NOT_FOUND, "회선 정보를 찾을 수 없습니다.");
+            throw new ApplicationException(SharedPoolErrorCode.LINE_NOT_FOUND);
         }
         if (remainingData < amount) {
-            throw new ApplicationException(CommonErrorCode.INVALID_REQUEST, "잔여 데이터가 부족합니다.");
+            throw new ApplicationException(SharedPoolErrorCode.INSUFFICIENT_DATA);
         }
 
         // 1. 개인 데이터 잔여량 차감
@@ -82,7 +83,7 @@ public class FamilySharedPoolsService {
         SharedPoolDomain domain = sharedPoolMapper.selectSharedPoolDetail(familyId, lineId);
 
         if (domain == null) {
-            throw new ApplicationException(CommonErrorCode.NOT_FOUND);
+            throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
         // 정책으로 제한된 공유풀 데이터 한도 조회 (SHARED_LIMIT 테이블)
@@ -108,7 +109,7 @@ public class FamilySharedPoolsService {
         SharedPoolDomain domain = sharedPoolMapper.selectSharedPoolMain(familyId);
 
         if (domain == null) {
-            throw new ApplicationException(CommonErrorCode.NOT_FOUND);
+            throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
         return SharedPoolMainResDto.builder()
@@ -123,7 +124,7 @@ public class FamilySharedPoolsService {
         SharedPoolDomain domain = sharedPoolMapper.selectSharedDataThreshold(familyId);
 
         if (domain == null) {
-            throw new ApplicationException(CommonErrorCode.NOT_FOUND);
+            throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
         return SharedDataThresholdResDto.builder()
@@ -132,8 +133,14 @@ public class FamilySharedPoolsService {
                 .build();
     }
 
-    public void updateSharedDataThreshold(Long familyId, UpdateSharedDataThresholdReqDto request) {
-        // 권한 검증 등은 추후 추가 가능
+    public void updateSharedDataThreshold(Long familyId, UpdateSharedDataThresholdReqDto request, Long userId) {
+        // 권한 검증: 요청한 사용자가 해당 가족의 대표자(OWNER)인지 확인
+        int ownerCount = sharedPoolMapper.countFamilyOwner(familyId, userId);
+        if (ownerCount == 0) {
+            throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
+        }
+
+        // 권한 확인 후 임계치 수정 진행
         sharedPoolMapper.updateSharedDataThreshold(familyId, request.getNewFamilyThreshold());
     }
 }

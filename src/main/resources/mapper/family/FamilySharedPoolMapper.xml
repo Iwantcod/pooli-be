@@ -139,4 +139,14 @@
           AND deleted_at IS NULL
     </select>
 
+    <!-- PATCH /api/shared-pools/limit 검증용: 대표자(OWNER) 확인 -->
+    <select id="countFamilyOwner" resultType="int">
+        SELECT COUNT(*)
+        FROM FAMILY_LINE fl
+        JOIN LINE l ON fl.line_id = l.line_id
+        WHERE fl.family_id = #{familyId}
+          AND l.user_id = #{userId}
+          AND fl.role = 'OWNER'
+    </select>
+
 </mapper>
