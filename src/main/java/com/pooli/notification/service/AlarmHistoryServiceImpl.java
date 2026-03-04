@@ -35,7 +35,9 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
             AlarmType alarmType
     ) {
 
+
         Map<String, String> values = new HashMap<>();
+
 
         // AlarmType의 이름을 문자열로 넣어 나중에 JSON 파싱이 쉽도록 합니다.
         values.put("type", alarmType.name());
