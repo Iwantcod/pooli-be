@@ -30,15 +30,12 @@ public interface FamilySharedPoolMapper {
     // PATCH /api/shared-pools/limit 용
     void updateSharedDataThreshold(@Param("familyId") Long familyId, @Param("newThreshold") Long newThreshold);
 
-    // POST /api/shared-pools 검증용: 해당 lineId가 familyId의 구성원인지 확인
-    int countFamilyLineMembership(@Param("familyId") Long familyId, @Param("lineId") Long lineId);
-
     // POST /api/shared-pools 검증용: 해당 lineId의 잔여 데이터량 조회
     Long selectRemainingData(@Param("lineId") Long lineId);
 
     // GET /api/shared-pools/detail 용: 해당 lineId의 공유풀 데이터 사용 제한량 조회
     Long selectSharedDataLimit(@Param("lineId") Long lineId);
 
-    // PATCH /api/shared-pools/limit 검증용: 해당 userId가 familyId의 대표자(OWNER)인지 확인
-    int countFamilyOwner(@Param("familyId") Long familyId, @Param("userId") Long userId);
+    // 세션의 lineId로 familyId를 조회
+    Long selectFamilyIdByLineId(@Param("lineId") Long lineId);
 }

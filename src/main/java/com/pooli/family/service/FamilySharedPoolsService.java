@@ -1,9 +1,8 @@
 package com.pooli.family.service;
 
 import com.pooli.common.exception.ApplicationException;
-import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.family.exception.SharedPoolErrorCode;
-import com.pooli.family.domain.dto.request.CreateSharedPoolContributionReqDto;
+
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
 import com.pooli.family.domain.dto.response.*;
 import com.pooli.family.domain.entity.SharedPoolDomain;
@@ -17,6 +16,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class FamilySharedPoolsService {
 
     private final FamilySharedPoolMapper sharedPoolMapper;
+
+    // 세션의 lineId로 familyId를 DB에서 조회하는 헬퍼 메서드
+    public Long getFamilyIdByLineId(Long lineId) {
+        Long familyId = sharedPoolMapper.selectFamilyIdByLineId(lineId);
+        if (familyId == null) {
+            throw new ApplicationException(SharedPoolErrorCode.NOT_FAMILY_MEMBER);
+        }
+        return familyId;
+    }
 
     public SharedPoolMyStatusResDto getMySharedPoolStatus(Long lineId) {
         SharedPoolDomain domain = sharedPoolMapper.selectMySharedPoolStatus(lineId);
@@ -49,19 +57,10 @@ public class FamilySharedPoolsService {
 
     // 트랜잭션 필수: 여러 DB UPDATE 작업을 묶음
     @Transactional
-    public void contributeToSharedPool(CreateSharedPoolContributionReqDto request) {
-        Long amount = request.getAmount();
-        Integer lineId = request.getLineId();
-        Integer familyId = request.getFamilyId();
+    public void contributeToSharedPool(Long lineId, Long familyId, Long amount) {
 
-        // 검증 1: 해당 lineId가 familyId의 구성원인지 확인
-        int memberCount = sharedPoolMapper.countFamilyLineMembership(Long.valueOf(familyId), Long.valueOf(lineId));
-        if (memberCount == 0) {
-            throw new ApplicationException(SharedPoolErrorCode.NOT_FAMILY_MEMBER);
-        }
-
-        // 검증 3: 잔여 데이터가 충전량보다 충분한지 확인
-        Long remainingData = sharedPoolMapper.selectRemainingData(Long.valueOf(lineId));
+        // 검증: 잔여 데이터가 충전량보다 충분한지 확인
+        Long remainingData = sharedPoolMapper.selectRemainingData(lineId);
         if (remainingData == null) {
             throw new ApplicationException(SharedPoolErrorCode.LINE_NOT_FOUND);
         }
@@ -70,13 +69,13 @@ public class FamilySharedPoolsService {
         }
 
         // 1. 개인 데이터 잔여량 차감
-        sharedPoolMapper.updateLineRemainingData(Long.valueOf(lineId), amount);
+        sharedPoolMapper.updateLineRemainingData(lineId, amount);
 
         // 2. 가족 공유풀 총량 및 잔여량 증가
-        sharedPoolMapper.updateFamilyPoolData(Long.valueOf(familyId), amount);
+        sharedPoolMapper.updateFamilyPoolData(familyId, amount);
 
         // 3. 충전 이력 기록 (당월 데이터 통합을 위해 DUPLICATE 처리됨)
-        sharedPoolMapper.insertContribution(Long.valueOf(familyId), Long.valueOf(lineId), amount);
+        sharedPoolMapper.insertContribution(familyId, lineId, amount);
     }
 
     public SharedPoolDetailResDto getSharedPoolDetail(Long familyId, Long lineId) {
@@ -133,14 +132,7 @@ public class FamilySharedPoolsService {
                 .build();
     }
 
-    public void updateSharedDataThreshold(Long familyId, UpdateSharedDataThresholdReqDto request, Long userId) {
-        // 권한 검증: 요청한 사용자가 해당 가족의 대표자(OWNER)인지 확인
-        int ownerCount = sharedPoolMapper.countFamilyOwner(familyId, userId);
-        if (ownerCount == 0) {
-            throw new ApplicationException(CommonErrorCode.FAMILY_REPRESENTATIVE_FORBIDDEN);
-        }
-
-        // 권한 확인 후 임계치 수정 진행
+    public void updateSharedDataThreshold(Long familyId, UpdateSharedDataThresholdReqDto request) {
         sharedPoolMapper.updateSharedDataThreshold(familyId, request.getNewFamilyThreshold());
     }
 }
