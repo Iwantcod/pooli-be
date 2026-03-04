@@ -24,4 +24,8 @@ public interface AlarmHistoryService {
 
     UnreadCountsResDto getUnreadCounts(Long lineId);
 
+    NotiSendResDto readOne(Long alarmHistoryId, Long lineId);
+
+    UnreadCountsResDto readAll(Long lineId);
+
 }

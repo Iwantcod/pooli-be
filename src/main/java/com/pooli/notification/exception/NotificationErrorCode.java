@@ -35,6 +35,12 @@ public enum NotificationErrorCode implements ErrorCode {
             "알림 데이터 JSON 변환에 실패했습니다."
     ),
 
+    ALARM_HISTORY_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "NOTI:4402",
+            "알림 내역이 존재하지 않습니다."
+    ),
+
     NOTIFICATION_SAVE_FAILED(
             HttpStatus.INTERNAL_SERVER_ERROR,
             "NOTI:5002",
