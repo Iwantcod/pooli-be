@@ -53,6 +53,14 @@ public class DataController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * getMonthlyDataUsage
+     * - yearMonth 포함 근 3개월의 데이터 사용량 추이 조회
+     * 
+     * @param lineId : 조회 대상 회선 식별자
+     * @param yearMonth : 조회 기준 년,월 정보
+     * @return
+     */
     @Operation(
             summary = "3개월 간 데이터 사용량 추이 조회",
             description = "특정 회선의 특정 월 기준 최근 3개월(해당 월 포함) 데이터 사용량 및 평균 사용량을 조회한다."
@@ -93,6 +101,15 @@ public class DataController {
         return ResponseEntity.ok(dataService.getMonthlyDataUsage(lineId , yearMonth));
     }
 
+    /**
+     * getAppDataUsage()
+     * - 회선의 yearMonth 월 앱 서비스별 데이터 사용량 조회
+     * 
+     * @param principal : 로그인 세션 정보
+     * @param lineId : 조회 대상 회선 식별자
+     * @param yearMonth : 조회 기준 년,월 정보
+     * @return
+     */
     @Operation(
             summary = "기준 월 앱 서비스별 데이터 사용량 조회",
             description = "특정 회선의 당월 앱 서비스별 데이터 사용량 및 총 사용량을 조회한다."
@@ -135,6 +152,13 @@ public class DataController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * getDataSummary()
+     * - 특정 회선의 개인 데이터 잔량, 소속 가족의 공유 데이터 잔량, 사용자 정보 등의 요약 정보 조회
+     * 
+     * @param lineId : 조회 대상 회선 식별자
+     * @return
+     */
     @Operation(
             summary = "공유 및 개인 데이터 잔량 조회",
             description = "특정 회선의 공유 데이터 잔량, 개인 데이터 잔량, 사용자 정보 및 요금제 정보를 조회한다."
@@ -172,7 +196,16 @@ public class DataController {
         return ResponseEntity.ok(dataService.getDataSummary(lineId));
     }
     
-    
+    /**
+     * getDataUsage()
+     * - 특정 회선의 yearMonth의 공유 데이터 및 개인 데이터 사용량 집계 기록을 조회
+     * - yearMonth가 당월일 경우 데이터 총량도 함께 조회
+     * 
+     * 
+     * @param lineId : 조회 대상 회선 식별자
+     * @param yearMonth : 조회 기준 년,월 정보
+     * @return
+     */
     @Operation(
             summary = "데이터 사용량 조회",
             description = "특정 회선, 특정 월의 공유 데이터 사용량, 개인 데이터 사용량을 조회한다."
