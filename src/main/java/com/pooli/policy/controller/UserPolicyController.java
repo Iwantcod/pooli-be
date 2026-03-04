@@ -564,37 +564,34 @@ public class UserPolicyController {
             @Parameter(description = "회선 식별자", example = "101")
             @RequestParam Long lineId,
             @Parameter(description = "조회할 페이지 번호", example = "0")
-            @RequestParam Integer pageNumber,
+            @RequestParam(defaultValue = "0") Integer pageNumber,
             @Parameter(description = "페이지 당 크기", example = "10")
-            @RequestParam Integer pageSize
+            @RequestParam(defaultValue = "100") Integer pageSize,
+            @Parameter(description = "앱 이름 검색 키워드", example = "You")
+            @RequestParam(required = false) String keyword,
+            @Parameter(description = "정책 상태 그룹", example = "ALL")
+            @RequestParam(required = false, defaultValue = "ALL") AppPolicySearchCondReqDto.PolicyScope policyScope,
+            @Parameter(description = "데이터 제한 적용 앱만 조회", example = "false")
+            @RequestParam(required = false, defaultValue = "false") boolean dataLimit,
+            @Parameter(description = "속도 제한 적용 앱만 조회", example = "false")
+            @RequestParam(required = false, defaultValue = "false") boolean speedLimit,
+            @Parameter(description = "정렬 기준", example = "ACTIVE")
+            @RequestParam(required = false, defaultValue = "ACTIVE") AppPolicySearchCondReqDto.SortType sortType,
+            @AuthenticationPrincipal AuthUserDetails auth
     ) {
-        List<AppPolicyResDto> response = List.of(
-                AppPolicyResDto.builder()
-                        .appPolicyId(7301L)
-                        .lineId(101L)
-                        .appId(301)
-                        .appName("YouTube")
-                        .isActive(true)
-                        .dailyLimitData(500L)
-                        .build(),
-                AppPolicyResDto.builder()
-                        .appPolicyId(7302L)
-                        .lineId(101L)
-                        .appId(302)
-                        .appName("Instagram")
-                        .isActive(true)
-                        .dailyLimitData(300L)
-                        .build(),
-                AppPolicyResDto.builder()
-                        .appPolicyId(7303L)
-                        .lineId(101L)
-                        .appId(401)
-                        .appName("GameX")
-                        .isActive(false)
-                        .dailyLimitData(0L)
-                        .build()
-        );
-        return ResponseEntity.ok(response);
+        AppPolicySearchCondReqDto request = AppPolicySearchCondReqDto.builder()
+                .lineId(lineId)
+                .pageNumber(pageNumber)
+                .pageSize(pageSize)
+                .keyword(keyword)
+                .policyScope(policyScope)
+                .dataLimit(dataLimit)
+                .speedLimit(speedLimit)
+                .sortType(sortType)
+                .build();
+
+        List<AppPolicyResDto> answer = userPolicyService.getAppPolicies(request, auth);
+        return ResponseEntity.ok(answer);
     }
 
     @Operation(

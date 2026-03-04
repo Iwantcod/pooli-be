@@ -1,10 +1,12 @@
 package com.pooli.policy.mapper;
 
+import com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto;
 import com.pooli.policy.domain.dto.response.AppPolicyResDto;
 import com.pooli.policy.domain.entity.AppPolicy;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 @Mapper
@@ -20,6 +22,8 @@ public interface AppPolicyMapper {
     Optional<AppPolicyResDto> findDtoExistById(Long appPolicyId);
     // pk 로 Entity 조회
     Optional<AppPolicy> findEntityExistById(Long appPolicyId);
+    // 동적 조건 기반 앱 정책 목록 조회
+    List<AppPolicyResDto> findApplicationsWithPolicy(AppPolicySearchCondReqDto request);
 
 
     /*

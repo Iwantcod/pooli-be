@@ -220,8 +220,38 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     }
 
     @Override
-    public List<AppPolicyResDto> getAppPolicies(Long lineId, AuthUserDetails auth, Integer pageNumber, Integer pageSize) {
-        return List.of();
+    @Transactional(readOnly = true)
+    public List<AppPolicyResDto> getAppPolicies(AppPolicySearchCondReqDto request, AuthUserDetails auth) {
+        if (request.getPageNumber() == null || request.getPageNumber() < 0) {
+            throw new ApplicationException(CommonErrorCode.INVALID_PAGE_NUMBER);
+        }
+        if (request.getPageSize() == null || request.getPageSize() < 0 || request.getPageSize() > 100) {
+            throw new ApplicationException(CommonErrorCode.INVALID_PAGE_SIZE);
+        }
+
+        AppPolicySearchCondReqDto.PolicyScope policyScope = request.getPolicyScope() != null
+                ? request.getPolicyScope()
+                : AppPolicySearchCondReqDto.PolicyScope.ALL;
+        AppPolicySearchCondReqDto.SortType sortType = request.getSortType() != null
+                ? request.getSortType()
+                : AppPolicySearchCondReqDto.SortType.ACTIVE;
+        String keyword = request.getKeyword() != null && request.getKeyword().isBlank()
+                ? null
+                : request.getKeyword();
+
+        AppPolicySearchCondReqDto query = AppPolicySearchCondReqDto.builder()
+                .lineId(request.getLineId())
+                .keyword(keyword)
+                .policyScope(policyScope)
+                .dataLimit(request.isDataLimit())
+                .speedLimit(request.isSpeedLimit())
+                .sortType(sortType)
+                .pageNumber(request.getPageNumber())
+                .pageSize(request.getPageSize())
+                .offset(request.getPageNumber() * request.getPageSize())
+                .build();
+        checkIsSameFamilyGroup(query.getLineId(), auth.getLineId());
+        return appPolicyMapper.findApplicationsWithPolicy(query);
     }
 
     @Override
