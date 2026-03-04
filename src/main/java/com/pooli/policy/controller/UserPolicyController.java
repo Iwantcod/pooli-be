@@ -534,8 +534,29 @@ public class UserPolicyController {
     }
 
     @Operation(
-            summary = "특정 구성원 앱 별 정책 조회",
-            description = "사용자 권한 필요. 특정 회선의 앱 단위 정책 목록과 PK를 조회합니다."
+            summary = "특정 구성원 앱 별 정책 동적 필터링 & 정렬 기준 적용 조회",
+            description = """
+                    사용자 권한 필요. 특정 회선(lineId)의 앱 정책 목록을 동적 필터/정렬/페이지네이션으로 조회합니다.
+                    
+                    API URI 예시
+                    - 기본 조회: GET /api/policies/lines/apps?lineId=101
+                    - 키워드 + 정렬: GET /api/policies/lines/apps?lineId=101&keyword=You&sortType=NAME
+                    - 정책 적용 앱만: GET /api/policies/lines/apps?lineId=101&policyScope=APPLIED
+                    - 데이터/속도 제한 필터: GET /api/policies/lines/apps?lineId=101&dataLimit=true&speedLimit=true
+                    - 페이지 조회: GET /api/policies/lines/apps?lineId=101&pageNumber=1&pageSize=20
+                    
+                    응답 필드 매핑 기준
+                    - appId, appName: APPLICATION 테이블 값으로 항상 제공
+                    - appPolicyId, lineId, isActive, dailyLimitData, dailyLimitSpeed, isWhiteList
+                        - APP_POLICY가 존재하지 않는 경우: 해당 필드 모두 null
+                        - APP_POLICY가 존재하지 않는 경우: 해당 필드에 DB 값 반영
+                    
+                    파라미터 참고
+                    - pageNumber 기본값: 0
+                    - pageSize 기본값: 100 (허용 범위: 0~100)
+                    - policyScope(정책 적용 상태) 기본값: ALL
+                    - sortType(정렬 기준) 기본값: ACTIVE(활성화순)
+                    """
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "앱 단위 정책 목록, pk 조회 요청 성공"),
@@ -569,11 +590,11 @@ public class UserPolicyController {
             @RequestParam(defaultValue = "100") Integer pageSize,
             @Parameter(description = "앱 이름 검색 키워드", example = "You")
             @RequestParam(required = false) String keyword,
-            @Parameter(description = "정책 상태 그룹", example = "ALL")
+            @Parameter(description = "정책 상태 필터", example = "ALL")
             @RequestParam(required = false, defaultValue = "ALL") AppPolicySearchCondReqDto.PolicyScope policyScope,
-            @Parameter(description = "데이터 제한 적용 앱만 조회", example = "false")
+            @Parameter(description = "데이터 제한 적용 앱만 조회 여부", example = "false")
             @RequestParam(required = false, defaultValue = "false") boolean dataLimit,
-            @Parameter(description = "속도 제한 적용 앱만 조회", example = "false")
+            @Parameter(description = "속도 제한 적용 앱만 조회 여부", example = "false")
             @RequestParam(required = false, defaultValue = "false") boolean speedLimit,
             @Parameter(description = "정렬 기준", example = "ACTIVE")
             @RequestParam(required = false, defaultValue = "ACTIVE") AppPolicySearchCondReqDto.SortType sortType,
