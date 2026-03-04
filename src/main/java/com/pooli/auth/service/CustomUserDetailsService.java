@@ -16,25 +16,25 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CustomUserDetailsService implements UserDetailsService {
 
-    private final UserMapper userRepository;
+    private final UserMapper userMapper;
 
     @Override
     public UserDetails loadUserByUsername(String email) {
-        User user = userRepository.findByEmail(email);
+        User user = userMapper.findByEmail(email);
         if (user == null) {
             throw new UsernameNotFoundException("User not found");
         }
 
-        List<String> roleNames = userRepository.findRoleNamesByUserId(user.getUserId());
+        List<String> roleNames = userMapper.findRoleNamesByUserId(user.getUserId());
         if (!roleNames.contains("ADMIN") && !roleNames.contains("ROLE_ADMIN")) {
-            String familyRole = userRepository.findFamilyRoleByMainLineUserId(user.getUserId());
+            String familyRole = userMapper.findFamilyRoleByMainLineUserId(user.getUserId());
             if (familyRole != null && !familyRole.isBlank()) {
                 String mappedFamilyRole = "FAMILY_" + familyRole.trim().toUpperCase();
                 roleNames = new java.util.ArrayList<>(roleNames);
                 roleNames.add(mappedFamilyRole);
             }
         }
-        Long mainLineId = userRepository.findMainLineIdByUserId(user.getUserId());
+        Long mainLineId = userMapper.findMainLineIdByUserId(user.getUserId());
         return AuthUserDetails.builder()
             .userId(user.getUserId())
             .userName(user.getUserName())
