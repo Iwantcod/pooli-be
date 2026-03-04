@@ -1,14 +1,14 @@
 package com.pooli.common.exception;
 
-import com.pooli.common.dto.ErrorResDto;
-import com.pooli.common.dto.Violation;
-import jakarta.validation.ConstraintViolationException;
-import lombok.extern.slf4j.Slf4j;
+import java.time.OffsetDateTime;
+import java.util.List;
+
 import org.slf4j.MDC;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.validation.BindException;
@@ -17,14 +17,16 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-import java.time.OffsetDateTime;
-import java.util.List;
+import com.pooli.common.dto.ErrorResDto;
+import com.pooli.common.dto.Violation;
+
+import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @RestControllerAdvice
@@ -266,22 +268,26 @@ public class GlobalExceptionHandler {
     }
 
     // COMMON-4302: @PreAuthorize 인가 실패
-    @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ErrorResDto> handleAccessDeniedException(AccessDeniedException ex) {
-        ErrorResDto body = ErrorResDto.builder()
-                .code(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN.getCode())
-                .message(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN.getMessage())
-                .timestamp(OffsetDateTime.now().toString())
-                .traceId(MDC.get(TRACE_ID_KEY))
-                .build();
-
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
-    }
+//    @ExceptionHandler(AccessDeniedException.class)
+//    public ResponseEntity<ErrorResDto> handleAccessDeniedException(AccessDeniedException ex) {
+//        ErrorResDto body = ErrorResDto.builder()
+//                .code(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN.getCode())
+//                .message(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN.getMessage())
+//                .timestamp(OffsetDateTime.now().toString())
+//                .traceId(MDC.get(TRACE_ID_KEY))
+//                .build();
+//
+//        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+//    }
 
     // COMMON-5000: 최종 fallback
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResDto> handleException(Exception ex) {
         log.error("Unhandled error", ex);
+        
+        if (ex instanceof AccessDeniedException) {
+            throw (org.springframework.security.access.AccessDeniedException) ex;
+        }
 
         ErrorResDto body = ErrorResDto.builder()
                 .code("COMMON:5000")

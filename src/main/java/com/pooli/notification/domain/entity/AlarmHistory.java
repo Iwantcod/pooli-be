@@ -1,9 +1,8 @@
 package com.pooli.notification.domain.entity;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import com.pooli.notification.domain.enums.AlarmCode;
-
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,10 +16,10 @@ import lombok.NoArgsConstructor;
 public class AlarmHistory {
 
 	Long alarm_historyId;
-	Long userId;
+	Long lineId;
 	AlarmCode alarmCode;
 	String value;
-	LocalDate createdAt;
-	LocalDate deletedAt;
-	LocalDate readAt;
+	LocalDateTime  createdAt;
+	LocalDateTime deletedAt;
+	LocalDateTime  readAt;
 }
