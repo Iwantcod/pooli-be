@@ -3,8 +3,8 @@ package com.pooli.notification.domain.dto.response;
 import java.time.LocalDateTime;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.pooli.notification.domain.enums.AlarmCode;
 
+import com.pooli.notification.domain.enums.AlarmCode;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;

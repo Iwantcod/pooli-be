@@ -1,18 +1,8 @@
 package com.pooli.policy.controller;
 
-import com.pooli.auth.service.AuthUserDetails;
-import com.pooli.policy.domain.dto.request.*;
-import com.pooli.policy.domain.dto.response.*;
-import com.pooli.policy.domain.enums.DayOfWeek;
-import com.pooli.policy.service.UserPolicyService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
+
+import com.pooli.policy.domain.dto.request.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -25,16 +15,30 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
+import com.pooli.policy.domain.dto.response.AppPolicyResDto;
+import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
+import com.pooli.policy.domain.dto.response.BlockPolicyResDto;
+import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
+import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
+import com.pooli.policy.service.UserPolicyService;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+
 @Tag(name = "Policy", description = "정책 API")
 @RestController
 @RequestMapping("/api/policies")
+@RequiredArgsConstructor
 public class UserPolicyController {
 
-    private final UserPolicyService userPolicyService;
-
-    public UserPolicyController(UserPolicyService userPolicyService) {
-        this.userPolicyService = userPolicyService;
-    }
+	private final UserPolicyService userPolicyService;
 
     @Operation(
             summary = "백오피스에서 '활성화'한 전체 정책 목록 조회",
@@ -49,32 +53,16 @@ public class UserPolicyController {
                 - COMMON:4300 가족 대표자 권한 없음
                 """
         ),
-        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+        @ApiResponse(
+            responseCode = "500",
+            description = "서버 내부 오류"
+        )
     })
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping
-    public ResponseEntity<List<ActivePolicyResDto>> getActivePolicies() {
-        List<ActivePolicyResDto> response = List.of(
-                ActivePolicyResDto.builder()
-                        .policyId(1001L)
-                        .policyName("야간 사용 차단")
-                        .policyType("BLOCK")
-                        .description("22:00부터 06:00까지 데이터 사용을 차단합니다.")
-                        .build(),
-                ActivePolicyResDto.builder()
-                        .policyId(1002L)
-                        .policyName("일일 데이터 제한")
-                        .policyType("LIMIT")
-                        .description("회선별 일일 데이터 사용량을 제한합니다.")
-                        .build(),
-                ActivePolicyResDto.builder()
-                        .policyId(1003L)
-                        .policyName("게임 앱 제한")
-                        .policyType("APP")
-                        .description("선택한 게임 앱 정책을 제한합니다.")
-                        .build()
-        );
-        return ResponseEntity.ok(response);
+    public ResponseEntity<List<ActivePolicyResDto>> getActivePolicies(  @AuthenticationPrincipal AuthUserDetails auth) {
+
+        return ResponseEntity.ok(userPolicyService.getActivePolicies());
     }
 
     @Operation(
@@ -105,33 +93,12 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/repeat-block")
     public ResponseEntity<List<RepeatBlockPolicyResDto>> getReBlockPolicies(
+    		@AuthenticationPrincipal AuthUserDetails auth,
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
-            @RequestParam Long lineId
+            @RequestParam("lineId") Long lineId
     ) {
 
-        List<RepeatBlockDayResDto> days = List.of(
-                RepeatBlockDayResDto.builder()
-                        .dayOfWeek(DayOfWeek.MON)
-                        .startAt(LocalTime.of(14, 0))
-                        .endAt(LocalTime.of(18, 0))
-                        .build(),
-                RepeatBlockDayResDto.builder()
-                        .dayOfWeek(DayOfWeek.WED)
-                        .startAt(LocalTime.of(10, 0))
-                        .endAt(LocalTime.of(12, 0))
-                        .build()
-        );
-
-        List<RepeatBlockPolicyResDto> response = List.of(
-                RepeatBlockPolicyResDto.builder()
-                        .repeatBlockId(1000L)
-                        .lineId(lineId)
-                        .isActive(false)
-                        .days(days)
-                        .build()
-        );
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(userPolicyService.getRepeatBlockPolicies(lineId, auth));
     }
 
     @Operation(
@@ -174,9 +141,12 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PostMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> createReBlockPolicies(
+
+    		@AuthenticationPrincipal AuthUserDetails auth,
             @RequestBody RepeatBlockPolicyReqDto request
     ) {
-        RepeatBlockPolicyResDto response = RepeatBlockPolicyResDto.builder().build();
+
+        RepeatBlockPolicyResDto response = userPolicyService.createRepeatBlockPolicy(request, auth);
 
         return ResponseEntity.ok(response);
     }
@@ -217,11 +187,12 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> updateReBlockPolicies(
+    		@AuthenticationPrincipal AuthUserDetails auth,
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
-            @RequestParam Long repeatBlockId,
+            @RequestParam("repeatBlockId") Long repeatBlockId,
             @RequestBody RepeatBlockPolicyReqDto request
     ) {
-        RepeatBlockPolicyResDto response = RepeatBlockPolicyResDto.builder().build();
+        RepeatBlockPolicyResDto response = userPolicyService.updateRepeatBlockPolicy(repeatBlockId, request, auth);
 
         return ResponseEntity.ok(response);
     }
@@ -257,11 +228,14 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @DeleteMapping("/lines/repeat-block")
     public ResponseEntity<RepeatBlockPolicyResDto> deleteReBlockPolicies(
+    		@AuthenticationPrincipal AuthUserDetails auth,
             @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
-            @RequestParam Long repeatBlockId
+            @RequestParam("repeatBlockId") Long repeatBlockId
     ) {
 
-        return ResponseEntity.ok().build();
+    	RepeatBlockPolicyResDto response = userPolicyService.deleteRepeatBlockPolicy(repeatBlockId, auth);
+
+        return ResponseEntity.ok(response);
     }
     
     @Operation(
@@ -293,13 +267,12 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> getImBlockPolicies(
+    		@AuthenticationPrincipal AuthUserDetails auth,
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
-            @RequestParam Long lineId
+            @RequestParam("lineId") Long lineId
     ) {
-        ImmediateBlockResDto response = ImmediateBlockResDto.builder()
-                .lineId(lineId)
-                .blockEndAt(LocalDateTime.now())
-                .build();
+
+        ImmediateBlockResDto response = userPolicyService.getImmediateBlockPolicy(lineId, auth);
 
         return ResponseEntity.ok(response);
     }
@@ -339,12 +312,13 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @PatchMapping("/lines/immediate-block")
     public ResponseEntity<ImmediateBlockResDto> updateImBlockPolicies(
+    		@AuthenticationPrincipal AuthUserDetails auth,
             @Parameter(name = "lineId", description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
+            @RequestParam("lineId") Long lineId,
             @RequestBody ImmediateBlockReqDto request
     ) {
 
-        ImmediateBlockResDto response = ImmediateBlockResDto.builder().build();
+        ImmediateBlockResDto response = userPolicyService.updateImmediateBlockPolicy(lineId, request, auth);
 
         return ResponseEntity.ok(response);
     }
@@ -823,10 +797,11 @@ public class UserPolicyController {
     @PreAuthorize("hasRole('FAMILY_OWNER')")
     @GetMapping("/lines/applied")
     public ResponseEntity<AppliedPolicyResDto> getAppliedPoliciesByLine(
+    		@AuthenticationPrincipal AuthUserDetails auth,
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId
+            @RequestParam("lineId") Long lineId
     ) {
-        return ResponseEntity.ok(AppliedPolicyResDto.builder().build());
+    	return ResponseEntity.ok(userPolicyService.getAppliedPolicies(lineId, auth));
     }
 
     @Operation(

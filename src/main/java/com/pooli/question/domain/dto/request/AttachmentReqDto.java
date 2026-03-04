@@ -16,5 +16,5 @@ public class AttachmentReqDto {
 
 	@NotNull(message = "파일 크기는 필수입니다.")
 	@Schema(description = "파일 크기", example = "204800")
-    private int fileSize;
+    private Integer fileSize;
 }

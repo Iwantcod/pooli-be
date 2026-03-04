@@ -1,16 +1,38 @@
 package com.pooli.policy.service;
 
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.policy.domain.dto.request.*;
-import com.pooli.policy.domain.dto.response.*;
 import com.pooli.policy.domain.entity.AppPolicy;
 import com.pooli.policy.domain.entity.LineLimit;
+import com.pooli.policy.domain.dto.request.AppDataLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.AppSpeedLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.ImmediateBlockReqDto;
+import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
+import com.pooli.policy.domain.dto.request.RepeatBlockDayReqDto;
+import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
+import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
+import com.pooli.policy.domain.dto.response.AppPolicyResDto;
+import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
+import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
+import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockDayResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
 import com.pooli.policy.exception.PolicyErrorCode;
 import com.pooli.policy.mapper.AppPolicyMapper;
 import com.pooli.policy.mapper.LineLimitMapper;
+import com.pooli.policy.mapper.ImmediateBlockMapper;
+import com.pooli.policy.mapper.PolicyBackOfficeMapper;
+import com.pooli.policy.mapper.RepeatBlockDayMapper;
+import com.pooli.policy.mapper.RepeatBlockMapper;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,40 +49,135 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     private final LineLimitMapper lineLimitMapper;
     private final AppPolicyMapper appPolicyMapper;
 
-    @Override
-    public List<ActivePolicyResDto> getActivePolicies() {
-        return List.of();
-    }
+    private final PolicyBackOfficeMapper policyBackOfficeMapper;
+    private final RepeatBlockMapper repeatBlockMapper;
+    private final RepeatBlockDayMapper repeatBlockDayMapper;
+    private final ImmediateBlockMapper immediateBlockMapper;
 
-    @Override
-    public List<RepeatBlockPolicyResDto> getRepeatBlockPolicies(Long lineId, AuthUserDetails auth) {
-        return List.of();
-    }
+	@Override
+	public List<ActivePolicyResDto> getActivePolicies() {
 
-    @Override
-    public RepeatBlockPolicyResDto createRepeatBlockPolicy(RepeatBlockPolicyReqDto request, AuthUserDetails auth) {
-        return null;
-    }
+		return policyBackOfficeMapper.selectActivePolicies();
+	}
 
-    @Override
-    public RepeatBlockPolicyResDto updateRepeatBlockPolicy(Long repeatBlockId, RepeatBlockPolicyReqDto request, AuthUserDetails auth) {
-        return null;
-    }
+	@Override
+	public List<RepeatBlockPolicyResDto> getRepeatBlockPolicies(Long lineId, AuthUserDetails auth) {
 
-    @Override
-    public RepeatBlockPolicyResDto deleteRepeatBlockPolicy(Long repeatBlockId, AuthUserDetails auth) {
-        return null;
-    }
+	    return repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
+	}
 
-    @Override
-    public ImmediateBlockResDto getImmediateBlockPolicy(Long lineId, AuthUserDetails auth) {
-        return null;
-    }
+	@Override
+	@Transactional
+	public RepeatBlockPolicyResDto createRepeatBlockPolicy(RepeatBlockPolicyReqDto request, AuthUserDetails auth) {
 
-    @Override
-    public ImmediateBlockResDto updateImmediateBlockPolicy(Long lineId, ImmediateBlockReqDto request, AuthUserDetails auth) {
-        return null;
-    }
+        Long lineId = auth.getLineId();
+
+
+	    List<RepeatBlockDayReqDto> days = request.getDays();
+
+	    // 반복적 차단 요일/시간 중복 체크
+	    if (days != null && !days.isEmpty()) {
+	        for (RepeatBlockDayReqDto day : days) {
+	            boolean exists = repeatBlockMapper.isDuplicatedRepeatBlocks(
+	            		lineId,
+	                    day.getDayOfWeek(),
+	                    day.getStartAt(),
+	                    day.getEndAt()
+	            );
+	            if (exists) {
+	            	throw new ApplicationException(PolicyErrorCode.BLOCK_POLICY_CONFLICT);
+	            }
+	        }
+
+	    }
+
+	    // 새로운 차단이면 DB 삽입
+	    repeatBlockMapper.insertRepeatBlock(request);
+
+	    if (days != null && !days.isEmpty()) {
+	        repeatBlockDayMapper.insertRepeatBlockDays(request.getRepeatBlockId(), days);
+	    }
+
+	    // DTO 반환
+	    List<RepeatBlockDayResDto> dayResList = days != null
+	            ? days.stream()
+	                  .map(d -> RepeatBlockDayResDto.builder()
+	                          .dayOfWeek(d.getDayOfWeek())
+	                          .startAt(d.getStartAt())
+	                          .endAt(d.getEndAt())
+	                          .build())
+	                  .toList()
+	            : List.of();
+
+	    return RepeatBlockPolicyResDto.builder()
+	            .repeatBlockId(request.getRepeatBlockId())
+	            .lineId(lineId)
+	            .isActive(request.getIsActive())
+	            .days(dayResList)
+	            .build();
+	}
+
+	@Override
+	public RepeatBlockPolicyResDto updateRepeatBlockPolicy(Long repeatBlockId, RepeatBlockPolicyReqDto request,
+			AuthUserDetails auth) {
+		// 반복 차단 요일 및 시간대 정보를 삭제한 후 새로 삽입하기
+		deleteRepeatBlockPolicy(repeatBlockId, auth);
+		return createRepeatBlockPolicy(request, auth);
+	}
+
+	@Override
+	public RepeatBlockPolicyResDto deleteRepeatBlockPolicy(Long repeatBlockId, AuthUserDetails auth) {
+
+	    // 반복적 차단 정보 없음
+		RepeatBlockPolicyResDto exist = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
+
+		if (exist == null) {
+	        throw new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
+	    }
+
+	    // soft delete
+	    repeatBlockMapper.deleteRepeatBlock(repeatBlockId);
+	    repeatBlockDayMapper.deleteRepeatDayBlock(repeatBlockId);
+
+	    return RepeatBlockPolicyResDto.builder()
+	    		.repeatBlockId(repeatBlockId)
+	    		.lineId(auth.getLineId())
+	    		.isActive(false)
+	    		.build();
+	}
+
+	@Override
+	public ImmediateBlockResDto getImmediateBlockPolicy(Long lineId, AuthUserDetails auth) {
+
+	    ImmediateBlockResDto immBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
+
+	    // 즉시 차단 정보가 없을 때
+	    if(immBlock == null) {
+	    	return ImmediateBlockResDto.builder()
+		    		.lineId(lineId)
+		    		.blockEndAt(null)
+		    		.build();
+	    }
+
+	    return ImmediateBlockResDto.builder()
+	    		.lineId(lineId)
+	    		.blockEndAt(immBlock.getBlockEndAt())
+	    		.build();
+
+	}
+
+	@Override
+	public ImmediateBlockResDto updateImmediateBlockPolicy(Long lineId, ImmediateBlockReqDto request,
+			AuthUserDetails auth) {
+
+	    immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
+
+        return ImmediateBlockResDto.builder()
+        		.lineId(lineId)
+        		.blockEndAt(request.getBlockEndAt())
+        		.build();
+
+	}
 
     @Override
     @Transactional(readOnly = true)
@@ -402,11 +519,29 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
     }
 
-    @Override
-    public AppliedPolicyResDto getAppliedPolicies(Long lineId, AuthUserDetails auth) {
-        return null;
-    }
+	@Override
+	public AppliedPolicyResDto getAppliedPolicies(Long lineId, AuthUserDetails auth) {
 
+		// 제한 정책, 앱 정보 받아와서 추가하기(return에도)
+	    List<RepeatBlockPolicyResDto> repeatBlockPolicyList = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
+
+	    ImmediateBlockResDto immediateBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
+
+	    // null 안전하게 처리
+	    ImmediateBlockResDto immBlock = (immediateBlock != null)
+	        ? ImmediateBlockResDto.builder()
+	            .lineId(lineId)
+	            .blockEndAt(immediateBlock.getBlockEndAt())
+	            .build()
+	        : null;
+
+
+	    return AppliedPolicyResDto.builder()
+	            .repeatBlockPolicyList(repeatBlockPolicyList)
+	            .immediateBlock(immBlock)
+	            .build();
+
+	}
     /**
      * 대상 lineId가 API 요청자와 동일한 가족 그룹에 속해있는지 검증
      * @param targetLineId 대상 lineId
@@ -421,4 +556,5 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN);
         }
     }
+
 }

@@ -1,121 +1,95 @@
 package com.pooli.notification.controller;
 
+import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.notification.domain.dto.response.AlarmSettingResDto;
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.service.AlarmSettingService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.springframework.web.bind.annotation.RequestBody;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
 
 import com.pooli.notification.domain.dto.request.AlarmSettingReqDto;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @Tag(name = "notification-setting", description = "알람 설정 관련 API")
 @RestController
-@RequestMapping("/api/notifications")
+@RequiredArgsConstructor
+@RequestMapping("/api/notifications/settings")
 public class AlarmSettingController {
 
-	@Operation(
-		summary = "가족 데이터 알림 설정 변경",
-	    description = "가족 데이터 알림 설정의 ON/OFF를 변경한다."
-	)
-	@ApiResponses({
-        @ApiResponse(responseCode = "200", description = "조회 성공"),
-        @ApiResponse(responseCode = "404", description = "알람 정보가 존재하지 않음"),
-        @ApiResponse(responseCode = "500", description = "서버 오류"),   
-	})
-	@PatchMapping("/family-alarm")
-	public ResponseEntity<AlarmSettingReqDto> updateFamilyAlarm(){
-	 
-	// @AuthenticationPrincipal LoginUser loginUser
+	private final AlarmSettingService alarmSettingService;
 
-		 return ResponseEntity.ok().build();
-	}
-	
 	@Operation(
-		summary = "사용자 데이터 알림 설정 변경",
-	    description = "사용자 데이터 알림 설정의 ON/OFF를 변경한다."
+			summary = "알람 설정 변경",
+			description = "사용자의 알람 설정을 변경합니다."
 	)
 	@ApiResponses({
-        @ApiResponse(responseCode = "200", description = "조회 성공"),
-        @ApiResponse(responseCode = "404", description = "알람 정보가 존재하지 않음"),
-        @ApiResponse(responseCode = "500", description = "서버 오류"),   
+			@ApiResponse(responseCode = "204", description = "알람 설정 변경 성공"),
+			@ApiResponse(responseCode = "400",
+					description = """
+                잘못된 요청
+                - COMMON:4000 요청 형식 불일치
+                - COMMON:4001 요청 DTO 필드 유효성 검증 실패
+                - COMMON:4002 RequestParam 유효성 검증 실패
+				- COMMON:4003 RequestParam 타입 불일치
+				- COMMON:4004 필수 RequestParam 누락
+                """),
+			@ApiResponse(responseCode = "500",
+					description = """
+                서버 오류
+                - COMMON:5000 서버 내부 오류 발생
+                - COMMON:5001 데이터베이스 오류
+                """)
 	})
-	@PatchMapping("/user-alarm")
-	public ResponseEntity<AlarmSettingReqDto> updateUserAlarm(){
-	 
-	// @AuthenticationPrincipal LoginUser loginUser
-	
-		 return ResponseEntity.ok().build();
-	}
-	
-	@Operation(
-		summary = "정책 변경 알림 설정 변경",
-	    description = "정책 변경 알림 설정의 ON/OFF를 변경한다."
-	)
-	@ApiResponses({
-        @ApiResponse(responseCode = "200", description = "조회 성공"),
-        @ApiResponse(responseCode = "404", description = "알람 정보가 존재하지 않음"),
-        @ApiResponse(responseCode = "500", description = "서버 오류"),   
-	})
-	@PatchMapping("/policy-change-alarm")
-	public ResponseEntity<AlarmSettingReqDto> updatepolicyChangeAlarm(){
-	 
-	// @AuthenticationPrincipal LoginUser loginUser
-	
-		 return ResponseEntity.ok().build();
-	}
-	
-	@Operation(
-		summary = "정책 한도 알림 설정 변경",
-	    description = "정책 한도 알림 설정의 ON/OFF를 변경한다."
-	)
-	@ApiResponses({
-        @ApiResponse(responseCode = "200", description = "조회 성공"),
-        @ApiResponse(responseCode = "404", description = "알람 정보가 존재하지 않음"),
-        @ApiResponse(responseCode = "500", description = "서버 오류"),   
-	})
-	@PatchMapping("/policy-limit-alarm")
-	public ResponseEntity<AlarmSettingReqDto> updatePolicyLimitAlarm(){
-	 
-	// @AuthenticationPrincipal LoginUser loginUser
+	@PatchMapping
+	public ResponseEntity<Void> updateAlarm(
+			@AuthenticationPrincipal AuthUserDetails userDetails,
 
-		 return ResponseEntity.ok().build();
-	}
-	
-	@Operation(
-		summary = "권한 변경 알림 설정 변경",
-	    description = "권한 변경 알림 설정의 ON/OFF를 변경한다."
-	)
-	@ApiResponses({
-        @ApiResponse(responseCode = "200", description = "조회 성공"),
-        @ApiResponse(responseCode = "404", description = "알람 정보가 존재하지 않음"),
-        @ApiResponse(responseCode = "500", description = "서버 오류"),   
-	})
-	@PatchMapping("/permission-alarm")
-	public ResponseEntity<AlarmSettingReqDto> updatePermissionAlarm(){
-	 
-	// @AuthenticationPrincipal LoginUser loginUser
-	
-		 return ResponseEntity.ok().build();
-	}
-	
-	@Operation(
-		summary = "문의 사항 알림 설정 변경",
-	    description = "문의 사항 알림 설정의 ON/OFF를 변경한다."
-	)
-	@ApiResponses({
-        @ApiResponse(responseCode = "200", description = "조회 성공"),
-        @ApiResponse(responseCode = "404", description = "알람 정보가 존재하지 않음"),
-        @ApiResponse(responseCode = "500", description = "서버 오류"),   
-	})
-	@PatchMapping("/question-alarm")
-	public ResponseEntity<AlarmSettingReqDto> updateQuestionAlarm(){
-	 
-	// @AuthenticationPrincipal LoginUser loginUser
+			@Parameter(description = "알람 코드", example = "POLICY_CHANGE")
+			@RequestParam AlarmCode code,
 
-	 return ResponseEntity.ok().build();
+			@Valid @RequestBody AlarmSettingReqDto request
+	) {
+		alarmSettingService.updateAlarmSetting(
+				userDetails.getUserId(),
+				code,
+				request.getEnabled()
+		);
+
+		return ResponseEntity.noContent().build();
 	}
+
+
+	@Operation(
+			summary = "알람 설정 조회",
+			description = "사용자의 알람 설정을 조회합니다."
+	)
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "알람 설정 조회 성공"),
+			@ApiResponse(responseCode = "500",
+					description = """
+                서버 오류
+                - COMMON:5000 서버 내부 오류 발생
+                - COMMON:5001 데이터베이스 오류
+                """)
+	})
+	@GetMapping
+	public ResponseEntity<AlarmSettingResDto> getAlarmSetting(
+			@AuthenticationPrincipal AuthUserDetails userDetails
+	) {
+		AlarmSettingResDto response =
+				alarmSettingService.getAlarmSetting(userDetails.getUserId());
+
+		return ResponseEntity.ok(response);
+	}
+
+
 }

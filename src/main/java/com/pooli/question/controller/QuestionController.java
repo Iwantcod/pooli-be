@@ -6,6 +6,7 @@ import java.util.List;
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.question.domain.dto.response.*;
 import com.pooli.question.service.QuestionService;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -33,10 +34,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @RequiredArgsConstructor
 @RequestMapping("/api/questions")
 public class QuestionController {
-
-	/*TodoList :
-			- Session에 따른 Common validation 추가 시 각자 Session에 따른 유효성 검사 추가 필요
-	* */
 
 	private final QuestionService questionService;
 
@@ -89,7 +86,7 @@ public class QuestionController {
 				description = """
 						권한 없음
 						
-						 - COMMON:4302 해당 회선에 대한 접근 권한이 없습니다.
+						 - COMMON:4302 접근 권한이 없습니다.
 					"""),
 	    @ApiResponse(responseCode = "404", description = "QUESTION:4042:해당 문의사항이 존재하지 않습니다."),
 		@ApiResponse(responseCode = "500",
@@ -103,6 +100,7 @@ public class QuestionController {
 	@DeleteMapping
 	public ResponseEntity<Void> deleteQuestion(
 			@AuthenticationPrincipal AuthUserDetails userDetails,
+			@Parameter(description = "문의 id", example = "10")
 			@RequestParam(name="questionId") Long questionId) {
 
 		questionService.deleteQuestion(questionId, userDetails);
@@ -129,7 +127,7 @@ public class QuestionController {
 				description = """
 						권한 없음
 						
-						 - COMMON:4302 해당 회선에 대한 접근 권한이 없습니다.
+						 - COMMON:4302 접근 권한이 없습니다.
 					"""),
 	    @ApiResponse(responseCode = "404", description = "문의사항 정보가 존재하지 않음"),
 	    @ApiResponse(responseCode = "500", description = "서버 오류"),
@@ -138,9 +136,17 @@ public class QuestionController {
 	@GetMapping("/users")
 	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestion(
 			@AuthenticationPrincipal AuthUserDetails userDetails,
+
+			@Parameter(description = "카테고리 id들", example = "[1, 2, 3]")
 			@RequestParam(name="categoryIds", required = false) List<Long> categoryIds,
+
+			@Parameter(description = "답변 여부", example = "true")
 			@RequestParam(name="isAnswered", required = false) Boolean isAnswered,
+
+			@Parameter(description = "페이지 넘버", example = "0")
 			@RequestParam(name="pageNumber") Integer page,
+
+			@Parameter(description = "페이지 사이즈", example = "20")
 			@RequestParam(name="pageSize") Integer size
 	) {
 
@@ -176,14 +182,22 @@ public class QuestionController {
 			@ApiResponse(responseCode = "500", description = "서버 오류"),
 
 	})
-	@PreAuthorize("hasRole('ADMIN')")
+	@PreAuthorize("@authz.requireAdmin(authentication)")
 	@GetMapping("/admins")
 	public ResponseEntity<PagingResDto<QuestionListResDto>> selectQuestionAdmin(
-			@AuthenticationPrincipal AuthUserDetails userDetails,
+			@Parameter(description = "카테고리 id들", example = "[1, 2, 3]")
 			@RequestParam(required = false) List<Long> categoryIds,
+
+			@Parameter(description = "답변 여부", example = "true")
 			@RequestParam(required = false) Boolean isAnswered,
+
+			@Parameter(description = "회선 id", example = "1002")
 			@RequestParam(required = false) Long lineId,
+
+			@Parameter(description = "페이지 넘버", example = "0")
 			@RequestParam Integer pageNumber,
+
+			@Parameter(description = "페이지 사이즈", example = "20")
 			@RequestParam Integer pageSize
 	) {
 		return ResponseEntity.ok(
@@ -209,7 +223,7 @@ public class QuestionController {
 				description = """
 					권한 없음
 					
-					 - COMMON:4302 해당 회선에 대한 접근 권한이 없습니다.
+					 - COMMON:4302 접근 권한이 없습니다.
 				"""),
 	    @ApiResponse(responseCode = "404", description = "문의사항 상세 정보가 존재하지 않음"),
 	    @ApiResponse(responseCode = "500", description = "서버 오류"),
@@ -218,6 +232,8 @@ public class QuestionController {
 	@GetMapping("/details")
 	public ResponseEntity<QuestionResDto> selectDetailQuestion(
 			@AuthenticationPrincipal AuthUserDetails userDetails,
+
+			@Parameter(description = "문의 id", example = "1")
 			@RequestParam(name="questionId") Long questionId
 			) {
 

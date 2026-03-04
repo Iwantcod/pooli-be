@@ -1,6 +1,7 @@
 package com.pooli.question.domain.dto.response;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -36,7 +37,7 @@ public class QuestionResDto {
 	private Boolean isAnswer;
 	
 	@Schema(description = "문의사항 생성 시점", example = "2026-02-23T14:30:00")
-	private LocalDate createdAt;
+	private LocalDateTime createdAt;
 
 	@Schema(description = "문의사항 첨부 파일 URL 리스트")
 	private List<AttachmentResDto> attachments;
