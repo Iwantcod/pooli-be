@@ -1,8 +1,12 @@
 package com.pooli.notification.service;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.pooli.common.dto.PagingResDto;
 import com.pooli.common.exception.ApplicationException;
+import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.notification.domain.dto.request.NotiSendReqDto;
+import com.pooli.notification.domain.dto.response.NotiSendResDto;
+import com.pooli.notification.domain.dto.response.UnreadCountsResDto;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.domain.enums.NotificationTargetType;
@@ -141,6 +145,68 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
                     NotificationErrorCode.NOTIFICATION_SAVE_FAILED
             );
         }
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public PagingResDto<NotiSendResDto> getNotifications(
+            Long userId,
+            Long lineId,
+            Integer page,
+            Integer size,
+            Boolean isRead,
+            AlarmCode code
+    ) {
+
+        if (page == null || page < 0) {
+            throw new ApplicationException(CommonErrorCode.INVALID_PAGE_NUMBER);
+        }
+        if (size == null || size <= 0) {
+            throw new ApplicationException(CommonErrorCode.INVALID_PAGE_SIZE);
+        }
+
+        int offset = page * size;
+
+        List<NotiSendResDto> content =
+                alarmHistoryMapper.findAlarmHistoryPage(
+                        userId,
+                        lineId,
+                        isRead,
+                        code != null ? code.name() : null,
+                        offset,
+                        size
+                );
+
+        Long totalElements =
+                alarmHistoryMapper.countAlarmHistory(
+                        userId,
+                        lineId,
+                        isRead,
+                        code != null ? code.name() : null
+                );
+
+        int totalPages =
+                (int) Math.ceil((double) totalElements / size);
+
+        return PagingResDto.<NotiSendResDto>builder()
+                .content(content)
+                .page(page)
+                .size(size)
+                .totalElements(totalElements)
+                .totalPages(totalPages)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public UnreadCountsResDto getUnreadCounts(Long userId, Long lineId) {
+
+        Long count = alarmHistoryMapper.countUnreadByLineId(userId,lineId);
+
+        return UnreadCountsResDto.builder()
+                .lineId(lineId)
+                .unreadCount(count != null ? count : 0L)
+                .build();
     }
 
 }

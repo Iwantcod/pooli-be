@@ -1,5 +1,6 @@
 package com.pooli.notification.mapper;
 
+import com.pooli.notification.domain.dto.response.NotiSendResDto;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -18,5 +19,26 @@ public interface AlarmHistoryMapper {
             @Param("lineIds") List<Long> lineIds,
             @Param("alarmCode") String alarmCode,
             @Param("value") String value
+    );
+
+    List<NotiSendResDto> findAlarmHistoryPage(
+            @Param("userId") Long userId,
+            @Param("lineId") Long lineId,
+            @Param("isRead") Boolean isRead,
+            @Param("code") String code,
+            @Param("offset") int offset,
+            @Param("size") int size
+    );
+
+    Long countAlarmHistory(
+            @Param("userId") Long userId,
+            @Param("lineId") Long lineId,
+            @Param("isRead") Boolean isRead,
+            @Param("code") String code
+    );
+
+    Long countUnreadByLineId(
+            @Param("userId") Long userId,
+            @Param("lineId") Long lineId
     );
 }

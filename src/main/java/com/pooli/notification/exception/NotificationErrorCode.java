@@ -29,15 +29,9 @@ public enum NotificationErrorCode implements ErrorCode {
             "알림을 보낼 대상이 존재하지 않습니다."
     ),
 
-    JSON_CONVERT_FAILED(
-            HttpStatus.INTERNAL_SERVER_ERROR,
-            "NOTI:5001",
-            "알림 데이터 JSON 변환에 실패했습니다."
-    ),
-
     NOTIFICATION_SAVE_FAILED(
             HttpStatus.INTERNAL_SERVER_ERROR,
-            "NOTI:5002",
+            "NOTI:5001",
             "알림 저장 중 오류가 발생했습니다."
     );
 

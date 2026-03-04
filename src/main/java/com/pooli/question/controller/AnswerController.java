@@ -39,7 +39,7 @@ public class AnswerController {
                 - ANSWER:4001: 이미 답변이 존재합니다
                 """),
             @ApiResponse(responseCode = "403",
-                    description = "COMMON:4302 접근 권한이 없습니다."),
+                    description = "COMMON:4301 관리자 권한이 없습니다."),
             @ApiResponse(responseCode = "500",
                     description = """
                 서버 오류
@@ -47,7 +47,7 @@ public class AnswerController {
                 - COMMON:5001 데이터베이스 오류
                 """)
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @PostMapping
     public ResponseEntity<AnswerCreateResDto> createAnswer(
             @AuthenticationPrincipal AuthUserDetails userDetails,
@@ -69,7 +69,7 @@ public class AnswerController {
             - COMMON:4000 요청 형식 불일치
             """),
             @ApiResponse(responseCode = "403",
-                    description = "COMMON:4302 접근 권한이 없습니다."),
+                    description = "COMMON:4301 관리자 권한이 없습니다."),
             @ApiResponse(responseCode = "404",
                     description = "해당 답변 없음"),
             @ApiResponse(responseCode = "500",
@@ -79,7 +79,7 @@ public class AnswerController {
             - COMMON:5001 데이터베이스 오류
             """)
     })
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@authz.requireAdmin(authentication)")
     @DeleteMapping
     public ResponseEntity<Void> deleteAnswer(
             @Parameter(description = "답변 id", example = "10")
