@@ -3,7 +3,11 @@ package com.pooli.notification.controller;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.notification.domain.enums.AlarmCode;
+import io.swagger.v3.oas.annotations.Parameter;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,7 +17,6 @@ import org.springframework.web.bind.annotation.RestController;
 import com.pooli.common.dto.PagingResDto;
 import com.pooli.notification.domain.dto.response.NotiSendResDto;
 import com.pooli.notification.domain.dto.response.UnreadCountsResDto;
-import com.pooli.notification.domain.enums.AlarmCode;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -35,15 +38,22 @@ public class NotiReadController {
         @ApiResponse(responseCode = "500", description = "서버 오류"),   
 	})
 	@GetMapping
-	public ResponseEntity<PagingResDto<NotiSendResDto>> getNotifications(    
+	public ResponseEntity<PagingResDto<NotiSendResDto>> getNotifications(
+			@AuthenticationPrincipal AuthUserDetails userDetails,
+
+			@Parameter(description = "페이지 넘버", example = "0")
 			@RequestParam(name = "pageNumber") Integer page,
+
+			@Parameter(description = "페이지 사이즈", example = "20")
 	        @RequestParam(name = "pageSize") Integer size,
+
+			@Parameter(description = "읽었는지 여부", example = "true")
 	        @RequestParam(name = "isRead", required = false) Boolean isRead){
 		
 	    NotiSendResDto noti = NotiSendResDto.builder()
         .alarmHistoryId(1L)
         .lineId(2L)
-        .alarmCode(AlarmCode.LIMIT)
+        .alarmCode(AlarmCode.POLICY_LIMIT)
         .value(null)  
         .isRead(isRead != null ? isRead : false)
         .build();

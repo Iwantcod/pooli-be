@@ -6,10 +6,10 @@ import org.springframework.http.HttpStatus;
 public enum PermissionErrorCode implements ErrorCode {
 
     // 400 Bad Request
-    PERMISSION_NAME_BLANK(HttpStatus.BAD_REQUEST, "PERMISSION-4000", "권한 이름은 비어 있을 수 없습니다."),
-    PERMISSION_NAME_TOO_LONG(HttpStatus.BAD_REQUEST, "PERMISSION-4001", "권한 이름은 20자 이하여야 합니다."),
-    PERMISSION_IS_ENABLE_MISSING(HttpStatus.BAD_REQUEST, "PERMISSION-4002", "권한 활성화 값(isEnable)이 누락되었습니다."),
-    ROLE_TRANSFER_REQUEST_INVALID(HttpStatus.BAD_REQUEST, "PERMISSION-4003", "역할 양도 요청 값이 올바르지 않습니다."),
+//    PERMISSION_NAME_BLANK(HttpStatus.BAD_REQUEST, "PERMISSION-4000", "권한 이름은 비어 있을 수 없습니다."),
+//    PERMISSION_NAME_TOO_LONG(HttpStatus.BAD_REQUEST, "PERMISSION-4001", "권한 이름은 20자 이하여야 합니다."),
+//    PERMISSION_IS_ENABLE_MISSING(HttpStatus.BAD_REQUEST, "PERMISSION-4002", "권한 활성화 값(isEnable)이 누락되었습니다."),
+//    ROLE_TRANSFER_REQUEST_INVALID(HttpStatus.BAD_REQUEST, "PERMISSION-4003", "역할 양도 요청 값이 올바르지 않습니다."),
     ROLE_TRANSFER_SELF(HttpStatus.BAD_REQUEST, "PERMISSION-4004", "자기 자신에게 역할을 양도할 수 없습니다."),
 
     // 404 Not Found
