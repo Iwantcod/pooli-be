@@ -46,12 +46,40 @@
           AND p.deleted_at IS NULL
     </select>
 
+    <!-- 가족 전체 구성원 권한 목록 조회 (familyId 기준) -->
+    <!-- CROSS JOIN + LEFT JOIN: PERMISSION_LINE row가 없는 (구성원, 권한) 조합도 반환 (기본 false) -->
+    <select id="findByFamilyId" resultMap="memberPermissionResultMap">
+        SELECT fl.family_id,
+               fl.line_id,
+               p.permission_id,
+               p.permission_title,
+               COALESCE(pl.is_enable, false) AS is_enable,
+               pl.created_at
+        FROM FAMILY_LINE fl
+                 CROSS JOIN PERMISSION p
+                 LEFT JOIN PERMISSION_LINE pl ON pl.line_id = fl.line_id AND pl.permission_id = p.permission_id
+        WHERE fl.family_id = #{familyId}
+          AND p.deleted_at IS NULL
+    </select>
+
     <!-- 구성원 권한 변경 (없으면 INSERT, 있으면 UPDATE) -->
     <insert id="upsert">
         INSERT INTO PERMISSION_LINE (line_id, permission_id, is_enable, created_at, updated_at)
         VALUES (#{lineId}, #{permissionId}, #{isEnable}, NOW(), NOW())
         ON DUPLICATE KEY UPDATE
             is_enable  = #{isEnable},
+            updated_at = NOW()
+    </insert>
+
+    <!-- 구성원 권한 일괄 변경 -->
+    <insert id="bulkUpsert">
+        INSERT INTO PERMISSION_LINE (line_id, permission_id, is_enable, created_at, updated_at)
+        VALUES
+        <foreach collection="items" item="item" separator=",">
+            (#{item.lineId}, #{item.permissionId}, #{item.isEnable}, NOW(), NOW())
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+            is_enable  = VALUES(is_enable),
             updated_at = NOW()
     </insert>
 
