@@ -106,6 +106,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	        repeatBlockDayMapper.insertRepeatBlockDays(request.getRepeatBlockId(), days);
 	    }
 
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.CREATE_REPEAT_BLOCK);
+
 	    // DTO 반환
 	    List<RepeatBlockDayResDto> dayResList = days != null
 	            ? days.stream()
@@ -126,6 +128,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	}
 
 	@Override
+    @Transactional
 	public RepeatBlockPolicyResDto updateRepeatBlockPolicy(Long repeatBlockId, RepeatBlockPolicyReqDto request,
 			AuthUserDetails auth) {
 	    RepeatBlockPolicyResDto exist = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
@@ -138,7 +141,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 		// 반복 차단 요일 및 시간대 정보를 삭제한 후 새로 삽입하기
 		deleteRepeatBlockPolicy(repeatBlockId, auth);
-		return createRepeatBlockPolicy(request, auth);
+		RepeatBlockPolicyResDto updated = createRepeatBlockPolicy(request, auth);
+        alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_REPEAT_BLOCK);
+        return updated;
 	}
 
 	@Override
@@ -155,6 +160,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	    // soft delete
 	    repeatBlockMapper.deleteRepeatBlock(repeatBlockId);
 	    repeatBlockDayMapper.deleteRepeatDayBlock(repeatBlockId);
+        alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.DELETE_REPEAT_BLOCK);
 
 	    return RepeatBlockPolicyResDto.builder()
 	    		.repeatBlockId(repeatBlockId)
@@ -190,6 +196,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	    checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
 	    immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_IMMEDIATE_BLOCK);
 
         return ImmediateBlockResDto.builder()
         		.lineId(lineId)
@@ -300,7 +307,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             if(newSharedLimitActive) {
                 alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
             } else {
-                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
+                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_SHAREDATA_LIMIT);
             }
             return LimitPolicyResDto.builder()
                     .lineLimitId(lineLimit.get().getLimitId())
