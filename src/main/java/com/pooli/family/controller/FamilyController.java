@@ -3,6 +3,7 @@ package com.pooli.family.controller;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.family.domain.dto.request.UpdateVisibilityReqDto;
+import com.pooli.family.domain.dto.response.FamilyMemberSummaryResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 import com.pooli.family.service.FamilyService;
@@ -189,5 +191,45 @@ public class FamilyController {
     	
     	familyService.updateVisibility(request,principal);
         return ResponseEntity.ok().build();
+    }
+    
+    
+    @Operation(
+            summary = "특정 회선 소속 가족 그룹 정보 조회",
+            description = "전화번호를 통해 회선 및 해당 유저에 대한 요약 정보"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "임계치 수정 성공"),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = """
+                        잘못된 요청
+                        
+                        - COMMON:4002 RequestParam 유효성 검증 실패
+                        - COMMON:4003 RequestParam 타입 불일치
+                        - COMMON:4004 필수 RequestParam 누락
+                        """
+                ),
+            @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = """
+                        권한 부족
+                        
+                        - COMMON:4301 관리자 권한 필요
+                        """
+                ),
+            @ApiResponse(responseCode = "404", description = "회선 정보를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
+    @PreAuthorize("@authz.requireAdmin(authentication)")
+    @GetMapping("/members/by-line")
+    public ResponseEntity<FamilyMemberSummaryResDto> getFamilyMembersByLineId(
+    		@Parameter(description = "회선 아이디", example = "1")
+    		@NotNull
+            @RequestParam(required = true, name = "lineId") Long lineId
+    ) {
+
+        return ResponseEntity.ok(familyService.getFamilyMembersByLineId(lineId));
     }
 }

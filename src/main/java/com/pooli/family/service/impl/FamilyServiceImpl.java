@@ -10,6 +10,7 @@ import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.family.domain.dto.request.UpdateVisibilityReqDto;
+import com.pooli.family.domain.dto.response.FamilyMemberSummaryResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 import com.pooli.family.error.FamilyErrorCode;
@@ -83,5 +84,29 @@ public class FamilyServiceImpl implements FamilyService {
 	    
 		return null;
 	}
+
+	@Override
+	  @Transactional(readOnly = true)
+	  public FamilyMemberSummaryResDto getFamilyMembersByLineId(Long lineId) {
+
+	      Integer familyId = familyMapper.selectFamilyIdByLineId(lineId);
+	      if (familyId == null) {
+	          throw new ApplicationException(FamilyErrorCode.FAM_NOT_FOUND);
+	      }
+
+	      List<FamilyMemberSummaryResDto.FamilyMemberSummaryDto> members =
+	          familyMapper.selectFamilyMemberSummaryByFamilyIdAndLineId(familyId, lineId);
+
+	      if (members.isEmpty()) {
+	          throw new ApplicationException(FamilyErrorCode.FAM_NOT_FOUND);
+	      }
+
+	      /* 추후 전화번호 마스킹 처리 예정 */
+	      
+	      return FamilyMemberSummaryResDto.builder()
+	          .familyId(familyId)
+	          .members(members)
+	          .build();
+	  }
 
 }

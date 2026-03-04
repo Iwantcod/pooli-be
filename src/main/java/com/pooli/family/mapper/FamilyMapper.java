@@ -5,6 +5,7 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import com.pooli.family.domain.dto.response.FamilyMemberSummaryResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 
@@ -35,6 +36,17 @@ public interface FamilyMapper {
 	int updateFamilyLineVisibility(
 	    @Param("lineId") Long lineId,
 	    @Param("isPublic") Boolean isPublic
+	);
+	
+		
+	Integer selectFamilyIdByLineId(
+	    @Param("lineId") Long lineId
+	);
+	
+	List<FamilyMemberSummaryResDto.FamilyMemberSummaryDto>
+	    selectFamilyMemberSummaryByFamilyIdAndLineId(
+	        @Param("familyId") Integer familyId,
+	        @Param("lineId") Long lineId
 	);
 
 	
