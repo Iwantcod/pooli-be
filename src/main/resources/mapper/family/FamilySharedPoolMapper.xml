@@ -138,4 +138,11 @@
         WHERE line_id = #{lineId}
     </select>
 
+    <!-- 알람 전송용: 가족의 모든 멤버 lineId 조회 -->
+    <select id="selectLineIdsByFamilyId" resultType="java.lang.Long">
+        SELECT line_id
+        FROM FAMILY_LINE
+        WHERE family_id = #{familyId}
+    </select>
+
 </mapper>
