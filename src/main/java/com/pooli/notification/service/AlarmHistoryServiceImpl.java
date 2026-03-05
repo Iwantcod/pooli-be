@@ -7,6 +7,7 @@ import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.notification.domain.dto.request.NotiSendReqDto;
 import com.pooli.notification.domain.dto.response.NotiSendResDto;
 import com.pooli.notification.domain.dto.response.UnreadCountsResDto;
+import com.pooli.notification.domain.entity.AlarmHistory;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.domain.enums.NotificationTargetType;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.*;
 
@@ -166,15 +168,26 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
         int offset = page * size;
 
-        List<NotiSendResDto> content =
-                alarmHistoryMapper.findAlarmHistoryPage(
-                        userId,
-                        lineId,
-                        isRead,
-                        code != null ? code.name() : null,
-                        offset,
-                        size
-                );
+        List<AlarmHistory> entities = alarmHistoryMapper.findAlarmHistoryPage(
+                userId,
+                lineId,
+                isRead,
+                code != null ? code.name() : null,
+                offset,
+                size
+        );
+
+        List<NotiSendResDto> content = entities.stream()
+                .map(entity -> NotiSendResDto.builder()
+                        .alarmHistoryId(entity.getAlarm_historyId())
+                        .lineId(entity.getLineId())
+                        .alarmCode(entity.getAlarmCode())
+                        .value(parseJson(entity.getValue()))
+                        .isRead(entity.getReadAt() != null)
+                        .createdAt(entity.getCreatedAt())
+                        .build()
+                )
+                .toList();
 
         Long totalElements =
                 alarmHistoryMapper.countAlarmHistory(
@@ -241,4 +254,15 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
                 .build();
     }
 
+    private JsonNode parseJson(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        try {
+            return objectMapper.readTree(value);
+        } catch (JsonProcessingException e) {
+            throw new ApplicationException(NotificationErrorCode.INVALID_NOTIFICATION_JSON);
+        }
+    }
 }
