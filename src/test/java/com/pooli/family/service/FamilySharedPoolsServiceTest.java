@@ -6,12 +6,20 @@ import com.pooli.family.domain.dto.response.*;
 import com.pooli.family.domain.entity.SharedPoolDomain;
 import com.pooli.family.exception.SharedPoolErrorCode;
 import com.pooli.family.repository.FamilySharedPoolMapper;
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.service.AlarmHistoryService;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,6 +30,9 @@ class FamilySharedPoolsServiceTest {
 
     @Mock
     private FamilySharedPoolMapper sharedPoolMapper;
+
+    @Mock
+    private AlarmHistoryService alarmHistoryService;
 
     @InjectMocks
     private FamilySharedPoolsService service;
@@ -117,15 +128,20 @@ class FamilySharedPoolsServiceTest {
     // ========== 4. contributeToSharedPool ==========
 
     @Test
-    @DisplayName("contributeToSharedPool - 정상: 잔량 충분 시 3단 트랜잭션 수행")
+    @DisplayName("contributeToSharedPool - 정상: 잔량 충분 시 3단 트랜잭션 수행 + 알람 전송")
     void contributeToSharedPool_success() {
         when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
+        when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L, 201L));
 
         service.contributeToSharedPool(101L, 1L, 500_000L);
 
         verify(sharedPoolMapper).updateLineRemainingData(101L, 500_000L);
         verify(sharedPoolMapper).updateFamilyPoolData(1L, 500_000L);
         verify(sharedPoolMapper).insertContribution(1L, 101L, 500_000L);
+        // 알람: 본인(101) 제외, user2(201)에게만 전송
+        verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY),
+                eq(AlarmType.SHARED_POOL_CONTRIBUTION), anyMap());
+        verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any(), anyMap());
     }
 
     @Test
@@ -272,13 +288,62 @@ class FamilySharedPoolsServiceTest {
     // ========== 8. updateSharedDataThreshold ==========
 
     @Test
-    @DisplayName("updateSharedDataThreshold - 정상: Mapper 호출 검증")
+    @DisplayName("updateSharedDataThreshold - 정상: Mapper 호출 + 알람 전송 검증")
     void updateSharedDataThreshold_success() {
         UpdateSharedDataThresholdReqDto request = new UpdateSharedDataThresholdReqDto();
         request.setNewFamilyThreshold(100_000L);
+        when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L, 201L));
 
         service.updateSharedDataThreshold(1L, request);
 
         verify(sharedPoolMapper).updateSharedDataThreshold(1L, 100_000L);
+        // 알람: 가족 전체(101, 201) 모두에게 전송
+        verify(alarmHistoryService).createAlarm(eq(101L), eq(AlarmCode.FAMILY),
+                eq(AlarmType.SHARED_POOL_THRESHOLD_CHANGE), anyMap());
+        verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY),
+                eq(AlarmType.SHARED_POOL_THRESHOLD_CHANGE), anyMap());
+    }
+
+    // ========== 9. 알람 전송 추가 검증 ==========
+
+    @Nested
+    @DisplayName("알람 전송 검증")
+    class AlarmTest {
+
+        @Test
+        @DisplayName("데이터 담기 - 가족이 본인만 있으면 알람 미전송")
+        void contributeAlarm_noOtherMembers() {
+            when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
+            when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L));
+
+            service.contributeToSharedPool(101L, 1L, 500_000L);
+
+            verify(alarmHistoryService, never()).createAlarm(anyLong(), any(), any(), anyMap());
+        }
+
+        @Test
+        @DisplayName("데이터 담기 - 가족 멤버 3명이면 본인 제외 2명에게 알람")
+        void contributeAlarm_threeMembers() {
+            when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
+            when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L, 201L, 301L));
+
+            service.contributeToSharedPool(101L, 1L, 500_000L);
+
+            verify(alarmHistoryService, times(2)).createAlarm(anyLong(), eq(AlarmCode.FAMILY),
+                    eq(AlarmType.SHARED_POOL_CONTRIBUTION), anyMap());
+            verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any(), anyMap());
+        }
+
+        @Test
+        @DisplayName("임계치 수정 - 가족 멤버가 없으면 알람 미전송")
+        void thresholdAlarm_noMembers() {
+            UpdateSharedDataThresholdReqDto request = new UpdateSharedDataThresholdReqDto();
+            request.setNewFamilyThreshold(50_000L);
+            when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(Collections.emptyList());
+
+            service.updateSharedDataThreshold(1L, request);
+
+            verify(alarmHistoryService, never()).createAlarm(anyLong(), any(), any(), anyMap());
+        }
     }
 }

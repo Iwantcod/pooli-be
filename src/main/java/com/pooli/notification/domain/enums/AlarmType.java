@@ -45,4 +45,8 @@ public enum AlarmType {
 
     // OTHERS
     NOTIFICATION,
+
+    // FAMILY (공유풀)
+    SHARED_POOL_CONTRIBUTION,
+    SHARED_POOL_THRESHOLD_CHANGE,
 }
