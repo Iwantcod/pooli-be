@@ -40,12 +40,6 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
     @Override
     public AdminPolicyResDto createPolicy(AdminPolicyReqDto request) {
         adminPolicyMapper.insertPolicy(request);
-        sendOwnerNotification(
-                AlarmType.ACTIVATE_POLICY,
-                request.getPolicyId(),
-                null,
-                request.getPolicyName()
-        );
 
         return AdminPolicyResDto.builder()
                 .policyId(request.getPolicyId())
@@ -64,12 +58,6 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
         }
 
         adminPolicyMapper.updatePolicy(policyId, request);
-        sendOwnerNotification(
-                AlarmType.ACTIVATE_POLICY,
-                policyId,
-                request.getPolicyCategoryId(),
-                request.getPolicyName()
-        );
 
         return AdminPolicyResDto.builder()
                 .policyId(policyId)
@@ -88,12 +76,6 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
         }
 
         adminPolicyMapper.deletePolicy(policyId);
-        sendOwnerNotification(
-                AlarmType.DEACTIVATE_POLICY,
-                policyId,
-                null,
-                existing.getPolicyName()
-        );
 
         return AdminPolicyResDto.builder()
                 .policyId(policyId)
@@ -132,12 +114,6 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
     public AdminPolicyCateResDto createCategory(AdminCategoryReqDto request) {
     	
         adminPolicyMapper.insertCategory(request);
-        sendOwnerNotification(
-                AlarmType.ACTIVATE_POLICY,
-                null,
-                request.getPolicyCategoryId(),
-                request.getPolicyCategoryName()
-        );
 
         return AdminPolicyCateResDto.builder()
                 .policyCategoryId(request.getPolicyCategoryId())
@@ -159,12 +135,6 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
 
     	    
         adminPolicyMapper.updateCategory(policyCategoryId, request);
-        sendOwnerNotification(
-                AlarmType.ACTIVATE_POLICY,
-                null,
-                policyCategoryId,
-                request.getPolicyCategoryName()
-        );
 
         return AdminPolicyCateResDto.builder()
                 .policyCategoryId(policyCategoryId)
@@ -185,12 +155,6 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
 	    }
 	    
         adminPolicyMapper.deleteCategory(policyCategoryId);
-        sendOwnerNotification(
-                AlarmType.DEACTIVATE_POLICY,
-                null,
-                policyCategoryId,
-                category.getPolicyCategoryName()
-        );
 
         return AdminPolicyCateResDto.builder()
                 .policyCategoryId(policyCategoryId)

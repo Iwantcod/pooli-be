@@ -495,12 +495,12 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (appPolicy.isPresent()) {
             if(appPolicy.get().getAppPolicyId() != null) {
                 // 3-1. 기존 정책이 존재한다면 is_active를 반대값으로 설정(toggle)
-                boolean newIsAcvice = !appPolicy.get().getIsActive();
-                int ret = appPolicyMapper.updateIsActive(appPolicy.get().getAppPolicyId(), newIsAcvice);
+                boolean newIsActive = !appPolicy.get().getIsActive();
+                int ret = appPolicyMapper.updateIsActive(appPolicy.get().getAppPolicyId(), newIsActive);
                 if(ret != 1) {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
                 }
-                if(newIsAcvice) {
+                if(newIsActive) {
                     alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
                     alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
                 } else {
