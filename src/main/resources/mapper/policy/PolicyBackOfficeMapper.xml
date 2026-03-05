@@ -12,7 +12,7 @@
 	        policy_category_id AS policyType,
 	        policy_name,
 	        is_new AS isNew
-	    FROM policy
+	    FROM POLICY
 	    WHERE is_active = true
 
     </select>
