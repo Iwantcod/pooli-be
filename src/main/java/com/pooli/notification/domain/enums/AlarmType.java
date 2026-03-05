@@ -7,6 +7,7 @@ public enum AlarmType {
     ACTIVATE_POLICY, // 새로운 정책이 활성화되었습니다.
     DEACTIVATE_POLICY, // 새로운 정책이 비활성화되었습니다.
 
+
     /*
     =============== 차단 정책(반복적/즉시) ================
      */
@@ -38,6 +39,7 @@ public enum AlarmType {
     POLICY_ADD_WHITELIST,  // 앱 정책 화이트리스트가 추가되었습니다.
     POLICY_DELETE_WHITELIST, // 앱 정책 화이트리스트가 삭제되었습니다.
 
+
     // QUESTION
     ANSWER,
 
@@ -52,4 +54,5 @@ public enum AlarmType {
     SHARED_POOL_CONTRIBUTION,
     SHARED_POOL_THRESHOLD_CHANGE,
 }
+
 
