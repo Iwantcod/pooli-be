@@ -37,6 +37,11 @@ public enum NotificationErrorCode implements ErrorCode {
             HttpStatus.INTERNAL_SERVER_ERROR,
             "NOTI:5001",
             "알림 저장 중 오류가 발생했습니다."
+    ),
+    INVALID_NOTIFICATION_JSON(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+        "NOTI:5002",
+                "알림 데이터(JSON) 파싱 중 오류가 발생했습니다."
     );
 
     private final HttpStatus httpStatus;
