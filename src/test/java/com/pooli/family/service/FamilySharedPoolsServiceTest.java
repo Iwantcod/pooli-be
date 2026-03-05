@@ -19,7 +19,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -140,8 +139,8 @@ class FamilySharedPoolsServiceTest {
         verify(sharedPoolMapper).insertContribution(1L, 101L, 500_000L);
         // 알람: 본인(101) 제외, user2(201)에게만 전송
         verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY),
-                eq(AlarmType.SHARED_POOL_CONTRIBUTION), anyMap());
-        verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any(), anyMap());
+                eq(AlarmType.SHARED_POOL_CONTRIBUTION));
+        verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any());
     }
 
     @Test
@@ -299,9 +298,9 @@ class FamilySharedPoolsServiceTest {
         verify(sharedPoolMapper).updateSharedDataThreshold(1L, 100_000L);
         // 알람: 가족 전체(101, 201) 모두에게 전송
         verify(alarmHistoryService).createAlarm(eq(101L), eq(AlarmCode.FAMILY),
-                eq(AlarmType.SHARED_POOL_THRESHOLD_CHANGE), anyMap());
+                eq(AlarmType.SHARED_POOL_THRESHOLD_CHANGE));
         verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY),
-                eq(AlarmType.SHARED_POOL_THRESHOLD_CHANGE), anyMap());
+                eq(AlarmType.SHARED_POOL_THRESHOLD_CHANGE));
     }
 
     // ========== 9. 알람 전송 추가 검증 ==========
@@ -318,7 +317,7 @@ class FamilySharedPoolsServiceTest {
 
             service.contributeToSharedPool(101L, 1L, 500_000L);
 
-            verify(alarmHistoryService, never()).createAlarm(anyLong(), any(), any(), anyMap());
+            verify(alarmHistoryService, never()).createAlarm(anyLong(), any(), any());
         }
 
         @Test
@@ -330,8 +329,8 @@ class FamilySharedPoolsServiceTest {
             service.contributeToSharedPool(101L, 1L, 500_000L);
 
             verify(alarmHistoryService, times(2)).createAlarm(anyLong(), eq(AlarmCode.FAMILY),
-                    eq(AlarmType.SHARED_POOL_CONTRIBUTION), anyMap());
-            verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any(), anyMap());
+                    eq(AlarmType.SHARED_POOL_CONTRIBUTION));
+            verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any());
         }
 
         @Test
@@ -343,7 +342,7 @@ class FamilySharedPoolsServiceTest {
 
             service.updateSharedDataThreshold(1L, request);
 
-            verify(alarmHistoryService, never()).createAlarm(anyLong(), any(), any(), anyMap());
+            verify(alarmHistoryService, never()).createAlarm(anyLong(), any(), any());
         }
     }
 }
