@@ -13,14 +13,14 @@ public interface MemberPermissionService {
     MemberPermissionListResDto getMyPermissions(Long lineId);
 
     // 구성원 권한 목록 조회
-    MemberPermissionListResDto getMemberPermissions(Long familyId, Long lineId, AuthUserDetails userDetails);
+    MemberPermissionListResDto getMemberPermissions(Long lineId, AuthUserDetails userDetails);
 
     // 가족 전체 구성원 권한 목록 조회
-    MemberPermissionListResDto getFamilyMemberPermissions(Long familyId, AuthUserDetails userDetails);
+    MemberPermissionListResDto getFamilyMemberPermissions(Long lineId, AuthUserDetails userDetails);
 
     // 구성원 권한 변경
     MemberPermissionResDto updateMemberPermission(Long familyId, Long lineId, MemberPermissionUpsertReqDto reqDto, AuthUserDetails userDetails);
 
     // 구성원 권한 일괄 변경
-    MemberPermissionListResDto bulkUpdateMemberPermissions(Long familyId, List<MemberPermissionBulkUpsertReqDto> reqList, AuthUserDetails userDetails);
+    MemberPermissionListResDto bulkUpdateMemberPermissions(Long lineId, List<MemberPermissionBulkUpsertReqDto> reqList, AuthUserDetails userDetails);
 }

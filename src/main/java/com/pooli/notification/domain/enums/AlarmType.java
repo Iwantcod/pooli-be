@@ -38,15 +38,18 @@ public enum AlarmType {
     POLICY_ADD_WHITELIST,  // 앱 정책 화이트리스트가 추가되었습니다.
     POLICY_DELETE_WHITELIST, // 앱 정책 화이트리스트가 삭제되었습니다.
 
-
-
     // QUESTION
     ANSWER,
 
     // OTHERS
     NOTIFICATION,
 
+    // PERMISSION
+    PERMISSION_CHANGED,
+    ROLE_TRANSFERRED,
+
     // FAMILY (공유풀)
     SHARED_POOL_CONTRIBUTION,
     SHARED_POOL_THRESHOLD_CHANGE,
 }
+

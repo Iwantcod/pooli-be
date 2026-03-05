@@ -15,6 +15,7 @@ import com.pooli.notification.exception.NotificationErrorCode;
 import com.pooli.notification.mapper.AlarmHistoryMapper;
 import com.pooli.notification.mapper.NotificationLineMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -23,6 +24,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.*;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AlarmHistoryServiceImpl implements AlarmHistoryService {
@@ -47,19 +49,14 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
         try {
             String jsonValue = objectMapper.writeValueAsString(values);
 
-            int result = alarmHistoryMapper.insertAlarmHistory(
+            alarmHistoryMapper.insertAlarmHistory(
                     lineId,
                     alarmCode.name(),
                     jsonValue
             );
 
-            if (result != 1) {
-                System.out.println("회선 Id :" + lineId + "의 " + alarmCode.name() + " : 알람 저장 실패");
-                // MongoDB 기록
-            }
-
         } catch (JsonProcessingException e) {
-            System.out.println("알림 JSON 변환 실패 : " + e.getMessage());
+            log.warn("알림 JSON 변환 실패 - lineId: {}, alarmCode: {}, error: {}", lineId, alarmCode.name(), e.getMessage());
         }
     }
 

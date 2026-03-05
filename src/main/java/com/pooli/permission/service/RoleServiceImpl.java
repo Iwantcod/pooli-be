@@ -6,11 +6,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.family.domain.entity.FamilyLine;
 import com.pooli.family.domain.enums.FamilyRole;
-import com.pooli.line.domain.entity.Line;
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.service.AlarmHistoryService;
 import com.pooli.permission.domain.dto.response.RepresentativeRoleTransferResDto;
 import com.pooli.permission.exception.PermissionErrorCode;
 import com.pooli.permission.mapper.FamilyLineMapper;
-import com.pooli.permission.mapper.LineUserPermissionMapper;
 
 import lombok.RequiredArgsConstructor;
 
@@ -18,27 +19,21 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class RoleServiceImpl implements RoleService {
 
-    private final LineUserPermissionMapper lineUserPermissionMapper;
     private final FamilyLineMapper familyLineMapper;
+    private final AlarmHistoryService alarmHistoryService;
 
     @Override
     @Transactional
-    public RepresentativeRoleTransferResDto transferRepresentativeRole(Long currentUserId, Long changeUserId) {
+    public RepresentativeRoleTransferResDto transferRepresentativeRole(Long currentLineId, Long changeLineId) {
 
-        if (currentUserId.equals(changeUserId)) {
+        if (currentLineId.equals(changeLineId)) {
             throw new ApplicationException(PermissionErrorCode.ROLE_TRANSFER_SELF);
         }
 
-        Line currentLine = lineUserPermissionMapper.findMainLineByUserId(currentUserId)
+        FamilyLine currentFamilyLine = familyLineMapper.findByLineId(currentLineId)
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.ROLE_TRANSFER_SOURCE_NOT_FOUND));
 
-        Line targetLine = lineUserPermissionMapper.findMainLineByUserId(changeUserId)
-                .orElseThrow(() -> new ApplicationException(PermissionErrorCode.ROLE_TRANSFER_TARGET_NOT_FOUND));
-
-        FamilyLine currentFamilyLine = familyLineMapper.findByLineId(currentLine.getLineId())
-                .orElseThrow(() -> new ApplicationException(PermissionErrorCode.ROLE_TRANSFER_SOURCE_NOT_FOUND));
-
-        FamilyLine targetFamilyLine = familyLineMapper.findByLineId(targetLine.getLineId())
+        FamilyLine targetFamilyLine = familyLineMapper.findByLineId(changeLineId)
                 .orElseThrow(() -> new ApplicationException(PermissionErrorCode.ROLE_TRANSFER_TARGET_NOT_FOUND));
 
         if (!currentFamilyLine.getFamilyId().equals(targetFamilyLine.getFamilyId())) {
@@ -61,9 +56,13 @@ public class RoleServiceImpl implements RoleService {
                 .role(FamilyRole.OWNER)
                 .build());
 
+        familyLineMapper.findAllFamilyIdByLineId(currentLineId)
+                .forEach(lineId ->
+                        alarmHistoryService.createAlarm(lineId, AlarmCode.PERMISSION, AlarmType.ROLE_TRANSFERRED));
+
         return RepresentativeRoleTransferResDto.builder()
-                .currentOwnerUserId(currentUserId)
-                .changeOwnerUserId(changeUserId)
+                .currentOwnerLineId(currentLineId)
+                .changeOwnerLineId(changeLineId)
                 .build();
     }
 }
