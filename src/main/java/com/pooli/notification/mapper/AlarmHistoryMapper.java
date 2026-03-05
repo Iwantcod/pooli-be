@@ -1,6 +1,7 @@
 package com.pooli.notification.mapper;
 
 import com.pooli.notification.domain.dto.response.NotiSendResDto;
+import com.pooli.notification.domain.entity.AlarmHistory;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -21,7 +22,7 @@ public interface AlarmHistoryMapper {
             @Param("value") String value
     );
 
-    List<NotiSendResDto> findAlarmHistoryPage(
+    List<AlarmHistory> findAlarmHistoryPage(
             @Param("userId") Long userId,
             @Param("lineId") Long lineId,
             @Param("isRead") Boolean isRead,

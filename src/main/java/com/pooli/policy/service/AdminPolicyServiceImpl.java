@@ -2,6 +2,12 @@ package com.pooli.policy.service;
 
 import java.util.List;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.pooli.notification.domain.dto.request.NotiSendReqDto;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.domain.enums.NotificationTargetType;
+import com.pooli.notification.service.AlarmHistoryService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +29,7 @@ import lombok.RequiredArgsConstructor;
 public class AdminPolicyServiceImpl implements AdminPolicyService {
 
     private final AdminPolicyMapper adminPolicyMapper;
+    private final AlarmHistoryService alarmHistoryService;
 
     @Override
     @Transactional(readOnly = true)
@@ -84,6 +91,12 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
         }
 
         adminPolicyMapper.updatePolicyActiveStatus(policyId, request);
+        sendOwnerNotification(
+                Boolean.TRUE.equals(request.getIsActive()) ? AlarmType.ACTIVATE_POLICY : AlarmType.DEACTIVATE_POLICY,
+                policyId,
+                existing.getPolicyCategoryId(),
+                existing.getPolicyName()
+        );
 
         return AdminPolicyActiveResDto.builder()
                 .policyId(policyId)
@@ -146,5 +159,25 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
         return AdminPolicyCateResDto.builder()
                 .policyCategoryId(policyCategoryId)
                 .build();
+    }
+
+    private void sendOwnerNotification(AlarmType type, Integer policyId, Integer policyCategoryId, String name) {
+        ObjectNode value = JsonNodeFactory.instance.objectNode();
+        value.put("type", type.name());
+        if (policyId != null) {
+            value.put("policyId", policyId);
+        }
+        if (policyCategoryId != null) {
+            value.put("policyCategoryId", policyCategoryId);
+        }
+        if (name != null) {
+            value.put("name", name);
+        }
+
+        NotiSendReqDto req = new NotiSendReqDto();
+        req.setTargetType(NotificationTargetType.OWNER);
+        req.setValue(value);
+
+        alarmHistoryService.sendNotification(req);
     }
 }

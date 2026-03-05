@@ -84,7 +84,7 @@
     </select>
 
     <select id="findAlarmHistoryPage"
-            resultType="com.pooli.notification.domain.dto.response.NotiSendResDto">
+            resultType="com.pooli.notification.domain.entity.AlarmHistory">
 
         SELECT
         ah.alarm_history_id AS alarmHistoryId,
