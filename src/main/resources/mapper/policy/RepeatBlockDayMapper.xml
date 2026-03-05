@@ -6,7 +6,7 @@
 
   <!-- repeat_block_day 생성(여러 요일 생성될 수 있음) -->
     <insert id="insertRepeatBlockDays">
-        INSERT INTO repeat_block_day
+        INSERT INTO REPEAT_BLOCK_DAY
             (repeat_block_id, day_of_week, start_at, end_at, created_at)
         VALUES
         <foreach collection="days" item="day" separator=",">
@@ -15,7 +15,7 @@
     </insert>
     
    	<update id="deleteRepeatDayBlock">
-	  UPDATE repeat_block_day
+	  UPDATE REPEAT_BLOCK_DAY
 	  SET deleted_at = NOW()
 	  WHERE repeat_block_id = #{repeatBlockId}
 	    AND deleted_at IS NULL
