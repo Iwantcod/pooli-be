@@ -14,7 +14,10 @@ Spring Boot 기반의 POOLI 백엔드 팀 프로젝트 입니다.
 
 
 ### Notion - Mentoring
+#### 1차 멘토링
 - https://www.notion.so/yerin1412/1-BE-30d389b3e039801bab8dc55bf12a793b?source=copy_link
+#### 3차 멘토링
+- https://www.notion.so/yerin1412/3-31a389b3e039807c87c6f0d628a4ee7c
 
 
 
