@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.policy.mapper.PolicyBackOfficeMapper">
+
+   <select id="selectActivePolicies"
+            resultType="com.pooli.policy.domain.dto.response.ActivePolicyResDto">
+
+         SELECT
+	        policy_id AS policyId,
+	        policy_category_id AS policyType,
+	        policy_name,
+	        is_new AS isNew
+	    FROM POLICY
+	    WHERE is_active = true
+
+    </select>
+    
+</mapper>

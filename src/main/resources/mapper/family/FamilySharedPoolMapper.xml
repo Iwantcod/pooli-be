@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.pooli.family.repository.FamilySharedPoolMapper">
+
+    <!-- GET /api/shared-pools/my 용 -->
+    <select id="selectMySharedPoolStatus" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
+        SELECT
+            l.line_id,
+            l.remaining_data,
+            COALESCE(SUM(fsud.contribution_amount), 0) AS personal_contribution
+        FROM LINE l
+        LEFT JOIN FAMILY_SHARED_USAGE_DAILY fsud 
+          ON l.line_id = fsud.line_id 
+          AND DATE_FORMAT(fsud.usage_date, '%Y-%m') = DATE_FORMAT(CURRENT_DATE(), '%Y-%m')
+        WHERE l.line_id = #{lineId}
+          AND l.deleted_at IS NULL
+        GROUP BY l.line_id, l.remaining_data
+    </select>
+
+    <!-- GET /api/shared-pools 용 -->
+    <select id="selectFamilySharedPool" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
+        SELECT
+            f.family_id,
+            f.pool_base_data,
+            f.pool_total_data,
+            f.pool_remaining_data,
+            COALESCE(SUM(fsud.usage_amount), 0) AS monthly_usage_amount,
+            COALESCE(SUM(fsud.contribution_amount), 0) AS monthly_contribution_amount
+        FROM FAMILY f
+        LEFT JOIN FAMILY_SHARED_USAGE_DAILY fsud 
+          ON f.family_id = fsud.family_id
+          AND DATE_FORMAT(fsud.usage_date, '%Y-%m') = DATE_FORMAT(CURRENT_DATE(), '%Y-%m')
+        WHERE f.family_id = #{familyId}
+          AND f.deleted_at IS NULL
+        GROUP BY f.family_id, f.pool_base_data, f.pool_total_data, f.pool_remaining_data
+    </select>
+
+    <!-- POST /api/shared-pools 용 (데이터 담기 1: 회선 잔여량 차감) -->
+    <update id="updateLineRemainingData">
+        UPDATE LINE
+        SET remaining_data = remaining_data - #{amount}
+        WHERE line_id = #{lineId}
+          AND remaining_data >= #{amount}
+    </update>
+
+    <!-- POST /api/shared-pools 용 (데이터 담기 2: 가족 공유풀 증가) -->
+    <update id="updateFamilyPoolData">
+        UPDATE FAMILY
+        SET pool_remaining_data = pool_remaining_data + #{amount},
+            pool_total_data = pool_total_data + #{amount}
+        WHERE family_id = #{familyId}
+    </update>
+
+    <!-- POST /api/shared-pools 용 (데이터 담기 3: 충전 이력 기록/업데이트) -->
+    <insert id="insertContribution">
+        INSERT INTO FAMILY_SHARED_USAGE_DAILY (usage_date, family_id, line_id, contribution_amount, usage_amount, created_at)
+        VALUES (CURRENT_DATE(), #{familyId}, #{lineId}, #{amount}, 0, NOW())
+        ON DUPLICATE KEY UPDATE 
+            contribution_amount = contribution_amount + #{amount},
+            updated_at = NOW()
+    </insert>
+
+    <!-- GET /api/shared-pools/detail/remaining-amount 용 -->
+    <select id="selectSharedPoolDetail" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
+        SELECT
+            p.basic_data_amount,
+            l.remaining_data,
+            f.pool_total_data,
+            f.pool_remaining_data
+        FROM LINE l
+        INNER JOIN PLAN p ON l.plan_id = p.plan_id
+        INNER JOIN FAMILY_LINE fl ON l.line_id = fl.line_id
+        INNER JOIN FAMILY f ON fl.family_id = f.family_id
+        WHERE l.line_id = #{lineId}
+          AND f.family_id = #{familyId}
+          AND l.deleted_at IS NULL
+          AND f.deleted_at IS NULL
+    </select>
+
+    <!-- GET /api/shared-pools/main/remaining-amount 용 -->
+    <select id="selectSharedPoolMain" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
+        SELECT
+            f.pool_base_data,
+            f.pool_total_data,
+            f.pool_remaining_data,
+            COALESCE(SUM(fsud.contribution_amount), 0) AS monthly_contribution_amount
+        FROM FAMILY f
+        LEFT JOIN FAMILY_SHARED_USAGE_DAILY fsud 
+          ON f.family_id = fsud.family_id
+          AND DATE_FORMAT(fsud.usage_date, '%Y-%m') = DATE_FORMAT(CURRENT_DATE(), '%Y-%m')
+        WHERE f.family_id = #{familyId}
+          AND f.deleted_at IS NULL
+        GROUP BY f.family_id, f.pool_base_data, f.pool_total_data, f.pool_remaining_data
+    </select>
+
+    <!-- GET /api/shared-pools/limits 용 -->
+    <select id="selectSharedDataThreshold" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
+        SELECT
+            f.family_threshold,
+            f.is_threshold_active
+        FROM FAMILY f
+        WHERE f.family_id = #{familyId}
+          AND f.deleted_at IS NULL
+    </select>
+
+    <!-- PATCH /api/shared-pools/limits 용 -->
+    <update id="updateSharedDataThreshold">
+        UPDATE FAMILY
+        SET family_threshold = #{newThreshold},
+            is_threshold_active = true,
+            updated_at = NOW()
+        WHERE family_id = #{familyId}
+          AND deleted_at IS NULL
+    </update>
+
+    <!-- POST /api/shared-pools 검증용: 잔여 데이터량 조회 -->
+    <select id="selectRemainingData" resultType="java.lang.Long">
+        SELECT remaining_data
+        FROM LINE
+        WHERE line_id = #{lineId}
+          AND deleted_at IS NULL
+    </select>
+
+    <!-- GET /api/shared-pools/detail 용: 공유풀 데이터 사용 제한량 조회 -->
+    <select id="selectSharedDataLimit" resultType="java.lang.Long">
+        SELECT shared_data_limit
+        FROM SHARED_LIMIT
+        WHERE line_id = #{lineId}
+          AND is_active = true
+          AND deleted_at IS NULL
+    </select>
+
+    <!-- 세션의 lineId로 familyId를 조회 -->
+    <select id="selectFamilyIdByLineId" resultType="java.lang.Long">
+        SELECT family_id
+        FROM FAMILY_LINE
+        WHERE line_id = #{lineId}
+    </select>
+
+    <!-- 알람 전송용: 가족의 모든 멤버 lineId 조회 -->
+    <select id="selectLineIdsByFamilyId" resultType="java.lang.Long">
+        SELECT line_id
+        FROM FAMILY_LINE
+        WHERE family_id = #{familyId}
+    </select>
+
+</mapper>

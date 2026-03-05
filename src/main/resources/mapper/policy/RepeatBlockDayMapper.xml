@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.policy.mapper.RepeatBlockDayMapper">
+
+  <!-- repeat_block_day 생성(여러 요일 생성될 수 있음) -->
+    <insert id="insertRepeatBlockDays">
+        INSERT INTO REPEAT_BLOCK_DAY
+            (repeat_block_id, day_of_week, start_at, end_at, created_at)
+        VALUES
+        <foreach collection="days" item="day" separator=",">
+            (#{repeatBlockId}, #{day.dayOfWeek}, #{day.startAt}, #{day.endAt}, NOW())
+        </foreach>
+    </insert>
+    
+   	<update id="deleteRepeatDayBlock">
+	  UPDATE REPEAT_BLOCK_DAY
+	  SET deleted_at = NOW()
+	  WHERE repeat_block_id = #{repeatBlockId}
+	    AND deleted_at IS NULL
+	</update>
+
+</mapper>

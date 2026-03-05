@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+  
+ <mapper namespace="com.pooli.line.mapper.LineMapper">
+ 	
+	 <!-- lineId로 소유자 userId 조회 (소유권 검증 전용) -->
+    <select id="findOwnerUserIdByLineId" parameterType="long" resultType="java.lang.Long">
+        SELECT user_id
+        FROM LINE
+        WHERE line_id = #{lineId}
+          AND deleted_at IS NULL
+    </select>
+ 
+ 
+   <select id="selectLinesByUserIdOrderByLineId"
+          resultType="com.pooli.line.domain.dto.response.LineSimpleResDto">
+	    SELECT
+	        line_id AS lineId,
+	        phone AS phoneNumber
+	    FROM
+	        line
+	    WHERE
+	        user_id = #{userId}
+	        AND deleted_at IS NULL
+	    ORDER BY
+	        CASE WHEN line_id = #{lineId} THEN 0 ELSE 1 END,
+	        line_id ASC
+	</select>
+  
+  
+  	<select id="selectIndividualThresholdByLineId"
+            parameterType="long"
+            resultType="com.pooli.line.domain.dto.response.IndividualThresholdResDto">
+	      SELECT
+	          individual_threshold AS individualThreshold,
+	          is_threshold_active AS isThresholdActive
+	      FROM
+	          line
+	      WHERE
+	          line_id = #{lineId}
+    </select>
+    
+	<update id="updateIndividualThreshold">
+	   UPDATE line
+	   SET
+	       individual_threshold = #{individualThreshold},
+	       is_threshold_active = #{isThresholdActive}
+	   WHERE
+	       line_id = #{lineId}
+	</update>
+  
+	<select id="selectLineUserSummaryListByPhoneSuffix"
+	          parameterType="string"
+	          resultType="com.pooli.line.domain.dto.response.LineUserSummaryResDto">
+	    SELECT
+	        l.line_id   AS lineId,
+	        l.phone     AS phone,
+	        u.user_id   AS userId,
+	        u.user_name AS userName,
+	        u.email     AS email
+	    FROM LINE l
+	    JOIN USERS u ON u.user_id = l.user_id
+	    WHERE l.deleted_at IS NULL
+	      AND u.deleted_at IS NULL
+	      AND RIGHT(REPLACE(l.phone, '-', ''), 4) = #{phoneSuffix}
+	    ORDER BY l.line_id ASC
+	</select>
+	
+	<select id="selectLinesByUserId"
+          resultType="com.pooli.line.domain.dto.response.LineSimpleResDto">
+	    SELECT
+	        line_id AS lineId,
+	        phone AS phoneNumber
+	    FROM
+	        line
+	    WHERE
+	        user_id = #{userId}
+	        AND deleted_at IS NULL
+	</select>
+ 
+ 
+ </mapper>

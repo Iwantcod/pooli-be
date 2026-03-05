@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.policy.mapper.AppPolicyMapper">
+    <!-- 단일 테이블 조회 후 Entity Class에 결과 매핑 -->
+    <resultMap id="appPolicyResultMap"
+               type="com.pooli.policy.domain.entity.AppPolicy">
+        <constructor>
+            <arg column="app_policy_id"  javaType="java.lang.Long"/>
+            <arg column="line_id"        javaType="java.lang.Long"/>
+            <arg column="application_id" javaType="java.lang.Integer"/>
+            <arg column="data_limit"     javaType="java.lang.Long"/>
+            <arg column="speed_limit"    javaType="java.lang.Integer"/>
+            <arg column="is_active"      javaType="java.lang.Boolean"/>
+            <arg column="is_whitelist"   javaType="java.lang.Boolean"/>
+            <arg column="created_at"     javaType="java.time.LocalDateTime"/>
+            <arg column="deleted_at"     javaType="java.time.LocalDateTime"/>
+            <arg column="updated_at"     javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 특정 앱 정책에 대한 정보(앱 이름, 화이트리스트 적용 여부)를 한 번에 조회 후 Dto Class에 결과 매핑 -->
+    <resultMap id="appPolicyResDtoResultMap"
+               type="com.pooli.policy.domain.dto.response.AppPolicyResDto">
+        <constructor>
+            <arg column="appPolicyId"       javaType="java.lang.Long"/>
+            <arg column="lineId"            javaType="java.lang.Long"/>
+            <arg column="appId"             javaType="java.lang.Integer"/>
+            <arg column="appName"           javaType="java.lang.String"/>
+            <arg column="isActive"          javaType="java.lang.Boolean"/>
+            <arg column="dailyLimitData"    javaType="java.lang.Long"/>
+            <arg column="dailyLimitSpeed"   javaType="java.lang.Integer"/>
+            <arg column="isActiveWhiteList" javaType="java.lang.Boolean"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 정책 정보 및 앱 이름을 포함하여 조회 -->
+    <select id="findDtoExistByLineIdAndAppId" resultMap="appPolicyResDtoResultMap">
+        SELECT
+            ap.app_policy_id appPolicyId,
+            ap.line_id lineId,
+            a.application_id appId,
+            a.application_name appName,
+            ap.is_active isActive,
+            ap.data_limit dailyLimitData,
+            ap.speed_limit dailyLimitSpeed,
+            ap.is_whitelist isActiveWhiteList
+        FROM APPLICATION a
+         LEFT JOIN APP_POLICY ap
+           ON ap.application_id = a.application_id
+             AND ap.line_id = #{lineId}
+             AND ap.deleted_at IS NULL
+        WHERE a.application_id = #{appId};
+    </select>
+
+    <sql id="appPolicyFilterFromWhere">
+        FROM APPLICATION a
+        LEFT JOIN APP_POLICY ap
+          ON ap.application_id = a.application_id
+         AND ap.line_id = #{lineId}
+         AND ap.deleted_at IS NULL
+
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND a.application_name LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+
+            <choose>
+                <when test="policyScope == @com.pooli.policy.domain.enums.PolicyScope@ALL">
+                </when>
+
+                <when test="policyScope == @com.pooli.policy.domain.enums.PolicyScope@APPLIED">
+                    AND (
+                        ap.app_policy_id IS NOT NULL
+                        AND ap.is_active = 1
+                        AND ap.is_whitelist = 0
+                        AND (ap.data_limit != -1 OR ap.speed_limit != -1)
+                    )
+                </when>
+
+                <when test="policyScope == @com.pooli.policy.domain.enums.PolicyScope@NONE">
+                    AND (
+                        ap.app_policy_id IS NULL
+                        OR ap.is_active = 0
+                        OR (ap.is_active = 1 AND ap.data_limit = -1 AND ap.speed_limit = -1)
+                    )
+                </when>
+
+                <when test="policyScope == @com.pooli.policy.domain.enums.PolicyScope@WHITELIST">
+                    AND (
+                        ap.app_policy_id IS NOT NULL
+                        AND ap.is_active = 1
+                        AND ap.is_whitelist = 1
+                    )
+                </when>
+            </choose>
+
+            <if test="dataLimit == true">
+                AND (
+                    ap.app_policy_id IS NOT NULL
+                    AND ap.is_active = 1
+                    AND ap.data_limit != -1
+                )
+            </if>
+
+            <if test="speedLimit == true">
+                AND (
+                    ap.app_policy_id IS NOT NULL
+                    AND ap.is_active = 1
+                    AND ap.speed_limit != -1
+                )
+            </if>
+        </where>
+    </sql>
+
+    <!-- 동적 필터/정렬/페이지네이션 기반 앱 정책 목록 조회 -->
+    <select id="findApplicationsWithPolicy"
+            parameterType="com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto"
+            resultMap="appPolicyResDtoResultMap">
+        SELECT
+            ap.app_policy_id   AS appPolicyId,
+            ap.line_id         AS lineId,
+            a.application_id   AS appId,
+            a.application_name AS appName,
+            ap.is_active       AS isActive,
+            ap.data_limit      AS dailyLimitData,
+            ap.speed_limit     AS dailyLimitSpeed,
+            ap.is_whitelist    AS isActiveWhiteList
+        <include refid="appPolicyFilterFromWhere"/>
+
+        <choose>
+            <when test="sortType == @com.pooli.policy.domain.enums.SortType@NAME">
+                ORDER BY a.application_name DESC,
+                         a.application_id DESC
+            </when>
+            <otherwise>
+                ORDER BY ap.is_active DESC,
+                         ap.app_policy_id DESC,
+                         a.application_id DESC
+            </otherwise>
+        </choose>
+
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <select id="countApplicationsWithPolicy"
+            parameterType="com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto"
+            resultType="long">
+        SELECT COUNT(*)
+        <include refid="appPolicyFilterFromWhere"/>
+    </select>
+
+    <!-- pk 로 Entity 조회 -->
+    <select id="findEntityExistById" resultMap="appPolicyResultMap">
+        SELECT
+            app_policy_id,
+            line_id,
+            application_id,
+            data_limit,
+            speed_limit,
+            is_active,
+            created_at,
+            deleted_at,
+            updated_at,
+            is_whitelist
+        FROM APP_POLICY
+        WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
+    </select>
+
+    <!-- pk 로 Dto 조회 -->
+    <select id="findDtoExistById" resultMap="appPolicyResDtoResultMap" parameterType="long">
+        SELECT
+            ap.app_policy_id appPolicyId,
+            ap.line_id lineId,
+            a.application_id appId,
+            a.application_name appName,
+            ap.is_active isActive,
+            ap.data_limit dailyLimitData,
+            ap.speed_limit dailyLimitSpeed,
+            ap.is_whitelist isActiveWhiteList
+        FROM APP_POLICY ap
+         JOIN APPLICATION a
+           ON a.application_id = ap.application_id
+        WHERE ap.app_policy_id = #{appPolicyId}
+          AND ap.deleted_at IS NULL;
+    </select>
+
+    <!-- pk로 삭제되지 않은 레코드의 is_active 값 update -->
+    <update id="updateIsActive">
+        UPDATE APP_POLICY
+        SET is_active = #{isActive}, updated_at = now()
+        WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
+    </update>
+
+    <!-- pk로 삭제되지 않은 레코드의 is_whitelist 값 update -->
+    <update id="updateIsWhitelist">
+        UPDATE APP_POLICY
+        SET is_whitelist = #{isWhitelist}, updated_at = now()
+        WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
+    </update>
+
+    <!-- pk로 삭제되지 않은 레코드의 data_limit 값 update -->
+    <update id="updateDataLimit">
+        UPDATE APP_POLICY
+        SET data_limit = #{value}, updated_at = now()
+        WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
+    </update>
+
+    <!-- pk로 삭제되지 않은 레코드의 speed_limit 값 update -->
+    <update id="updateSpeedLimit">
+        UPDATE APP_POLICY
+        SET speed_limit = #{value}, updated_at = now()
+        WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
+    </update>
+
+    <!-- pk로 레코드 삭제처리 -->
+    <update id="setDeleted" parameterType="long">
+        UPDATE APP_POLICY
+        SET deleted_at = now()
+        WHERE app_policy_id = #{appPolicyId};
+    </update>
+
+    <!-- 새 레코드 생성 -->
+    <insert id="insertAppPolicy"
+            parameterType="com.pooli.policy.domain.entity.AppPolicy"
+            useGeneratedKeys="true"
+            keyProperty="appPolicyId"
+            keyColumn="app_policy_id">
+        INSERT INTO APP_POLICY
+               (line_id,   application_id,   data_limit,   speed_limit,   is_active,   created_at)
+        values (#{lineId}, #{applicationId}, #{dataLimit}, #{speedLimit}, #{isActive}, now());
+    </insert>
+</mapper>

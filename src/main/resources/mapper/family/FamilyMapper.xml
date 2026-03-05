@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+    
+<mapper namespace="com.pooli.family.mapper.FamilyMapper">
+	<select id="selectFamilyMembersHeader"
+	         resultType="com.pooli.family.domain.dto.response.FamilyMembersResDto">
+	   SELECT
+	     CASE
+	       WHEN EXISTS (
+	         SELECT 1
+	         FROM PERMISSION_LINE pl
+	         JOIN PERMISSION p ON p.permission_id = pl.permission_id
+	         WHERE pl.line_id = #{lineId}
+	           AND p.permission_id = 1
+	           AND pl.is_enable = TRUE
+	       )
+	       THEN TRUE
+	       ELSE FALSE
+	     END AS isEnable,
+	     f.family_id AS familyId,
+	     f.pool_total_data AS sharedPoolTotalData
+	   FROM FAMILY_LINE fl
+	   JOIN FAMILY f ON f.family_id = fl.family_id
+	   WHERE fl.line_id = #{lineId}
+	</select>
+	
+	<select id="selectFamilyMembersSimpleByLineId"
+	          resultType="com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto">
+	
+	    SELECT
+	      l.line_id   AS lineId,
+	      u.user_id   AS userId,
+	      u.user_name AS userName,
+	      l.phone     AS phone
+	    FROM FAMILY_LINE fl
+	    JOIN LINE l  ON fl.line_id = l.line_id
+	    JOIN USERS u ON l.user_id = u.user_id
+	    JOIN FAMILY f ON f.family_id = fl.family_id
+	    WHERE fl.family_id = (
+	      SELECT fl2.family_id
+	      FROM FAMILY_LINE fl2
+	      WHERE fl2.line_id = #{lineId}
+	    )
+	      AND l.deleted_at IS NULL
+	      AND f.deleted_at IS NULL
+	    ORDER BY
+	      CASE WHEN l.line_id = #{lineId} THEN 0 ELSE 1 END,
+	      l.line_id ASC
+	
+	</select>
+
+
+	<select id="existsFamilyLine" resultType="boolean">
+	  SELECT EXISTS (
+	    SELECT 1
+	      FROM FAMILY_LINE fl
+	      JOIN FAMILY f ON f.family_id = fl.family_id
+	      WHERE fl.family_id = #{familyId}
+	        AND fl.line_id = #{lineId}
+	        AND f.deleted_at IS NULL
+	  )
+	</select>
+
+	<select id="selectFamilyMembersSimple"
+	            resultType="com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto">
+		
+	    SELECT
+	      l.line_id   AS lineId,
+	      u.user_id   AS userId,
+	      u.user_name AS userName,
+	      l.phone     AS phone
+	    FROM FAMILY_LINE fl
+	    JOIN LINE l  ON fl.line_id = l.line_id
+	    JOIN USERS u ON l.user_id = u.user_id
+	    JOIN FAMILY f ON f.family_id = fl.family_id
+	    WHERE fl.family_id = #{familyId}
+	      AND l.deleted_at IS NULL
+	      AND f.deleted_at IS NULL
+	      AND EXISTS (
+	        SELECT 1
+	        FROM FAMILY_LINE fl2
+	        WHERE fl2.family_id = #{familyId}
+	          AND fl2.line_id = #{lineId}
+	      )
+	    ORDER BY
+	      CASE WHEN l.line_id = #{lineId} THEN 0 ELSE 1 END,
+	      l.line_id ASC
+	            
+    </select>
+    
+    
+    <select id="isPermissionEnabledByTitle" resultType="boolean">
+	    SELECT EXISTS (
+	      SELECT 1
+	      FROM PERMISSION_LINE pl
+	      JOIN PERMISSION p ON p.permission_id = pl.permission_id
+	      WHERE pl.line_id = #{lineId}
+	        AND p.permission_id = 2
+	        AND pl.is_enable = TRUE
+	    )
+	</select>
+	  
+	  
+	<update id="updateFamilyLineVisibility">
+		UPDATE FAMILY_LINE
+		SET is_public = #{isPublic}
+		WHERE line_id = #{lineId}
+	</update>
+	
+	<select id="selectFamilyIdByLineId" resultType="int">
+	    SELECT fl.family_id
+	    FROM FAMILY_LINE fl
+	    JOIN FAMILY f ON f.family_id = fl.family_id
+	    WHERE fl.line_id = #{lineId}
+	      AND f.deleted_at IS NULL
+	</select>
+
+	<select id="selectFamilyMemberSummaryByFamilyIdAndLineId"
+          resultType="com.pooli.family.domain.dto.response.FamilyMemberSummaryResDto$FamilyMemberSummaryDto">
+	    SELECT
+	      l.line_id   AS lineId,
+	      u.user_id   AS userId,
+	      u.user_name AS userName,
+	      l.phone     AS phone,
+	      fl.role     AS role
+	    FROM FAMILY_LINE fl
+	    JOIN LINE  l ON fl.line_id = l.line_id
+	    JOIN USERS u ON l.user_id = u.user_id
+	    JOIN FAMILY f ON f.family_id = fl.family_id
+	    WHERE fl.family_id = #{familyId}
+	      AND l.deleted_at IS NULL
+	      AND f.deleted_at IS NULL
+	    ORDER BY
+	      CASE
+	        WHEN fl.role = 'OWNER' THEN 0
+	        WHEN l.line_id = #{lineId} THEN 1
+	        ELSE 2
+	      END,
+	      l.line_id ASC
+	</select>         
+</mapper>

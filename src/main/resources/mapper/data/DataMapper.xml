@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+  
+ <mapper namespace="com.pooli.data.mapper.DataMapper">
+ 
+	<select id="findRecentMonthlyUsageByLineId"
+	        resultType="com.pooli.data.domain.dto.response.MonthlyDataUsageResDto$MonthlyUsageDto">
+	    SELECT
+	        DATE_FORMAT(d.usage_date, '%Y-%m') AS yearMonth,
+	        COALESCE(SUM(d.total_usage_data), 0) AS usedAmount
+	    FROM DAILY_TOTAL_DATA d
+	    WHERE d.line_id = #{lineId}
+	      AND d.deleted_at IS NULL
+	      AND d.usage_date &gt;= DATE_SUB(
+	            STR_TO_DATE(CONCAT(#{month}, '01'), '%Y%m%d'),
+	            INTERVAL 2 MONTH
+	      )
+	      AND d.usage_date &lt; DATE_ADD(
+	            STR_TO_DATE(CONCAT(#{month}, '01'), '%Y%m%d'),
+	            INTERVAL 1 MONTH
+	      )
+	    GROUP BY DATE_FORMAT(d.usage_date, '%Y-%m')
+	    ORDER BY yearMonth DESC
+	</select>
+	 
+	<select id="findAppDataUsageByLineIdAndMonth"
+	              resultType="com.pooli.data.domain.dto.response.AppDataUsageResDto$AppUsageDto">
+          SELECT
+              a.application_name AS appName,
+              COALESCE(SUM(d.total_usage_data), 0) AS usedAmount
+          FROM DAILY_APP_TOTAL_DATA d
+          INNER JOIN APPLICATION a
+              ON a.application_id = d.application_id
+          WHERE d.line_id = #{lineId}
+            AND d.usage_date >= STR_TO_DATE(CONCAT(#{month}, '01'), '%Y%m%d')
+            AND d.usage_date &lt; DATE_ADD(STR_TO_DATE(CONCAT(#{month}, '01'), '%Y%m%d'), INTERVAL 1 MONTH)
+          GROUP BY a.application_id, a.application_name
+          ORDER BY usedAmount DESC
+      </select>
+      
+      
+	<select id="findDataSummaryByLineId"
+	        parameterType="long"
+	        resultType="com.pooli.data.domain.dto.response.DataBalancesResDto">
+	    SELECT
+	        u.user_name AS userName,
+	        fl.role AS role,
+	        f.pool_remaining_data AS sharedDataRemaining,
+	        l.remaining_data AS personalDataRemaining,
+	        p.plan_name AS planName
+	    FROM LINE l
+	    JOIN USERS u
+	        ON u.user_id = l.user_id
+	       AND u.deleted_at IS NULL
+	    JOIN FAMILY_LINE fl
+	        ON fl.line_id = l.line_id
+	    JOIN FAMILY f
+	        ON f.family_id = fl.family_id
+	       AND f.deleted_at IS NULL
+	    JOIN PLAN p
+	        ON p.plan_id = l.plan_id
+	       AND p.deleted_at IS NULL
+	    WHERE l.line_id = #{lineId}
+	      AND l.deleted_at IS NULL
+	</select>
+	
+	
+	 <select id="findDataUsageAggregateByLineIdAndMonth"
+          resultType="com.pooli.data.domain.dto.response.DataUsageResDto">
+      SELECT
+          COALESCE(fsu.shared_used, 0) AS sharedPoolUsedAmount,
+          COALESCE(dtd.total_used, 0) - COALESCE(fsu.shared_used, 0) AS personalUsedAmount,
+          p.basic_data_amount AS personalTotalAmount,
+          f.pool_total_data AS sharedPoolTotalAmount
+      FROM LINE l
+      JOIN PLAN p
+          ON p.plan_id = l.plan_id
+         AND p.deleted_at IS NULL
+      JOIN FAMILY_LINE fl
+          ON fl.line_id = l.line_id
+      JOIN FAMILY f
+          ON f.family_id = fl.family_id
+         AND f.deleted_at IS NULL
+      LEFT JOIN (
+          SELECT
+              line_id,
+              SUM(usage_amount) AS shared_used
+          FROM FAMILY_SHARED_USAGE_DAILY
+          WHERE line_id = #{lineId}
+            AND deleted_at IS NULL
+            AND usage_date >= STR_TO_DATE(CONCAT(#{yearMonth}, '01'), '%Y%m%d')
+            AND usage_date &lt;  DATE_ADD(STR_TO_DATE(CONCAT(#{yearMonth}, '01'), '%Y%m%d'), INTERVAL 1 MONTH)
+          GROUP BY line_id
+      ) fsu ON fsu.line_id = l.line_id
+      LEFT JOIN (
+          SELECT
+              line_id,
+              SUM(total_usage_data) AS total_used
+          FROM DAILY_TOTAL_DATA
+          WHERE line_id = #{lineId}
+            AND deleted_at IS NULL
+            AND usage_date >= STR_TO_DATE(CONCAT(#{yearMonth}, '01'), '%Y%m%d')
+            AND usage_date &lt;  DATE_ADD(STR_TO_DATE(CONCAT(#{yearMonth}, '01'), '%Y%m%d'), INTERVAL 1 MONTH)
+          GROUP BY line_id
+      ) dtd ON dtd.line_id = l.line_id
+      WHERE l.line_id = #{lineId}
+        AND l.deleted_at IS NULL
+  </select>
+ 
+ </mapper>

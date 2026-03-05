@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.policy.mapper.ImmediateBlockMapper">
+	
+    <select id="selectImmediateBlockPolicy" resultType="com.pooli.policy.domain.dto.response.ImmediateBlockResDto">
+       	SELECT 
+       		block_end_at 
+       	FROM LINE
+       	WHERE line_id = #{lineId}
+    </select>
+    
+    <update id="updateImmediateBlockPolicy">
+        UPDATE LINE
+		SET block_end_at = #{request.blockEndAt}
+		WHERE line_id = #{lineId}
+    </update>
+    
+</mapper>

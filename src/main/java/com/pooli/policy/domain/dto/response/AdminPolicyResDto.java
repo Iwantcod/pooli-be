@@ -1,26 +1,38 @@
 package com.pooli.policy.domain.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.*;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 @Getter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Schema(description = "관리자 정책 목록 항목")
+@Schema(description = "관리자 - 정책 생성 응답 dto")
 public class AdminPolicyResDto {
-    @Schema(description = "정책 식별자", example = "1001")
-    private Long policyId;
+	
+	@Schema(description = "정책 ID", example = "1")
+    private Integer policyId;
+    
+	@Schema(description = "정책 이름", example = "반복적 차단 정책")	
+	private String policyName;
 
-    @Schema(description = "정책명", example = "야간 사용 차단")
-    private String policyName;
+	@Schema(description = "정책 카테고리 ID", example = "1")	
+	private Integer policyCategoryId;
 
-    @Schema(description = "정책 유형", example = "BLOCK")
-    private String policyType;
+    @Schema(description = "정책 카테고리 이름", example = "차단")
+    private String policyCategoryName;
+	
+	@Schema(description = "정책 활성화 여부", example = "false")	
+	private Boolean isActive;
 
-    @Schema(description = "정책 활성화 여부", example = "true")
-    private Boolean active;
+	@Schema(description = "신규 정책 여부", example = "true")	
+	private Boolean isNew;
+	
+    @Schema(description = "최종 수정일", example = "2024-03-03T23:00:00")
+    private java.time.LocalDateTime updatedAt;
 
-    @Schema(description = "최종 수정 시각", example = "2026-02-20T10:10:00")
-    private String updatedAt;
 }

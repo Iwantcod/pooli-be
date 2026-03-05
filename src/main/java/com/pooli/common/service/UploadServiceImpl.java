@@ -1,5 +1,6 @@
 package com.pooli.common.service;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.enums.FileDomain;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.dto.request.PresignedUrlReqDto;
@@ -36,9 +37,9 @@ public class UploadServiceImpl implements UploadService {
     private String bucket;
 
     @Override
-    public PresignedUrlResDto generatePresignedUrls(PresignedUrlReqDto request) {
+    public PresignedUrlResDto generatePresignedUrls(PresignedUrlReqDto request, AuthUserDetails userDetails) {
 
-        uploadValidationService.validateRequest(request);
+        uploadValidationService.validateRequest(request, userDetails);
 
         try {
             List<UploadFileResDto> uploads = request.getFiles()
@@ -68,7 +69,7 @@ public class UploadServiceImpl implements UploadService {
 
         GetObjectPresignRequest presignRequest =
                 GetObjectPresignRequest.builder()
-                        .signatureDuration(Duration.ofMinutes(5))
+                        .signatureDuration(Duration.ofMinutes(10))
                         .getObjectRequest(getObjectRequest)
                         .build();
 

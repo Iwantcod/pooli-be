@@ -79,6 +79,12 @@ public enum PolicyErrorCode implements ErrorCode {
             "POLICY:4405",
             "해당 정책 정보가 존재하지 않습니다."
     ),
+
+    LIMIT_POLICY_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "POLICY:4406",
+            "해당 제한 정책 정보가 존재하지 않습니다."
+    ),
     
     
     /* 409(conflict) */
@@ -101,9 +107,15 @@ public enum PolicyErrorCode implements ErrorCode {
             "이미 활성화된 정책입니다."
     ),
     
-    BLOCK_POLICY_CONFLICT(
+    POLICY_INACTIVE_CONFLICT(
             HttpStatus.CONFLICT,
             "POLICY:4903",
+            "활성화되지 않은 정책입니다."
+    ),
+    
+    BLOCK_POLICY_CONFLICT(
+            HttpStatus.CONFLICT,
+            "POLICY:4904",
             "기존의 차단 정책과 충돌합니다."
     );
     

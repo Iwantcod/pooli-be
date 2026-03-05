@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.question.mapper.AnswerMapper">
+
+
+    <!-- 기존 questionId 기준 답변 조회 -->
+    <select id="findAnswerByQuestionId" resultType="com.pooli.question.domain.entity.Answer">
+        SELECT
+        answer_id,
+        user_id,
+        question_id,
+        content,
+        created_at
+        FROM answer
+        WHERE question_id = #{questionId}
+        AND deleted_at IS NULL
+    </select>
+
+    <!-- answerId 기준 단건 답변 조회 -->
+    <select id="findAnswerById" resultType="com.pooli.question.domain.entity.Answer">
+        SELECT
+        answer_id,
+        user_id,
+        question_id,
+        content,
+        created_at
+        FROM answer
+        WHERE answer_id = #{answerId}
+        AND deleted_at IS NULL
+    </select>
+
+    <!-- 답변 첨부파일 조회 -->
+    <select id="findAnswerAttachments" resultType="com.pooli.question.domain.entity.AnswerAttachment">
+        SELECT
+        answer_attachment_id,
+        answer_id,
+        s3_key,
+        file_size,
+        created_at
+        FROM answer_attachment
+        WHERE answer_id = #{answerId}
+        AND deleted_at IS NULL
+    </select>
+
+    <!-- 답변 첨부파일 soft delete questionId 기준 삭제 -->
+    <update id="softDeleteAnswerAttachments">
+        UPDATE answer_attachment
+        SET deleted_at = NOW()
+        WHERE answer_id IN (
+        SELECT answer_id
+        FROM answer
+        WHERE question_id = #{questionId}
+        AND deleted_at IS NULL
+        )
+        AND deleted_at IS NULL
+    </update>
+
+    <update id="softDeleteAnswers">
+        UPDATE answer
+        SET deleted_at = NOW()
+        WHERE question_id = #{questionId}
+        AND deleted_at IS NULL
+    </update>
+
+    <!-- answerId 기준 단건 삭제 -->
+    <update id="softDeleteAnswerAttachmentsByAnswerId">
+        UPDATE answer_attachment
+        SET deleted_at = NOW()
+        WHERE answer_id = #{answerId}
+        AND deleted_at IS NULL
+    </update>
+
+    <update id="softDeleteAnswerById">
+        UPDATE answer
+        SET deleted_at = NOW()
+        WHERE answer_id = #{answerId}
+        AND deleted_at IS NULL
+    </update>
+
+
+    <!-- 답변 생성 -->
+    <insert id="insertAnswer" useGeneratedKeys="true" keyProperty="answerId">
+        INSERT INTO answer (user_id, question_id, content, created_at)
+        VALUES (#{userId}, #{questionId}, #{content}, NOW())
+    </insert>
+
+    <!-- 답변 첨부파일 생성 -->
+    <insert id="insertAnswerAttachment" useGeneratedKeys="true" keyProperty="answerAttachmentId">
+        INSERT INTO answer_attachment (answer_id, s3_key, file_size, created_at)
+        VALUES (#{answerId}, #{s3Key}, #{fileSize}, NOW())
+    </insert>
+
+</mapper>
