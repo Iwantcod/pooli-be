@@ -6,6 +6,7 @@ import com.pooli.notification.domain.dto.response.NotiSendResDto;
 import com.pooli.notification.domain.dto.response.UnreadCountsResDto;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.domain.enums.NotificationTargetType;
 
 import java.util.List;
 import java.util.Map;
@@ -30,4 +31,5 @@ public interface AlarmHistoryService {
 
     UnreadCountsResDto readAll(Long lineId);
 
+    public void createListAlarm( List<Long> lineIds, NotificationTargetType targetType, AlarmCode alarmCode, AlarmType alarmType);
 }
