@@ -85,8 +85,7 @@ public class FamilySharedPoolsService {
         sharedPoolMapper.insertContribution(familyId, lineId, amount);
 
         // 4. 알람: 가족 전체 (본인 제외)에게 데이터 담기 알림
-        sendAlarmToFamily(familyId, lineId, AlarmType.SHARED_POOL_CONTRIBUTION,
-                Map.of("amount", String.valueOf(amount)));
+        sendAlarmToFamily(familyId, lineId, AlarmType.SHARED_POOL_CONTRIBUTION);
     }
 
     public SharedPoolDetailResDto getSharedPoolDetail(Long familyId, Long lineId) {
@@ -147,21 +146,20 @@ public class FamilySharedPoolsService {
         sharedPoolMapper.updateSharedDataThreshold(familyId, request.getNewFamilyThreshold());
 
         // 알람: 가족 전체에게 임계치 변경 알림
-        sendAlarmToFamily(familyId, null, AlarmType.SHARED_POOL_THRESHOLD_CHANGE,
-                Map.of("newThreshold", String.valueOf(request.getNewFamilyThreshold())));
+        sendAlarmToFamily(familyId, null, AlarmType.SHARED_POOL_THRESHOLD_CHANGE);
     }
 
     /**
      * 가족 구성원 전체에게 알람을 전송하는 헬퍼 메서드
      * @param excludeLineId 본인 제외 (null이면 전체에게 보냄)
      */
-    private void sendAlarmToFamily(Long familyId, Long excludeLineId, AlarmType alarmType, Map<String, String> values) {
+    private void sendAlarmToFamily(Long familyId, Long excludeLineId, AlarmType alarmType) {
         List<Long> familyLineIds = sharedPoolMapper.selectLineIdsByFamilyId(familyId);
         for (Long targetLineId : familyLineIds) {
             if (excludeLineId != null && targetLineId.equals(excludeLineId)) {
                 continue;
             }
-            alarmHistoryService.createAlarm(targetLineId, AlarmCode.FAMILY, alarmType, values);
+            alarmHistoryService.createAlarm(targetLineId, AlarmCode.FAMILY, alarmType);
         }
     }
 }

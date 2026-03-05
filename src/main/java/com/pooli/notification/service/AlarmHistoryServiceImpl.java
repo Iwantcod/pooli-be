@@ -33,6 +33,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
     private final NotificationLineMapper notificationLineMapper;
 
     @Transactional
+    @Override
     public void createAlarm(
             Long lineId,
             AlarmCode alarmCode,
@@ -57,38 +58,6 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
         } catch (JsonProcessingException e) {
             log.warn("알림 JSON 변환 실패 - lineId: {}, alarmCode: {}, error: {}", lineId, alarmCode.name(), e.getMessage());
-        }
-    }
-
-    @Transactional
-    @Override
-    public void createAlarm(
-            Long lineId,
-            AlarmCode alarmCode,
-            AlarmType alarmType,
-            Map<String, String> values
-    ) {
-        Map<String, String> mergedValues = new HashMap<>();
-        mergedValues.put("type", alarmType.name());
-        if (values != null) {
-            mergedValues.putAll(values);
-        }
-
-        try {
-            String jsonValue = objectMapper.writeValueAsString(mergedValues);
-
-            int result = alarmHistoryMapper.insertAlarmHistory(
-                    lineId,
-                    alarmCode.name(),
-                    jsonValue
-            );
-
-            if (result != 1) {
-                System.out.println("회선 Id :" + lineId + "의 " + alarmCode.name() + " : 알람 저장 실패");
-            }
-
-        } catch (JsonProcessingException e) {
-            System.out.println("알림 JSON 변환 실패 : " + e.getMessage());
         }
     }
 
