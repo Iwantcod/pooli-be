@@ -14,8 +14,8 @@
             p.is_active AS isActive,
             p.is_new AS isNew,
             p.updated_at AS updatedAt
-        FROM policy p
-        LEFT JOIN policy_category pc ON p.policy_category_id = pc.policy_category_id
+        FROM POLICY p
+        LEFT JOIN POLICY_CATEGORY pc ON p.policy_category_id = pc.policy_category_id
         WHERE p.deleted_at IS NULL
           AND (pc.deleted_at IS NULL OR pc.deleted_at IS NOT NULL)
         ORDER BY p.policy_id DESC
@@ -31,8 +31,8 @@
 		    p.is_active AS isActive,
 		    p.is_new AS isNew,
 		    p.updated_at AS updatedAt
-		FROM policy p
-		LEFT JOIN policy_category pc
+		FROM POLICY p
+		LEFT JOIN POLICY_CATEGORY pc
 		    ON p.policy_category_id = pc.policy_category_id
 		WHERE p.deleted_at IS NULL
 		  AND p.policy_id = #{policyId};
@@ -40,13 +40,13 @@
     
     <!-- 정책 추가 -->
     <insert id="insertPolicy" useGeneratedKeys="true" keyProperty="policyId">
-        INSERT INTO policy (policy_category_id, policy_name, is_active, is_new, created_at)
+        INSERT INTO POLICY (policy_category_id, policy_name, is_active, is_new, created_at)
         VALUES (#{request.policyCategoryId}, #{request.policyName}, false, true, NOW())
     </insert>
 
     <!-- 정책 수정 (동적 SQL: 값이 있는 필드만 업데이트) -->
     <update id="updatePolicy">
-        UPDATE policy
+        UPDATE POLICY
         SET
             policy_category_id = #{request.policyCategoryId},
             policy_name = #{request.policyName},
@@ -58,7 +58,7 @@
     
     <!-- 정책 - isNew 변경 -->
     <update id="updateIsNewPolicy">
-        UPDATE policy
+        UPDATE POLICY
         SET
             is_active = false,
             updated_at = NOW()
@@ -68,7 +68,7 @@
 
     <!-- 정책 삭제 (Soft Delete) -->
     <update id="deletePolicy">
-        UPDATE policy
+        UPDATE POLICY
         SET
             deleted_at = NOW()
         WHERE policy_id = #{policyId}
@@ -77,7 +77,7 @@
 
     <!-- 정책 활성/비활성 상태, isNew 변경 -->
     <update id="updatePolicyActiveStatus">        
-        UPDATE policy
+        UPDATE POLICY
 	    <set>
 	        <if test="request.isActive != null">is_active = #{request.isActive},</if>
 	        <!-- 활성 상태를 false로 바꾸는 경우 isNew도 false -->
@@ -94,7 +94,7 @@
         SELECT
             policy_category_id AS policyCategoryId,
             policy_category_name AS policyCategoryName
-        FROM policy_category
+        FROM POLICY_CATEGORY
         WHERE deleted_at IS NULL
         ORDER BY policy_category_id ASC
     </select>
@@ -105,20 +105,20 @@
 		    pc.policy_category_id AS policyCategoryId,
 		    pc.policy_category_name AS policyCategoryName,
 		    pc.updated_at AS updatedAt
-		FROM policy_category pc
+		FROM POLICY_CATEGORY pc
 		WHERE pc.deleted_at IS NULL
 		  AND pc.policy_category_id = #{policyCategoryId};
     </select>
 
     <!-- 정책 카테고리 추가 -->
     <insert id="insertCategory" useGeneratedKeys="true" keyProperty="policyCategoryId">
-        INSERT INTO policy_category (policy_category_name, created_at)
+        INSERT INTO POLICY_CATEGORY (policy_category_name, created_at)
         VALUES (#{request.policyCategoryName}, NOW())
     </insert>
 
     <!-- 정책 카테고리 수정 (동적 SQL) -->
     <update id="updateCategory">
-        UPDATE policy_category
+        UPDATE POLICY_CATEGORY
         <set>
             <if test="request.policyCategoryName != null">policy_category_name = #{request.policyCategoryName},</if>
             updated_at = NOW()
@@ -129,7 +129,7 @@
 
     <!-- 정책 카테고리 삭제 (Soft Delete) -->
     <update id="deleteCategory">
-        UPDATE policy_category
+        UPDATE POLICY_CATEGORY
         SET
             deleted_at = NOW()
         WHERE policy_category_id = #{policyCategoryId}

@@ -2,6 +2,9 @@ package com.pooli.policy.service;
 
 import java.util.List;
 
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.service.AlarmHistoryService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +48,8 @@ import java.util.Optional;
 @Slf4j
 @RequiredArgsConstructor
 public class UserPolicyServiceImpl implements UserPolicyService {
+    private final AlarmHistoryService alarmHistoryService;
+
     private final FamilyLineMapper familyLineMapper;
     private final LineLimitMapper lineLimitMapper;
     private final AppPolicyMapper appPolicyMapper;
@@ -101,6 +106,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	        repeatBlockDayMapper.insertRepeatBlockDays(request.getRepeatBlockId(), days);
 	    }
 
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.CREATE_REPEAT_BLOCK);
+
 	    // DTO 반환
 	    List<RepeatBlockDayResDto> dayResList = days != null
 	            ? days.stream()
@@ -121,6 +128,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	}
 
 	@Override
+    @Transactional
 	public RepeatBlockPolicyResDto updateRepeatBlockPolicy(Long repeatBlockId, RepeatBlockPolicyReqDto request,
 			AuthUserDetails auth) {
 	    RepeatBlockPolicyResDto exist = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
@@ -133,7 +141,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
 		// 반복 차단 요일 및 시간대 정보를 삭제한 후 새로 삽입하기
 		deleteRepeatBlockPolicy(repeatBlockId, auth);
-		return createRepeatBlockPolicy(request, auth);
+		RepeatBlockPolicyResDto updated = createRepeatBlockPolicy(request, auth);
+        alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_REPEAT_BLOCK);
+        return updated;
 	}
 
 	@Override
@@ -150,6 +160,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	    // soft delete
 	    repeatBlockMapper.deleteRepeatBlock(repeatBlockId);
 	    repeatBlockDayMapper.deleteRepeatDayBlock(repeatBlockId);
+        alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.DELETE_REPEAT_BLOCK);
 
 	    return RepeatBlockPolicyResDto.builder()
 	    		.repeatBlockId(repeatBlockId)
@@ -185,6 +196,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	    checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
 	    immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_IMMEDIATE_BLOCK);
 
         return ImmediateBlockResDto.builder()
         		.lineId(lineId)
@@ -229,6 +241,12 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             if(def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
+            if(newDailyLimitActive) {
+                alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT);
+            } else {
+                alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DAYDATA_LIMIT);
+            }
+
             return LimitPolicyResDto.builder()
                     .lineLimitId(lineLimit.get().getLimitId())
                     .dailyDataLimit(lineLimit.get().getDailyDataLimit())
@@ -260,6 +278,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
+        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DAYDATA_LIMIT);
+
         return LimitPolicyResDto.builder()
                 .lineLimitId(lineLimit.get().getLimitId())
                 .dailyDataLimit(request.getPolicyValue())
@@ -283,6 +303,11 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             int def = lineLimitMapper.updateIsSharedLimitActiveById(lineLimit.get().getLimitId(), newSharedLimitActive);
             if(def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+            }
+            if(newSharedLimitActive) {
+                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
+            } else {
+                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_SHAREDATA_LIMIT);
             }
             return LimitPolicyResDto.builder()
                     .lineLimitId(lineLimit.get().getLimitId())
@@ -314,6 +339,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if(def != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT);
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
+
         return LimitPolicyResDto.builder()
                 .lineLimitId(newLineLimit.getLimitId())
                 .dailyDataLimit(newLineLimit.getDailyDataLimit())
@@ -341,6 +369,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
+        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
         return LimitPolicyResDto.builder()
                 .lineLimitId(lineLimit.get().getLimitId())
                 .dailyDataLimit(lineLimit.get().getDailyDataLimit())
@@ -423,6 +452,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_APP_USAGE_LIMIT);
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
         return appPolicy.get().toBuilder()
                 .dailyLimitData(request.getValue())
@@ -446,6 +476,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DATA_SPEED_LIMIT);
 
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
         return appPolicy.get().toBuilder()
@@ -464,9 +495,17 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (appPolicy.isPresent()) {
             if(appPolicy.get().getAppPolicyId() != null) {
                 // 3-1. 기존 정책이 존재한다면 is_active를 반대값으로 설정(toggle)
-                int ret = appPolicyMapper.updateIsActive(appPolicy.get().getAppPolicyId(), !appPolicy.get().getIsActive());
+                boolean newIsActive = !appPolicy.get().getIsActive();
+                int ret = appPolicyMapper.updateIsActive(appPolicy.get().getAppPolicyId(), newIsActive);
                 if(ret != 1) {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+                }
+                if(newIsActive) {
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
+                } else {
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
                 }
                 return appPolicy.get().toBuilder()
                         .isActive(!appPolicy.get().getIsActive())
@@ -484,6 +523,11 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 if(ret != 1) {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
                 }
+
+                // 알람 전송
+                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
+                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
+
                 return AppPolicyResDto.builder()
                         .appPolicyId(newAppPolicy.getAppPolicyId())
                         .lineId(request.getLineId())
@@ -520,6 +564,13 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
+        // 알람 전송
+        if(newIsWhiteList) {
+            alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_ADD_WHITELIST);
+        } else {
+            alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_WHITELIST);
+        }
+
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
         return appPolicy.get().toBuilder()
                 .isWhiteList(newIsWhiteList)
@@ -543,6 +594,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if(ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
+
+        // 알람 전송
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
     }
 
 	@Override
