@@ -69,55 +69,73 @@ class UserPolicyServiceImplTest {
     class ReadMethods {
 
         @Test
+        @DisplayName("활성화된 정책 목록 조회 시 백오피스 조회 결과를 반환한다")
         void getActivePolicies_success() {
+            // given
             ActivePolicyResDto dto = ActivePolicyResDto.builder().policyId(1L).policyName("P1").build();
             when(policyBackOfficeMapper.selectActivePolicies()).thenReturn(List.of(dto));
 
+            // when
             List<ActivePolicyResDto> result = userPolicyService.getActivePolicies();
 
+            // then
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getPolicyName()).isEqualTo("P1");
         }
 
         @Test
+        @DisplayName("반복 차단 정책 조회 시 대상 라인의 정책 목록을 반환한다")
         void getRepeatBlockPolicies_success() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             when(repeatBlockMapper.selectRepeatBlocksByLineId(lineId))
                     .thenReturn(List.of(RepeatBlockPolicyResDto.builder().repeatBlockId(10L).lineId(lineId).build()));
 
+            // when
             List<RepeatBlockPolicyResDto> result = userPolicyService.getRepeatBlockPolicies(lineId, userAuth(100L));
 
+            // then
             assertThat(result).hasSize(1);
             assertThat(result.get(0).getRepeatBlockId()).isEqualTo(10L);
         }
 
         @Test
+        @DisplayName("즉시 차단 정책이 없으면 종료 시간을 null로 반환한다")
         void getImmediateBlockPolicy_whenMissing_returnsNullEndAt() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             when(immediateBlockMapper.selectImmediateBlockPolicy(lineId)).thenReturn(null);
 
+            // when
             ImmediateBlockResDto result = userPolicyService.getImmediateBlockPolicy(lineId, userAuth(100L));
 
+            // then
             assertThat(result.getLineId()).isEqualTo(lineId);
             assertThat(result.getBlockEndAt()).isNull();
         }
 
         @Test
+        @DisplayName("라인 제한 정책이 없으면 빈 제한 DTO를 반환한다")
         void getLimitPolicy_whenMissing_returnsEmptyDto() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             when(lineLimitMapper.getExistLineLimitByLineId(lineId)).thenReturn(Optional.empty());
 
+            // when
             LimitPolicyResDto result = userPolicyService.getLimitPolicy(lineId, userAuth(100L));
 
+            // then
             assertThat(result.getLineLimitId()).isNull();
             assertThat(result.getDailyDataLimit()).isNull();
         }
 
         @Test
+        @DisplayName("앱 정책 조회 시 기본 검색조건을 보정하고 페이징 결과를 반환한다")
         void getAppPolicies_success_appliesDefaultsAndPaging() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             AppPolicySearchCondReqDto req = AppPolicySearchCondReqDto.builder()
@@ -133,8 +151,10 @@ class UserPolicyServiceImplTest {
             ));
             when(appPolicyMapper.countApplicationsWithPolicy(any())).thenReturn(5L);
 
+            // when
             PagingResDto<AppPolicyResDto> result = userPolicyService.getAppPolicies(req, userAuth(100L));
 
+            // then
             assertThat(result.getContent()).hasSize(2);
             assertThat(result.getTotalElements()).isEqualTo(5L);
             assertThat(result.getTotalPages()).isEqualTo(3);
@@ -147,7 +167,9 @@ class UserPolicyServiceImplTest {
         }
 
         @Test
+        @DisplayName("적용된 정책 조회 시 반복/즉시 차단 정책을 함께 반환한다")
         void getAppliedPolicies_success() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             when(repeatBlockMapper.selectRepeatBlocksByLineId(lineId))
@@ -155,23 +177,29 @@ class UserPolicyServiceImplTest {
             when(immediateBlockMapper.selectImmediateBlockPolicy(lineId))
                     .thenReturn(ImmediateBlockResDto.builder().lineId(lineId).blockEndAt(LocalDateTime.now()).build());
 
+            // when
             AppliedPolicyResDto result = userPolicyService.getAppliedPolicies(lineId, userAuth(100L));
 
+            // then
             assertThat(result.getRepeatBlockPolicyList()).hasSize(1);
             assertThat(result.getImmediateBlock()).isNotNull();
         }
 
         @Test
+        @DisplayName("앱 정책 조회 시 페이지 번호가 음수면 INVALID_PAGE_NUMBER를 던진다")
         void getAppPolicies_invalidPageNumber_throws() {
+            // given
             AppPolicySearchCondReqDto req = AppPolicySearchCondReqDto.builder()
                     .lineId(100L)
                     .pageNumber(-1)
                     .pageSize(10)
                     .build();
 
+            // when
             ApplicationException ex = assertThrows(ApplicationException.class,
                     () -> userPolicyService.getAppPolicies(req, userAuth(100L)));
 
+            // then
             assertThat(ex.getErrorCode()).isEqualTo(CommonErrorCode.INVALID_PAGE_NUMBER);
         }
     }
@@ -181,7 +209,9 @@ class UserPolicyServiceImplTest {
     class WriteMethods {
 
         @Test
+        @DisplayName("반복 차단 정책 생성 성공 시 요일 정보 저장과 알림 발송을 수행한다")
         void createRepeatBlockPolicy_success() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
 
@@ -201,15 +231,19 @@ class UserPolicyServiceImplTest {
                 return 1;
             }).when(repeatBlockMapper).insertRepeatBlock(any());
 
+            // when
             RepeatBlockPolicyResDto result = userPolicyService.createRepeatBlockPolicy(req, userAuth(100L));
 
+            // then
             assertThat(result.getRepeatBlockId()).isEqualTo(11L);
             verify(repeatBlockDayMapper).insertRepeatBlockDays(eq(11L), any());
             verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.CREATE_REPEAT_BLOCK);
         }
 
         @Test
+        @DisplayName("중복 시간대의 반복 차단 정책 생성 시 BLOCK_POLICY_CONFLICT를 던진다")
         void createRepeatBlockPolicy_whenConflict_throws() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
 
@@ -223,24 +257,32 @@ class UserPolicyServiceImplTest {
 
             when(repeatBlockMapper.isDuplicatedRepeatBlocks(eq(lineId), any(), any(), any())).thenReturn(true);
 
+            // when
             ApplicationException ex = assertThrows(ApplicationException.class,
                     () -> userPolicyService.createRepeatBlockPolicy(req, userAuth(100L)));
 
+            // then
             assertThat(ex.getErrorCode()).isEqualTo(PolicyErrorCode.BLOCK_POLICY_CONFLICT);
         }
 
         @Test
+        @DisplayName("수정 대상 반복 차단 정책이 없으면 REPEAT_BLOCK_NOT_FOUND를 던진다")
         void updateRepeatBlockPolicy_whenNotFound_throws() {
+            // given
             when(repeatBlockMapper.selectRepeatBlockById(1L)).thenReturn(null);
 
+            // when
             ApplicationException ex = assertThrows(ApplicationException.class,
                     () -> userPolicyService.updateRepeatBlockPolicy(1L, new RepeatBlockPolicyReqDto(), userAuth(100L)));
 
+            // then
             assertThat(ex.getErrorCode()).isEqualTo(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
         }
 
         @Test
+        @DisplayName("반복 차단 정책 수정 성공 시 기존 정책 비활성화 후 신규 정책을 생성한다")
         void updateRepeatBlockPolicy_success() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             when(repeatBlockMapper.selectRepeatBlockById(1L))
@@ -262,42 +304,54 @@ class UserPolicyServiceImplTest {
                 return 1;
             }).when(repeatBlockMapper).insertRepeatBlock(any());
 
+            // when
             RepeatBlockPolicyResDto result = userPolicyService.updateRepeatBlockPolicy(1L, req, userAuth(100L));
 
+            // then
             assertThat(result.getRepeatBlockId()).isEqualTo(22L);
             verify(repeatBlockMapper).deleteRepeatBlock(1L);
             verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_REPEAT_BLOCK);
         }
 
         @Test
+        @DisplayName("반복 차단 정책 삭제 성공 시 비활성 상태의 결과를 반환한다")
         void deleteRepeatBlockPolicy_success() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             when(repeatBlockMapper.selectRepeatBlockById(7L))
                     .thenReturn(RepeatBlockPolicyResDto.builder().repeatBlockId(7L).lineId(lineId).build());
 
+            // when
             RepeatBlockPolicyResDto result = userPolicyService.deleteRepeatBlockPolicy(7L, userAuth(100L));
 
+            // then
             assertThat(result.getRepeatBlockId()).isEqualTo(7L);
             assertThat(result.getIsActive()).isFalse();
         }
 
         @Test
+        @DisplayName("즉시 차단 정책 수정 성공 시 종료시간 갱신과 알림 발송을 수행한다")
         void updateImmediateBlockPolicy_success() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             ImmediateBlockReqDto req = new ImmediateBlockReqDto();
             req.setBlockEndAt(LocalDateTime.of(2026, 3, 5, 10, 0));
 
+            // when
             ImmediateBlockResDto result = userPolicyService.updateImmediateBlockPolicy(lineId, req, userAuth(100L));
 
+            // then
             assertThat(result.getBlockEndAt()).isEqualTo(req.getBlockEndAt());
             verify(immediateBlockMapper).updateImmediateBlockPolicy(lineId, req);
             verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_IMMEDIATE_BLOCK);
         }
 
         @Test
+        @DisplayName("일일 총량 제한 토글 시 기존 정책을 활성화로 전환한다")
         void toggleDailyTotalLimitPolicy_existing_success() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             LineLimit lineLimit = LineLimit.builder()
@@ -311,28 +365,36 @@ class UserPolicyServiceImplTest {
             when(lineLimitMapper.getExistLineLimitByLineId(lineId)).thenReturn(Optional.of(lineLimit));
             when(lineLimitMapper.updateIsDailyLimitActiveById(1L, true)).thenReturn(1);
 
+            // when
             LimitPolicyResDto result = userPolicyService.toggleDailyTotalLimitPolicy(lineId, userAuth(100L));
 
+            // then
             assertThat(result.getIsDailyDataLimitActive()).isTrue();
             verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT);
         }
 
         @Test
+        @DisplayName("일일 총량 제한 토글 시 DB 업데이트 실패하면 DATABASE_ERROR를 던진다")
         void toggleDailyTotalLimitPolicy_dbFail_throws() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             LineLimit lineLimit = LineLimit.builder().limitId(1L).lineId(lineId).isDailyLimitActive(true).build();
             when(lineLimitMapper.getExistLineLimitByLineId(lineId)).thenReturn(Optional.of(lineLimit));
             when(lineLimitMapper.updateIsDailyLimitActiveById(1L, false)).thenReturn(0);
 
+            // when
             ApplicationException ex = assertThrows(ApplicationException.class,
                     () -> userPolicyService.toggleDailyTotalLimitPolicy(lineId, userAuth(100L)));
 
+            // then
             assertThat(ex.getErrorCode()).isEqualTo(CommonErrorCode.DATABASE_ERROR);
         }
 
         @Test
+        @DisplayName("일일 총량 제한 정책이 없으면 신규 제한 정책을 생성한다")
         void toggleDailyTotalLimitPolicy_whenMissing_insertsNew() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             when(lineLimitMapper.getExistLineLimitByLineId(lineId)).thenReturn(Optional.empty());
@@ -344,14 +406,18 @@ class UserPolicyServiceImplTest {
                 return 1;
             }).when(lineLimitMapper).createLineLimit(any());
 
+            // when
             LimitPolicyResDto result = userPolicyService.toggleDailyTotalLimitPolicy(lineId, userAuth(100L));
 
+            // then
             assertThat(result.getDailyDataLimit()).isEqualTo(-1L);
             assertThat(result.getIsSharedDataLimitActive()).isTrue();
         }
 
         @Test
+        @DisplayName("일일 총량 제한 값 변경 성공 시 변경된 제한 값을 반환한다")
         void updateDailyTotalLimitPolicyValue_success() {
+            // given
             LimitPolicyUpdateReqDto req = new LimitPolicyUpdateReqDto();
             req.setLimitPolicyId(1L);
             req.setPolicyValue(777L);
@@ -368,26 +434,34 @@ class UserPolicyServiceImplTest {
             allowFamily(100L, 100L);
             when(lineLimitMapper.updateDailyDataLimit(req)).thenReturn(1);
 
+            // when
             LimitPolicyResDto result = userPolicyService.updateDailyTotalLimitPolicyValue(req, userAuth(100L));
 
+            // then
             assertThat(result.getDailyDataLimit()).isEqualTo(777L);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DAYDATA_LIMIT);
         }
 
         @Test
+        @DisplayName("일일 총량 제한 값 변경 시 정책이 없으면 LIMIT_POLICY_NOT_FOUND를 던진다")
         void updateDailyTotalLimitPolicyValue_notFound_throws() {
+            // given
             LimitPolicyUpdateReqDto req = new LimitPolicyUpdateReqDto();
             req.setLimitPolicyId(1L);
             when(lineLimitMapper.getExistLineLimitById(1L)).thenReturn(Optional.empty());
 
+            // when
             ApplicationException ex = assertThrows(ApplicationException.class,
                     () -> userPolicyService.updateDailyTotalLimitPolicyValue(req, userAuth(100L)));
 
+            // then
             assertThat(ex.getErrorCode()).isEqualTo(PolicyErrorCode.LIMIT_POLICY_NOT_FOUND);
         }
 
         @Test
+        @DisplayName("공유 풀 제한 토글 시 기존 정책을 활성화로 전환한다")
         void toggleSharedPoolLimitPolicy_existing_success() {
+            // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
             LineLimit lineLimit = LineLimit.builder()
@@ -401,14 +475,18 @@ class UserPolicyServiceImplTest {
             when(lineLimitMapper.getExistLineLimitByLineId(lineId)).thenReturn(Optional.of(lineLimit));
             when(lineLimitMapper.updateIsSharedLimitActiveById(10L, true)).thenReturn(1);
 
+            // when
             LimitPolicyResDto result = userPolicyService.toggleSharedPoolLimitPolicy(lineId, userAuth(100L));
 
+            // then
             assertThat(result.getIsSharedDataLimitActive()).isTrue();
             verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
         }
 
         @Test
+        @DisplayName("공유 풀 제한 값 변경 성공 시 변경된 값을 반환한다")
         void updateSharedPoolLimitPolicyValue_success() {
+            // given
             LimitPolicyUpdateReqDto req = new LimitPolicyUpdateReqDto();
             req.setLimitPolicyId(10L);
             req.setPolicyValue(2222L);
@@ -425,14 +503,18 @@ class UserPolicyServiceImplTest {
             allowFamily(100L, 100L);
             when(lineLimitMapper.updateSharedDataLimit(req)).thenReturn(1);
 
+            // when
             LimitPolicyResDto result = userPolicyService.updateSharedPoolLimitPolicyValue(req, userAuth(100L));
 
+            // then
             assertThat(result.getSharedDataLimit()).isEqualTo(2222L);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
         }
 
         @Test
+        @DisplayName("앱 데이터 사용량 제한 변경 성공 시 변경된 제한값을 반환한다")
         void updateAppDataLimit_success() {
+            // given
             AppDataLimitUpdateReqDto req = new AppDataLimitUpdateReqDto();
             req.setAppPolicyId(1L);
             req.setValue(5000L);
@@ -449,14 +531,18 @@ class UserPolicyServiceImplTest {
             allowFamily(100L, 100L);
             when(appPolicyMapper.updateDataLimit(1L, 5000L)).thenReturn(1);
 
+            // when
             AppPolicyResDto result = userPolicyService.updateAppDataLimit(req, userAuth(100L));
 
+            // then
             assertThat(result.getDailyLimitData()).isEqualTo(5000L);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_APP_USAGE_LIMIT);
         }
 
         @Test
+        @DisplayName("앱 데이터 사용량 제한 변경 시 DB 업데이트 실패하면 DATABASE_ERROR를 던진다")
         void updateAppDataLimit_dbFail_throws() {
+            // given
             AppDataLimitUpdateReqDto req = new AppDataLimitUpdateReqDto();
             req.setAppPolicyId(1L);
             req.setValue(5000L);
@@ -466,14 +552,18 @@ class UserPolicyServiceImplTest {
             allowFamily(100L, 100L);
             when(appPolicyMapper.updateDataLimit(1L, 5000L)).thenReturn(0);
 
+            // when
             ApplicationException ex = assertThrows(ApplicationException.class,
                     () -> userPolicyService.updateAppDataLimit(req, userAuth(100L)));
 
+            // then
             assertThat(ex.getErrorCode()).isEqualTo(CommonErrorCode.DATABASE_ERROR);
         }
 
         @Test
+        @DisplayName("앱 속도 제한 변경 성공 시 변경된 속도 제한값을 반환한다")
         void updateAppSpeedLimit_success() {
+            // given
             AppSpeedLimitUpdateReqDto req = new AppSpeedLimitUpdateReqDto();
             req.setAppPolicyId(2L);
             req.setValue(70);
@@ -490,14 +580,18 @@ class UserPolicyServiceImplTest {
             allowFamily(100L, 100L);
             when(appPolicyMapper.updateSpeedLimit(2L, 70)).thenReturn(1);
 
+            // when
             AppPolicyResDto result = userPolicyService.updateAppSpeedLimit(req, userAuth(100L));
 
+            // then
             assertThat(result.getDailyLimitSpeed()).isEqualTo(70);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DATA_SPEED_LIMIT);
         }
 
         @Test
+        @DisplayName("기존 앱 정책의 활성화 토글 시 활성 상태로 변경하고 알림을 발송한다")
         void toggleAppPolicyActive_existingPolicy_success() {
+            // given
             AppPolicyActiveToggleReqDto req = new AppPolicyActiveToggleReqDto();
             req.setLineId(100L);
             req.setApplicationId(10);
@@ -516,15 +610,19 @@ class UserPolicyServiceImplTest {
             when(appPolicyMapper.findDtoExistByLineIdAndAppId(100L, 10)).thenReturn(Optional.of(appPolicy));
             when(appPolicyMapper.updateIsActive(1L, true)).thenReturn(1);
 
+            // when
             AppPolicyResDto result = userPolicyService.toggleAppPolicyActive(req, userAuth(100L));
 
+            // then
             assertThat(result.getIsActive()).isTrue();
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
         }
 
         @Test
+        @DisplayName("앱 정책이 없으면 신규 앱 정책을 생성하고 활성화한다")
         void toggleAppPolicyActive_newInsert_success() {
+            // given
             AppPolicyActiveToggleReqDto req = new AppPolicyActiveToggleReqDto();
             req.setLineId(100L);
             req.setApplicationId(10);
@@ -545,28 +643,36 @@ class UserPolicyServiceImplTest {
                 return 1;
             }).when(appPolicyMapper).insertAppPolicy(any());
 
+            // when
             AppPolicyResDto result = userPolicyService.toggleAppPolicyActive(req, userAuth(100L));
 
+            // then
             assertThat(result.getAppPolicyId()).isEqualTo(55L);
             assertThat(result.getIsActive()).isTrue();
         }
 
         @Test
+        @DisplayName("앱 정책 활성화 토글 시 앱 정보가 없으면 APP_NOT_FOUND를 던진다")
         void toggleAppPolicyActive_whenAppMissing_throws() {
+            // given
             AppPolicyActiveToggleReqDto req = new AppPolicyActiveToggleReqDto();
             req.setLineId(100L);
             req.setApplicationId(10);
             allowFamily(100L, 100L);
             when(appPolicyMapper.findDtoExistByLineIdAndAppId(100L, 10)).thenReturn(Optional.empty());
 
+            // when
             ApplicationException ex = assertThrows(ApplicationException.class,
                     () -> userPolicyService.toggleAppPolicyActive(req, userAuth(100L)));
 
+            // then
             assertThat(ex.getErrorCode()).isEqualTo(PolicyErrorCode.APP_NOT_FOUND);
         }
 
         @Test
+        @DisplayName("화이트리스트 토글 성공 시 화이트리스트 상태를 true로 변경한다")
         void toggleAppPolicyWhitelist_success() {
+            // given
             AppPolicyResDto appPolicy = AppPolicyResDto.builder()
                     .appPolicyId(1L)
                     .lineId(100L)
@@ -576,33 +682,43 @@ class UserPolicyServiceImplTest {
             allowFamily(100L, 100L);
             when(appPolicyMapper.updateIsWhitelist(1L, true)).thenReturn(1);
 
+            // when
             AppPolicyResDto result = userPolicyService.toggleAppPolicyWhitelist(1L, userAuth(100L));
 
+            // then
             assertThat(result.getIsWhiteList()).isTrue();
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_ADD_WHITELIST);
         }
 
         @Test
+        @DisplayName("앱 정책 삭제 성공 시 삭제 처리와 관련 알림 발송을 수행한다")
         void deleteAppPolicy_success() {
+            // given
             AppPolicy appPolicy = AppPolicy.builder().appPolicyId(1L).lineId(100L).build();
             when(appPolicyMapper.findEntityExistById(1L)).thenReturn(Optional.of(appPolicy));
             allowFamily(100L, 100L);
             when(appPolicyMapper.setDeleted(1L)).thenReturn(1);
 
+            // when
             userPolicyService.deleteAppPolicy(1L, userAuth(100L));
 
+            // then
             verify(appPolicyMapper).setDeleted(1L);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
         }
 
         @Test
+        @DisplayName("삭제 대상 앱 정책이 없으면 APP_POLICY_NOT_FOUND를 던진다")
         void deleteAppPolicy_notFound_throws() {
+            // given
             when(appPolicyMapper.findEntityExistById(1L)).thenReturn(Optional.empty());
 
+            // when
             ApplicationException ex = assertThrows(ApplicationException.class,
                     () -> userPolicyService.deleteAppPolicy(1L, userAuth(100L)));
 
+            // then
             assertThat(ex.getErrorCode()).isEqualTo(PolicyErrorCode.APP_POLICY_NOT_FOUND);
         }
     }
