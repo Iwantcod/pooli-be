@@ -63,6 +63,80 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
     @Transactional
     @Override
+    public void createListAlarm( List<Long> lineIds, NotificationTargetType targetType, AlarmCode alarmCode, AlarmType alarmType) {
+
+        if (targetType != NotificationTargetType.DIRECT
+                && lineIds != null && !lineIds.isEmpty()) {
+            log.warn("DIRECT 타입이 아닐 경우 lineIds는 빈 값이어야 함 - lineIds: {}", lineIds);
+        }
+
+        List<Long> targetLineIds;
+
+        switch (targetType) {
+
+            case DIRECT -> {
+
+                if (lineIds == null || lineIds.isEmpty()) {
+                    log.warn("알람 대상이 없음 - lineIds: {}", lineIds);
+                    return;
+                }
+
+                // 1. 중복 제거
+                Set<Long> uniqueLineIds = new HashSet<>(lineIds);
+
+                // 2. 존재하는 ID 조회
+                List<Long> existingLineIds =
+                        notificationLineMapper.findExistingLineIds(new ArrayList<>(uniqueLineIds));
+
+                Set<Long> missingIds = new HashSet<>(uniqueLineIds);
+                existingLineIds.forEach(missingIds::remove);
+
+                // 3. 존재 여부 검증
+                if (!missingIds.isEmpty()) {
+                    log.warn("알람 대상 중 DB에 존재하지 않는 LineId 발견 - missingIds: {}", missingIds);
+                    return;
+                }
+
+                targetLineIds = existingLineIds;
+            }
+            case ALL -> targetLineIds = notificationLineMapper.findAllLineIds();
+
+            case OWNER -> targetLineIds =
+                    notificationLineMapper.findLineIdsByRole("OWNER");
+
+            case MEMBER -> targetLineIds =
+                    notificationLineMapper.findLineIdsByRole("MEMBER");
+
+            default -> {
+                log.warn("존재 하지 않는 NotificationTargetType : {}", targetType);
+                return;
+            }
+        }
+
+        if (targetLineIds == null || targetLineIds.isEmpty()) {
+            log.warn("알람 대상이 없음 - LineId: {}", targetLineIds);
+            return;
+        }
+        try {
+            ObjectNode jsonNode = objectMapper.createObjectNode();
+
+            jsonNode.put("type", alarmType.name());
+
+            String jsonValue = objectMapper.writeValueAsString(jsonNode);
+
+            alarmHistoryMapper.insertNotificationAlarms(
+                    targetLineIds,
+                    alarmCode.name(),
+                    jsonValue
+            );
+
+        } catch (Exception e) {
+            log.warn("알람 저장 실패 - lineIds: {}, error: {}", targetLineIds, e.getMessage());
+        }
+    }
+
+    @Transactional
+    @Override
     public void sendNotification(NotiSendReqDto request) {
 
         List<Long> lineIds = request.getLineId();
