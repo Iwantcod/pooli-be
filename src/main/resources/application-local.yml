@@ -58,6 +58,7 @@ server:
         same-site: ${SESSION_COOKIE_SAME_SITE}
 
 logging:
+  config: classpath:monitoring/logback-spring.xml
   level:
     org.mybatis: ${LOG_LEVEL_MYBATIS}
     org.springframework.jdbc: ${LOG_LEVEL_JDBC}
