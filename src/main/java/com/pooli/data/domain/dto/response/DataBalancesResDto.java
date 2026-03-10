@@ -9,11 +9,12 @@ import lombok.*;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 @Schema(description = "공유 및 개인 데이터 잔량 조회 응답 DTO")
 public class DataBalancesResDto {
-
-    @Schema(description = "사용자 이름", example = "홍길동")
-    private String userName;
+ 
     
-    @Schema(description = "사용자 가족 내 권한", example = "OWNER")
+	@Schema(description = "회선 식별자", example = "1")
+	private Long lineId;
+
+	@Schema(description = "사용자 가족 내 권한", example = "OWNER")
     private String role;
 
     @Schema(description = "가족 공유 데이터 잔량(byte)", example = "5000")
