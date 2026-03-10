@@ -13,7 +13,7 @@
         question_category_name,
         created_at,
         deleted_at
-        FROM question_category
+        FROM QUESTION_CATEGORY
         WHERE deleted_at IS NULL
         ORDER BY question_category_id ASC
 
@@ -21,7 +21,7 @@
 
     <!-- 문의사항 insert -->
     <insert id="insertQuestion" useGeneratedKeys="true" keyProperty="questionId">
-        INSERT INTO question
+        INSERT INTO QUESTION
         (question_category_id, line_id, title, content, is_answer, created_at)
         VALUES
         (#{questionCategoryId}, #{lineId}, #{title}, #{content}, false, NOW())
@@ -29,7 +29,7 @@
 
     <!-- 문의사항 첨부파일 insert -->
     <insert id="insertQuestionAttachments">
-        INSERT INTO question_attachment
+        INSERT INTO QUESTION_ATTACHMENT
         (question_id, s3_key, file_size, created_at)
         VALUES
         <foreach collection="attachments" item="att" separator=",">
@@ -39,7 +39,7 @@
 
     <!-- 문의사항 soft delete -->
     <update id="softDeleteQuestion">
-        UPDATE question
+        UPDATE QUESTION
         SET deleted_at = NOW()
         WHERE question_id = #{questionId}
         AND deleted_at IS NULL
@@ -47,7 +47,7 @@
 
     <!-- 문의사항 첨부파일 soft delete -->
     <update id="softDeleteQuestionAttachments">
-        UPDATE question_attachment
+        UPDATE QUESTION_ATTACHMENT
         SET deleted_at = NOW()
         WHERE question_id = #{questionId}
         AND deleted_at IS NULL
@@ -63,7 +63,7 @@
         line_id AS lineId,
         title,
         is_answer AS isAnswer
-        FROM question
+        FROM QUESTION
         WHERE deleted_at IS NULL
         AND line_id = #{lineId}
 
@@ -88,7 +88,7 @@
     <select id="countQuestionList" resultType="long">
 
         SELECT COUNT(*)
-        FROM question
+        FROM QUESTION
         WHERE deleted_at IS NULL
 
         AND line_id = #{lineId}
@@ -114,7 +114,7 @@
         line_id AS lineId,
         title,
         is_answer AS isAnswer
-        FROM question
+        FROM QUESTION
         WHERE deleted_at IS NULL
 
         <!-- lineId optional -->
@@ -142,7 +142,7 @@
     <!-- 관리자용 전체 개수 조회 -->
     <select id="countQuestionListAdmin" resultType="long">
         SELECT COUNT(*)
-        FROM question
+        FROM QUESTION
         WHERE deleted_at IS NULL
 
         <if test="lineId != null">
@@ -171,7 +171,7 @@
         content,
         is_answer,
         created_at
-        FROM question
+        FROM QUESTION
         WHERE question_id = #{questionId}
         AND deleted_at IS NULL
     </select>
@@ -184,15 +184,14 @@
         s3_key,
         file_size,
         created_at
-        FROM question_attachment
+        FROM QUESTION_ATTACHMENT
         WHERE question_id = #{questionId}
         AND deleted_at IS NULL
     </select>
 
-
     <!-- 질문 isAnswer 업데이트 -->
     <update id="updateQuestionIsAnswer">
-        UPDATE question
+        UPDATE QUESTION
         SET is_answer = #{isAnswer}
         WHERE question_id = #{questionId}
         AND deleted_at IS NULL

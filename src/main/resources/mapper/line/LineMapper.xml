@@ -20,7 +20,7 @@
 	        line_id AS lineId,
 	        phone AS phoneNumber
 	    FROM
-	        line
+	        LINE
 	    WHERE
 	        user_id = #{userId}
 	        AND deleted_at IS NULL
@@ -37,13 +37,13 @@
 	          individual_threshold AS individualThreshold,
 	          is_threshold_active AS isThresholdActive
 	      FROM
-	          line
+	          LINE
 	      WHERE
 	          line_id = #{lineId}
     </select>
     
 	<update id="updateIndividualThreshold">
-	   UPDATE line
+	   UPDATE LINE
 	   SET
 	       individual_threshold = #{individualThreshold},
 	       is_threshold_active = #{isThresholdActive}
@@ -74,7 +74,7 @@
 	        line_id AS lineId,
 	        phone AS phoneNumber
 	    FROM
-	        line
+	        LINE
 	    WHERE
 	        user_id = #{userId}
 	        AND deleted_at IS NULL

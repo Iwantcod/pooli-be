@@ -5,7 +5,6 @@
 
 <mapper namespace="com.pooli.question.mapper.AnswerMapper">
 
-
     <!-- 기존 questionId 기준 답변 조회 -->
     <select id="findAnswerByQuestionId" resultType="com.pooli.question.domain.entity.Answer">
         SELECT
@@ -14,7 +13,7 @@
         question_id,
         content,
         created_at
-        FROM answer
+        FROM ANSWER
         WHERE question_id = #{questionId}
         AND deleted_at IS NULL
     </select>
@@ -27,7 +26,7 @@
         question_id,
         content,
         created_at
-        FROM answer
+        FROM ANSWER
         WHERE answer_id = #{answerId}
         AND deleted_at IS NULL
     </select>
@@ -40,18 +39,18 @@
         s3_key,
         file_size,
         created_at
-        FROM answer_attachment
+        FROM ANSWER_ATTACHMENT
         WHERE answer_id = #{answerId}
         AND deleted_at IS NULL
     </select>
 
     <!-- 답변 첨부파일 soft delete questionId 기준 삭제 -->
     <update id="softDeleteAnswerAttachments">
-        UPDATE answer_attachment
+        UPDATE ANSWER_ATTACHMENT
         SET deleted_at = NOW()
         WHERE answer_id IN (
         SELECT answer_id
-        FROM answer
+        FROM ANSWER
         WHERE question_id = #{questionId}
         AND deleted_at IS NULL
         )
@@ -59,7 +58,7 @@
     </update>
 
     <update id="softDeleteAnswers">
-        UPDATE answer
+        UPDATE ANSWER
         SET deleted_at = NOW()
         WHERE question_id = #{questionId}
         AND deleted_at IS NULL
@@ -67,29 +66,28 @@
 
     <!-- answerId 기준 단건 삭제 -->
     <update id="softDeleteAnswerAttachmentsByAnswerId">
-        UPDATE answer_attachment
+        UPDATE ANSWER_ATTACHMENT
         SET deleted_at = NOW()
         WHERE answer_id = #{answerId}
         AND deleted_at IS NULL
     </update>
 
     <update id="softDeleteAnswerById">
-        UPDATE answer
+        UPDATE ANSWER
         SET deleted_at = NOW()
         WHERE answer_id = #{answerId}
         AND deleted_at IS NULL
     </update>
 
-
     <!-- 답변 생성 -->
     <insert id="insertAnswer" useGeneratedKeys="true" keyProperty="answerId">
-        INSERT INTO answer (user_id, question_id, content, created_at)
+        INSERT INTO ANSWER (user_id, question_id, content, created_at)
         VALUES (#{userId}, #{questionId}, #{content}, NOW())
     </insert>
 
     <!-- 답변 첨부파일 생성 -->
     <insert id="insertAnswerAttachment" useGeneratedKeys="true" keyProperty="answerAttachmentId">
-        INSERT INTO answer_attachment (answer_id, s3_key, file_size, created_at)
+        INSERT INTO ANSWER_ATTACHMENT (answer_id, s3_key, file_size, created_at)
         VALUES (#{answerId}, #{s3Key}, #{fileSize}, NOW())
     </insert>
 

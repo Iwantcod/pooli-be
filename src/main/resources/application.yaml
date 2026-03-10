@@ -26,6 +26,8 @@ spring:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
+    mongodb:
+      uri: ${MONGO_URI}
   session:
     store-type: redis
     timeout: ${SESSION_TIMEOUT}
@@ -53,6 +55,7 @@ server:
         same-site: ${SESSION_COOKIE_SAME_SITE}
 
 logging:
+  config: classpath:monitoring/logback-spring.xml
   level:
     org.mybatis: ${LOG_LEVEL_MYBATIS}
     org.springframework.jdbc: ${LOG_LEVEL_JDBC}
@@ -83,7 +86,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: "health, prometheus"
   endpoint:
     health:
       show-details: never
