@@ -54,7 +54,7 @@
         SELECT COUNT(*)
         FROM ALARM_HISTORY ah
 
-        LEFT JOIN alarm_setting s
+        LEFT JOIN ALARM_SETTING s
         ON s.user_id = #{userId}
         AND s.deleted_at IS NULL
 
@@ -99,7 +99,7 @@
 
         FROM ALARM_HISTORY ah
 
-        LEFT JOIN alarm_setting s
+        LEFT JOIN ALARM_SETTING s
         ON s.user_id = #{userId}
         AND s.deleted_at IS NULL
 
@@ -153,7 +153,7 @@
         SELECT COUNT(*)
         FROM ALARM_HISTORY ah
 
-        LEFT JOIN alarm_setting s
+        LEFT JOIN ALARM_SETTING s
         ON s.user_id = #{userId}
         AND s.deleted_at IS NULL
 

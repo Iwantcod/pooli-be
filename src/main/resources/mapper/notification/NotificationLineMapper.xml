@@ -6,21 +6,21 @@
 <mapper namespace="com.pooli.notification.mapper.NotificationLineMapper">
     <select id="findAllLineIds" resultType="long">
         SELECT line_id
-        FROM line
+        FROM LINE
         WHERE deleted_at IS NULL
     </select>
 
     <select id="findLineIdsByRole" resultType="long">
         SELECT DISTINCT fl.line_id
-        FROM family_line fl
-        JOIN line l ON fl.line_id = l.line_id
+        FROM FAMILY_LINE fl
+        JOIN LINE l ON fl.line_id = l.line_id
         WHERE fl.role = #{role}
         AND l.deleted_at IS NULL
     </select>
 
     <select id="findExistingLineIds" resultType="long">
         SELECT line_id
-        FROM line
+        FROM LINE
         WHERE line_id IN
         <foreach collection="lineIds"
                  item="id"

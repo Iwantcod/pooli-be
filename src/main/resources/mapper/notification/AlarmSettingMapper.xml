@@ -11,7 +11,7 @@
             resultType="AlarmSetting">
 
         SELECT *
-        FROM alarm_setting
+        FROM ALARM_SETTING
         WHERE user_id = #{userId}
         AND deleted_at IS NULL
 
