@@ -27,7 +27,8 @@
 API 서버:
 
 - 요청별 traceId 생성
-- MQ 적재 성공 시 200, 실패 시 500/403
+- MQ 적재 성공 시 200
+- MQ 적재 실패 시 API 서버 HTTP 응답 코드는 추후 확정(TBD)
 
 트래픽 처리 서버:
 
@@ -75,8 +76,8 @@ API 서버:
 - app_speed_limit:{lineId} (hash, ttl 없음) -> speed:{appId}
 - app_whitelist:{lineId} (set, ttl 없음) -> {appId}
 - monthly_shared_limit:{lineId} (string, ttl 없음)
-- daily_total_usage:{lineId}:{yyyymmdd} (string, ttl 일말+12h)
-- daily_app_usage:{lineId}:{yyyymmdd} (hash, ttl 일말+12h) -> app:{appId}
+- daily_total_usage:{lineId}:{yyyymmdd} (string, ttl 일말+8h)
+- daily_app_usage:{lineId}:{yyyymmdd} (hash, ttl 일말+8h) -> app:{appId}
 - monthly_shared_usage:{lineId}:{yyyymm} (string, ttl 월말+10d)
 
 ### **5.3 차단**
@@ -348,8 +349,8 @@ value -> {used data}
 - 프로파일 종류: `local`, `api`, `traffic`
 - `local` 프로파일: 개발용. API 서버 역할 + 트래픽 처리 서버 역할을 모두 수행한다.
 - `api` 프로파일: API 서버 역할만 수행한다.
-    - 요청 수신 -> `traceId` 생성 -> MQ 적재까지 수행한다.
-    - cache용 Redis, streams용 Redis에는 접근하지 않는다.
+    - 요청 수신 -> `traceId` 생성 -> Streams(MQ) 적재까지 수행한다.
+    - cache용 Redis에는 접근하지 않으며, streams용 Redis에는 접근한다.
     - 세션용 Redis는 별도 인프라이며 기존 설정대로 사용한다.
 - `traffic` 프로파일: 트래픽 처리 서버 역할만 수행한다.
     - MQ/Streams 소비, 1초 tick 차감 오케스트레이션, DONE 저장, XACK 수행
