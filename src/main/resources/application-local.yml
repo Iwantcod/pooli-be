@@ -90,6 +90,8 @@ app:
     key-traffic-request: ${STREAMS_KEY_TRAFFIC_REQUEST:traffic:deduct:request}
     group-traffic: ${STREAMS_GROUP_TRAFFIC:traffic-deduct-cg}
     consumer-name: ${STREAMS_CONSUMER_NAME:${HOSTNAME:pooli}-${SERVER_PORT:8080}}
+    consumer-enabled: ${STREAMS_CONSUMER_ENABLED:false}
+    worker-thread-count: ${STREAMS_WORKER_THREAD_COUNT:8}
     read-count: ${STREAMS_READ_COUNT:20}
     block-ms: ${STREAMS_BLOCK_MS:2000}
     reclaim-interval-ms: ${STREAMS_RECLAIM_INTERVAL_MS:5000}

@@ -35,6 +35,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficRequestEnqueueService {
 
+    // MDC에서 trace id를 읽고/쓸 때 사용하는 고정 키
     private static final String TRACE_ID_MDC_KEY = "traceId";
 
     @Qualifier("streamsStringRedisTemplate")
@@ -77,9 +78,15 @@ public class TrafficRequestEnqueueService {
         // 요청 필터(MDC)에 이미 traceId가 있으면 같은 값을 재사용해
         // API 로그와 MQ 메시지 간 상관관계를 쉽게 추적한다.
         String existingTraceId = MDC.get(TRACE_ID_MDC_KEY);
-        return existingTraceId != null && !existingTraceId.isBlank()
-                ? existingTraceId
-                : UUID.randomUUID().toString();
+        if (existingTraceId != null && !existingTraceId.isBlank()) {
+            return existingTraceId;
+        }
+
+        // traceId가 없는 실행 경로(예: 테스트/비웹 호출)에서도
+        // 동일 키("traceId") 기준으로 로그 상관관계를 유지하도록 MDC에 기록한다.
+        String generatedTraceId = UUID.randomUUID().toString();
+        MDC.put(TRACE_ID_MDC_KEY, generatedTraceId);
+        return generatedTraceId;
     }
 
     private String toPayloadJson(TrafficPayloadReqDto payload) {
@@ -110,4 +117,3 @@ public class TrafficRequestEnqueueService {
         }
     }
 }
-

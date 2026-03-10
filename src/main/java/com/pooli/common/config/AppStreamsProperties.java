@@ -17,6 +17,8 @@ public class AppStreamsProperties {
     private String keyTrafficRequest;
     private String groupTraffic;
     private String consumerName;
+    private boolean consumerEnabled;
+    private int workerThreadCount;
     private int readCount;
     private long blockMs;
     private long reclaimIntervalMs;
@@ -24,4 +26,3 @@ public class AppStreamsProperties {
     private int maxRetry;
     private String keyTrafficDlq;
 }
-
