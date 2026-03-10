@@ -64,7 +64,7 @@
   - `lock_release.lua`
   - 스크립트 SHA preload 및 실행기 구현
 - 완료 기준:
-  - `EVALSHA` 호출 및 `[answer,status]` 파싱 성공
+  - `EVALSHA` 호출 및 JSON 반환(`answer`,`status`) 파싱 성공
 
 ### 3.7 Redis 키/TTL/시간 규칙 구현
 - 작업:
@@ -148,4 +148,3 @@
 - API 실패 응답코드(`TBD`) 확정 필요:
   - 후보 예시: `400/401/403/500/503`
   - 확정 전까지는 내부 오류 중심 임시 정책으로 운영
-

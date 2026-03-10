@@ -129,7 +129,7 @@ value -> {used data}
 
 ## **7) Lua 반환 계약**
 
-- 모든 차감 Lua는 [answer, status]를 반환한다.
+- 모든 차감 Lua는 JSON 문자열(`{"answer": <number>, "status": "<CODE>"}`)을 반환한다.
 - answer: 현재 tick 실제 차감량(Byte)
 - status:
 
@@ -150,8 +150,8 @@ value -> {used data}
 
 | **스크립트** | **목적** | **주요 입력** | **주요 읽기/쓰기** | **반환** |
 | --- | --- | --- | --- | --- |
-| deduct_indiv_tick.lua | 개인풀 tick 차감 + 정책 검증 + usage 갱신 | lineId, appId, currentTickTargetData, nowSec, traceId | 개인풀 잔량, 차단/제한, 일사용량, 앱사용량, 속도누적 | [answer, status] |
-| deduct_shared_tick.lua | 공유풀 tick 차감 + 정책 검증 + usage 갱신 | lineId, familyId, appId, currentTickTargetData, nowSec, traceId | 공유풀 잔량, 차단/제한, 일/월사용량, 앱사용량, 속도누적 | [answer, status] |
+| deduct_indiv_tick.lua | 개인풀 tick 차감 + 정책 검증 + usage 갱신 | lineId, appId, currentTickTargetData, nowSec, traceId | 개인풀 잔량, 차단/제한, 일사용량, 앱사용량, 속도누적 | JSON 문자열(`{"answer":n,"status":"..."}`) |
+| deduct_shared_tick.lua | 공유풀 tick 차감 + 정책 검증 + usage 갱신 | lineId, familyId, appId, currentTickTargetData, nowSec, traceId | 공유풀 잔량, 차단/제한, 일/월사용량, 앱사용량, 속도누적 | JSON 문자열(`{"answer":n,"status":"..."}`) |
 | refill_gate.lua | refill 필요 여부 + lock 획득 판정 | poolType, ownerId, threshold, traceId | 잔량, is_empty, lock 키 | FAIL/SKIP/OK/WAIT |
 | lock_heartbeat.lua | lock 소유자 TTL 연장 | lockKey, traceId, ttlMs | lock 키 | 1(성공)/0(실패) |
 | lock_release.lua | lock 소유자 해제 | lockKey, traceId | lock 키 | 1(해제)/0(무시) |
@@ -194,60 +194,60 @@ value -> {used data}
 
 ### **11.4 개인 데이터 차감 가능량 계산 및 차감량 반환 (상세)**
 
-1. `currentTickTargetData < 0`이면 `[-1, ERROR]` 반환
+1. `currentTickTargetData < 0`이면 `{"answer":-1,"status":"ERROR"}` 반환
 2. `answer = min(개인풀 잔량, currentTickTargetData)`
-3. `answer == 0`이면 `[0, NO_BALANCE]` 반환
+3. `answer == 0`이면 `{"answer":0,"status":"NO_BALANCE"}` 반환
 4. 앱 화이트리스트 여부 확인
 5. 화이트리스트 앱이면 11번으로 이동(차단/제한 정책 우회)
-6. 즉시 차단 정책 적용 중이면 `[0, BLOCKED_IMMEDIATE]` 반환
-7. 반복 차단 상태이면 `[0, BLOCKED_REPEAT]` 반환
+6. 즉시 차단 정책 적용 중이면 `{"answer":0,"status":"BLOCKED_IMMEDIATE"}` 반환
+7. 반복 차단 상태이면 `{"answer":0,"status":"BLOCKED_REPEAT"}` 반환
 8. 일 데이터 사용 제한 검증
 - 정책 비활성 또는 제한값 `1`이면 다음 단계
 - 아니라면 `answer = min(answer, max(0, 일 제한값 - 일 누적 사용량))`
-- 이때 `answer == 0`이면 `[0, HIT_DAILY_LIMIT]` 반환
+- 이때 `answer == 0`이면 `{"answer":0,"status":"HIT_DAILY_LIMIT"}` 반환
 9. 앱 데이터 사용 제한 검증
 - 정책 비활성 또는 제한값 `1`이면 다음 단계
 - 아니라면 `answer = min(answer, max(0, 앱 일 제한값 - 앱 일 누적 사용량))`
-- 이때 `answer == 0`이면 `[0, HIT_APP_DAILY_LIMIT]` 반환
+- 이때 `answer == 0`이면 `{"answer":0,"status":"HIT_APP_DAILY_LIMIT"}` 반환
 10. 앱 속도 제한 검증
 - 정책 비활성 또는 제한값 `1`이면 다음 단계
 - 아니라면 `answer = min(answer, 초당 사용 가능 데이터량(Byte))`
-- 이때 `answer == 0`이면 `[0, HIT_APP_SPEED]` 반환
+- 이때 `answer == 0`이면 `{"answer":0,"status":"HIT_APP_SPEED"}` 반환
 11. `answer`만큼 개인풀 잔량 차감
 12. `answer`만큼 `daily_total_usage` 증가
 13. `answer`만큼 `daily_app_usage` 증가
-14. `[answer, OK]` 반환
+14. `{"answer":answer,"status":"OK"}` 반환
 
 ### **11.5 공유 데이터 차감 가능량 계산 및 차감량 반환 (상세)**
 
-1. `currentTickTargetData < 0`이면 `[-1, ERROR]` 반환
+1. `currentTickTargetData < 0`이면 `{"answer":-1,"status":"ERROR"}` 반환
 2. `answer = min(공유풀 잔량, currentTickTargetData)`
-3. `answer == 0`이면 `[0, NO_BALANCE]` 반환
+3. `answer == 0`이면 `{"answer":0,"status":"NO_BALANCE"}` 반환
 4. 앱 화이트리스트 여부 확인
 5. 화이트리스트 앱이면 12번으로 이동(차단/제한 정책 우회)
-6. 즉시 차단 정책 적용 중이면 `[0, BLOCKED_IMMEDIATE]` 반환
-7. 반복 차단 상태이면 `[0, BLOCKED_REPEAT]` 반환
+6. 즉시 차단 정책 적용 중이면 `{"answer":0,"status":"BLOCKED_IMMEDIATE"}` 반환
+7. 반복 차단 상태이면 `{"answer":0,"status":"BLOCKED_REPEAT"}` 반환
 8. 일 데이터 사용 제한 검증
 - 정책 비활성 또는 제한값 `1`이면 다음 단계
 - 아니라면 `answer = min(answer, max(0, 일 제한값 - 일 누적 사용량))`
-- 이때 `answer == 0`이면 `[0, HIT_DAILY_LIMIT]` 반환
+- 이때 `answer == 0`이면 `{"answer":0,"status":"HIT_DAILY_LIMIT"}` 반환
 9. 월 공유풀 사용 제한 검증
 - 정책 비활성 또는 제한값 `1`이면 다음 단계
 - 아니라면 `answer = min(answer, max(0, 월 공유 제한값 - 월 공유 누적 사용량))`
-- 이때 `answer == 0`이면 `[0, HIT_MONTHLY_SHARED_LIMIT]` 반환
+- 이때 `answer == 0`이면 `{"answer":0,"status":"HIT_MONTHLY_SHARED_LIMIT"}` 반환
 10. 앱 데이터 사용 제한 검증
 - 정책 비활성 또는 제한값 `1`이면 다음 단계
 - 아니라면 `answer = min(answer, max(0, 앱 일 제한값 - 앱 일 누적 사용량))`
-- 이때 `answer == 0`이면 `[0, HIT_APP_DAILY_LIMIT]` 반환
+- 이때 `answer == 0`이면 `{"answer":0,"status":"HIT_APP_DAILY_LIMIT"}` 반환
 11. 앱 속도 제한 검증
 - 정책 비활성 또는 제한값 `1`이면 다음 단계
 - 아니라면 `answer = min(answer, 초당 사용 가능 데이터량(Byte))`
-- 이때 `answer == 0`이면 `[0, HIT_APP_SPEED]` 반환
+- 이때 `answer == 0`이면 `{"answer":0,"status":"HIT_APP_SPEED"}` 반환
 12. `answer`만큼 공유풀 잔량 차감
 13. `answer`만큼 `daily_total_usage` 증가
 14. `answer`만큼 `monthly_shared_usage` 증가
 15. `answer`만큼 `daily_app_usage` 증가
-16. `[answer, OK]` 반환
+16. `{"answer":answer,"status":"OK"}` 반환
 
 ### **12) 데이터 리필량 계산**
 
@@ -329,7 +329,7 @@ value -> {used data}
 4. tick=1..10 루프를 시작한다.
 5. remaining_ticks를 계산하고 current_tick_target_data = ceil(api_remaining_data / remaining_ticks)를 구한다.
 6. `deduct_indiv_tick.lua`를 호출한다.
-7. Lua는 원자적으로 검증 -> answer 계산 -> 차감/집계 -> [answer,status] 반환을 수행한다.
+7. Lua는 원자적으로 검증 -> answer 계산 -> 차감/집계 -> JSON(`{"answer":...,"status":"..."}`) 반환을 수행한다.
 8. 개인풀 결과가 HYDRATE면 DB hydrate 후 같은 tick에서 `deduct_indiv_tick.lua` 1회 재호출한다.
 9. 개인풀 결과가 NO_BALANCE면 `refill_gate.lua`를 호출한다.
 10. refill 결과가 OK면 DB refill 수행 후(필요 시 heartbeat) 같은 tick에서 `deduct_indiv_tick.lua` 1회 재호출한다.

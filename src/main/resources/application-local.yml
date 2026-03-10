@@ -28,9 +28,9 @@ spring:
       password: ${SPRING_SECURITY_PASSWORD}
   data:
     redis:
-      host: ${SESSION_REDIS_HOST:${REDIS_HOST}}
-      port: ${SESSION_REDIS_PORT:${REDIS_PORT}}
-      password: ${SESSION_REDIS_PASSWORD:${REDIS_PASSWORD}}
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
     mongodb:
       uri: ${L0CAL_MONGO_URI}
   session:
