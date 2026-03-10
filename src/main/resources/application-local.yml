@@ -58,6 +58,7 @@ server:
         same-site: ${SESSION_COOKIE_SAME_SITE}
 
 logging:
+  config: classpath:monitoring/logback-spring.xml
   level:
     org.mybatis: ${LOG_LEVEL_MYBATIS}
     org.springframework.jdbc: ${LOG_LEVEL_JDBC}
@@ -73,6 +74,12 @@ springdoc:
 app:
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health, prometheus"
 
 # ==========================================================
 # AWS S3 CONFIG

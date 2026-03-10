@@ -3,6 +3,7 @@ package com.pooli.common.exception;
 import java.time.OffsetDateTime;
 import java.util.List;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.MDC;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
@@ -34,8 +35,17 @@ public class GlobalExceptionHandler {
     private static final String TRACE_ID_KEY = "traceId";
 
     @ExceptionHandler(ApplicationException.class)
-    public ResponseEntity<ErrorResDto> handleApplicationException(ApplicationException ex) {
+    public ResponseEntity<ErrorResDto> handleApplicationException(ApplicationException ex, HttpServletRequest request) {
         ErrorCode errorCode = ex.getErrorCode();
+
+        log.warn(
+                "application_error traceId={} uri={} errorCode={} message={}",
+                MDC.get(TRACE_ID_KEY),
+                request.getRequestURI(),
+                errorCode.getCode(),
+                ex.getMessage()
+        );
+
 
         ErrorResDto body = ErrorResDto.builder()
                 .code(errorCode.getCode())
@@ -225,7 +235,11 @@ public class GlobalExceptionHandler {
     // COMMON-5001: 데이터베이스 오류
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<ErrorResDto> handleDataAccessException(DataAccessException ex) {
-        log.error("DB error", ex);
+        log.error(
+                "database_error traceId={}",
+                MDC.get(TRACE_ID_KEY),
+                ex
+        );
 
         ErrorResDto body = ErrorResDto.builder()
                 .code("COMMON:5001")
@@ -240,7 +254,11 @@ public class GlobalExceptionHandler {
     // COMMON-5002: 외부 시스템 오류(예: RestTemplate/WebClient/Feign 계열을 여기에 묶기)
     @ExceptionHandler(RestClientException.class)
     public ResponseEntity<ErrorResDto> handleRestClientException(RestClientException ex) {
-        log.error("External system error", ex);
+        log.error(
+                "external_system_error traceId={}",
+                MDC.get(TRACE_ID_KEY),
+                ex
+        );
 
         ErrorResDto body = ErrorResDto.builder()
                 .code("COMMON:5002")
@@ -283,7 +301,11 @@ public class GlobalExceptionHandler {
     // COMMON-5000: 최종 fallback
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResDto> handleException(Exception ex) {
-        log.error("Unhandled error", ex);
+        log.error(
+                "unhandled_error traceId={}",
+                MDC.get(TRACE_ID_KEY),
+                ex
+        );
         
         if (ex instanceof AccessDeniedException) {
             throw (org.springframework.security.access.AccessDeniedException) ex;
