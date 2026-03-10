@@ -86,7 +86,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: "health, prometheus"
+        include: health,prometheus
   endpoint:
     health:
       show-details: never
+  metrics:
+    tags:
+      application: pooli-be
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
