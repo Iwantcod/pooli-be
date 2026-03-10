@@ -26,6 +26,41 @@
 	   WHERE fl.line_id = #{lineId}
 	</select>
 	
+	
+	  <select id="selectFamilyMembers"
+	          resultType="com.pooli.family.domain.dto.response.FamilyMembersResDto$FamilyMemberDto">
+	    SELECT
+	      u.user_id             AS userId,
+	      l.line_id             AS lineId,
+	      l.plan_id             AS planId,
+	      u.user_name           AS userName,
+	      l.phone               AS phone,
+	      p.plan_name           AS planName,
+	      l.remaining_data      AS remainingData,
+	      p.basic_data_amount   AS basicDataAmount,
+	      fl.role               AS role,
+	      f.pool_total_data     AS sharedPoolTotalAmount,
+	      f.pool_remaining_data AS sharedPoolRemainingAmount,
+	      CASE WHEN l.line_id = #{lineId} THEN TRUE ELSE FALSE END AS isMe
+	    FROM FAMILY_LINE fl
+	    JOIN LINE  l ON fl.line_id = l.line_id
+	    JOIN USERS u ON l.user_id = u.user_id
+	    JOIN PLAN  p ON l.plan_id = p.plan_id
+	    JOIN FAMILY f ON fl.family_id = f.family_id
+	    WHERE fl.family_id = #{familyId}
+	      AND l.deleted_at IS NULL
+	      AND u.deleted_at IS NULL
+	      AND p.deleted_at IS NULL
+	      AND f.deleted_at IS NULL
+	    ORDER BY
+	      CASE
+	        WHEN fl.role = 'OWNER' THEN 0
+	        WHEN l.line_id = #{lineId} THEN 1
+	        ELSE 2
+	      END,
+	      l.line_id ASC
+	  </select>
+	
 	<select id="selectFamilyMembersSimpleByLineId"
 	          resultType="com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto">
 	

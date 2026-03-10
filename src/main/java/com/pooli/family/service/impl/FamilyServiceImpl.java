@@ -37,7 +37,7 @@ public class FamilyServiceImpl implements FamilyService {
 		}
 		
 		List<FamilyMembersResDto.FamilyMemberDto> members =
-		    familyMapper.selectFamilyMembers(header.getFamilyId());
+		    familyMapper.selectFamilyMembers(header.getFamilyId(),principal.getLineId());
 		
 		return FamilyMembersResDto.builder()
 		      .isEnable(header.getIsEnable())
