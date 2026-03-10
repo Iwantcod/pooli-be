@@ -14,7 +14,7 @@ import org.springframework.util.StringUtils;
 
 @Configuration
 @Profile({"default", "local", "api", "traffic"})
-@EnableConfigurationProperties(StreamsRedisProperties.class)
+@EnableConfigurationProperties({StreamsRedisProperties.class, AppStreamsProperties.class})
 public class StreamsRedisConfig {
 
     @Bean("streamsRedisConnectionFactory")
@@ -36,4 +36,3 @@ public class StreamsRedisConfig {
         return new StringRedisTemplate(connectionFactory);
     }
 }
-
