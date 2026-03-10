@@ -1,0 +1,9 @@
+spring:
+  config:
+    activate:
+      on-profile: traffic
+  main:
+    web-application-type: none
+  session:
+    store-type: none
+

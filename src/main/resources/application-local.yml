@@ -28,9 +28,9 @@ spring:
       password: ${SPRING_SECURITY_PASSWORD}
   data:
     redis:
-      host: ${REDIS_HOST}
-      port: ${REDIS_PORT}
-      password: ${REDIS_PASSWORD}
+      host: ${SESSION_REDIS_HOST:${REDIS_HOST}}
+      port: ${SESSION_REDIS_PORT:${REDIS_PORT}}
+      password: ${SESSION_REDIS_PASSWORD:${REDIS_PASSWORD}}
     mongodb:
       uri: ${L0CAL_MONGO_URI}
   session:
@@ -76,6 +76,26 @@ springdoc:
 app:
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
+  redis:
+    namespace: ${REDIS_NAMESPACE:pooli}
+    cache:
+      host: ${CACHE_REDIS_HOST}
+      port: ${CACHE_REDIS_PORT}
+      password: ${CACHE_REDIS_PASSWORD}
+    streams:
+      host: ${STREAMS_REDIS_HOST}
+      port: ${STREAMS_REDIS_PORT}
+      password: ${STREAMS_REDIS_PASSWORD}
+  streams:
+    key-traffic-request: ${STREAMS_KEY_TRAFFIC_REQUEST:traffic:deduct:request}
+    group-traffic: ${STREAMS_GROUP_TRAFFIC:traffic-deduct-cg}
+    consumer-name: ${STREAMS_CONSUMER_NAME:${HOSTNAME:pooli}-${SERVER_PORT:8080}}
+    read-count: ${STREAMS_READ_COUNT:20}
+    block-ms: ${STREAMS_BLOCK_MS:2000}
+    reclaim-interval-ms: ${STREAMS_RECLAIM_INTERVAL_MS:5000}
+    reclaim-min-idle-ms: ${STREAMS_RECLAIM_MIN_IDLE_MS:70000}
+    max-retry: ${STREAMS_MAX_RETRY:3}
+    key-traffic-dlq: ${STREAMS_KEY_TRAFFIC_DLQ:traffic:deduct:dlq}
 
 management:
   endpoints:
