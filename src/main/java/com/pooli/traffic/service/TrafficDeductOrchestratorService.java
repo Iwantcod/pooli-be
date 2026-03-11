@@ -1,6 +1,7 @@
 package com.pooli.traffic.service;
 
 import java.time.LocalDateTime;
+import java.util.concurrent.TimeUnit;
 import java.util.Set;
 
 import org.springframework.context.annotation.Profile;
@@ -39,6 +40,7 @@ public class TrafficDeductOrchestratorService {
 
     private final TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
     private final TrafficRecentUsageBucketService trafficRecentUsageBucketService;
+    private final TrafficTickPacer trafficTickPacer;
 
     public TrafficDeductResultResDto orchestrate(TrafficPayloadReqDto payload) {
         LocalDateTime startedAt = LocalDateTime.now();
@@ -49,6 +51,9 @@ public class TrafficDeductOrchestratorService {
         long deductedTotalBytes = 0L;
         TrafficLuaStatus lastLuaStatus = null;
         TrafficFinalStatus finalStatus;
+        // 동일 요청 내 tick 스케줄 기준 시점은 한 번만 고정합니다.
+        // 이후 tick n의 목표 시작 시각은 base + (n-1)*1초 입니다.
+        long orchestrationStartNano = System.nanoTime();
 
         try {
             // Step 2) tick=1..10 순차 루프를 수행한다.
@@ -58,8 +63,21 @@ public class TrafficDeductOrchestratorService {
                     break;
                 }
 
+                // tick당 1초 슬롯을 맞추기 위해 시작 시각까지 대기한다.
+                // 처리 지연으로 슬롯이 지난 경우 대기 없이 진행하고 lag만 기록한다.
+                long lagMs = trafficTickPacer.awaitTickStart(orchestrationStartNano, tick);
+                long tickStartedNano = System.nanoTime();
+
                 int remainingTicks = (MAX_TICKS - tick) + 1;
                 long currentTickTargetData = calculateCurrentTickTarget(apiRemainingData, remainingTicks);
+                log.debug(
+                        "traffic_tick_started traceId={} tick={} lagMs={} currentTickTargetData={} apiRemainingBefore={}",
+                        payload == null ? null : payload.getTraceId(),
+                        tick,
+                        lagMs,
+                        currentTickTargetData,
+                        apiRemainingData
+                );
 
                 // Step 3) 개인풀을 먼저 시도한다.
                 TrafficLuaExecutionResult individualResult =
@@ -105,6 +123,16 @@ public class TrafficDeductOrchestratorService {
                         break;
                     }
                 }
+
+                long processingMs = nanosToMillis(System.nanoTime() - tickStartedNano);
+                log.debug(
+                        "traffic_tick_completed traceId={} tick={} processingMs={} apiRemainingAfter={} deductedTotalBytes={}",
+                        payload == null ? null : payload.getTraceId(),
+                        tick,
+                        processingMs,
+                        apiRemainingData,
+                        deductedTotalBytes
+                );
             }
 
             // Step 5) 루프 종료 후 최종 상태를 계산한다.
@@ -165,5 +193,12 @@ public class TrafficDeductOrchestratorService {
             return 0L;
         }
         return value;
+    }
+
+    private long nanosToMillis(long nanos) {
+        if (nanos <= 0) {
+            return 0L;
+        }
+        return TimeUnit.NANOSECONDS.toMillis(nanos);
     }
 }

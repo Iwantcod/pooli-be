@@ -2,6 +2,7 @@ package com.pooli.traffic.service;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -35,6 +36,9 @@ class TrafficDeductOrchestratorServiceTest {
     @Mock
     private TrafficRecentUsageBucketService trafficRecentUsageBucketService;
 
+    @Mock
+    private TrafficTickPacer trafficTickPacer;
+
     @InjectMocks
     private TrafficDeductOrchestratorService trafficDeductOrchestratorService;
 
@@ -61,6 +65,7 @@ class TrafficDeductOrchestratorServiceTest {
             ArgumentCaptor<Long> targetCaptor = ArgumentCaptor.forClass(Long.class);
             verify(trafficHydrateRefillAdapterService, times(10)).executeIndividualWithRecovery(eq(payload), targetCaptor.capture());
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
+            verify(trafficTickPacer, times(10)).awaitTickStart(anyLong(), anyInt());
 
             assertAll(
                     () -> assertEquals(List.of(11L, 11L, 11L, 10L, 10L, 10L, 10L, 10L, 10L, 10L), targetCaptor.getAllValues()),
@@ -91,6 +96,7 @@ class TrafficDeductOrchestratorServiceTest {
             // then
             verify(trafficHydrateRefillAdapterService, times(1))
                     .executeSharedWithRecovery(payload, 6L);
+            verify(trafficTickPacer, times(10)).awaitTickStart(anyLong(), anyInt());
 
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
@@ -116,6 +122,7 @@ class TrafficDeductOrchestratorServiceTest {
                     .executeIndividualWithRecovery(payload, 10L);
             verify(trafficHydrateRefillAdapterService, never())
                     .executeSharedWithRecovery(eq(payload), anyLong());
+            verify(trafficTickPacer, times(1)).awaitTickStart(anyLong(), anyInt());
 
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, result.getFinalStatus()),
@@ -137,6 +144,7 @@ class TrafficDeductOrchestratorServiceTest {
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
+            verify(trafficTickPacer, times(1)).awaitTickStart(anyLong(), anyInt());
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
                     () -> assertEquals(0L, result.getDeductedTotalBytes()),
