@@ -1,10 +1,10 @@
 package com.pooli.policy.service;
 
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 
-import com.pooli.notification.domain.enums.AlarmCode;
-import com.pooli.notification.domain.enums.AlarmType;
-import com.pooli.notification.service.AlarmHistoryService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,11 +12,13 @@ import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.dto.PagingResDto;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.service.AlarmHistoryService;
 import com.pooli.permission.mapper.FamilyLineMapper;
-import com.pooli.policy.domain.dto.request.*;
-import com.pooli.policy.domain.entity.AppPolicy;
-import com.pooli.policy.domain.entity.LineLimit;
 import com.pooli.policy.domain.dto.request.AppDataLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.AppPolicyActiveToggleReqDto;
+import com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto;
 import com.pooli.policy.domain.dto.request.AppSpeedLimitUpdateReqDto;
 import com.pooli.policy.domain.dto.request.ImmediateBlockReqDto;
 import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
@@ -25,24 +27,26 @@ import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
 import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
 import com.pooli.policy.domain.dto.response.AppPolicyResDto;
 import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
+import com.pooli.policy.domain.dto.response.BlockStatusResDto;
 import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
 import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockDayResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
+import com.pooli.policy.domain.entity.AppPolicy;
+import com.pooli.policy.domain.entity.LineLimit;
+import com.pooli.policy.domain.enums.DayOfWeek;
 import com.pooli.policy.domain.enums.PolicyScope;
 import com.pooli.policy.domain.enums.SortType;
 import com.pooli.policy.exception.PolicyErrorCode;
 import com.pooli.policy.mapper.AppPolicyMapper;
-import com.pooli.policy.mapper.LineLimitMapper;
 import com.pooli.policy.mapper.ImmediateBlockMapper;
+import com.pooli.policy.mapper.LineLimitMapper;
 import com.pooli.policy.mapper.PolicyBackOfficeMapper;
 import com.pooli.policy.mapper.RepeatBlockDayMapper;
 import com.pooli.policy.mapper.RepeatBlockMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
-import java.util.Optional;
 
 @Service
 @Slf4j
@@ -167,6 +171,104 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	    		.lineId(auth.getLineId())
 	    		.isActive(false)
 	    		.build();
+	}
+
+	@Override
+	public BlockStatusResDto getBlockStatus(Long lineId, AuthUserDetails auth) {
+
+	    checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
+
+	    LocalDateTime now = LocalDateTime.now();
+	    LocalTime nowTime = now.toLocalTime();
+
+	    DayOfWeek todayDow =
+	        DayOfWeek.values()[now.getDayOfWeek().getValue() % 7];
+
+	    DayOfWeek yesterdayDow =
+	        DayOfWeek.values()[(now.getDayOfWeek().getValue() + 6) % 7];
+
+	    LocalDateTime latestEnd = null;
+
+	    // 1️⃣ Immediate Block
+	    ImmediateBlockResDto immBlock =
+	        immediateBlockMapper.selectImmediateBlockPolicy(lineId);
+
+	    if (immBlock != null &&
+	        immBlock.getBlockEndAt() != null &&
+	        immBlock.getBlockEndAt().isAfter(now)) {
+
+	        latestEnd = immBlock.getBlockEndAt();
+	    }
+
+	    // 2️⃣ Repeat Block
+	    List<RepeatBlockPolicyResDto> repeatBlocks =
+	        repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
+
+	    for (RepeatBlockPolicyResDto block : repeatBlocks) {
+
+	        if (!Boolean.TRUE.equals(block.getIsActive()) || block.getDays() == null) {
+	            continue;
+	        }
+
+	        for (RepeatBlockDayResDto day : block.getDays()) {
+
+	            LocalTime start = day.getStartAt();
+	            LocalTime end = day.getEndAt();
+
+	            boolean overnight = start.isAfter(end);
+
+	            boolean inRange = false;
+	            LocalDateTime repeatEnd = null;
+
+	            if (!overnight) {
+	                // 같은날 block (ex: 11:00 ~ 12:00)
+
+	                if (day.getDayOfWeek() == todayDow &&
+	                    !nowTime.isBefore(start) &&
+	                    !nowTime.isAfter(end)) {
+
+	                    inRange = true;
+	                    repeatEnd = now.toLocalDate().atTime(end);
+	                }
+
+	            } else {
+	                // 자정 넘어가는 block (ex: 20:00 ~ 02:00)
+
+	                if (day.getDayOfWeek() == todayDow &&
+	                    !nowTime.isBefore(start)) {
+
+	                    inRange = true;
+	                    repeatEnd = now.toLocalDate().plusDays(1).atTime(end);
+	                }
+
+	                if (day.getDayOfWeek() == yesterdayDow &&
+	                    !nowTime.isAfter(end)) {
+
+	                    inRange = true;
+	                    repeatEnd = now.toLocalDate().atTime(end);
+	                }
+	            }
+
+	            if (inRange) {
+
+	                if (latestEnd == null || repeatEnd.isAfter(latestEnd)) {
+	                    latestEnd = repeatEnd;
+	                }
+	            }
+	        }
+	    }
+
+	    if (latestEnd != null) {
+	        return BlockStatusResDto.builder()
+	                .isBlocked(true)
+	                .blockEndsAt(latestEnd)
+	                .build();
+	    }
+
+	    return BlockStatusResDto.builder()
+	            .isBlocked(false)
+	            .blockEndsAt(null)
+	            .build();
 	}
 
 	@Override

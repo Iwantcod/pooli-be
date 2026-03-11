@@ -59,6 +59,12 @@ public interface UserPolicyService {
     // =========================================================
 
     /**
+     * 현재 시각 기준으로 즉시 차단 또는 반복 차단 중인지 여부와 종료 시각 조회
+     * Controller: ResponseEntity<BlockStatusResDto>
+     */
+    BlockStatusResDto getBlockStatus(Long lineId, AuthUserDetails auth);
+
+    /**
      * 특정 구성원의 즉시 차단 정책 조회
      * Controller: ResponseEntity<ImmediateBlockResDto>
      */
