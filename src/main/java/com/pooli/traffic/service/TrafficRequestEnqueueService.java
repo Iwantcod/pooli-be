@@ -3,6 +3,7 @@ package com.pooli.traffic.service;
 import java.util.Map;
 import java.util.UUID;
 
+import com.pooli.monitoring.metrics.TrafficRequestMetrics;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
@@ -42,6 +43,7 @@ public class TrafficRequestEnqueueService {
     private final StringRedisTemplate streamsStringRedisTemplate;
     private final ObjectMapper objectMapper;
     private final AppStreamsProperties appStreamsProperties;
+    private final TrafficRequestMetrics trafficRequestMetrics;
 
     /**
      * 트래픽 발생 요청을 Streams에 enqueue하고, 추적용 응답(traceId/enqueuedAt)을 반환합니다.
@@ -56,6 +58,8 @@ public class TrafficRequestEnqueueService {
      * @return enqueue 완료 응답(traceId, enqueuedAt)
      */
     public TrafficGenerateResDto enqueue(TrafficGenerateReqDto request) {
+        trafficRequestMetrics.incrementRequest();
+
         String traceId = resolveTraceId();
         long enqueuedAt = System.currentTimeMillis();
 
