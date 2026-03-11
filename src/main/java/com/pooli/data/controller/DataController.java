@@ -188,12 +188,11 @@ public class DataController {
     })
     @GetMapping("/usages/balances")
     public ResponseEntity<DataBalancesResDto> getDataSummary(
-            @Parameter(description = "회선 ID", example = "1")
-            @RequestParam(required = true, name = "lineId") Long lineId
+    		@AuthenticationPrincipal AuthUserDetails principal
     ) {
 
 
-        return ResponseEntity.ok(dataService.getDataSummary(lineId));
+        return ResponseEntity.ok(dataService.getDataSummary(principal.getLineId()));
     }
     
     /**

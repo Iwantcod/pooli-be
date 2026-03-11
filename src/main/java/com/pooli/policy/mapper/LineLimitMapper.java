@@ -35,4 +35,7 @@ public interface LineLimitMapper {
      */
     // 새 LineLimit 레코드 insert
     int createLineLimit(LineLimit lineLimit);
+
+    // 특정 lineId의 요금제 기본 데이터 제공량 조회
+    Long selectPlanDataLimitByLineId(@Param("lineId") Long lineId);
 }

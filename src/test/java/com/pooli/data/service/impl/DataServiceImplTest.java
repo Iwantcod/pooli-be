@@ -204,7 +204,7 @@ class DataServiceImplTest {
     @DisplayName("데이터 요약: 값 반환")
     void getDataSummary_success_returnsDto() {
         DataBalancesResDto dto = DataBalancesResDto.builder()
-            .userName("user")
+            .lineId(1L)
             .role("OWNER")
             .sharedDataRemaining(100L)
             .personalDataRemaining(50L)

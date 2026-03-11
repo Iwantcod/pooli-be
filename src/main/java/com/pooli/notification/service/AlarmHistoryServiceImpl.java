@@ -203,7 +203,9 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
                 );
             }
 
-            jsonNode.put("type", "NOTIFICATION");
+            if (!jsonNode.has("type")) {
+                jsonNode.put("type", "NOTIFICATION");
+            }
 
             String jsonValue = objectMapper.writeValueAsString(jsonNode);
 

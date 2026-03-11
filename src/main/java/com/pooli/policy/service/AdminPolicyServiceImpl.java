@@ -91,8 +91,9 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
         }
 
         adminPolicyMapper.updatePolicyActiveStatus(policyId, request);
-        sendOwnerNotification(
+        sendPolicyNotification(
                 Boolean.TRUE.equals(request.getIsActive()) ? AlarmType.ACTIVATE_POLICY : AlarmType.DEACTIVATE_POLICY,
+                NotificationTargetType.OWNER,
                 policyId,
                 existing.getPolicyCategoryId(),
                 existing.getPolicyName()
@@ -161,7 +162,7 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
                 .build();
     }
 
-    private void sendOwnerNotification(AlarmType type, Integer policyId, Integer policyCategoryId, String name) {
+    private void sendPolicyNotification(AlarmType type, NotificationTargetType targetType, Integer policyId, Integer policyCategoryId, String name) {
         ObjectNode value = JsonNodeFactory.instance.objectNode();
         value.put("type", type.name());
         if (policyId != null) {
@@ -175,7 +176,7 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
         }
 
         NotiSendReqDto req = new NotiSendReqDto();
-        req.setTargetType(NotificationTargetType.OWNER);
+        req.setTargetType(targetType);
         req.setValue(value);
 
         alarmHistoryService.sendNotification(req);
