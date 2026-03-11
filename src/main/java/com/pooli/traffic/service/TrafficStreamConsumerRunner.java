@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.context.SmartLifecycle;
@@ -43,6 +45,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
     // DONE 영속화 서비스(traceId UNIQUE idempotency)
     private final TrafficDeductDonePersistenceService trafficDeductDonePersistenceService;
+    // pending reclaim/retry/DLQ 분기 서비스
+    private final TrafficStreamReclaimService trafficStreamReclaimService;
 
     // 전역적인 소비 루프 동작 여부 플래그(start/stop 간 공유)
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -50,6 +54,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private ExecutorService pollerExecutor;
     // 레코드 처리 병렬 수행용 worker 실행기
     private ExecutorService workerExecutor;
+    // pending reclaim 주기 실행기
+    private ScheduledExecutorService reclaimExecutor;
 
     @Override
     public void start() {
@@ -84,6 +90,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         // 제출 직후 루프가 즉시 종료되는 경쟁 상태를 피한다.
         running.set(true);
         pollerExecutor.submit(this::consumeLoop);
+        startReclaimLoop();
         log.info(
                 "traffic_stream_consumer_started group={} consumer={} workerThreads={}",
                 appStreamsProperties.getGroupTraffic(),
@@ -105,6 +112,11 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         // 진행 중/대기 중인 처리 태스크를 함께 종료시킨다.
         if (workerExecutor != null) {
             workerExecutor.shutdownNow();
+        }
+
+        // reclaim 보조 루프도 함께 중단한다.
+        if (reclaimExecutor != null) {
+            reclaimExecutor.shutdownNow();
         }
         log.info("traffic_stream_consumer_stopped");
     }
@@ -158,6 +170,44 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     record.getId().getValue(),
                     running.get()
             );
+        }
+    }
+
+    private void startReclaimLoop() {
+        long reclaimIntervalMs = Math.max(1L, appStreamsProperties.getReclaimIntervalMs());
+
+        // reclaim은 주기적으로 pending 목록을 점검하는 보조 작업이므로 단일 스레드면 충분하다.
+        reclaimExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r, "traffic-stream-reclaim");
+            thread.setDaemon(true);
+            return thread;
+        });
+
+        reclaimExecutor.scheduleWithFixedDelay(
+                this::runReclaimCycle,
+                reclaimIntervalMs,
+                reclaimIntervalMs,
+                TimeUnit.MILLISECONDS
+        );
+    }
+
+    private void runReclaimCycle() {
+        if (!running.get()) {
+            return;
+        }
+
+        try {
+            // reclaim 서비스가 idle/retry 기준으로 필터링한 레코드를 반환하면
+            // 메인 소비 경로와 동일하게 worker 큐로 분배해 처리한다.
+            List<MapRecord<String, String, String>> reclaimedRecords =
+                    trafficStreamReclaimService.reclaimAndRouteExceededRetries();
+
+            for (MapRecord<String, String, String> reclaimedRecord : reclaimedRecords) {
+                dispatchRecord(reclaimedRecord);
+            }
+        } catch (Exception e) {
+            // reclaim 실패가 메인 소비 루프를 멈추게 해서는 안 되므로 로그 후 다음 주기를 기다린다.
+            log.error("traffic_stream_reclaim_cycle_failed", e);
         }
     }
 
@@ -244,6 +294,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             // 스키마 불일치/JSON 파손은 재처리해도 복구가 어려우므로 DLQ로 분기한다.
             trafficStreamInfraService.writeDlq(payloadJson, "payload 역직렬화 실패", recordId);
             trafficStreamInfraService.acknowledge(record.getId());
+        } catch (Exception e) {
+            // 처리 중 시스템 예외는 ACK하지 않고 남겨 재전달/reclaim 경로에서 복구한다.
+            log.error("traffic_stream_record_handle_failed recordId={}", recordId, e);
         }
     }
 

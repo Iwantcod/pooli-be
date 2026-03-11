@@ -1,15 +1,21 @@
 package com.pooli.traffic.service;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
+import org.springframework.data.domain.Range;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.connection.Limit;
+import org.springframework.data.redis.connection.RedisStreamCommands.XClaimOptions;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.PendingMessage;
+import org.springframework.data.redis.connection.stream.PendingMessages;
 import org.springframework.data.redis.connection.stream.ReadOffset;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamOffset;
@@ -91,6 +97,67 @@ public class TrafficStreamInfraService {
                 appStreamsProperties.getGroupTraffic(),
                 recordId
         );
+    }
+
+    public List<PendingMessage> readPendingMessages(long count) {
+        long safeCount = Math.max(1L, count);
+        PendingMessages pendingMessages = streamOps().pending(
+                appStreamsProperties.getKeyTrafficRequest(),
+                appStreamsProperties.getGroupTraffic(),
+                Range.unbounded(),
+                safeCount
+        );
+
+        if (pendingMessages == null || pendingMessages.isEmpty()) {
+            return List.of();
+        }
+
+        List<PendingMessage> messages = new ArrayList<>(pendingMessages.size());
+        for (PendingMessage pendingMessage : pendingMessages) {
+            messages.add(pendingMessage);
+        }
+        return messages;
+    }
+
+    public List<MapRecord<String, String, String>> claimPending(
+            List<RecordId> recordIds,
+            long minIdleMs
+    ) {
+        if (recordIds == null || recordIds.isEmpty()) {
+            return List.of();
+        }
+
+        XClaimOptions claimOptions = XClaimOptions.minIdleMs(Math.max(0L, minIdleMs))
+                .ids(recordIds.toArray(RecordId[]::new));
+
+        List<MapRecord<String, String, String>> claimed = streamOps().claim(
+                appStreamsProperties.getKeyTrafficRequest(),
+                appStreamsProperties.getGroupTraffic(),
+                appStreamsProperties.getConsumerName(),
+                claimOptions
+        );
+
+        if (claimed == null) {
+            return List.of();
+        }
+        return claimed;
+    }
+
+    public MapRecord<String, String, String> readRecordById(RecordId recordId) {
+        if (recordId == null) {
+            return null;
+        }
+
+        List<MapRecord<String, String, String>> records = streamOps().range(
+                appStreamsProperties.getKeyTrafficRequest(),
+                Range.closed(recordId.getValue(), recordId.getValue()),
+                Limit.limit().count(1)
+        );
+
+        if (records == null || records.isEmpty()) {
+            return null;
+        }
+        return records.get(0);
     }
 
     public RecordId writeDlq(String payload, String reason, String sourceRecordId) {

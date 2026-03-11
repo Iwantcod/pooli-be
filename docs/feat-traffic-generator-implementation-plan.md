@@ -114,7 +114,8 @@
 
 ### 3.12 재시도/리클레임/DLQ 구현
 - 작업:
-  - reclaim(`XAUTOCLAIM`) 보조 작업 구현
+  - reclaim 보조 작업 구현
+    - 구현 상세: `XPENDING + XCLAIM(min-idle)` 조합으로 idle pending 메시지 회수
   - `max retry` 초과 시 DLQ 이동
   - 역직렬화/검증 실패 즉시 DLQ 적재
 - 완료 기준:
