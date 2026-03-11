@@ -11,6 +11,7 @@ import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
 import com.pooli.traffic.domain.enums.TrafficFinalStatus;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
+import com.pooli.traffic.domain.enums.TrafficPoolType;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +38,7 @@ public class TrafficDeductOrchestratorService {
     );
 
     private final TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
+    private final TrafficRecentUsageBucketService trafficRecentUsageBucketService;
 
     public TrafficDeductResultResDto orchestrate(TrafficPayloadReqDto payload) {
         LocalDateTime startedAt = LocalDateTime.now();
@@ -67,6 +69,7 @@ public class TrafficDeductOrchestratorService {
                 long indivDeducted = normalizeNonNegative(individualResult.getAnswer());
                 deductedTotalBytes += indivDeducted;
                 apiRemainingData = clampRemaining(apiRemainingData - indivDeducted);
+                trafficRecentUsageBucketService.recordTickUsage(TrafficPoolType.INDIVIDUAL, payload, indivDeducted);
 
                 // 개인풀 결과가 회복 불가면 즉시 종료한다.
                 if (isUnrecoverableStatus(individualResult.getStatus())) {
@@ -89,6 +92,7 @@ public class TrafficDeductOrchestratorService {
                     long sharedDeducted = normalizeNonNegative(sharedResult.getAnswer());
                     deductedTotalBytes += sharedDeducted;
                     apiRemainingData = clampRemaining(apiRemainingData - sharedDeducted);
+                    trafficRecentUsageBucketService.recordTickUsage(TrafficPoolType.SHARED, payload, sharedDeducted);
 
                     // 공유풀 결과가 회복 불가면 즉시 종료한다.
                     if (isUnrecoverableStatus(sharedResult.getStatus())) {

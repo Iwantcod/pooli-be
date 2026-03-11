@@ -32,6 +32,9 @@ class TrafficDeductOrchestratorServiceTest {
     @Mock
     private TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
 
+    @Mock
+    private TrafficRecentUsageBucketService trafficRecentUsageBucketService;
+
     @InjectMocks
     private TrafficDeductOrchestratorService trafficDeductOrchestratorService;
 

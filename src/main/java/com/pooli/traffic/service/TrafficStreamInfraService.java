@@ -178,8 +178,20 @@ public class TrafficStreamInfraService {
     }
 
     private boolean isBusyGroupError(Throwable throwable) {
-        String message = throwable.getMessage();
-        return message != null && message.contains("BUSYGROUP");
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.contains("BUSYGROUP")) {
+                return true;
+            }
+
+            String exceptionType = current.getClass().getName();
+            if (exceptionType.contains("RedisBusyException")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**

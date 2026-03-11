@@ -102,6 +102,19 @@ public class TrafficRedisKeyFactory {
         return namespaced("speed_bucket:individual:" + lineId + ":" + epochSecond);
     }
 
+    public String speedBucketSharedKey(long familyId, long epochSecond) {
+        // 공유풀 속도 버킷은 초 단위로 키를 분리한다.
+        return namespaced("speed_bucket:shared:" + familyId + ":" + epochSecond);
+    }
+
+    public String speedBucketIndividualPattern(long lineId) {
+        return namespaced("speed_bucket:individual:" + lineId + ":*");
+    }
+
+    public String speedBucketSharedPattern(long familyId) {
+        return namespaced("speed_bucket:shared:" + familyId + ":*");
+    }
+
     public String dedupeRunKey(String traceId) {
         // traceId는 필수이므로 빈 문자열은 허용하지 않는다.
         String normalizedTraceId = Objects.requireNonNull(traceId, "traceId must not be null").trim();

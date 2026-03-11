@@ -23,7 +23,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
+import com.pooli.traffic.domain.TrafficRefillPlan;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPoolType;
@@ -94,7 +96,8 @@ class TrafficHydrateRefillAdapterServiceTest {
                     .thenReturn(luaResult(0L, TrafficLuaStatus.NO_BALANCE))
                     .thenReturn(luaResult(60L, TrafficLuaStatus.OK));
             when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_indiv_amount:11:202603", 0L)).thenReturn(0L);
-            when(trafficQuotaSourcePort.resolveRefillThreshold(TrafficPoolType.INDIVIDUAL, payload)).thenReturn(30L);
+            when(trafficQuotaSourcePort.resolveRefillPlan(TrafficPoolType.INDIVIDUAL, payload))
+                    .thenReturn(refillPlan(10L, 2, 20L, 100L, 30L, "RECENT_10S"));
             when(trafficLuaScriptInfraService.executeRefillGate(
                     "pooli:indiv_refill_lock:11",
                     payload.getTraceId(),
@@ -107,7 +110,12 @@ class TrafficHydrateRefillAdapterServiceTest {
                     payload.getTraceId(),
                     TrafficRedisRuntimePolicy.LOCK_TTL_MS
             )).thenReturn(true, true);
-            when(trafficQuotaSourcePort.resolveRefillUnit(TrafficPoolType.INDIVIDUAL, payload)).thenReturn(100L);
+            when(trafficQuotaSourcePort.claimRefillAmountFromDb(
+                    TrafficPoolType.INDIVIDUAL,
+                    payload,
+                    java.time.YearMonth.of(2026, 3),
+                    100L
+            )).thenReturn(claimResult(100L, 1_000L, 100L, 900L));
 
             // when
             TrafficLuaExecutionResult result =
@@ -134,7 +142,8 @@ class TrafficHydrateRefillAdapterServiceTest {
             when(trafficLuaScriptInfraService.executeDeductIndivTick("pooli:remaining_indiv_amount:11:202603", 100L))
                     .thenReturn(luaResult(0L, TrafficLuaStatus.NO_BALANCE));
             when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_indiv_amount:11:202603", 0L)).thenReturn(0L);
-            when(trafficQuotaSourcePort.resolveRefillThreshold(TrafficPoolType.INDIVIDUAL, payload)).thenReturn(30L);
+            when(trafficQuotaSourcePort.resolveRefillPlan(TrafficPoolType.INDIVIDUAL, payload))
+                    .thenReturn(refillPlan(10L, 2, 20L, 100L, 30L, "RECENT_10S"));
             when(trafficLuaScriptInfraService.executeRefillGate(
                     "pooli:indiv_refill_lock:11",
                     payload.getTraceId(),
@@ -201,6 +210,38 @@ class TrafficHydrateRefillAdapterServiceTest {
         return TrafficLuaExecutionResult.builder()
                 .answer(answer)
                 .status(status)
+                .build();
+    }
+
+    private TrafficDbRefillClaimResult claimResult(
+            long requestedRefillAmount,
+            long dbRemainingBefore,
+            long actualRefillAmount,
+            long dbRemainingAfter
+    ) {
+        return TrafficDbRefillClaimResult.builder()
+                .requestedRefillAmount(requestedRefillAmount)
+                .dbRemainingBefore(dbRemainingBefore)
+                .actualRefillAmount(actualRefillAmount)
+                .dbRemainingAfter(dbRemainingAfter)
+                .build();
+    }
+
+    private TrafficRefillPlan refillPlan(
+            long delta,
+            int bucketCount,
+            long bucketSum,
+            long refillUnit,
+            long threshold,
+            String source
+    ) {
+        return TrafficRefillPlan.builder()
+                .delta(delta)
+                .bucketCount(bucketCount)
+                .bucketSum(bucketSum)
+                .refillUnit(refillUnit)
+                .threshold(threshold)
+                .source(source)
                 .build();
     }
 }

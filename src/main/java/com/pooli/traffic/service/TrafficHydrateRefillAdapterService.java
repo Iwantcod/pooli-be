@@ -6,7 +6,9 @@ import java.time.YearMonth;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
+import com.pooli.traffic.domain.TrafficRefillPlan;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPoolType;
@@ -128,7 +130,27 @@ public class TrafficHydrateRefillAdapterService {
         TrafficLuaExecutionResult retriedResult = currentResult;
         for (int retry = 0; retry < REFILL_RETRY_MAX; retry++) {
             long currentAmount = trafficQuotaCacheService.readAmountOrDefault(balanceKey, 0L);
-            long threshold = trafficQuotaSourcePort.resolveRefillThreshold(poolType, payload);
+            TrafficRefillPlan refillPlan = trafficQuotaSourcePort.resolveRefillPlan(poolType, payload);
+            long delta = normalizeNonNegative(refillPlan == null ? null : refillPlan.getDelta());
+            int bucketCount = normalizeNonNegativeInt(refillPlan == null ? null : refillPlan.getBucketCount());
+            long requestedRefillUnit = normalizeNonNegative(refillPlan == null ? null : refillPlan.getRefillUnit());
+            long threshold = Math.max(1L, normalizeNonNegative(refillPlan == null ? null : refillPlan.getThreshold()));
+            String refillPlanSource = refillPlan == null || refillPlan.getSource() == null
+                    ? "UNKNOWN"
+                    : refillPlan.getSource();
+
+            log.info(
+                    "traffic_refill_plan_resolved traceId={} poolType={} balanceKey={} currentAmount={} delta={} bucketCount={} refillUnit={} threshold={} source={}",
+                    payload.getTraceId(),
+                    poolType,
+                    balanceKey,
+                    currentAmount,
+                    delta,
+                    bucketCount,
+                    requestedRefillUnit,
+                    threshold,
+                    refillPlanSource
+            );
 
             TrafficRefillGateStatus gateStatus = trafficLuaScriptInfraService.executeRefillGate(
                     lockKey,
@@ -167,7 +189,33 @@ public class TrafficHydrateRefillAdapterService {
             }
 
             try {
-                long refillUnit = trafficQuotaSourcePort.resolveRefillUnit(poolType, payload);
+                TrafficDbRefillClaimResult claimResult = trafficQuotaSourcePort.claimRefillAmountFromDb(
+                        poolType,
+                        payload,
+                        targetMonth,
+                        requestedRefillUnit
+                );
+                long dbRemainingBefore = normalizeNonNegative(claimResult == null ? null : claimResult.getDbRemainingBefore());
+                long actualRefillAmount = normalizeNonNegative(claimResult == null ? null : claimResult.getActualRefillAmount());
+                long dbRemainingAfter = normalizeNonNegative(claimResult == null ? null : claimResult.getDbRemainingAfter());
+                if (actualRefillAmount <= 0) {
+                    // DB에서 실제 차감된 양이 없으면 Redis 충전 없이 현재 결과를 유지한다.
+                    log.debug(
+                            "traffic_refill_db_noop traceId={} poolType={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
+                            payload.getTraceId(),
+                            poolType,
+                            requestedRefillUnit,
+                            threshold,
+                            delta,
+                            bucketCount,
+                            refillPlanSource,
+                            dbRemainingBefore,
+                            actualRefillAmount,
+                            dbRemainingAfter
+                    );
+                    return retriedResult;
+                }
+
                 long monthlyExpireAt = trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth);
 
                 // 리필 작업 동안 lock TTL이 만료되지 않도록 heartbeat를 한번 더 수행한다.
@@ -176,7 +224,21 @@ public class TrafficHydrateRefillAdapterService {
                         payload.getTraceId(),
                         TrafficRedisRuntimePolicy.LOCK_TTL_MS
                 );
-                trafficQuotaCacheService.refillBalance(balanceKey, refillUnit, monthlyExpireAt);
+                trafficQuotaCacheService.refillBalance(balanceKey, actualRefillAmount, monthlyExpireAt);
+                log.info(
+                        "traffic_refill_applied traceId={} poolType={} balanceKey={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
+                        payload.getTraceId(),
+                        poolType,
+                        balanceKey,
+                        requestedRefillUnit,
+                        threshold,
+                        delta,
+                        bucketCount,
+                        refillPlanSource,
+                        dbRemainingBefore,
+                        actualRefillAmount,
+                        dbRemainingAfter
+                );
 
                 // 리필 후 동일 tick 차감을 1회 재시도한다.
                 retriedResult = executeDeduct(poolType, balanceKey, currentTickTargetData);
@@ -252,5 +314,19 @@ public class TrafficHydrateRefillAdapterService {
                 .answer(-1L)
                 .status(TrafficLuaStatus.ERROR)
                 .build();
+    }
+
+    private long normalizeNonNegative(Long value) {
+        if (value == null || value <= 0) {
+            return 0L;
+        }
+        return value;
+    }
+
+    private int normalizeNonNegativeInt(Integer value) {
+        if (value == null || value <= 0) {
+            return 0;
+        }
+        return value;
     }
 }
