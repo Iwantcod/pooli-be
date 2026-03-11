@@ -42,6 +42,9 @@ public class TrafficDeductOrchestratorService {
     private final TrafficRecentUsageBucketService trafficRecentUsageBucketService;
     private final TrafficTickPacer trafficTickPacer;
 
+    /**
+      * `orchestrate` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     public TrafficDeductResultResDto orchestrate(TrafficPayloadReqDto payload) {
         LocalDateTime startedAt = LocalDateTime.now();
 
@@ -157,6 +160,9 @@ public class TrafficDeductOrchestratorService {
                 .build();
     }
 
+    /**
+      * 현재 상태를 기준으로 다음 단계 계산값을 산출합니다.
+     */
     private long calculateCurrentTickTarget(long apiRemainingData, int remainingTicks) {
         // 동적 분배 규칙: ceil(apiRemainingData / remainingTicks)
         // 정수 연산으로 올림을 보장하기 위해 (x + y - 1) / y 형태를 사용한다.
@@ -166,6 +172,9 @@ public class TrafficDeductOrchestratorService {
         return (apiRemainingData + remainingTicks - 1) / remainingTicks;
     }
 
+    /**
+     * 입력값과 정책을 바탕으로 최종 사용 값을 계산해 반환합니다.
+     */
     private TrafficFinalStatus resolveFinalStatus(long apiRemainingData, TrafficLuaStatus lastLuaStatus) {
         if (lastLuaStatus == TrafficLuaStatus.ERROR) {
             // Lua ERROR는 시스템/데이터 오류 성격이므로 FAILED로 해석한다.
@@ -177,10 +186,16 @@ public class TrafficDeductOrchestratorService {
         return TrafficFinalStatus.PARTIAL_SUCCESS;
     }
 
+    /**
+     * 현재 상태를 불리언 값으로 확인해 호출 측의 분기 판단을 돕습니다.
+     */
     private boolean isUnrecoverableStatus(TrafficLuaStatus status) {
         return status != null && UNRECOVERABLE_STATUSES.contains(status);
     }
 
+    /**
+      * `clampRemaining` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     private long clampRemaining(long value) {
         if (value <= 0) {
             return 0L;
@@ -188,6 +203,9 @@ public class TrafficDeductOrchestratorService {
         return value;
     }
 
+    /**
+     * 비정상 값을 방어하고 안전한 표준 값으로 보정합니다.
+     */
     private long normalizeNonNegative(Long value) {
         if (value == null || value <= 0) {
             return 0L;
@@ -195,6 +213,9 @@ public class TrafficDeductOrchestratorService {
         return value;
     }
 
+    /**
+      * 나노초 단위를 밀리초 단위로 변환합니다.
+     */
     private long nanosToMillis(long nanos) {
         if (nanos <= 0) {
             return 0L;

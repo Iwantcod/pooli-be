@@ -24,6 +24,9 @@ public class TrafficInFlightDedupeService {
     private final StringRedisTemplate cacheStringRedisTemplate;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
 
+    /**
+      * `tryClaim` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     public boolean tryClaim(String traceId) {
         // traceId에서 dedupe 키를 생성한다. (namespace 포함)
         String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
@@ -44,6 +47,9 @@ public class TrafficInFlightDedupeService {
         return acquired;
     }
 
+    /**
+      * `release` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     public void release(String traceId) {
         // DONE 저장/ACK 완료 후에는 in-flight 키를 정리해 불필요한 키 잔존을 줄인다.
         if (traceId == null || traceId.isBlank()) {

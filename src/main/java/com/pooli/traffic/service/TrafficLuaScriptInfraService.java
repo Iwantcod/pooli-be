@@ -58,6 +58,9 @@ public class TrafficLuaScriptInfraService {
             new EnumMap<>(TrafficLuaScriptType.class);
 
     @PostConstruct
+    /**
+      * `preloadScripts` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     public void preloadScripts() {
         // 애플리케이션 시작 시 모든 Lua를 메모리에 올리고 Redis에 SCRIPT LOAD 해둔다.
         // 이후 실행 시 EVALSHA 경로를 우선 사용해 첫 호출 지연을 줄인다.
@@ -70,6 +73,9 @@ public class TrafficLuaScriptInfraService {
         }
     }
 
+    /**
+     * 핵심 처리 로직을 실행하고 결과를 반환합니다.
+     */
     public TrafficLuaExecutionResult executeDeductIndivTick(String remainingIndivKey, long currentTickTargetData) {
         // 개인풀 차감 스크립트는 answer/status JSON 문자열을 반환한다.
         String rawJson = executeStringSingle(
@@ -81,6 +87,9 @@ public class TrafficLuaScriptInfraService {
         return parseDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_INDIV_TICK);
     }
 
+    /**
+     * 핵심 처리 로직을 실행하고 결과를 반환합니다.
+     */
     public TrafficLuaExecutionResult executeDeductSharedTick(String remainingSharedKey, long currentTickTargetData) {
         // 공유풀 차감 스크립트도 동일하게 answer/status JSON 계약을 사용한다.
         String rawJson = executeStringSingle(
@@ -92,6 +101,9 @@ public class TrafficLuaScriptInfraService {
         return parseDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_SHARED_TICK);
     }
 
+    /**
+     * 핵심 처리 로직을 실행하고 결과를 반환합니다.
+     */
     public TrafficRefillGateStatus executeRefillGate(
             String lockKey,
             String traceId,
@@ -121,6 +133,9 @@ public class TrafficLuaScriptInfraService {
         }
     }
 
+    /**
+     * 핵심 처리 로직을 실행하고 결과를 반환합니다.
+     */
     public boolean executeLockHeartbeat(String lockKey, String traceId, long lockTtlMs) {
         // lock heartbeat는 1/0을 반환하므로 1이면 성공(true)으로 변환한다.
         Long rawResult = executeLongSingle(
@@ -132,6 +147,9 @@ public class TrafficLuaScriptInfraService {
         return rawResult == 1L;
     }
 
+    /**
+     * 핵심 처리 로직을 실행하고 결과를 반환합니다.
+     */
     public boolean executeLockRelease(String lockKey, String traceId) {
         // lock release 역시 1/0 계약이므로 1이면 실제 해제 성공으로 판단한다.
         Long rawResult = executeLongSingle(
@@ -143,11 +161,17 @@ public class TrafficLuaScriptInfraService {
         return rawResult == 1L;
     }
 
+    /**
+     * 현재 설정/상태 값을 반환합니다.
+     */
     public String getPreloadedSha(TrafficLuaScriptType scriptType) {
         // 운영 점검/로그 목적의 조회 메서드다.
         return scriptShaRegistry.get(scriptType);
     }
 
+    /**
+     * 핵심 처리 로직을 실행하고 결과를 반환합니다.
+     */
     private String executeStringSingle(TrafficLuaScriptType scriptType, List<String> keys, List<String> args) {
         RedisScript<String> script = requireStringScript(scriptType);
 
@@ -165,6 +189,9 @@ public class TrafficLuaScriptInfraService {
         }
     }
 
+    /**
+     * 핵심 처리 로직을 실행하고 결과를 반환합니다.
+     */
     private Long executeLongSingle(TrafficLuaScriptType scriptType, List<String> keys, List<String> args) {
         RedisScript<Long> script = requireLongScript(scriptType);
 
@@ -182,6 +209,9 @@ public class TrafficLuaScriptInfraService {
         }
     }
 
+    /**
+     * 원시 입력을 검증하고 내부 표현으로 변환합니다.
+     */
     private TrafficLuaExecutionResult parseDeductResult(String rawJson, TrafficLuaScriptType scriptType) {
         // 반환값이 비어 있으면 차감 결과를 신뢰할 수 없으므로 즉시 실패 처리한다.
         if (rawJson == null || rawJson.isBlank()) {
@@ -213,6 +243,9 @@ public class TrafficLuaScriptInfraService {
         }
     }
 
+    /**
+      * `requireStringScript` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     private RedisScript<String> requireStringScript(TrafficLuaScriptType scriptType) {
         RedisScript<String> script = stringScriptRegistry.get(scriptType);
         if (script == null) {
@@ -224,6 +257,9 @@ public class TrafficLuaScriptInfraService {
         return script;
     }
 
+    /**
+      * `requireLongScript` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     private RedisScript<Long> requireLongScript(TrafficLuaScriptType scriptType) {
         RedisScript<Long> script = longScriptRegistry.get(scriptType);
         if (script == null) {
@@ -235,6 +271,9 @@ public class TrafficLuaScriptInfraService {
         return script;
     }
 
+    /**
+      * `registerScript` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     private void registerScript(TrafficLuaScriptType scriptType, String scriptText) {
         // 스크립트 반환 계약에 따라 결과 타입을 분리 등록한다.
         switch (scriptType) {
@@ -259,6 +298,9 @@ public class TrafficLuaScriptInfraService {
         }
     }
 
+    /**
+      * `preloadScriptSha` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     private String preloadScriptSha(TrafficLuaScriptType scriptType, String scriptText) {
         try {
             // execute 오버로드 모호성을 피하기 위해 RedisCallback 타입을 명시한다.
@@ -282,6 +324,9 @@ public class TrafficLuaScriptInfraService {
         }
     }
 
+    /**
+     * 필요한 원천 데이터를 로드해 반환합니다.
+     */
     private String loadScriptText(TrafficLuaScriptType scriptType) {
         ClassPathResource resource = new ClassPathResource(scriptType.getResourcePath());
 

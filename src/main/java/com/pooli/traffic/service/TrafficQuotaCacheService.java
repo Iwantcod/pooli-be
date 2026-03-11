@@ -23,6 +23,9 @@ public class TrafficQuotaCacheService {
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
 
+    /**
+     * 외부 저장소에서 현재 데이터를 조회해 반환합니다.
+     */
     public long readAmountOrDefault(String balanceKey, long defaultValue) {
         // amount 필드가 없으면 defaultValue를 반환해 호출자가 분기 판단을 이어갈 수 있게 한다.
         Object rawAmount = cacheStringRedisTemplate.opsForHash().get(balanceKey, "amount");
@@ -39,6 +42,9 @@ public class TrafficQuotaCacheService {
         }
     }
 
+    /**
+      * `hydrateBalance` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     public void hydrateBalance(String balanceKey, long initialAmount, long expireAtEpochSeconds) {
         long normalizedAmount = Math.max(0L, initialAmount);
 
@@ -50,6 +56,9 @@ public class TrafficQuotaCacheService {
         cacheStringRedisTemplate.expireAt(balanceKey, Instant.ofEpochSecond(expireAtEpochSeconds));
     }
 
+    /**
+      * `refillBalance` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     public void refillBalance(String balanceKey, long refillAmount, long expireAtEpochSeconds) {
         long normalizedRefillAmount = Math.max(0L, refillAmount);
         if (normalizedRefillAmount <= 0) {

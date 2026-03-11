@@ -23,98 +23,161 @@ public class TrafficRedisKeyFactory {
     private final AppRedisProperties appRedisProperties;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String policyKey(long policyId) {
         return namespaced("policy:" + policyId);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String dailyTotalLimitKey(long lineId) {
         return namespaced("daily_total_limit:" + lineId);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String appDataDailyLimitKey(long lineId) {
         return namespaced("app_data_daily_limit:" + lineId);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String appSpeedLimitKey(long lineId) {
         return namespaced("app_speed_limit:" + lineId);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String appWhitelistKey(long lineId) {
         return namespaced("app_whitelist:" + lineId);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String monthlySharedLimitKey(long lineId) {
         return namespaced("monthly_shared_limit:" + lineId);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String dailyTotalUsageKey(long lineId, LocalDate targetDate) {
         // 일별 집계 키는 yyyymmdd suffix를 사용한다.
         String yyyymmdd = trafficRedisRuntimePolicy.formatYyyyMmDd(targetDate);
         return namespaced("daily_total_usage:" + lineId + ":" + yyyymmdd);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String dailyAppUsageKey(long lineId, LocalDate targetDate) {
         // 일별 집계 키는 yyyymmdd suffix를 사용한다.
         String yyyymmdd = trafficRedisRuntimePolicy.formatYyyyMmDd(targetDate);
         return namespaced("daily_app_usage:" + lineId + ":" + yyyymmdd);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String monthlySharedUsageKey(long lineId, YearMonth targetMonth) {
         // 월별 집계 키는 yyyymm suffix를 사용한다.
         String yyyymm = trafficRedisRuntimePolicy.formatYyyyMm(targetMonth);
         return namespaced("monthly_shared_usage:" + lineId + ":" + yyyymm);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String immediatelyBlockEndKey(long lineId) {
         return namespaced("immediately_block_end:" + lineId);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String repeatBlockKey(long lineId) {
         return namespaced("repeat_block:" + lineId);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String remainingIndivAmountKey(long lineId, YearMonth targetMonth) {
         // 잔량 해시 키는 월 단위(yyyymm)로 관리한다.
         String yyyymm = trafficRedisRuntimePolicy.formatYyyyMm(targetMonth);
         return namespaced("remaining_indiv_amount:" + lineId + ":" + yyyymm);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String remainingSharedAmountKey(long familyId, YearMonth targetMonth) {
         // 잔량 해시 키는 월 단위(yyyymm)로 관리한다.
         String yyyymm = trafficRedisRuntimePolicy.formatYyyyMm(targetMonth);
         return namespaced("remaining_shared_amount:" + familyId + ":" + yyyymm);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String indivRefillLockKey(long lineId) {
         return namespaced("indiv_refill_lock:" + lineId);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String sharedRefillLockKey(long familyId) {
         return namespaced("shared_refill_lock:" + familyId);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String qosKey(long lineId) {
         return namespaced("qos:" + lineId);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String speedBucketIndividualKey(long lineId, long epochSecond) {
         // 속도 버킷은 초 단위로 키를 분리한다.
         return namespaced("speed_bucket:individual:" + lineId + ":" + epochSecond);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String speedBucketSharedKey(long familyId, long epochSecond) {
         // 공유풀 속도 버킷은 초 단위로 키를 분리한다.
         return namespaced("speed_bucket:shared:" + familyId + ":" + epochSecond);
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String speedBucketIndividualPattern(long lineId) {
         return namespaced("speed_bucket:individual:" + lineId + ":*");
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String speedBucketSharedPattern(long familyId) {
         return namespaced("speed_bucket:shared:" + familyId + ":*");
     }
 
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String dedupeRunKey(String traceId) {
         // traceId는 필수이므로 빈 문자열은 허용하지 않는다.
         String normalizedTraceId = Objects.requireNonNull(traceId, "traceId must not be null").trim();
@@ -124,6 +187,9 @@ public class TrafficRedisKeyFactory {
         return namespaced("dedupe:run:" + normalizedTraceId);
     }
 
+    /**
+      * `namespaced` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     private String namespaced(String keyBody) {
         // namespace가 비어 있으면 원본 키를 그대로 사용한다.
         String namespace = appRedisProperties.getNamespace();

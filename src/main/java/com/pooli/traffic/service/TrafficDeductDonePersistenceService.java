@@ -25,6 +25,9 @@ public class TrafficDeductDonePersistenceService {
     private final TrafficDeductDoneMapper trafficDeductDoneMapper;
 
     @Transactional(readOnly = true)
+    /**
+      * `existsByTraceId` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     public boolean existsByTraceId(String traceId) {
         // traceId가 비어 있으면 DONE 조회 대상이 아니므로 false를 반환한다.
         if (traceId == null || traceId.isBlank()) {
@@ -34,6 +37,9 @@ public class TrafficDeductDonePersistenceService {
     }
 
     @Transactional
+    /**
+      * `saveIfAbsent` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     public boolean saveIfAbsent(TrafficPayloadReqDto payload, TrafficDeductResultResDto result) {
         // payload/result는 같은 traceId 기준으로 들어와야 하므로 null 안전성을 먼저 보장한다.
         if (payload == null || result == null) {
@@ -63,6 +69,9 @@ public class TrafficDeductDonePersistenceService {
         return affectedRowCount > 0;
     }
 
+    /**
+      * 입력값이 없을 때 사용할 기본 값을 반환합니다.
+     */
     private LocalDateTime defaultNowIfNull(LocalDateTime value) {
         if (value != null) {
             return value;

@@ -22,6 +22,9 @@ public class TrafficPayloadValidationService {
 
     private final Validator validator;
 
+    /**
+      * `validate` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     public List<Violation> validate(TrafficPayloadReqDto payload) {
         // payload 자체가 null이면 이후 필드 단위 검증이 불가능하므로
         // 명확한 단일 오류를 반환해 호출 측에서 DLQ/로그 분기를 쉽게 처리한다.
@@ -44,6 +47,9 @@ public class TrafficPayloadValidationService {
                 .toList();
     }
 
+    /**
+      * `toViolation` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     private Violation toViolation(ConstraintViolation<TrafficPayloadReqDto> violation) {
         String fieldName = violation.getPropertyPath() == null
                 ? "unknown"

@@ -43,6 +43,18 @@ public class TrafficRequestEnqueueService {
     private final ObjectMapper objectMapper;
     private final AppStreamsProperties appStreamsProperties;
 
+    /**
+     * 트래픽 발생 요청을 Streams에 enqueue하고, 추적용 응답(traceId/enqueuedAt)을 반환합니다.
+     *
+     * <p>처리 순서:
+     * 1) traceId 확정(MDC 재사용 또는 신규 생성)
+     * 2) 요청 DTO를 메시지 payload DTO로 변환
+     * 3) payload를 JSON 직렬화
+     * 4) Streams `payload` 필드로 단일 레코드 XADD
+     *
+     * @param request API 요청 본문(lineId, familyId, appId, apiTotalData)
+     * @return enqueue 완료 응답(traceId, enqueuedAt)
+     */
     public TrafficGenerateResDto enqueue(TrafficGenerateReqDto request) {
         String traceId = resolveTraceId();
         long enqueuedAt = System.currentTimeMillis();
@@ -74,6 +86,15 @@ public class TrafficRequestEnqueueService {
                 .build();
     }
 
+    /**
+     * 현재 요청 컨텍스트에서 사용할 traceId를 결정합니다.
+     *
+     * <p>규칙:
+     * - MDC에 traceId가 이미 있으면 그대로 재사용
+     * - 없으면 UUID를 생성해 MDC에 기록 후 반환
+     *
+     * @return 로그/메시지 상관관계 추적에 사용할 traceId
+     */
     private String resolveTraceId() {
         // 요청 필터(MDC)에 이미 traceId가 있으면 같은 값을 재사용해
         // API 로그와 MQ 메시지 간 상관관계를 쉽게 추적한다.
@@ -89,6 +110,13 @@ public class TrafficRequestEnqueueService {
         return generatedTraceId;
     }
 
+    /**
+     * 메시지 payload DTO를 Streams 적재용 JSON 문자열로 직렬화합니다.
+     *
+     * @param payload 메시지 계약 DTO
+     * @return JSON 문자열
+     * @throws ApplicationException 직렬화 실패 시 INTERNAL_SERVER_ERROR
+     */
     private String toPayloadJson(TrafficPayloadReqDto payload) {
         try {
             return objectMapper.writeValueAsString(payload);
@@ -98,6 +126,15 @@ public class TrafficRequestEnqueueService {
         }
     }
 
+    /**
+     * 직렬화된 payload를 Streams 요청 키에 XADD 합니다.
+     *
+     * <p>메시지 구조는 명세에 따라 `field=payload`, `value=<json>` 단일 필드를 사용합니다.
+     *
+     * @param payloadJson 직렬화된 payload JSON
+     * @return 생성된 Streams RecordId
+     * @throws ApplicationException Redis 접근 실패/결과 null 시 EXTERNAL_SYSTEM_ERROR
+     */
     private RecordId addToStream(String payloadJson) {
         try {
             RecordId recordId = streamsStringRedisTemplate.opsForStream().add(

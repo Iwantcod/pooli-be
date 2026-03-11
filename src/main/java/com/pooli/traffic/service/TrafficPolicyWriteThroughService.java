@@ -218,6 +218,9 @@ public class TrafficPolicyWriteThroughService {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
+                /**
+                  * `afterCommit` 처리 목적에 맞는 핵심 로직을 수행합니다.
+                 */
                 public void afterCommit() {
                     wrappedOperation.run();
                 }

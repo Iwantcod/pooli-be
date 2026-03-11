@@ -58,6 +58,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private ScheduledExecutorService reclaimExecutor;
 
     @Override
+    /**
+     * 애플리케이션 시작 시점에 필요한 초기화 작업을 수행합니다.
+     */
     public void start() {
         // 오케스트레이터가 아직 연결되지 않은 환경에서 소비기를 켜면
         // 메시지가 불완전 처리될 수 있으므로, 설정값으로 기동 여부를 먼저 확인한다.
@@ -100,6 +103,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     @Override
+    /**
+     * 애플리케이션 종료 시점에 실행 중인 리소스를 안전하게 정리합니다.
+     */
     public void stop() {
         // 루프가 다음 사이클에서 종료되도록 먼저 상태를 내린다.
         running.set(false);
@@ -122,20 +128,32 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     @Override
+    /**
+     * 현재 상태를 불리언 값으로 확인해 호출 측의 분기 판단을 돕습니다.
+     */
     public boolean isRunning() {
         return running.get();
     }
 
     @Override
+    /**
+     * 현재 상태를 불리언 값으로 확인해 호출 측의 분기 판단을 돕습니다.
+     */
     public boolean isAutoStartup() {
         return true;
     }
 
     @Override
+    /**
+     * 현재 설정/상태 값을 반환합니다.
+     */
     public int getPhase() {
         return Integer.MAX_VALUE;
     }
 
+    /**
+      * `consumeLoop` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     private void consumeLoop() {
         // SmartLifecycle stop() 호출 전까지 BLOCK read -> 레코드 처리 과정을 반복한다.
         while (running.get()) {
@@ -154,6 +172,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         }
     }
 
+    /**
+      * 수신 레코드를 적절한 처리 경로로 분배합니다.
+     */
     private void dispatchRecord(MapRecord<String, String, String> record) {
         if (workerExecutor == null) {
             log.warn("traffic_stream_worker_not_ready recordId={}", record.getId().getValue());
@@ -173,6 +194,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         }
     }
 
+    /**
+      * 컴포넌트 실행을 시작하고 필요한 초기화를 수행합니다.
+     */
     private void startReclaimLoop() {
         long reclaimIntervalMs = Math.max(1L, appStreamsProperties.getReclaimIntervalMs());
 
@@ -191,6 +215,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         );
     }
 
+    /**
+      * `runReclaimCycle` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     private void runReclaimCycle() {
         if (!running.get()) {
             return;
@@ -211,6 +238,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         }
     }
 
+    /**
+      * 입력 상태를 해석해 분기별 처리 로직을 수행합니다.
+     */
     private void handleRecord(MapRecord<String, String, String> record) {
         // DLQ/로그 추적을 위해 레코드 ID를 초기에 추출해 둔다.
         String recordId = record.getId().getValue();
@@ -300,6 +330,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         }
     }
 
+    /**
+     * 입력값과 정책을 바탕으로 최종 사용 값을 계산해 반환합니다.
+     */
     private int resolveWorkerThreadCount() {
         int configuredCount = appStreamsProperties.getWorkerThreadCount();
         if (configuredCount > 0) {

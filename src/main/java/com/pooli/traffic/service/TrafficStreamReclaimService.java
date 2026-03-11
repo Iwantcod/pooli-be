@@ -28,6 +28,9 @@ public class TrafficStreamReclaimService {
     private final TrafficStreamInfraService trafficStreamInfraService;
     private final AppStreamsProperties appStreamsProperties;
 
+    /**
+      * `reclaimAndRouteExceededRetries` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     public List<MapRecord<String, String, String>> reclaimAndRouteExceededRetries() {
         // pending 스캔 건수는 readCount를 재사용하되, 최소 1건을 보장한다.
         long pendingScanCount = Math.max(1L, appStreamsProperties.getReadCount());
@@ -63,16 +66,25 @@ public class TrafficStreamReclaimService {
         return trafficStreamInfraService.claimPending(claimCandidates, reclaimMinIdleMs);
     }
 
+    /**
+     * 현재 상태를 불리언 값으로 확인해 호출 측의 분기 판단을 돕습니다.
+     */
     private boolean isIdleEnoughForReclaim(PendingMessage pendingMessage, long reclaimMinIdleMs) {
         Duration elapsedSinceLastDelivery = pendingMessage.getElapsedTimeSinceLastDelivery();
         long elapsedMs = elapsedSinceLastDelivery == null ? 0L : elapsedSinceLastDelivery.toMillis();
         return elapsedMs >= reclaimMinIdleMs;
     }
 
+    /**
+      * `hasExceededRetryLimit` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     private boolean hasExceededRetryLimit(PendingMessage pendingMessage, int maxRetry) {
         return pendingMessage.getTotalDeliveryCount() > maxRetry;
     }
 
+    /**
+      * `moveToDlqAndAcknowledge` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     private void moveToDlqAndAcknowledge(PendingMessage pendingMessage, int maxRetry) {
         String sourceRecordId = pendingMessage.getIdAsString();
         MapRecord<String, String, String> sourceRecord =

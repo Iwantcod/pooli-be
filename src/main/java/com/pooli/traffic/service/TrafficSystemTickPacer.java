@@ -18,6 +18,9 @@ public class TrafficSystemTickPacer implements TrafficTickPacer {
 
     private final long tickIntervalNanos;
 
+    /**
+      * `Value` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     */
     public TrafficSystemTickPacer(@Value("${app.traffic.tick-interval-ms:1000}") long tickIntervalMs) {
         // 잘못된 설정(0 이하)을 방어하기 위해 기본값 1000ms를 강제합니다.
         long normalizedIntervalMs = tickIntervalMs > 0 ? tickIntervalMs : 1000L;
@@ -25,6 +28,9 @@ public class TrafficSystemTickPacer implements TrafficTickPacer {
     }
 
     @Override
+    /**
+     * 요구되는 시점/조건이 만족될 때까지 대기한 뒤 결과를 반환합니다.
+     */
     public long awaitTickStart(long orchestrationStartNano, int tickNumber) {
         if (orchestrationStartNano <= 0 || tickNumber <= 0) {
             return 0L;
