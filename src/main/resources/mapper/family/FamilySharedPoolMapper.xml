@@ -94,11 +94,13 @@
         GROUP BY f.family_id, f.pool_base_data, f.pool_total_data, f.pool_remaining_data
     </select>
 
-    <!-- GET /api/shared-pools/limits 용 -->
+    <!-- GET /api/shared-pools/limit 용 -->
     <select id="selectSharedDataThreshold" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
         SELECT
             f.family_threshold,
-            f.is_threshold_active
+            f.is_threshold_active,
+            f.pool_total_data,
+            f.pool_remaining_data
         FROM FAMILY f
         WHERE f.family_id = #{familyId}
           AND f.deleted_at IS NULL
