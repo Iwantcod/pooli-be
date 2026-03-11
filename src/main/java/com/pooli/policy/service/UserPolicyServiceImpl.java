@@ -12,6 +12,7 @@ import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.dto.PagingResDto;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.family.mapper.FamilyMapper;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
@@ -52,260 +53,256 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RequiredArgsConstructor
 public class UserPolicyServiceImpl implements UserPolicyService {
+	
     private final AlarmHistoryService alarmHistoryService;
 
     private final FamilyLineMapper familyLineMapper;
     private final LineLimitMapper lineLimitMapper;
     private final AppPolicyMapper appPolicyMapper;
+    private final FamilyMapper familyMapper;
 
     private final PolicyBackOfficeMapper policyBackOfficeMapper;
     private final RepeatBlockMapper repeatBlockMapper;
     private final RepeatBlockDayMapper repeatBlockDayMapper;
     private final ImmediateBlockMapper immediateBlockMapper;
 
-	@Override
-	public List<ActivePolicyResDto> getActivePolicies() {
+    @Override
+    public List<ActivePolicyResDto> getActivePolicies() {
 
-		return policyBackOfficeMapper.selectActivePolicies();
-	}
+        return policyBackOfficeMapper.selectActivePolicies();
+    }
 
-	@Override
-	public List<RepeatBlockPolicyResDto> getRepeatBlockPolicies(Long lineId, AuthUserDetails auth) {
-	    checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
+    @Override
+    public List<RepeatBlockPolicyResDto> getRepeatBlockPolicies(Long lineId, AuthUserDetails auth) {
+        checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
-	    return repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
-	}
+        return repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
+    }
 
-	@Override
-	@Transactional
-	public RepeatBlockPolicyResDto createRepeatBlockPolicy(RepeatBlockPolicyReqDto request, AuthUserDetails auth) {
+    @Override
+    @Transactional
+    public RepeatBlockPolicyResDto createRepeatBlockPolicy(RepeatBlockPolicyReqDto request, AuthUserDetails auth) {
 
         Long lineId = request.getLineId() != null ? request.getLineId() : auth.getLineId();
         checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
         request.setLineId(lineId);
 
+        List<RepeatBlockDayReqDto> days = request.getDays();
 
-	    List<RepeatBlockDayReqDto> days = request.getDays();
+        // 반복적 차단 요일/시간 중복 체크
+        if (days != null && !days.isEmpty()) {
+            for (RepeatBlockDayReqDto day : days) {
+                boolean exists = repeatBlockMapper.isDuplicatedRepeatBlocks(
+                        lineId,
+                        day.getDayOfWeek(),
+                        day.getStartAt(),
+                        day.getEndAt());
+                if (exists) {
+                    throw new ApplicationException(PolicyErrorCode.BLOCK_POLICY_CONFLICT);
+                }
+            }
 
-	    // 반복적 차단 요일/시간 중복 체크
-	    if (days != null && !days.isEmpty()) {
-	        for (RepeatBlockDayReqDto day : days) {
-	            boolean exists = repeatBlockMapper.isDuplicatedRepeatBlocks(
-	            		lineId,
-	                    day.getDayOfWeek(),
-	                    day.getStartAt(),
-	                    day.getEndAt()
-	            );
-	            if (exists) {
-	            	throw new ApplicationException(PolicyErrorCode.BLOCK_POLICY_CONFLICT);
-	            }
-	        }
+        }
 
-	    }
+        // 새로운 차단이면 DB 삽입
+        repeatBlockMapper.insertRepeatBlock(request);
 
-	    // 새로운 차단이면 DB 삽입
-	    repeatBlockMapper.insertRepeatBlock(request);
-
-	    if (days != null && !days.isEmpty()) {
-	        repeatBlockDayMapper.insertRepeatBlockDays(request.getRepeatBlockId(), days);
-	    }
+        if (days != null && !days.isEmpty()) {
+            repeatBlockDayMapper.insertRepeatBlockDays(request.getRepeatBlockId(), days);
+        }
 
         alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.CREATE_REPEAT_BLOCK);
 
-	    // DTO 반환
-	    List<RepeatBlockDayResDto> dayResList = days != null
-	            ? days.stream()
-	                  .map(d -> RepeatBlockDayResDto.builder()
-	                          .dayOfWeek(d.getDayOfWeek())
-	                          .startAt(d.getStartAt())
-	                          .endAt(d.getEndAt())
-	                          .build())
-	                  .toList()
-	            : List.of();
+        // DTO 반환
+        List<RepeatBlockDayResDto> dayResList = days != null
+                ? days.stream()
+                        .map(d -> RepeatBlockDayResDto.builder()
+                                .dayOfWeek(d.getDayOfWeek())
+                                .startAt(d.getStartAt())
+                                .endAt(d.getEndAt())
+                                .build())
+                        .toList()
+                : List.of();
 
-	    return RepeatBlockPolicyResDto.builder()
-	            .repeatBlockId(request.getRepeatBlockId())
-	            .lineId(lineId)
-	            .isActive(request.getIsActive())
-	            .days(dayResList)
-	            .build();
-	}
+        return RepeatBlockPolicyResDto.builder()
+                .repeatBlockId(request.getRepeatBlockId())
+                .lineId(lineId)
+                .isActive(request.getIsActive())
+                .days(dayResList)
+                .build();
+    }
 
-	@Override
+    @Override
     @Transactional
-	public RepeatBlockPolicyResDto updateRepeatBlockPolicy(Long repeatBlockId, RepeatBlockPolicyReqDto request,
-			AuthUserDetails auth) {
-	    RepeatBlockPolicyResDto exist = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
-	    if (exist == null) {
-	        throw new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
-	    }
-	    checkIsSameFamilyGroup(exist.getLineId(), auth.getLineId(), auth);
-	    request.setLineId(exist.getLineId());
-	    request.setRepeatBlockId(repeatBlockId);
+    public RepeatBlockPolicyResDto updateRepeatBlockPolicy(Long repeatBlockId, RepeatBlockPolicyReqDto request,
+            AuthUserDetails auth) {
+        RepeatBlockPolicyResDto exist = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
+        if (exist == null) {
+            throw new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
+        }
+        checkIsSameFamilyGroup(exist.getLineId(), auth.getLineId(), auth);
+        request.setLineId(exist.getLineId());
+        request.setRepeatBlockId(repeatBlockId);
 
-		// 반복 차단 요일 및 시간대 정보를 삭제한 후 새로 삽입하기
-		deleteRepeatBlockPolicy(repeatBlockId, auth);
-		RepeatBlockPolicyResDto updated = createRepeatBlockPolicy(request, auth);
-        alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_REPEAT_BLOCK);
+        // 반복 차단 요일 및 시간대 정보를 삭제한 후 새로 삽입하기
+        deleteRepeatBlockPolicy(repeatBlockId, auth);
+        RepeatBlockPolicyResDto updated = createRepeatBlockPolicy(request, auth);
+        alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.UPDATE_REPEAT_BLOCK);
         return updated;
-	}
+    }
 
-	@Override
-	public RepeatBlockPolicyResDto deleteRepeatBlockPolicy(Long repeatBlockId, AuthUserDetails auth) {
+    @Override
+    public RepeatBlockPolicyResDto deleteRepeatBlockPolicy(Long repeatBlockId, AuthUserDetails auth) {
 
-	    // 반복적 차단 정보 없음
-		RepeatBlockPolicyResDto exist = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
+        // 반복적 차단 정보 없음
+        RepeatBlockPolicyResDto exist = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
 
-		if (exist == null) {
-	        throw new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
-	    }
-		checkIsSameFamilyGroup(exist.getLineId(), auth.getLineId(), auth);
+        if (exist == null) {
+            throw new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
+        }
+        checkIsSameFamilyGroup(exist.getLineId(), auth.getLineId(), auth);
 
-	    // soft delete
-	    repeatBlockMapper.deleteRepeatBlock(repeatBlockId);
-	    repeatBlockDayMapper.deleteRepeatDayBlock(repeatBlockId);
+        // soft delete
+        repeatBlockMapper.deleteRepeatBlock(repeatBlockId);
+        repeatBlockDayMapper.deleteRepeatDayBlock(repeatBlockId);
         alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.DELETE_REPEAT_BLOCK);
 
-	    return RepeatBlockPolicyResDto.builder()
-	    		.repeatBlockId(repeatBlockId)
-	    		.lineId(auth.getLineId())
-	    		.isActive(false)
-	    		.build();
-	}
+        return RepeatBlockPolicyResDto.builder()
+                .repeatBlockId(repeatBlockId)
+                .lineId(auth.getLineId())
+                .isActive(false)
+                .build();
+    }
 
-	@Override
-	public BlockStatusResDto getBlockStatus(Long lineId, AuthUserDetails auth) {
+    @Override
+    public BlockStatusResDto getBlockStatus(Long lineId, AuthUserDetails auth) {
 
-	    checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
+        checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
-	    LocalDateTime now = LocalDateTime.now();
-	    LocalTime nowTime = now.toLocalTime();
+        LocalDateTime now = LocalDateTime.now();
+        LocalTime nowTime = now.toLocalTime();
 
-	    DayOfWeek todayDow =
-	        DayOfWeek.values()[now.getDayOfWeek().getValue() % 7];
+        DayOfWeek todayDow = DayOfWeek.values()[now.getDayOfWeek().getValue() % 7];
 
-	    DayOfWeek yesterdayDow =
-	        DayOfWeek.values()[(now.getDayOfWeek().getValue() + 6) % 7];
+        DayOfWeek yesterdayDow = DayOfWeek.values()[(now.getDayOfWeek().getValue() + 6) % 7];
 
-	    LocalDateTime latestEnd = null;
+        LocalDateTime latestEnd = null;
 
-	    // 1️⃣ Immediate Block
-	    ImmediateBlockResDto immBlock =
-	        immediateBlockMapper.selectImmediateBlockPolicy(lineId);
+        // 즉시 차단 야부 조회
+        ImmediateBlockResDto immBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
 
-	    if (immBlock != null &&
-	        immBlock.getBlockEndAt() != null &&
-	        immBlock.getBlockEndAt().isAfter(now)) {
+        if (immBlock != null &&
+                immBlock.getBlockEndAt() != null &&
+                immBlock.getBlockEndAt().isAfter(now)) {
 
-	        latestEnd = immBlock.getBlockEndAt();
-	    }
+            latestEnd = immBlock.getBlockEndAt();
+        }
 
-	    // 2️⃣ Repeat Block
-	    List<RepeatBlockPolicyResDto> repeatBlocks =
-	        repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
+        // 반복 차단 여부 조회
+        List<RepeatBlockPolicyResDto> repeatBlocks = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
 
-	    for (RepeatBlockPolicyResDto block : repeatBlocks) {
+        for (RepeatBlockPolicyResDto block : repeatBlocks) {
 
-	        if (!Boolean.TRUE.equals(block.getIsActive()) || block.getDays() == null) {
-	            continue;
-	        }
+            if (!Boolean.TRUE.equals(block.getIsActive()) || block.getDays() == null) {
+                continue;
+            }
 
-	        for (RepeatBlockDayResDto day : block.getDays()) {
+            for (RepeatBlockDayResDto day : block.getDays()) {
 
-	            LocalTime start = day.getStartAt();
-	            LocalTime end = day.getEndAt();
+                LocalTime start = day.getStartAt();
+                LocalTime end = day.getEndAt();
 
-	            boolean overnight = start.isAfter(end);
+                boolean overnight = start.isAfter(end);
 
-	            boolean inRange = false;
-	            LocalDateTime repeatEnd = null;
+                boolean inRange = false;
+                LocalDateTime repeatEnd = null;
 
-	            if (!overnight) {
-	                // 같은날 block (ex: 11:00 ~ 12:00)
+                if (!overnight) {
+                    // 같은날 block (ex: 11:00 ~ 12:00)
 
-	                if (day.getDayOfWeek() == todayDow &&
-	                    !nowTime.isBefore(start) &&
-	                    !nowTime.isAfter(end)) {
+                    if (day.getDayOfWeek() == todayDow &&
+                            !nowTime.isBefore(start) &&
+                            !nowTime.isAfter(end)) {
 
-	                    inRange = true;
-	                    repeatEnd = now.toLocalDate().atTime(end);
-	                }
+                        inRange = true;
+                        repeatEnd = now.toLocalDate().atTime(end);
+                    }
 
-	            } else {
-	                // 자정 넘어가는 block (ex: 20:00 ~ 02:00)
+                } else {
+                    // 자정 넘어가는 block (ex: 20:00 ~ 02:00)
 
-	                if (day.getDayOfWeek() == todayDow &&
-	                    !nowTime.isBefore(start)) {
+                    if (day.getDayOfWeek() == todayDow &&
+                            !nowTime.isBefore(start)) {
 
-	                    inRange = true;
-	                    repeatEnd = now.toLocalDate().plusDays(1).atTime(end);
-	                }
+                        inRange = true;
+                        repeatEnd = now.toLocalDate().plusDays(1).atTime(end);
+                    }
 
-	                if (day.getDayOfWeek() == yesterdayDow &&
-	                    !nowTime.isAfter(end)) {
+                    if (day.getDayOfWeek() == yesterdayDow &&
+                            !nowTime.isAfter(end)) {
 
-	                    inRange = true;
-	                    repeatEnd = now.toLocalDate().atTime(end);
-	                }
-	            }
+                        inRange = true;
+                        repeatEnd = now.toLocalDate().atTime(end);
+                    }
+                }
 
-	            if (inRange) {
+                if (inRange) {
 
-	                if (latestEnd == null || repeatEnd.isAfter(latestEnd)) {
-	                    latestEnd = repeatEnd;
-	                }
-	            }
-	        }
-	    }
+                    if (latestEnd == null || repeatEnd.isAfter(latestEnd)) {
+                        latestEnd = repeatEnd;
+                    }
+                }
+            }
+        }
 
-	    if (latestEnd != null) {
-	        return BlockStatusResDto.builder()
-	                .isBlocked(true)
-	                .blockEndsAt(latestEnd)
-	                .build();
-	    }
+        if (latestEnd != null) {
+            return BlockStatusResDto.builder()
+                    .isBlocked(true)
+                    .blockEndsAt(latestEnd)
+                    .build();
+        }
 
-	    return BlockStatusResDto.builder()
-	            .isBlocked(false)
-	            .blockEndsAt(null)
-	            .build();
-	}
+        return BlockStatusResDto.builder()
+                .isBlocked(false)
+                .blockEndsAt(null)
+                .build();
+    }
 
-	@Override
-	public ImmediateBlockResDto getImmediateBlockPolicy(Long lineId, AuthUserDetails auth) {
-	    checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
+    @Override
+    public ImmediateBlockResDto getImmediateBlockPolicy(Long lineId, AuthUserDetails auth) {
+        checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
-	    ImmediateBlockResDto immBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
+        ImmediateBlockResDto immBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
 
-	    // 즉시 차단 정보가 없을 때
-	    if(immBlock == null) {
-	    	return ImmediateBlockResDto.builder()
-		    		.lineId(lineId)
-		    		.blockEndAt(null)
-		    		.build();
-	    }
-
-	    return ImmediateBlockResDto.builder()
-	    		.lineId(lineId)
-	    		.blockEndAt(immBlock.getBlockEndAt())
-	    		.build();
-
-	}
-
-	@Override
-	public ImmediateBlockResDto updateImmediateBlockPolicy(Long lineId, ImmediateBlockReqDto request,
-			AuthUserDetails auth) {
-	    checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
-
-	    immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
-        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_IMMEDIATE_BLOCK);
+        // 즉시 차단 정보가 없을 때
+        if (immBlock == null) {
+            return ImmediateBlockResDto.builder()
+                    .lineId(lineId)
+                    .blockEndAt(null)
+                    .build();
+        }
 
         return ImmediateBlockResDto.builder()
-        		.lineId(lineId)
-        		.blockEndAt(request.getBlockEndAt())
-        		.build();
+                .lineId(lineId)
+                .blockEndAt(immBlock.getBlockEndAt())
+                .build();
 
-	}
+    }
+
+    @Override
+    public ImmediateBlockResDto updateImmediateBlockPolicy(Long lineId, ImmediateBlockReqDto request,
+            AuthUserDetails auth) {
+        checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
+
+        immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_CHANGE, AlarmType.UPDATE_IMMEDIATE_BLOCK);
+
+        return ImmediateBlockResDto.builder()
+                .lineId(lineId)
+                .blockEndAt(request.getBlockEndAt())
+                .build();
+
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -315,6 +312,13 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
         // 2. 두 종류의 제한 정보 테이블에서 정보 조회
         Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitByLineId(lineId);
+        Long maxSharedData = familyMapper.selectPoolBaseDataByLineId(lineId);
+        Long maxDailyData = lineLimitMapper.selectPlanDataLimitByLineId(lineId);
+        
+        if (maxDailyData != null && maxDailyData == -1L) {
+        	maxDailyData = 100L;
+        }
+
         if (lineLimit.isPresent()) {
             return LimitPolicyResDto.builder()
                     .lineLimitId(lineLimit.get().getLimitId())
@@ -322,9 +326,14 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                     .isDailyDataLimitActive(lineLimit.get().getIsDailyLimitActive())
                     .sharedDataLimit(lineLimit.get().getSharedDataLimit())
                     .isSharedDataLimitActive(lineLimit.get().getIsSharedLimitActive())
+                    .maxSharedData(maxSharedData)
+                    .maxDailyData(maxDailyData)
                     .build();
         } else {
-            return LimitPolicyResDto.builder().build();
+            return LimitPolicyResDto.builder()
+                    .maxSharedData(maxSharedData)
+                    .maxDailyData(maxDailyData)
+                    .build();
         }
     }
 
@@ -340,10 +349,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             // 삭제 상태가 아닌 lineLimit 레코드가 존재하는 경우
             boolean newDailyLimitActive = !lineLimit.get().getIsDailyLimitActive();
             int def = lineLimitMapper.updateIsDailyLimitActiveById(lineLimit.get().getLimitId(), newDailyLimitActive);
-            if(def != 1) {
+            if (def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
-            if(newDailyLimitActive) {
+            if (newDailyLimitActive) {
                 alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT);
             } else {
                 alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DAYDATA_LIMIT);
@@ -367,7 +376,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     public LimitPolicyResDto updateDailyTotalLimitPolicyValue(LimitPolicyUpdateReqDto request, AuthUserDetails auth) {
         // 1. 대상 dailyLimit 레코드 조회
         Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitById(request.getLimitPolicyId());
-        if(lineLimit.isEmpty()) {
+        if (lineLimit.isEmpty()) {
             throw new ApplicationException(PolicyErrorCode.LIMIT_POLICY_NOT_FOUND);
         }
 
@@ -376,11 +385,12 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
         // 3. update 진행
         int def = lineLimitMapper.updateDailyDataLimit(request);
-        if(def != 1) {
+        if (def != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
-        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DAYDATA_LIMIT);
+        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE,
+                AlarmType.POLICY_UPDATE_DAYDATA_LIMIT);
 
         return LimitPolicyResDto.builder()
                 .lineLimitId(lineLimit.get().getLimitId())
@@ -403,14 +413,17 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             // 삭제 상태가 아닌 lineLimit 레코드가 존재하는 경우
             boolean newSharedLimitActive = !lineLimit.get().getIsSharedLimitActive();
             int def = lineLimitMapper.updateIsSharedLimitActiveById(lineLimit.get().getLimitId(), newSharedLimitActive);
-            if(def != 1) {
+            if (def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
-            if(newSharedLimitActive) {
-                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
+            if (newSharedLimitActive) {
+                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                        AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
             } else {
-                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_SHAREDATA_LIMIT);
+                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                        AlarmType.POLICY_DELETE_SHAREDATA_LIMIT);
             }
+
             return LimitPolicyResDto.builder()
                     .lineLimitId(lineLimit.get().getLimitId())
                     .dailyDataLimit(lineLimit.get().getDailyDataLimit())
@@ -426,6 +439,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
     /**
      * 새로운 LineLimit 레코드 삽입 후 DTO return
+     * 
      * @param lineId 회선 식별자
      * @return LimitPolicyResDto
      */
@@ -438,7 +452,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 .isSharedLimitActive(true)
                 .build();
         int def = lineLimitMapper.createLineLimit(newLineLimit);
-        if(def != 1) {
+        if (def != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
         alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT);
@@ -471,7 +485,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
-        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
+        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE,
+                AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
+
         return LimitPolicyResDto.builder()
                 .lineLimitId(lineLimit.get().getLimitId())
                 .dailyDataLimit(lineLimit.get().getDailyDataLimit())
@@ -554,7 +570,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_APP_USAGE_LIMIT);
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE,
+                AlarmType.POLICY_UPDATE_APP_USAGE_LIMIT);
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
         return appPolicy.get().toBuilder()
                 .dailyLimitData(request.getValue())
@@ -578,7 +595,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DATA_SPEED_LIMIT);
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE,
+                AlarmType.POLICY_UPDATE_DATA_SPEED_LIMIT);
 
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
         return appPolicy.get().toBuilder()
@@ -593,21 +611,26 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         checkIsSameFamilyGroup(request.getLineId(), auth.getLineId(), auth);
 
         // 2. 대상 앱의 정보 및 정책 정보를 함께 조회(정책이 없어도 조회결과 존재)
-        Optional<AppPolicyResDto> appPolicy = appPolicyMapper.findDtoExistByLineIdAndAppId(request.getLineId(), request.getApplicationId());
+        Optional<AppPolicyResDto> appPolicy = appPolicyMapper.findDtoExistByLineIdAndAppId(request.getLineId(),
+                request.getApplicationId());
         if (appPolicy.isPresent()) {
-            if(appPolicy.get().getAppPolicyId() != null) {
+            if (appPolicy.get().getAppPolicyId() != null) {
                 // 3-1. 기존 정책이 존재한다면 is_active를 반대값으로 설정(toggle)
                 boolean newIsActive = !appPolicy.get().getIsActive();
                 int ret = appPolicyMapper.updateIsActive(appPolicy.get().getAppPolicyId(), newIsActive);
-                if(ret != 1) {
+                if (ret != 1) {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
                 }
-                if(newIsActive) {
-                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
-                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
+                if (newIsActive) {
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                            AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                            AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
                 } else {
-                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
-                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                            AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
+                    alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                            AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
                 }
                 return appPolicy.get().toBuilder()
                         .isActive(!appPolicy.get().getIsActive())
@@ -622,13 +645,15 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                         .isActive(true)
                         .build();
                 int ret = appPolicyMapper.insertAppPolicy(newAppPolicy);
-                if(ret != 1) {
+                if (ret != 1) {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
                 }
 
                 // 알람 전송
-                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
-                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
+                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                        AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
+                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                        AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
 
                 return AppPolicyResDto.builder()
                         .appPolicyId(newAppPolicy.getAppPolicyId())
@@ -667,10 +692,12 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 알람 전송
-        if(newIsWhiteList) {
-            alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_ADD_WHITELIST);
+        if (newIsWhiteList) {
+            alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                    AlarmType.POLICY_ADD_WHITELIST);
         } else {
-            alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_WHITELIST);
+            alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                    AlarmType.POLICY_DELETE_WHITELIST);
         }
 
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
@@ -684,7 +711,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     public void deleteAppPolicy(Long appPolicyId, AuthUserDetails auth) {
         // 삭제 대상 app policy 레코드 조회
         Optional<AppPolicy> appPolicy = appPolicyMapper.findEntityExistById(appPolicyId);
-        if(appPolicy.isEmpty()) {
+        if (appPolicy.isEmpty()) {
             // 없다면 예외 발생
             throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
         }
@@ -693,53 +720,57 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
         // soft delete
         int ret = appPolicyMapper.setDeleted(appPolicyId);
-        if(ret != 1) {
+        if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
         // 알람 전송
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
     }
 
-	@Override
-	public AppliedPolicyResDto getAppliedPolicies(Long lineId, AuthUserDetails auth) {
-		checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
+    @Override
+    public AppliedPolicyResDto getAppliedPolicies(Long lineId, AuthUserDetails auth) {
+        checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
-		// 제한 정책, 앱 정보 받아와서 추가하기(return에도)
-	    List<RepeatBlockPolicyResDto> repeatBlockPolicyList = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
+        // 제한 정책, 앱 정보 받아와서 추가하기(return에도)
+        List<RepeatBlockPolicyResDto> repeatBlockPolicyList = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
 
-	    ImmediateBlockResDto immediateBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
+        ImmediateBlockResDto immediateBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
 
-	    // null 안전하게 처리
-	    ImmediateBlockResDto immBlock = (immediateBlock != null)
-	        ? ImmediateBlockResDto.builder()
-	            .lineId(lineId)
-	            .blockEndAt(immediateBlock.getBlockEndAt())
-	            .build()
-	        : null;
+        // null 안전하게 처리
+        ImmediateBlockResDto immBlock = (immediateBlock != null)
+                ? ImmediateBlockResDto.builder()
+                        .lineId(lineId)
+                        .blockEndAt(immediateBlock.getBlockEndAt())
+                        .build()
+                : null;
 
+        return AppliedPolicyResDto.builder()
+                .repeatBlockPolicyList(repeatBlockPolicyList)
+                .immediateBlock(immBlock)
+                .build();
 
-	    return AppliedPolicyResDto.builder()
-	            .repeatBlockPolicyList(repeatBlockPolicyList)
-	            .immediateBlock(immBlock)
-	            .build();
+    }
 
-	}
     /**
      * 대상 lineId가 API 요청자와 동일한 가족 그룹에 속해있는지 검증
+     * 
      * @param targetLineId 대상 lineId
-     * @param myLineId API 요청자 lineId
-     * @param auth 세션 정보를 담은 인증 객체(AuthUserDetails)
+     * @param myLineId     API 요청자 lineId
+     * @param auth         세션 정보를 담은 인증 객체(AuthUserDetails)
      * @throws ApplicationException '접근 권한 없음' 예외 throws
      */
-    private void checkIsSameFamilyGroup(Long targetLineId, Long myLineId, AuthUserDetails auth) throws ApplicationException {
-        if(auth.getRoleNames().contains("ROLE_ADMIN")) {
+    private void checkIsSameFamilyGroup(Long targetLineId, Long myLineId, AuthUserDetails auth)
+            throws ApplicationException {
+        if (auth.getRoleNames().contains("ROLE_ADMIN")) {
             return;
         }
         List<Long> myFamilyLineIdList = familyLineMapper.findAllFamilyIdByLineId(myLineId);
 
-        if(!myFamilyLineIdList.contains(targetLineId)){
+        if (!myFamilyLineIdList.contains(targetLineId)) {
             // 동일한 가족 그룹에 속해있지 않다면 권한 없음을 의미
             throw new ApplicationException(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN);
         }

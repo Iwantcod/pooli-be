@@ -50,5 +50,5 @@ public interface FamilyMapper {
 	        @Param("lineId") Long lineId
 	);
 
-	
+	Long selectPoolBaseDataByLineId(@Param("lineId") Long lineId);
 }

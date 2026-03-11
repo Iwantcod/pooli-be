@@ -353,7 +353,7 @@ public class UserPolicyController {
     @GetMapping("/lines/limits")
     public ResponseEntity<LimitPolicyResDto> getLimitPolicies(
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
+            @RequestParam("lineId") Long lineId,
             @AuthenticationPrincipal AuthUserDetails auth
             ) {
         LimitPolicyResDto answer = userPolicyService.getLimitPolicy(lineId, auth);

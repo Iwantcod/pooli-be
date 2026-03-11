@@ -21,4 +21,10 @@ public class LimitPolicyResDto {
     private Long sharedDataLimit;
     @Schema(description = "월별 공유풀 데이터 사용 제한 정책 활성화 여부", example = "true")
     private Boolean isSharedDataLimitActive;
+
+    @Schema(description = "가족 공유풀 제한 한도(Byte)", example = "10737418240")
+    private Long maxSharedData;
+
+    @Schema(description = "개인 데이터 제한 한도(Byte)", example = "10737418240")
+    private Long maxDailyData;
 }

@@ -87,4 +87,13 @@
                         VALUES (#{lineId}, #{dailyDataLimit}, #{isDailyLimitActive},   #{sharedDataLimit}, #{isSharedLimitActive}, now());
 
     </insert>
+
+    <select id="selectPlanDataLimitByLineId" resultType="long">
+        SELECT p.basic_data_amount
+        FROM LINE l
+        JOIN PLAN p ON l.plan_id = p.plan_id
+        WHERE l.line_id = #{lineId}
+          AND l.deleted_at IS NULL
+          AND p.deleted_at IS NULL
+    </select>
 </mapper>
