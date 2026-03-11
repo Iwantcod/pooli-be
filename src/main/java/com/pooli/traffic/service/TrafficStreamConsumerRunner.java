@@ -41,6 +41,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final TrafficDeductOrchestratorService trafficDeductOrchestratorService;
     // in-flight dedupe 선점 서비스(traceId 기준)
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
+    // DONE 영속화 서비스(traceId UNIQUE idempotency)
+    private final TrafficDeductDonePersistenceService trafficDeductDonePersistenceService;
 
     // 전역적인 소비 루프 동작 여부 플래그(start/stop 간 공유)
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -185,11 +187,27 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 return;
             }
 
+            // 이미 DONE 저장된 traceId면 재차감 없이 즉시 ACK해 재전달을 종료한다.
+            if (trafficDeductDonePersistenceService.existsByTraceId(payload.getTraceId())) {
+                log.info(
+                        "traffic_stream_record_already_done recordId={} traceId={}",
+                        recordId,
+                        payload.getTraceId()
+                );
+                trafficStreamInfraService.acknowledge(record.getId());
+                return;
+            }
+
             // 동일 traceId에 대한 동시/중복 처리 경쟁을 막기 위해 in-flight 선점을 시도한다.
             // 선점 실패는 이미 다른 워커(또는 다른 인스턴스)가 처리 중이라는 의미이므로
             // 현재 레코드는 실행을 생략한다.
             boolean claimed = trafficInFlightDedupeService.tryClaim(payload.getTraceId());
             if (!claimed) {
+                // 선점 실패 직후 DONE이 이미 저장됐는지 한 번 더 확인한다.
+                // 다른 워커가 처리 완료했다면 ACK로 정리하고, 아니면 재전달에 맡긴다.
+                if (trafficDeductDonePersistenceService.existsByTraceId(payload.getTraceId())) {
+                    trafficStreamInfraService.acknowledge(record.getId());
+                }
                 log.info(
                         "traffic_stream_record_deduped recordId={} traceId={}",
                         recordId,
@@ -201,12 +219,22 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             // 10-tick 오케스트레이터를 실행해 개인풀/공유풀 차감 결과를 계산한다.
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
-            // 현재 단계는 DONE 영속화/ACK 순서(3.11) 전이므로 ACK는 아직 수행하지 않는다.
-            // 우선 결과를 로그로 남겨 흐름을 검증한다.
+            // DONE 저장을 먼저 수행한다.
+            // - 신규 저장(1건) 또는 중복 저장(0건)은 모두 idempotent 성공으로 간주한다.
+            // - 저장 예외가 발생하면 ACK를 하지 않아 재전달로 복구한다.
+            boolean saved = trafficDeductDonePersistenceService.saveIfAbsent(payload, result);
+
+            // "저장 성공 후 ACK" 규칙을 보장하기 위해 영속화 이후에만 ACK한다.
+            trafficStreamInfraService.acknowledge(record.getId());
+
+            // ACK까지 성공한 뒤 in-flight 키를 정리한다.
+            trafficInFlightDedupeService.release(payload.getTraceId());
+
             log.info(
-                    "traffic_stream_record_orchestrated recordId={} traceId={} finalStatus={} deducted={} remaining={} lastLuaStatus={}",
+                    "traffic_stream_record_done recordId={} traceId={} persistResult={} finalStatus={} deducted={} remaining={} lastLuaStatus={}",
                     recordId,
                     result.getTraceId(),
+                    saved ? "SAVED" : "DUPLICATE",
                     result.getFinalStatus(),
                     result.getDeductedTotalBytes(),
                     result.getApiRemainingData(),

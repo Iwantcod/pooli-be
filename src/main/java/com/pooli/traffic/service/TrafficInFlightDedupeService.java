@@ -43,4 +43,13 @@ public class TrafficInFlightDedupeService {
         }
         return acquired;
     }
+
+    public void release(String traceId) {
+        // DONE 저장/ACK 완료 후에는 in-flight 키를 정리해 불필요한 키 잔존을 줄인다.
+        if (traceId == null || traceId.isBlank()) {
+            return;
+        }
+        String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
+        cacheStringRedisTemplate.delete(dedupeKey);
+    }
 }
