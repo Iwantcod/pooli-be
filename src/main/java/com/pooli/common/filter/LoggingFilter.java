@@ -29,21 +29,32 @@ public class LoggingFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
+    	
+    	
+    	// request wrapper
+    	ContentCachingRequestWrapper wrappedRequest =
+    			new ContentCachingRequestWrapper(request);
+
+    	String uri = request.getRequestURI();
+
+    	if (uri.startsWith("/actuator")) {
+    	    filterChain.doFilter(wrappedRequest, response);
+    	    return;
+    	}    	
 
         long start = System.currentTimeMillis();
 
         String traceId = UUID.randomUUID().toString();
         MDC.put("traceId", traceId);
-
-        // request wrapper
-        ContentCachingRequestWrapper wrappedRequest =
-                new ContentCachingRequestWrapper(request);
+        
 
         try {
 
             filterChain.doFilter(wrappedRequest, response);
 
         } finally {
+        	
+        	
 
             long latency = System.currentTimeMillis() - start;
 
