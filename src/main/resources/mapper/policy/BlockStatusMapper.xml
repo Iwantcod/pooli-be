@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.policy.mapper.BlockStatusMapper">
+
+    <!--
+        현재 시각 기준 활성화된 모든 차단 중 가장 늦게 끝나는 종료 시각 조회.
+        - 즉시 차단: LINE.block_end_at 이 #{now} 이후인 경우
+        - 반복 차단: 오늘 요일과 일치하고, 현재 시각이 [start_at, end_at] 구간에 포함되는 경우
+        차단 중이 아니면(활성화된 차단 없음) NULL 반환.
+    -->
+    <select id="selectLatestBlockEndAt" resultType="java.time.LocalDateTime">
+        SELECT MAX(block_end) AS latestBlockEnd
+        FROM (
+
+            /* 1. 즉시 차단: block_end_at 이 현재 일시 이후인 경우 */
+            SELECT block_end_at AS block_end
+            FROM LINE
+            WHERE line_id     = #{lineId}
+              AND block_end_at IS NOT NULL
+              AND block_end_at  > #{now}
+
+            UNION ALL
+
+            /* 2. 반복 차단: 오늘 요일·현재 시각이 차단 구간에 포함되는 경우
+               TIMESTAMP(CURDATE(), rbd.end_at) 로 LocalDateTime 형태로 변환하여 반환 */
+            SELECT TIMESTAMP(CURDATE(), rbd.end_at) AS block_end
+            FROM REPEAT_BLOCK rb
+            INNER JOIN REPEAT_BLOCK_DAY rbd
+                ON rb.repeat_block_id = rbd.repeat_block_id
+               AND rbd.deleted_at IS NULL
+            WHERE rb.line_id      = #{lineId}
+              AND rb.is_active     = true
+              AND rb.deleted_at    IS NULL
+              AND rbd.day_of_week  = #{dayOfWeek}
+              AND rbd.start_at    &lt;= #{nowTime}
+              AND rbd.end_at      &gt;= #{nowTime}
+
+        ) combined
+    </select>
+
+</mapper>

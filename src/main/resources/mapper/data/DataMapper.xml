@@ -45,6 +45,7 @@
 	        parameterType="long"
 	        resultType="com.pooli.data.domain.dto.response.DataBalancesResDto">
 	    SELECT
+		    l.line_id AS lineId,
 	        u.user_name AS userName,
 	        fl.role AS role,
 	        f.pool_remaining_data AS sharedDataRemaining,

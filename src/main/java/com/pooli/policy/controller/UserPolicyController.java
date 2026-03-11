@@ -20,6 +20,7 @@ import com.pooli.common.dto.PagingResDto;
 import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
 import com.pooli.policy.domain.dto.response.AppPolicyResDto;
 import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
+import com.pooli.policy.domain.dto.response.BlockStatusResDto;
 import com.pooli.policy.domain.dto.response.BlockPolicyResDto;
 import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
 import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
@@ -352,7 +353,7 @@ public class UserPolicyController {
     @GetMapping("/lines/limits")
     public ResponseEntity<LimitPolicyResDto> getLimitPolicies(
             @Parameter(description = "회선 식별자", example = "101")
-            @RequestParam Long lineId,
+            @RequestParam("lineId") Long lineId,
             @AuthenticationPrincipal AuthUserDetails auth
             ) {
         LimitPolicyResDto answer = userPolicyService.getLimitPolicy(lineId, auth);
@@ -930,6 +931,46 @@ public class UserPolicyController {
     ) {
         AppPolicyResDto response = AppPolicyResDto.builder().build();
         return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "특정 구성원의 현재 차단 상태 조회",
+            description = """
+                    사용자 권한 필요. 특정 회선의 현재 시각 기준 차단 여부와 차단 종료 시각을 조회합니다.
+                    
+                    - 즉시 차단(blockEndAt이 현재 시각 이후)과 반복 차단(현재 요일/시각이 설정 구간 내)을 모두 확인합니다.
+                    - 둘 중 하나라도 활성화되어 있으면 isBlocked=true를 반환합니다.
+                    - 여러 차단이 동시에 활성화된 경우, blockEndsAt은 가장 늦게 끝나는 시각입니다.
+                    - 차단 중이 아니면 isBlocked=false, blockEndsAt=null을 반환합니다.
+                    """
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "차단 상태 조회 성공"),
+        @ApiResponse(
+                responseCode = "400",
+                description = """
+                    잘못된 요청
+                    - COMMON:4002 RequestParam 유효성 검증 실패
+                    - COMMON:4003 RequestParam 타입 불일치
+                    - COMMON:4004 필수 RequestParam 누락
+                    """
+            ),
+        @ApiResponse(
+                responseCode = "403",
+                description = """
+                    권한 없음
+                    - COMMON:4300 가족 그룹 접근 권한이 없음
+                    """
+            ),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @GetMapping("/lines/block-status")
+    public ResponseEntity<BlockStatusResDto> getBlockStatus(
+            @AuthenticationPrincipal AuthUserDetails auth,
+            @Parameter(name = "lineId", description = "회선 식별자", example = "101")
+            @RequestParam("lineId") Long lineId
+    ) {
+        return ResponseEntity.ok(userPolicyService.getBlockStatus(lineId, auth));
     }
 
 }
