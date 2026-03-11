@@ -53,6 +53,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RequiredArgsConstructor
 public class UserPolicyServiceImpl implements UserPolicyService {
+	
     private final AlarmHistoryService alarmHistoryService;
 
     private final FamilyLineMapper familyLineMapper;
@@ -146,7 +147,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         // 반복 차단 요일 및 시간대 정보를 삭제한 후 새로 삽입하기
         deleteRepeatBlockPolicy(repeatBlockId, auth);
         RepeatBlockPolicyResDto updated = createRepeatBlockPolicy(request, auth);
-        alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_REPEAT_BLOCK);
+        alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.UPDATE_REPEAT_BLOCK);
         return updated;
     }
 
@@ -187,7 +188,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
         LocalDateTime latestEnd = null;
 
-        // 1️⃣ Immediate Block
+        // 즉시 차단 야부 조회
         ImmediateBlockResDto immBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
 
         if (immBlock != null &&
@@ -197,7 +198,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             latestEnd = immBlock.getBlockEndAt();
         }
 
-        // 2️⃣ Repeat Block
+        // 반복 차단 여부 조회
         List<RepeatBlockPolicyResDto> repeatBlocks = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
 
         for (RepeatBlockPolicyResDto block : repeatBlocks) {
@@ -294,7 +295,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
         immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
-        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_IMMEDIATE_BLOCK);
+        alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_CHANGE, AlarmType.UPDATE_IMMEDIATE_BLOCK);
 
         return ImmediateBlockResDto.builder()
                 .lineId(lineId)
