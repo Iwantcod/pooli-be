@@ -8,6 +8,8 @@ import com.pooli.notification.domain.dto.request.NotiSendReqDto;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.domain.enums.NotificationTargetType;
 import com.pooli.notification.service.AlarmHistoryService;
+import com.pooli.traffic.service.TrafficPolicyWriteThroughService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,7 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
 
     private final AdminPolicyMapper adminPolicyMapper;
     private final AlarmHistoryService alarmHistoryService;
+    private final ObjectProvider<TrafficPolicyWriteThroughService> trafficPolicyWriteThroughServiceProvider;
 
     @Override
     @Transactional(readOnly = true)
@@ -40,6 +43,14 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
     @Override
     public AdminPolicyResDto createPolicy(AdminPolicyReqDto request) {
         adminPolicyMapper.insertPolicy(request);
+
+        // 신규 정책은 기본 비활성 상태이므로 policy 키를 비활성 상태로 동기화한다.
+        if (request.getPolicyId() != null) {
+            applyWriteThrough(
+                    "admin_policy_create policyId=" + request.getPolicyId(),
+                    writeThroughService -> writeThroughService.syncPolicyActivation(request.getPolicyId(), false)
+            );
+        }
 
         return AdminPolicyResDto.builder()
                 .policyId(request.getPolicyId())
@@ -59,6 +70,12 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
 
         adminPolicyMapper.updatePolicy(policyId, request);
 
+        // 정책 수정 시 SQL에서 is_active=false로 고정되므로 Redis도 비활성으로 맞춘다.
+        applyWriteThrough(
+                "admin_policy_update policyId=" + policyId,
+                writeThroughService -> writeThroughService.syncPolicyActivation(policyId, false)
+        );
+
         return AdminPolicyResDto.builder()
                 .policyId(policyId)
                 .policyName(request.getPolicyName())
@@ -77,6 +94,11 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
 
         adminPolicyMapper.deletePolicy(policyId);
 
+        applyWriteThrough(
+                "admin_policy_delete policyId=" + policyId,
+                writeThroughService -> writeThroughService.syncPolicyActivation(policyId, false)
+        );
+
         return AdminPolicyResDto.builder()
                 .policyId(policyId)
                 .build();
@@ -91,6 +113,10 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
         }
 
         adminPolicyMapper.updatePolicyActiveStatus(policyId, request);
+        applyWriteThrough(
+                "admin_policy_toggle_activation policyId=" + policyId,
+                writeThroughService -> writeThroughService.syncPolicyActivation(policyId, Boolean.TRUE.equals(request.getIsActive()))
+        );
         sendPolicyNotification(
                 Boolean.TRUE.equals(request.getIsActive()) ? AlarmType.ACTIVATE_POLICY : AlarmType.DEACTIVATE_POLICY,
                 NotificationTargetType.OWNER,
@@ -160,6 +186,23 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
         return AdminPolicyCateResDto.builder()
                 .policyCategoryId(policyCategoryId)
                 .build();
+    }
+
+    private void applyWriteThrough(
+            String operationName,
+            java.util.function.Consumer<TrafficPolicyWriteThroughService> callback
+    ) {
+        // 단위 테스트(@InjectMocks)에서는 ObjectProvider가 주입되지 않을 수 있다.
+        if (trafficPolicyWriteThroughServiceProvider == null) {
+            return;
+        }
+
+        TrafficPolicyWriteThroughService writeThroughService = trafficPolicyWriteThroughServiceProvider.getIfAvailable();
+        if (writeThroughService == null) {
+            // cache Redis가 없는 프로파일에서는 정책 키 동기화를 생략한다.
+            return;
+        }
+        callback.accept(writeThroughService);
     }
 
     private void sendPolicyNotification(AlarmType type, NotificationTargetType targetType, Integer policyId, Integer policyCategoryId, String name) {
