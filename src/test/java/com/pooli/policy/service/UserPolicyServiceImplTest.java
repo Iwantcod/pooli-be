@@ -368,7 +368,8 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getBlockEndAt()).isEqualTo(req.getBlockEndAt());
             verify(immediateBlockMapper).updateImmediateBlockPolicy(lineId, req);
-            verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_CHANGE, AlarmType.UPDATE_IMMEDIATE_BLOCK);
+            // 차단 정책 알림은 POLICY_LIMIT 채널을 사용한다.
+            verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_IMMEDIATE_BLOCK);
         }
 
         @Test
