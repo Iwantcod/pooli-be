@@ -82,9 +82,13 @@
 - 작업:
   - HYDRATE 반환 시 DB hydrate 후 동일 tick 1회 재시도
   - NO_BALANCE 반환 시 refill gate -> lock 획득 시 DB refill -> 재호출
-  - lock heartbeat/release 구현
+  - DB refill은 `SELECT ... FOR UPDATE`로 row lock 후 `actual_refill_amount=min(refill_unit, db_remaining)` 계산
+  - DB 차감 성공 시 같은 `actual_refill_amount`만 Redis에 충전
+  - DB refill 수행 중 `LOCK_HEARTBEAT_MS=1000` 주기 heartbeat 유지
+  - lock heartbeat/release 구현(실패/예외 포함 finally 해제)
 - 완료 기준:
   - HYDRATE, NO_BALANCE, WAIT, FAIL, SKIP 분기 시나리오 검증
+  - DB 차감량과 Redis 충전량이 항상 동일함을 테스트로 보장
 
 ### 3.9 10-tick 오케스트레이터 구현
 - 작업:
@@ -141,13 +145,35 @@
 - 완료 기준:
   - 핵심 시나리오(정상/차단/한도/hydrate/refill/retry/dlq) 테스트 통과
 
+### 3.15 refill ledger(outbox) 및 재처리 워커 구현
+- 작업:
+  - refill ledger 테이블 생성(`trace_id`, `tick`, `pool_type` UNIQUE)
+  - 상태 컬럼 도입(`INIT`, `DB_DEDUCTED`, `REDIS_PENDING`, `REDIS_APPLIED`)
+  - DB 차감 성공 후 Redis 충전 실패 시 `REDIS_PENDING` 기록
+  - 백그라운드 워커가 `REDIS_PENDING`을 재처리해 Redis 충전 후 `REDIS_APPLIED`로 전이
+- 완료 기준:
+  - Redis 일시 장애 후에도 ledger 재처리로 최종 정합성 복구
+  - 동일 `(trace_id, tick, pool_type)`에서 중복 DB 차감/중복 Redis 충전이 발생하지 않음
+
+### 3.16 DB 예외/경계 조건 처리
+- 작업:
+  - DB deadlock/lock timeout만 최대 2회 재시도(짧은 backoff)
+  - 비일시적 DB 오류는 즉시 실패 처리(추가 재시도 금지)
+  - 월 경계는 `enqueuedAt` 기준 월 고정으로 DB/Redis 키 일치 강제
+  - line/family 누락, soft-delete, 음수 잔량 비정상 데이터 처리 규칙 구현
+- 완료 기준:
+  - 예외/경계 케이스에서 오작동(중복 차감, 음수 잔량, 무한 재시도) 없음
+  - 실패 시에도 lock 해제 및 후속 처리 가능 상태 유지
+
 ## 4. 권장 구현 순서(실행 우선순위)
 1. 프로파일/설정 분리
 2. API producer + 메시지 계약
 3. traffic consumer 인프라
 4. Lua + 오케스트레이터
-5. DONE/ACK + 재시도/DLQ
-6. 정책 write-through + 통합 테스트
+5. DB refill 원자 차감(`SELECT ... FOR UPDATE`) + heartbeat
+6. refill ledger(outbox) + 재처리 워커
+7. DONE/ACK + 재시도/DLQ
+8. 정책 write-through + 통합 테스트
 
 ## 5. 오픈 이슈
 - API 실패 응답코드(`TBD`) 확정 필요:

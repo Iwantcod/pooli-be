@@ -21,6 +21,9 @@
 - `traceId`: API 서버가 생성하여 MQ 메시지에 넣는 UUID.
 - `refill unit`: 리필 단위(델타 * 10, 0이라면 api total data).
 - `redis threshold`: 리필 임계치(델타 * 3, 0이라면 api total data의 30%).
+- `db remaining`: DB 원천 잔량(`LINE.remaining_data` 또는 `FAMILY.pool_remaining_data`).
+- `actual refill amount`: 실제 리필량. `min(refill unit, db remaining)`으로 계산한다.
+- `refill ledger`: DB 차감과 Redis 충전 정합성/재처리를 위한 영속 로그.
 
 ## **3) 아키텍처**
 
@@ -118,6 +121,7 @@ value -> {used data}
 - 월별 키: EXPIREAT(월말 + 10일)
 - lock TTL: 3000ms
 - lock heartbeat: 소유자만 1초 주기로 TTL 연장
+- DB refill 수행 중에도 lock 소유자는 `LOCK_HEARTBEAT_MS(1000ms)` 주기로 heartbeat를 유지한다.
 
 상수 고정:
 
@@ -163,7 +167,7 @@ value -> {used data}
 3. tick 목표량 계산 후 deduct_indiv_tick.lua 호출.
 4. 개인풀 status가 HYDRATE면 DB hydrate 후 같은 tick에서 개인풀 Lua 1회 재호출.
 5. 개인풀 status가 NO_BALANCE면 refill_gate.lua 호출.
-6. refill 결과가 OK면 DB refill + lock 유지(heartbeat) + 개인풀 Lua 1회 재호출.
+6. refill 결과가 OK면 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount = min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 개인풀 Lua를 1회 재호출한다(heartbeat 유지).
 7. 그래도 tick residual data > 0이고 개인풀 status가 NO_BALANCE면 deduct_shared_tick.lua 호출.
 8. 공유풀도 HYDRATE/NO_BALANCE/refill 동일 규칙 적용.
 9. tick 종료 후 api remaining data 감소.
@@ -269,6 +273,65 @@ value -> {used data}
 4. redis에 버킷 정보가 없을 때
     1. api total data 값을 redis-refill unit에 적재
 
+### **12.1) DB refill 원자 처리 규칙 (추가 확정)**
+
+1. 진입 조건:
+    1. 현재 tick 결과가 `NO_BALANCE`
+    2. `refill_gate.lua` 결과가 `OK`
+    3. lock 소유권(heartbeat)이 유효함
+2. DB 차감 트랜잭션:
+    1. 대상 풀 레코드를 `SELECT ... FOR UPDATE`로 조회한다.
+    2. `actual refill amount = min(refill unit, db remaining)`를 계산한다.
+    3. `actual refill amount <= 0`이면 DB/Redis 변경 없이 리필을 종료하고 현재 tick 결과는 `NO_BALANCE`를 유지한다.
+    4. `actual refill amount > 0`이면 DB 잔량을 `actual refill amount`만큼 차감한다.
+3. Redis 반영:
+    1. DB 차감 성공 후 Redis 잔량 키를 `actual refill amount`만큼 증가시킨다.
+    2. Redis 충전량은 반드시 DB 차감량과 동일해야 한다.
+4. tick 재시도:
+    1. Redis 반영이 성공한 경우에만 같은 tick에서 차감 Lua를 1회 재호출한다.
+
+### **12.2) DB/Redis 불일치 방지 규칙 (추가 확정)**
+
+1. 기본 전략:
+    1. 동기 경로(같은 tick)에서 DB 차감 -> Redis 충전을 우선 시도한다.
+2. outbox(ledger) 보강:
+    1. DB 차감 성공 후 Redis 충전 실패 시 `refill_ledger`에 재처리 상태를 기록한다.
+    2. 백그라운드 재처리 워커가 ledger를 읽어 Redis 충전을 재시도한다.
+3. idempotency:
+    1. ledger 유니크 키는 `(trace_id, tick, pool_type)`로 고정한다.
+    2. 동일 키는 한 번만 "DB 차감 완료" 상태가 될 수 있다.
+4. 상태 전이:
+    1. `INIT -> DB_DEDUCTED -> REDIS_APPLIED`를 정상 경로로 사용한다.
+    2. Redis 실패 시 `DB_DEDUCTED -> REDIS_PENDING`으로 전이하고 재처리 성공 시 `REDIS_APPLIED`로 전이한다.
+
+### **12.3) DB 예외/재시도 규칙 (추가 확정)**
+
+1. 재시도 대상:
+    1. deadlock
+    2. lock wait timeout
+2. 재시도 정책:
+    1. 최대 2회 재시도
+    2. 재시도 간 짧은 backoff를 둔다(예: 50ms)
+3. 비재시도 대상:
+    1. 스키마/구문/매핑 오류
+    2. 무효 파라미터
+    3. 기타 비일시적 예외
+4. 재시도 소진 또는 비재시도 예외 발생 시:
+    1. 해당 tick에서는 리필을 중단하고 기존 `NO_BALANCE` 결과를 유지한다.
+    2. lock은 소유자 기준으로 반드시 해제한다.
+
+### **12.4) 월 경계/삭제 상태 규칙 (추가 확정)**
+
+1. 월 기준:
+    1. `enqueuedAt` 기준 월을 DB/Redis 모두 동일하게 사용한다.
+2. 엔티티 누락:
+    1. line/family 레코드가 없거나 soft-delete 상태면 리필 불가로 처리한다.
+3. 데이터 이상:
+    1. DB 잔량이 음수인 비정상 상태는 데이터 오류로 기록하고 리필을 중단한다.
+4. 공통 원칙:
+    1. 월 키와 DB 조회 월이 불일치하면 리필을 진행하지 않는다.
+    2. 정합성보다 가용성을 우선해 중복 차감을 허용하지 않는다.
+
 ## **13) 키 미존재/HYDRATE 규칙**
 
 - key 미존재 시 Lua는 HYDRATE 반환
@@ -294,6 +357,8 @@ value -> {used data}
 - 예외 시나리오(재전달/중복 전달/재시도 경쟁)에서는 Redis dedupe 및 DONE idempotency로 정합성을 보장한다.
 - 하나의 데이터 처리 요청(10 tick)은 단일 스레드에서 순차 실행한다.
 - dedupe는 Redis(in-flight) + 영속 저장소(DONE) 이중 보장
+- refill은 Redis lock + DB row lock(`SELECT ... FOR UPDATE`)의 이중 잠금으로 보호한다.
+- DB 차감량과 Redis 충전량의 불일치는 refill ledger 재처리 대상으로 관리한다.
 - `XACK`는 반드시 DONE 영속 저장 이후 수행
 
 ## **16) 최종 데이터 차감 플로우 (개발 착수용)**
@@ -307,7 +372,7 @@ value -> {used data}
 7. 개인풀 Lua 실행.
 8. HYDRATE면 hydrate + 개인풀 재시도 1회.
 9. NO_BALANCE면 refill gate 실행.
-10. OK로 lock 획득 시 DB refill 수행(heartbeat 포함) 후 개인풀 재시도 1회.
+10. OK로 lock 획득 시 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount=min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 개인풀 재시도 1회.
 11. 개인풀 후 tick_residual_data > 0이고 status가 NO_BALANCE면 공유풀 Lua 실행.
 12. 공유풀에서도 HYDRATE/refill 동일 처리.
 13. 해당 tick 차감량만큼 api_remaining_data 감소.
@@ -332,7 +397,7 @@ value -> {used data}
 7. Lua는 원자적으로 검증 -> answer 계산 -> 차감/집계 -> JSON(`{"answer":...,"status":"..."}`) 반환을 수행한다.
 8. 개인풀 결과가 HYDRATE면 DB hydrate 후 같은 tick에서 `deduct_indiv_tick.lua` 1회 재호출한다.
 9. 개인풀 결과가 NO_BALANCE면 `refill_gate.lua`를 호출한다.
-10. refill 결과가 OK면 DB refill 수행 후(필요 시 heartbeat) 같은 tick에서 `deduct_indiv_tick.lua` 1회 재호출한다.
+10. refill 결과가 OK면 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount=min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 같은 tick에서 `deduct_indiv_tick.lua` 1회 재호출한다.
 11. 개인풀 처리 후 tick_residual_data = current_tick_target_data - indiv_answer_total을 계산한다.
 12. tick_residual_data > 0이고 개인풀 최종 status가 NO_BALANCE인 경우에만 `deduct_shared_tick.lua`를 호출한다.
 13. 공유풀도 동일하게 HYDRATE -> hydrate 1회 재호출, NO_BALANCE -> refill_gate -> 필요 시 재호출 규칙을 적용한다.
