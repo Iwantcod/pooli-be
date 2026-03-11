@@ -3,14 +3,13 @@ package com.pooli.monitoring.metrics;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.connection.stream.StreamInfo;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class RedisStreamMetrics {
 
     private final StringRedisTemplate redisTemplate;
@@ -21,6 +20,14 @@ public class RedisStreamMetrics {
 
     private static final String STREAM_KEY = "traffic-request-stream";
     private static final String GROUP_NAME = "traffic-group";
+
+    public RedisStreamMetrics(
+            @Qualifier("streamsStringRedisTemplate") StringRedisTemplate redisTemplate,
+            MeterRegistry meterRegistry
+    ) {
+        this.redisTemplate = redisTemplate;
+        this.meterRegistry = meterRegistry;
+    }
 
     @PostConstruct
     public void init() {
