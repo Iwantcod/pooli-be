@@ -15,6 +15,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
+import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Streams BLOCK 소비 루프를 실행하는 러너입니다.
  * poller 스레드는 레코드를 읽고, worker 풀은 레코드 처리 로직을 병렬 수행합니다.
- * 실제 차감 오케스트레이션은 다음 단계에서 연결합니다.
+ * worker는 payload 역직렬화 후 10-tick 오케스트레이터를 호출합니다.
  */
 @Slf4j
 @Component
@@ -36,6 +37,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final AppStreamsProperties appStreamsProperties;
     // payload JSON 역직렬화 도구
     private final ObjectMapper objectMapper;
+    // 10-tick 차감 오케스트레이션 서비스
+    private final TrafficDeductOrchestratorService trafficDeductOrchestratorService;
 
     // 전역적인 소비 루프 동작 여부 플래그(start/stop 간 공유)
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -172,12 +175,19 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             // JSON payload를 DTO로 역직렬화해 이후 오케스트레이터가 바로 사용할 수 있게 한다.
             TrafficPayloadReqDto payload = objectMapper.readValue(payloadJson, TrafficPayloadReqDto.class);
 
-            // 현재 단계는 인프라 도입 단계이므로, 정상 payload는 ACK하지 않고 대기한다.
-            // 다음 단계에서 오케스트레이터 연결 후 ACK 시점을 확정한다.
-            log.debug(
-                    "traffic_stream_record_received recordId={} traceId={} (processing deferred)",
+            // 10-tick 오케스트레이터를 실행해 개인풀/공유풀 차감 결과를 계산한다.
+            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
+
+            // 현재 단계는 DONE 영속화/ACK 순서(3.11) 전이므로 ACK는 아직 수행하지 않는다.
+            // 우선 결과를 로그로 남겨 흐름을 검증한다.
+            log.info(
+                    "traffic_stream_record_orchestrated recordId={} traceId={} finalStatus={} deducted={} remaining={} lastLuaStatus={}",
                     recordId,
-                    payload.getTraceId()
+                    result.getTraceId(),
+                    result.getFinalStatus(),
+                    result.getDeductedTotalBytes(),
+                    result.getApiRemainingData(),
+                    result.getLastLuaStatus()
             );
         } catch (JsonProcessingException e) {
             // 스키마 불일치/JSON 파손은 재처리해도 복구가 어려우므로 DLQ로 분기한다.
