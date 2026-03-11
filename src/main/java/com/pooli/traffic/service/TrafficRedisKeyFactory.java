@@ -31,6 +31,20 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * 부팅 시 policy 전역 활성화 bootstrap 단일 실행을 위한 분산락 키입니다.
+     */
+    public String policyBootstrapLockKey() {
+        return namespaced("policy:bootstrap:lock");
+    }
+
+    /**
+     * 마지막 policy bootstrap/reconciliation 성공 시각(epoch seconds)을 저장하는 키입니다.
+     */
+    public String policyBootstrapVersionKey() {
+        return namespaced("policy_bootstrap_version");
+    }
+
+    /**
       * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
      */
     public String dailyTotalLimitKey(long lineId) {
