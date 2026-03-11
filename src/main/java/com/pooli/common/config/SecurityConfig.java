@@ -49,6 +49,7 @@ public class SecurityConfig {
                     "/api/auth/admin/login",
                     "/api/auth/user/login",
                     "/api/auth/logout",
+                    "/api/traffic/requests",
                     "/error",
                     "/actuator/**"
                 ).permitAll()

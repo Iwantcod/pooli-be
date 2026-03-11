@@ -136,6 +136,7 @@
   - 단위 테스트: 분배 계산, 상태 전이, 종료 규칙
   - 통합 테스트: Redis + Streams + DB + Lua
   - 프로파일 테스트: `local`/`api`/`traffic` 부팅 검증
+    - 구현 상세: `ApplicationContextRunner` 기반 트래픽 핵심 빈 프로파일 활성/비활성 매트릭스 테스트 추가
   - 점진 배포: API 먼저, 이후 traffic 배포
 - 완료 기준:
   - 핵심 시나리오(정상/차단/한도/hydrate/refill/retry/dlq) 테스트 통과
