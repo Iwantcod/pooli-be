@@ -21,7 +21,7 @@
     <!-- 2. 기본값 insert (전부 true) -->
     <insert id="insertDefault" parameterType="long">
 
-        INSERT INTO alarm_setting (
+        INSERT INTO ALARM_SETTING (
         user_id,
         family_alarm,
         user_alarm,
@@ -50,7 +50,7 @@
     <!-- 3. 특정 컬럼만 update -->
     <update id="updateAlarmColumn">
 
-        UPDATE alarm_setting
+        UPDATE ALARM_SETTING
         SET ${columnName} = #{enabled},
         updated_at = NOW()
         WHERE user_id = #{userId}
