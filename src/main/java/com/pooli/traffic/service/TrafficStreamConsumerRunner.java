@@ -78,14 +78,16 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         // poller는 BLOCK read 전용이므로 단일 스레드면 충분하다.
         pollerExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread thread = new Thread(r, "traffic-stream-poller");
-            thread.setDaemon(true);
+            // traffic 프로파일(web-application-type=none)에서는
+            // non-daemon 워커가 최소 1개는 있어야 JVM이 즉시 종료되지 않는다.
+            thread.setDaemon(false);
             return thread;
         });
 
         // 레코드 처리는 worker 풀에서 병렬 수행한다.
         workerExecutor = Executors.newFixedThreadPool(workerThreadCount, r -> {
             Thread thread = new Thread(r, "traffic-stream-worker");
-            thread.setDaemon(true);
+            thread.setDaemon(false);
             return thread;
         });
 
@@ -166,6 +168,10 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     dispatchRecord(record);
                 }
             } catch (Exception e) {
+                // shutdownNow()로 BLOCK read를 깨운 종료 경로에서는 오류 로그를 남기지 않는다.
+                if (!running.get()) {
+                    break;
+                }
                 // 루프를 중단하지 않고 다음 read 사이클로 복구를 시도한다.
                 log.error("traffic_stream_consume_loop_failed", e);
             }
@@ -203,7 +209,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         // reclaim은 주기적으로 pending 목록을 점검하는 보조 작업이므로 단일 스레드면 충분하다.
         reclaimExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread thread = new Thread(r, "traffic-stream-reclaim");
-            thread.setDaemon(true);
+            thread.setDaemon(false);
             return thread;
         });
 

@@ -11,6 +11,7 @@ import com.pooli.common.exception.UploadErrorCode;
 import com.pooli.common.validator.UploadValidationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -27,6 +28,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@Profile("!traffic")
 @RequiredArgsConstructor
 public class UploadServiceImpl implements UploadService {
 

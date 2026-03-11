@@ -2,8 +2,11 @@ spring:
   config:
     activate:
       on-profile: traffic
+  data:
+    redis:
+      repositories:
+        enabled: false
   main:
     web-application-type: none
   session:
     store-type: none
-

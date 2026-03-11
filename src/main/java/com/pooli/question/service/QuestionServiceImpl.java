@@ -14,6 +14,7 @@ import com.pooli.question.exception.QuestionErrorCode;
 import com.pooli.question.mapper.AnswerMapper;
 import com.pooli.question.mapper.QuestionMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
+@Profile("!traffic")
 @RequiredArgsConstructor
 public class QuestionServiceImpl implements QuestionService {
 
