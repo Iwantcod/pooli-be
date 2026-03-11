@@ -1,5 +1,6 @@
 package com.pooli.monitoring.metrics;
 
+import com.pooli.common.config.AppStreamsProperties;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
@@ -14,19 +15,19 @@ public class RedisStreamMetrics {
 
     private final StringRedisTemplate redisTemplate;
     private final MeterRegistry meterRegistry;
+    private final AppStreamsProperties appStreamsProperties;
 
     private volatile double streamLength = 0;
     private volatile double pendingMessages = 0;
 
-    private static final String STREAM_KEY = "traffic-request-stream";
-    private static final String GROUP_NAME = "traffic-group";
-
     public RedisStreamMetrics(
             @Qualifier("streamsStringRedisTemplate") StringRedisTemplate redisTemplate,
-            MeterRegistry meterRegistry
+            MeterRegistry meterRegistry,
+            AppStreamsProperties appStreamsProperties
     ) {
         this.redisTemplate = redisTemplate;
         this.meterRegistry = meterRegistry;
+        this.appStreamsProperties = appStreamsProperties;
     }
 
     @PostConstruct
@@ -45,23 +46,27 @@ public class RedisStreamMetrics {
     public void collectMetrics() {
 
         try {
+            String streamKey = appStreamsProperties.getKeyTrafficRequest();
+            String groupName = appStreamsProperties.getGroupTraffic();
 
-            Long length = redisTemplate.opsForStream().size(STREAM_KEY);
+            Long length = redisTemplate.opsForStream().size(streamKey);
             if (length != null) {
                 streamLength = length;
             }
 
             StreamInfo.XInfoGroups groups =
-                    redisTemplate.opsForStream().groups(STREAM_KEY);
+                    redisTemplate.opsForStream().groups(streamKey);
+
+            pendingMessages = 0;
 
             groups.forEach(group -> {
-                if (GROUP_NAME.equals(group.groupName())) {
+                if (groupName.equals(group.groupName())) {
                     pendingMessages = group.pendingCount();
                 }
             });
 
         } catch (Exception e) {
-            // ëª¨ë‹ˆí„°ë§ ì‹¤íŒ¨ëŠ” ì„œë¹„ìŠ¤ ì˜í–¥ ì—†ë„ë¡
+            // ¸ğ´ÏÅÍ¸µ ½ÇÆĞ´Â ¼­ºñ½º ¿µÇâ ¾øµµ·Ï
         }
     }
 }
