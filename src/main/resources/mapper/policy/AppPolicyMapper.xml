@@ -168,6 +168,25 @@
         WHERE app_policy_id = #{appPolicyId} AND deleted_at IS NULL;
     </select>
 
+    <!-- lineId 기준 삭제되지 않은 앱 정책 전체 조회 -->
+    <select id="findAllEntityByLineId" resultMap="appPolicyResultMap">
+        SELECT
+            app_policy_id,
+            line_id,
+            application_id,
+            data_limit,
+            speed_limit,
+            is_active,
+            is_whitelist,
+            created_at,
+            deleted_at,
+            updated_at
+        FROM APP_POLICY
+        WHERE line_id = #{lineId}
+          AND deleted_at IS NULL
+        ORDER BY app_policy_id ASC
+    </select>
+
     <!-- pk 로 Dto 조회 -->
     <select id="findDtoExistById" resultMap="appPolicyResDtoResultMap" parameterType="long">
         SELECT

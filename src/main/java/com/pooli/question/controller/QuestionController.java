@@ -9,6 +9,7 @@ import com.pooli.question.service.QuestionService;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -31,6 +32,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 @Tag(name = "question", description = "문의 사항 관련 API")
 @RestController
+@Profile("!traffic")
 @RequiredArgsConstructor
 @RequestMapping("/api/questions")
 public class QuestionController {

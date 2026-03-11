@@ -2,6 +2,7 @@ package com.pooli.auth.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -31,6 +32,7 @@ import lombok.RequiredArgsConstructor;
 
 @Tag(name = "Authentication", description = "인증 및 인가 관련 API")
 @RestController
+@Profile("!traffic")
 @RequiredArgsConstructor
 @RequestMapping("/api/auth")
 public class AuthController {

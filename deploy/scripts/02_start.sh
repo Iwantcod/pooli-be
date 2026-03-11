@@ -17,6 +17,18 @@ set +a
 : "${ECR_REGISTRY:?ECR_REGISTRY is required}"
 : "${ECR_REPOSITORY:?ECR_REPOSITORY is required}"
 
+# 0.5) 배포 그룹 이름으로 실행 프로파일을 결정
+DG_NAME="${DEPLOYMENT_GROUP_NAME:-}"
+case "$DG_NAME" in
+  pooli-release-group) TARGET_PROFILE="api" ;;
+  pooli-traffic-group) TARGET_PROFILE="traffic" ;;
+  *)
+    echo "[start] ERROR: unknown DEPLOYMENT_GROUP_NAME=${DG_NAME}"
+    exit 1
+    ;;
+esac
+echo "[start] deploymentGroup=${DG_NAME} profile=${TARGET_PROFILE}"
+
 # 1) 이미지 태그(sha) 로드
 if [ ! -f /srv/pooli/deploy/meta/image_tag ]; then
   echo "[start] ERROR: /srv/pooli/deploy/meta/image_tag not found"
@@ -33,6 +45,13 @@ fi
 
 cp /srv/pooli/deploy/.env /srv/pooli/.env
 chmod 600 /srv/pooli/.env
+
+# 2.5) DG 기준 프로파일을 .env에 강제 주입
+if grep -q '^SPRING_PROFILES_ACTIVE=' /srv/pooli/.env; then
+  sed -i "s/^SPRING_PROFILES_ACTIVE=.*/SPRING_PROFILES_ACTIVE=${TARGET_PROFILE}/" /srv/pooli/.env
+else
+  echo "SPRING_PROFILES_ACTIVE=${TARGET_PROFILE}" >> /srv/pooli/.env
+fi
 
 # 3) aws cli 존재 확인 (없으면 여기서 종료)
 command -v aws >/dev/null 2>&1 || { echo "[start] ERROR: aws cli not installed"; exit 127; }
