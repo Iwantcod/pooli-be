@@ -5,6 +5,8 @@ import java.util.List;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
+import com.pooli.traffic.service.TrafficPolicyWriteThroughService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,6 +60,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     private final RepeatBlockMapper repeatBlockMapper;
     private final RepeatBlockDayMapper repeatBlockDayMapper;
     private final ImmediateBlockMapper immediateBlockMapper;
+    private final ObjectProvider<TrafficPolicyWriteThroughService> trafficPolicyWriteThroughServiceProvider;
 
 	@Override
 	public List<ActivePolicyResDto> getActivePolicies() {
@@ -105,6 +108,14 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	    if (days != null && !days.isEmpty()) {
 	        repeatBlockDayMapper.insertRepeatBlockDays(request.getRepeatBlockId(), days);
 	    }
+
+        // 반복 차단 정책은 line 단위 hash 전체 스냅샷으로 관리하므로
+        // 변경 직후 현재 활성 목록을 재조회해 Redis를 한 번에 동기화한다.
+        List<RepeatBlockPolicyResDto> latestRepeatBlocks = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
+        applyWriteThrough(
+                "repeat_block_create lineId=" + lineId,
+                writeThroughService -> writeThroughService.syncRepeatBlock(lineId, latestRepeatBlocks)
+        );
 
         alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.CREATE_REPEAT_BLOCK);
 
@@ -160,6 +171,14 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	    // soft delete
 	    repeatBlockMapper.deleteRepeatBlock(repeatBlockId);
 	    repeatBlockDayMapper.deleteRepeatDayBlock(repeatBlockId);
+
+        // 삭제 후 활성 반복 차단 목록을 다시 읽어 Redis hash를 갱신한다.
+        List<RepeatBlockPolicyResDto> latestRepeatBlocks = repeatBlockMapper.selectRepeatBlocksByLineId(exist.getLineId());
+        applyWriteThrough(
+                "repeat_block_delete lineId=" + exist.getLineId(),
+                writeThroughService -> writeThroughService.syncRepeatBlock(exist.getLineId(), latestRepeatBlocks)
+        );
+
         alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.DELETE_REPEAT_BLOCK);
 
 	    return RepeatBlockPolicyResDto.builder()
@@ -196,6 +215,13 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	    checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
 	    immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
+
+        // 즉시 차단 종료 시각 변경은 단일 키 갱신으로 즉시 반영한다.
+        applyWriteThrough(
+                "immediate_block_update lineId=" + lineId,
+                writeThroughService -> writeThroughService.syncImmediateBlockEnd(lineId, request.getBlockEndAt())
+        );
+
         alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_IMMEDIATE_BLOCK);
 
         return ImmediateBlockResDto.builder()
@@ -247,6 +273,18 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DAYDATA_LIMIT);
             }
 
+            // line_limit 변경은 daily/shared를 항상 함께 동기화해 키 불일치를 방지한다.
+            applyWriteThrough(
+                    "line_limit_toggle_daily lineId=" + lineId,
+                    writeThroughService -> writeThroughService.syncLineLimit(
+                            lineId,
+                            lineLimit.get().getDailyDataLimit(),
+                            newDailyLimitActive,
+                            lineLimit.get().getSharedDataLimit(),
+                            lineLimit.get().getIsSharedLimitActive()
+                    )
+            );
+
             return LimitPolicyResDto.builder()
                     .lineLimitId(lineLimit.get().getLimitId())
                     .dailyDataLimit(lineLimit.get().getDailyDataLimit())
@@ -280,6 +318,17 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
         alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DAYDATA_LIMIT);
 
+        applyWriteThrough(
+                "line_limit_update_daily_value lineId=" + lineLimit.get().getLineId(),
+                writeThroughService -> writeThroughService.syncLineLimit(
+                        lineLimit.get().getLineId(),
+                        request.getPolicyValue(),
+                        lineLimit.get().getIsDailyLimitActive(),
+                        lineLimit.get().getSharedDataLimit(),
+                        lineLimit.get().getIsSharedLimitActive()
+                )
+        );
+
         return LimitPolicyResDto.builder()
                 .lineLimitId(lineLimit.get().getLimitId())
                 .dailyDataLimit(request.getPolicyValue())
@@ -309,6 +358,17 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             } else {
                 alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_SHAREDATA_LIMIT);
             }
+
+            applyWriteThrough(
+                    "line_limit_toggle_shared lineId=" + lineLimit.get().getLineId(),
+                    writeThroughService -> writeThroughService.syncLineLimit(
+                            lineLimit.get().getLineId(),
+                            lineLimit.get().getDailyDataLimit(),
+                            lineLimit.get().getIsDailyLimitActive(),
+                            lineLimit.get().getSharedDataLimit(),
+                            newSharedLimitActive
+                    )
+            );
             return LimitPolicyResDto.builder()
                     .lineLimitId(lineLimit.get().getLimitId())
                     .dailyDataLimit(lineLimit.get().getDailyDataLimit())
@@ -342,6 +402,17 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT);
         alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
 
+        applyWriteThrough(
+                "line_limit_insert lineId=" + lineId,
+                writeThroughService -> writeThroughService.syncLineLimit(
+                        lineId,
+                        newLineLimit.getDailyDataLimit(),
+                        newLineLimit.getIsDailyLimitActive(),
+                        newLineLimit.getSharedDataLimit(),
+                        newLineLimit.getIsSharedLimitActive()
+                )
+        );
+
         return LimitPolicyResDto.builder()
                 .lineLimitId(newLineLimit.getLimitId())
                 .dailyDataLimit(newLineLimit.getDailyDataLimit())
@@ -370,6 +441,18 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
+
+        applyWriteThrough(
+                "line_limit_update_shared_value lineId=" + lineLimit.get().getLineId(),
+                writeThroughService -> writeThroughService.syncLineLimit(
+                        lineLimit.get().getLineId(),
+                        lineLimit.get().getDailyDataLimit(),
+                        lineLimit.get().getIsDailyLimitActive(),
+                        request.getPolicyValue(),
+                        lineLimit.get().getIsSharedLimitActive()
+                )
+        );
+
         return LimitPolicyResDto.builder()
                 .lineLimitId(lineLimit.get().getLimitId())
                 .dailyDataLimit(lineLimit.get().getDailyDataLimit())
@@ -454,9 +537,23 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
         alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_APP_USAGE_LIMIT);
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
-        return appPolicy.get().toBuilder()
+        AppPolicyResDto updatedResponse = appPolicy.get().toBuilder()
                 .dailyLimitData(request.getValue())
                 .build();
+
+        applyWriteThrough(
+                "app_policy_update_data_limit lineId=" + updatedResponse.getLineId() + " appId=" + updatedResponse.getAppId(),
+                writeThroughService -> writeThroughService.syncAppPolicy(
+                        updatedResponse.getLineId(),
+                        updatedResponse.getAppId(),
+                        Boolean.TRUE.equals(updatedResponse.getIsActive()),
+                        updatedResponse.getDailyLimitData(),
+                        updatedResponse.getDailyLimitSpeed(),
+                        Boolean.TRUE.equals(updatedResponse.getIsWhiteList())
+                )
+        );
+
+        return updatedResponse;
     }
 
     @Override
@@ -479,9 +576,23 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DATA_SPEED_LIMIT);
 
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
-        return appPolicy.get().toBuilder()
+        AppPolicyResDto updatedResponse = appPolicy.get().toBuilder()
                 .dailyLimitSpeed(request.getValue())
                 .build();
+
+        applyWriteThrough(
+                "app_policy_update_speed_limit lineId=" + updatedResponse.getLineId() + " appId=" + updatedResponse.getAppId(),
+                writeThroughService -> writeThroughService.syncAppPolicy(
+                        updatedResponse.getLineId(),
+                        updatedResponse.getAppId(),
+                        Boolean.TRUE.equals(updatedResponse.getIsActive()),
+                        updatedResponse.getDailyLimitData(),
+                        updatedResponse.getDailyLimitSpeed(),
+                        Boolean.TRUE.equals(updatedResponse.getIsWhiteList())
+                )
+        );
+
+        return updatedResponse;
     }
 
     @Override
@@ -507,9 +618,23 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                     alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
                     alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
                 }
-                return appPolicy.get().toBuilder()
+                AppPolicyResDto updatedResponse = appPolicy.get().toBuilder()
                         .isActive(!appPolicy.get().getIsActive())
                         .build();
+
+                applyWriteThrough(
+                        "app_policy_toggle_active lineId=" + updatedResponse.getLineId() + " appId=" + updatedResponse.getAppId(),
+                        writeThroughService -> writeThroughService.syncAppPolicy(
+                                updatedResponse.getLineId(),
+                                updatedResponse.getAppId(),
+                                Boolean.TRUE.equals(updatedResponse.getIsActive()),
+                                updatedResponse.getDailyLimitData(),
+                                updatedResponse.getDailyLimitSpeed(),
+                                Boolean.TRUE.equals(updatedResponse.getIsWhiteList())
+                        )
+                );
+
+                return updatedResponse;
             } else {
                 // 3-2. 기존 정책이 존재하지 않는다면 기본값 세팅하여 새 레코드 insert
                 AppPolicy newAppPolicy = AppPolicy.builder()
@@ -528,7 +653,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
                 alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
 
-                return AppPolicyResDto.builder()
+                AppPolicyResDto createdResponse = AppPolicyResDto.builder()
                         .appPolicyId(newAppPolicy.getAppPolicyId())
                         .lineId(request.getLineId())
                         .appId(request.getApplicationId())
@@ -538,6 +663,20 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                         .dailyLimitData(newAppPolicy.getDataLimit())
                         .dailyLimitSpeed(newAppPolicy.getSpeedLimit())
                         .build();
+
+                applyWriteThrough(
+                        "app_policy_create lineId=" + createdResponse.getLineId() + " appId=" + createdResponse.getAppId(),
+                        writeThroughService -> writeThroughService.syncAppPolicy(
+                                createdResponse.getLineId(),
+                                createdResponse.getAppId(),
+                                Boolean.TRUE.equals(createdResponse.getIsActive()),
+                                createdResponse.getDailyLimitData(),
+                                createdResponse.getDailyLimitSpeed(),
+                                Boolean.TRUE.equals(createdResponse.getIsWhiteList())
+                        )
+                );
+
+                return createdResponse;
             }
         } else {
             // 3-3. 조회 쿼리의 결과가 아예 존재하지 않는다면 앱이 존재하지 않음을 의미
@@ -572,9 +711,23 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
-        return appPolicy.get().toBuilder()
+        AppPolicyResDto updatedResponse = appPolicy.get().toBuilder()
                 .isWhiteList(newIsWhiteList)
                 .build();
+
+        applyWriteThrough(
+                "app_policy_toggle_whitelist lineId=" + updatedResponse.getLineId() + " appId=" + updatedResponse.getAppId(),
+                writeThroughService -> writeThroughService.syncAppPolicy(
+                        updatedResponse.getLineId(),
+                        updatedResponse.getAppId(),
+                        Boolean.TRUE.equals(updatedResponse.getIsActive()),
+                        updatedResponse.getDailyLimitData(),
+                        updatedResponse.getDailyLimitSpeed(),
+                        Boolean.TRUE.equals(updatedResponse.getIsWhiteList())
+                )
+        );
+
+        return updatedResponse;
     }
 
     @Override
@@ -598,6 +751,14 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         // 알람 전송
         alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
         alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
+
+        applyWriteThrough(
+                "app_policy_delete lineId=" + appPolicy.get().getLineId() + " appId=" + appPolicy.get().getApplicationId(),
+                writeThroughService -> writeThroughService.evictAppPolicy(
+                        appPolicy.get().getLineId(),
+                        appPolicy.get().getApplicationId()
+                )
+        );
     }
 
 	@Override
@@ -624,6 +785,26 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 	            .build();
 
 	}
+
+    private void applyWriteThrough(
+            String operationName,
+            java.util.function.Consumer<TrafficPolicyWriteThroughService> callback
+    ) {
+        // 단위 테스트(@InjectMocks) 환경에서는 ObjectProvider 주입이 생략될 수 있다.
+        if (trafficPolicyWriteThroughServiceProvider == null) {
+            return;
+        }
+
+        TrafficPolicyWriteThroughService writeThroughService = trafficPolicyWriteThroughServiceProvider.getIfAvailable();
+        if (writeThroughService == null) {
+            // api profile처럼 cache Redis가 비활성인 환경에서는 write-through를 건너뛴다.
+            log.debug("traffic_policy_write_through_skipped operation={} reason=no_cache_redis_profile", operationName);
+            return;
+        }
+
+        callback.accept(writeThroughService);
+    }
+
     /**
      * 대상 lineId가 API 요청자와 동일한 가족 그룹에 속해있는지 검증
      * @param targetLineId 대상 lineId

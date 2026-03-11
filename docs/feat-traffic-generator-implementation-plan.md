@@ -124,6 +124,9 @@
 ### 3.13 정책 변경 write-through 구현
 - 작업:
   - 정책 DB 변경 직후 대상 Redis 키 즉시 갱신
+    - 구현 상세: 트랜잭션 커밋 후(after-commit) `daily_total_limit`, `monthly_shared_limit`,
+      `app_data_daily_limit`, `app_speed_limit`, `app_whitelist`, `immediately_block_end`,
+      `repeat_block`, `policy:{policyId}`를 즉시 동기화
   - 실패 시 재시도/오류 로그 추가
 - 완료 기준:
   - 정책 변경 후 다음 tick부터 Redis 반영 확인
