@@ -39,6 +39,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final ObjectMapper objectMapper;
     // 10-tick 차감 오케스트레이션 서비스
     private final TrafficDeductOrchestratorService trafficDeductOrchestratorService;
+    // in-flight dedupe 선점 서비스(traceId 기준)
+    private final TrafficInFlightDedupeService trafficInFlightDedupeService;
 
     // 전역적인 소비 루프 동작 여부 플래그(start/stop 간 공유)
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -174,6 +176,27 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         try {
             // JSON payload를 DTO로 역직렬화해 이후 오케스트레이터가 바로 사용할 수 있게 한다.
             TrafficPayloadReqDto payload = objectMapper.readValue(payloadJson, TrafficPayloadReqDto.class);
+
+            // traceId가 없으면 dedupe 키를 만들 수 없고 재처리 제어가 불가능하므로
+            // 복구 불가능한 메시지로 판단해 DLQ + ACK 처리한다.
+            if (payload.getTraceId() == null || payload.getTraceId().isBlank()) {
+                trafficStreamInfraService.writeDlq(payloadJson, "traceId가 비어 있습니다.", recordId);
+                trafficStreamInfraService.acknowledge(record.getId());
+                return;
+            }
+
+            // 동일 traceId에 대한 동시/중복 처리 경쟁을 막기 위해 in-flight 선점을 시도한다.
+            // 선점 실패는 이미 다른 워커(또는 다른 인스턴스)가 처리 중이라는 의미이므로
+            // 현재 레코드는 실행을 생략한다.
+            boolean claimed = trafficInFlightDedupeService.tryClaim(payload.getTraceId());
+            if (!claimed) {
+                log.info(
+                        "traffic_stream_record_deduped recordId={} traceId={}",
+                        recordId,
+                        payload.getTraceId()
+                );
+                return;
+            }
 
             // 10-tick 오케스트레이터를 실행해 개인풀/공유풀 차감 결과를 계산한다.
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
