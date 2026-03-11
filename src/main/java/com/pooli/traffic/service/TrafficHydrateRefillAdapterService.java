@@ -45,6 +45,7 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficQuotaSourcePort trafficQuotaSourcePort;
     private final TrafficQuotaCacheService trafficQuotaCacheService;
+    private final TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
 
     /**
      * 개인풀 차감 경로를 실행합니다.
@@ -100,6 +101,18 @@ public class TrafficHydrateRefillAdapterService {
     ) {
         // 필수 값이 비어 있으면 이후 키/락 계산이 불가능하므로 ERROR로 즉시 종료한다.
         if (!isPayloadValidForPool(poolType, payload)) {
+            return errorResult();
+        }
+
+        try {
+            trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
+        } catch (RuntimeException e) {
+            log.error(
+                    "traffic_line_policy_hydration_failed traceId={} lineId={}",
+                    payload.getTraceId(),
+                    payload.getLineId(),
+                    e
+            );
             return errorResult();
         }
 

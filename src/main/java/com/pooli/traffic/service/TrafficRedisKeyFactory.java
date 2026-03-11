@@ -45,6 +45,20 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * 회선 정책(on-demand hydrate) 완료 여부를 나타내는 준비 키입니다.
+     */
+    public String linePolicyReadyKey(long lineId) {
+        return namespaced("line_policy_ready:" + lineId);
+    }
+
+    /**
+     * 회선 정책 hydrate의 단일 실행을 위한 분산락 키입니다.
+     */
+    public String linePolicyHydrateLockKey(long lineId) {
+        return namespaced("line_policy_hydrate_lock:" + lineId);
+    }
+
+    /**
       * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
      */
     public String dailyTotalLimitKey(long lineId) {

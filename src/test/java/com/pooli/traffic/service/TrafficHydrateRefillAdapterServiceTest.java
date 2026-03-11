@@ -8,6 +8,8 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -52,6 +55,9 @@ class TrafficHydrateRefillAdapterServiceTest {
 
     @Mock
     private TrafficQuotaCacheService trafficQuotaCacheService;
+
+    @Mock
+    private TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
 
     @InjectMocks
     private TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
@@ -195,6 +201,49 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(-1L, result.getAnswer())
             );
             verifyNoInteractions(trafficLuaScriptInfraService);
+        }
+
+        @Test
+        @DisplayName("차감 Lua 실행 전에 line 정책 ensureLoaded를 먼저 호출한다")
+        void ensuresLinePolicyBeforeDeduct() {
+            // given
+            TrafficPayloadReqDto payload = createPayload();
+            stubIndividualDeductKeys();
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+            when(trafficLuaScriptInfraService.executeDeductIndivTick(anyList(), anyList()))
+                    .thenReturn(luaResult(1L, TrafficLuaStatus.OK));
+
+            // when
+            TrafficLuaExecutionResult result =
+                    trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L);
+
+            // then
+            assertEquals(TrafficLuaStatus.OK, result.getStatus());
+            InOrder inOrder = inOrder(trafficLinePolicyHydrationService, trafficLuaScriptInfraService);
+            inOrder.verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
+            inOrder.verify(trafficLuaScriptInfraService).executeDeductIndivTick(anyList(), anyList());
+        }
+
+        @Test
+        @DisplayName("line 정책 ensureLoaded 실패 시 ERROR 반환하고 Lua는 호출하지 않는다")
+        void returnsErrorWhenLinePolicyHydrationFails() {
+            // given
+            TrafficPayloadReqDto payload = createPayload();
+            doThrow(new RuntimeException("hydrate-fail"))
+                    .when(trafficLinePolicyHydrationService)
+                    .ensureLoaded(11L);
+
+            // when
+            TrafficLuaExecutionResult result =
+                    trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L);
+
+            // then
+            assertAll(
+                    () -> assertEquals(TrafficLuaStatus.ERROR, result.getStatus()),
+                    () -> assertEquals(-1L, result.getAnswer())
+            );
+            verify(trafficLuaScriptInfraService, never()).executeDeductIndivTick(anyList(), anyList());
         }
 
         @Test
