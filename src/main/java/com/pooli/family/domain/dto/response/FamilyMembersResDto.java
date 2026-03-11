@@ -33,6 +33,9 @@ public class FamilyMembersResDto {
     @Schema(description = "가족 구성원 DTO")
     public static class FamilyMemberDto {
 
+        @Schema(description = "본인(회선) 여부 식별자", example = "true")
+        private Boolean isMe;
+        
         @Schema(description = "회원 식별자", example = "100")
         private Integer userId;
 

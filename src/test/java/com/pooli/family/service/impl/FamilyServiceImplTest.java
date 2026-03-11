@@ -56,14 +56,13 @@ class FamilyServiceImplTest {
             .build();
         List<FamilyMembersResDto.FamilyMemberDto> members = List.of(
             FamilyMembersResDto.FamilyMemberDto.builder()
-                .userId(1)
-                .lineId(10)
+                .isMe(true)
                 .userName("user")
                 .build()
         );
 
         when(familyMapper.selectFamilyMembersHeader(10L)).thenReturn(header);
-        when(familyMapper.selectFamilyMembers(1)).thenReturn(members);
+        when(familyMapper.selectFamilyMembers(1, 10L)).thenReturn(members);
 
         FamilyMembersResDto result = familyService.getFamilyMembers(principal);
 

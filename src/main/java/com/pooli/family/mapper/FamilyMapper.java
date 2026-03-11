@@ -17,7 +17,8 @@ public interface FamilyMapper {
     );
 
 	List<FamilyMembersResDto.FamilyMemberDto> selectFamilyMembers(
-        @Param("familyId") Integer familyId
+        @Param("familyId") Integer familyId,
+        @Param("lineId") Long lineId
     );
 	
 	List<FamilyMembersSimpleResDto> selectFamilyMembersSimpleByLineId(
