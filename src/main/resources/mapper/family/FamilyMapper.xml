@@ -174,5 +174,13 @@
 	        ELSE 2
 	      END,
 	      l.line_id ASC
-	</select>         
+	</select>
+
+	<select id="selectPoolBaseDataByLineId" resultType="long">
+		SELECT f.pool_base_data
+		FROM FAMILY f
+		JOIN FAMILY_LINE fl ON f.family_id = fl.family_id
+		WHERE fl.line_id = #{lineId}
+		  AND f.deleted_at IS NULL
+	</select>
 </mapper>
