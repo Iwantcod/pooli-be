@@ -9,7 +9,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 @Configuration
-@Profile("default")
+@Profile({"default","api"})
 public class ProdAwsConfig {
     @Value("${cloud.aws.region}")
     private String region;
