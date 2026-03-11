@@ -1,22 +1,18 @@
 package com.pooli.policy.service;
 
-import com.pooli.auth.service.AuthUserDetails;
-import com.pooli.common.dto.PagingResDto;
-import com.pooli.common.exception.ApplicationException;
-import com.pooli.common.exception.CommonErrorCode;
-import com.pooli.notification.domain.enums.AlarmCode;
-import com.pooli.notification.domain.enums.AlarmType;
-import com.pooli.notification.service.AlarmHistoryService;
-import com.pooli.permission.mapper.FamilyLineMapper;
-import com.pooli.policy.domain.dto.request.*;
-import com.pooli.policy.domain.dto.response.*;
-import com.pooli.policy.domain.entity.AppPolicy;
-import com.pooli.policy.domain.entity.LineLimit;
-import com.pooli.policy.domain.enums.DayOfWeek;
-import com.pooli.policy.domain.enums.PolicyScope;
-import com.pooli.policy.domain.enums.SortType;
-import com.pooli.policy.exception.PolicyErrorCode;
-import com.pooli.policy.mapper.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.Optional;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -26,15 +22,41 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.util.List;
-import java.util.Optional;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.common.dto.PagingResDto;
+import com.pooli.common.exception.ApplicationException;
+import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.family.mapper.FamilyMapper;
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.service.AlarmHistoryService;
+import com.pooli.permission.mapper.FamilyLineMapper;
+import com.pooli.policy.domain.dto.request.AppDataLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.AppPolicyActiveToggleReqDto;
+import com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto;
+import com.pooli.policy.domain.dto.request.AppSpeedLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.ImmediateBlockReqDto;
+import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
+import com.pooli.policy.domain.dto.request.RepeatBlockDayReqDto;
+import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
+import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
+import com.pooli.policy.domain.dto.response.AppPolicyResDto;
+import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
+import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
+import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
+import com.pooli.policy.domain.entity.AppPolicy;
+import com.pooli.policy.domain.entity.LineLimit;
+import com.pooli.policy.domain.enums.DayOfWeek;
+import com.pooli.policy.domain.enums.PolicyScope;
+import com.pooli.policy.domain.enums.SortType;
+import com.pooli.policy.exception.PolicyErrorCode;
+import com.pooli.policy.mapper.AppPolicyMapper;
+import com.pooli.policy.mapper.ImmediateBlockMapper;
+import com.pooli.policy.mapper.LineLimitMapper;
+import com.pooli.policy.mapper.PolicyBackOfficeMapper;
+import com.pooli.policy.mapper.RepeatBlockDayMapper;
+import com.pooli.policy.mapper.RepeatBlockMapper;
 
 @ExtendWith(MockitoExtension.class)
 class UserPolicyServiceImplTest {
@@ -43,6 +65,7 @@ class UserPolicyServiceImplTest {
     @Mock private FamilyLineMapper familyLineMapper;
     @Mock private LineLimitMapper lineLimitMapper;
     @Mock private AppPolicyMapper appPolicyMapper;
+    @Mock private FamilyMapper familyMapper;
     @Mock private PolicyBackOfficeMapper policyBackOfficeMapper;
     @Mock private RepeatBlockMapper repeatBlockMapper;
     @Mock private RepeatBlockDayMapper repeatBlockDayMapper;
@@ -310,7 +333,7 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getRepeatBlockId()).isEqualTo(22L);
             verify(repeatBlockMapper).deleteRepeatBlock(1L);
-            verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_REPEAT_BLOCK);
+            verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_CHANGE, AlarmType.UPDATE_REPEAT_BLOCK);
         }
 
         @Test
@@ -345,7 +368,7 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getBlockEndAt()).isEqualTo(req.getBlockEndAt());
             verify(immediateBlockMapper).updateImmediateBlockPolicy(lineId, req);
-            verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_IMMEDIATE_BLOCK);
+            verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_CHANGE, AlarmType.UPDATE_IMMEDIATE_BLOCK);
         }
 
         @Test
