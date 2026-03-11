@@ -71,6 +71,9 @@
   - 키 네임스페이스 통일(`${REDIS_NAMESPACE}`)
   - 일별 키 만료: `EXPIREAT(일말 + 8h)`
   - 월별 키 만료: `EXPIREAT(월말 + 10d)`
+  - 속도 버킷 키/만료 규칙:
+    - `speed_bucket:individual:{lineId}:{epochSec}` (TTL=15초)
+    - `speed_bucket:shared:{familyId}:{epochSec}` (TTL=15초)
   - lock 상수 적용:
     - `LOCK_TTL_MS=3000`
     - `LOCK_HEARTBEAT_MS=1000`
@@ -81,17 +84,31 @@
 ### 3.8 HYDRATE/REFILL 어댑터 구현
 - 작업:
   - HYDRATE 반환 시 DB hydrate 후 동일 tick 1회 재시도
+  - 매 tick 처리마다 `answer > 0`인 실제 차감량을 속도 버킷에 기록
+    - 개인풀: lineId 버킷, 공유풀: familyId 버킷으로 분리 집계
+    - 같은 초 다중 기록은 누적 증가(`INCRBY`)로 합산
   - NO_BALANCE 반환 시 refill gate -> lock 획득 시 DB refill -> 재호출
+  - `refill_gate.lua` 호출 직전에 `delta/refill unit/redis threshold`를 최신 버킷으로 재계산
+    - 10초 평균 산식: `delta = ceil(sum(answer) / 존재 버킷 수)`
+    - fallback: 최근 10초 버킷 없음 -> TTL 내 전체 버킷 -> 없으면 `apiTotalData`
+    - 계산식: `refillUnit=ceil(delta*10)`, `redisThreshold=ceil(delta*3)`
+    - `delta=0` 또는 버킷 없음이면 `refillUnit=apiTotalData`, `redisThreshold=ceil(apiTotalData*0.3)`
+    - `redisThreshold` 최소값은 1로 보정
   - DB refill은 `SELECT ... FOR UPDATE`로 row lock 후 `actual_refill_amount=min(refill_unit, db_remaining)` 계산
   - DB 차감 성공 시 같은 `actual_refill_amount`만 Redis에 충전
   - DB refill 수행 중 `LOCK_HEARTBEAT_MS=1000` 주기 heartbeat 유지
   - lock heartbeat/release 구현(실패/예외 포함 finally 해제)
+  - 리필 관측 로그에 필수 필드 기록:
+    - `traceId`, `delta`, `bucketCount`, `refillUnit`, `redisThreshold`,
+      `actualRefill`, `dbRemainingBefore`, `dbRemainingAfter`
 - 완료 기준:
   - HYDRATE, NO_BALANCE, WAIT, FAIL, SKIP 분기 시나리오 검증
   - DB 차감량과 Redis 충전량이 항상 동일함을 테스트로 보장
+  - 10초 평균/계산/fallback 규칙이 테스트로 재현됨
 
 ### 3.9 10-tick 오케스트레이터 구현
 - 작업:
+  - tick을 초당 1개 슬롯으로 실행(총 10 tick 기준 10초 창)
   - `currentTickTargetData = ceil(apiRemainingData / remainingTicks)`
   - 개인풀 우선 -> 잔여(residual) 조건 시 공유풀 차감
   - 회복 불가 상태 즉시 종료

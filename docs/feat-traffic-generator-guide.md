@@ -103,12 +103,21 @@ API 서버:
 - indiv_refill_lock:{lineId} (string, ttl 3000ms, value=traceId)
 - shared_refill_lock:{familyId} (string, ttl 3000ms, value=traceId)
 - qos:{lineId} (string, ttl 없음)
-
-key -> speed_bucket:individual:{lineId}:{saved sec}
-
-value -> {used data}
+- speed_bucket:individual:{lineId}:{epochSec} (string, ttl 15초)
+- speed_bucket:shared:{familyId}:{epochSec} (string, ttl 15초)
+    - value: 해당 초의 누적 차감량(Byte)
 
 ### 5.4.1 최근 데이터 사용량 1초 단위 기록
+
+1. 버킷 기록 시점:
+    1. 매 tick 처리마다 `actual answer(Byte)`를 기록한다.
+    2. 단, `answer <= 0`인 경우는 기록하지 않는다.
+2. 버킷 스코프:
+    1. 개인풀은 `speed_bucket:individual:{lineId}:{epochSec}`에 기록한다.
+    2. 공유풀은 `speed_bucket:shared:{familyId}:{epochSec}`에 기록한다.
+3. 기록 방식:
+    1. 같은 초(`epochSec`) 내 중복/동시 tick은 누적 증가(`INCRBY`)로 합산한다.
+    2. 기록 성공 시마다 해당 키 TTL을 15초로 갱신한다.
 
 ### **5.5 in-flight dedupe(중복 처리 방지)**
 
@@ -253,25 +262,38 @@ value -> {used data}
 15. `answer`만큼 `daily_app_usage` 증가
 16. `{"answer":answer,"status":"OK"}` 반환
 
-### **12) 데이터 리필량 계산**
+### **12) 데이터 리필량 계산 (확정 규칙)**
 
 참고 용어
 
-- `refill unit`: 리필 단위(델타 * 10, 0이라면 api total data).
-- `redis threshold`: 리필 임계치(델타 * 3, 0이라면 api total data의 30%).
-1. answer의 status가 NO_BALANCE인 경우
-    1. 차감량(answer)을 redis에 저장 (5.4.1)
-        - tick은 같은 초에 동시 저장 가능
-    2. 초 단위로 a의 정보를 가진 하나의 방(bucket)이 생성
-    3. 버킷은 `EXPIRE`를 통해 생성된 지 15초가 지나면 자동으로 삭제
-2. `remaining_indiv_amount`가 `refill unit`(델타 * 10, 현재 redis에 남은 데이터가 0이라면 api total data로 대체)의 임계점(=redis threshold) 밑으로 떨어졌을 때
-    1. Redis(Lua 스크립트)는 애플리케이션(스프링) 서버 쪽으로 리필 신호 전송
-3. redis에 버킷 정보가 있을 때
-    1. 현재 시간 - 최근 10초(임의) 간의 버킷 정보 조회
-        1. 10초 간의 정보가 없을 시 존재하는 모든 버킷 정보 조회
-    2. a의 값으로 평균 계산 후 redis-refill unit에 적재
-4. redis에 버킷 정보가 없을 때
-    1. api total data 값을 redis-refill unit에 적재
+- `delta`: 최근 데이터 평균 차감량(Byte)
+- `refill unit`: 리필 단위
+- `redis threshold`: 리필 임계치
+
+1. 계산/갱신 타이밍:
+    1. `refill_gate.lua` 호출 직전에 항상 최신 버킷으로 `delta/refill unit/redis threshold`를 재계산한다.
+2. 10초 평균 산식:
+    1. 최근 10초 버킷에서 `delta = ceil(sum(answer) / 존재 버킷 수)`를 계산한다.
+    2. "존재 버킷 수"는 값이 실제로 존재하는 버킷 개수만 사용한다.
+3. 데이터 부족 시 fallback 순서:
+    1. 최근 10초 버킷이 없으면, TTL 내 현재 남은 전체 버킷으로 동일 산식 계산
+    2. 전체 버킷도 없으면 `apiTotalData`를 fallback 값으로 사용
+4. `refill unit`/`redis threshold` 계산 규칙:
+    1. 기본: `refill unit = ceil(delta * 10)`, `redis threshold = ceil(delta * 3)`
+    2. `delta == 0` 또는 버킷 정보 없음: `refill unit = apiTotalData`, `redis threshold = ceil(apiTotalData * 0.3)`
+    3. 계산 결과는 음수가 될 수 없고, `redis threshold` 최소값은 1로 보정한다.
+5. 리필 신호 조건:
+    1. 현재 Redis 잔량(`remaining_*_amount`)이 `redis threshold` 미만이면 `refill_gate.lua`로 리필 시도를 진행한다.
+6. 버킷 스코프:
+    1. 개인풀은 lineId 기준 버킷 집합으로 계산한다.
+    2. 공유풀은 familyId 기준 버킷 집합으로 계산한다.
+
+### **12.0.1) 리필 관측 로그 필드 (확정)**
+
+1. 리필 계획 계산 로그:
+    1. `traceId`, `poolType`, `balanceKey`, `delta`, `bucketCount`, `refillUnit`, `redisThreshold`, `source`
+2. DB 리필 적용/미적용 로그:
+    1. `traceId`, `poolType`, `requestedRefill`, `actualRefill`, `dbRemainingBefore`, `dbRemainingAfter`
 
 ### **12.1) DB refill 원자 처리 규칙 (추가 확정)**
 
