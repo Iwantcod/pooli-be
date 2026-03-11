@@ -2,11 +2,20 @@ spring:
   config:
     activate:
       on-profile: traffic
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.session.SessionAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.session.SessionsEndpointAutoConfiguration
   data:
     redis:
       repositories:
         enabled: false
   main:
-    web-application-type: none
+    web-application-type: servlet
   session:
     store-type: none
+
+management:
+  endpoint:
+    sessions:
+      enabled: false
