@@ -13,6 +13,9 @@ public class DataBalancesResDto {
     
 	@Schema(description = "회선 식별자", example = "1")
 	private Long lineId;
+	
+	@Schema(description = "사용자 이름", example = "김철수")
+	private String userName;
 
 	@Schema(description = "사용자 가족 내 권한", example = "OWNER")
     private String role;

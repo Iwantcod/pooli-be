@@ -14,4 +14,10 @@ public class IndividualThresholdResDto {
 
     @Schema(description = "임계치 활성화 여부", example = "true")
     private Boolean isThresholdActive;
+
+    @Schema(description = "임계치 설정 최소값", example = "10000000(Byte)")
+    private Long thresholdMinValue;
+    
+    @Schema(description = "임계치 설정 최댓값", example = "10000000(Byte)")
+    private Long thresholdMaxValue;
 }
