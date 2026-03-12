@@ -21,6 +21,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.pooli.monitoring.metrics.TrafficTickMetrics;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
@@ -38,6 +39,9 @@ class TrafficDeductOrchestratorServiceTest {
 
     @Mock
     private TrafficTickPacer trafficTickPacer;
+
+    @Mock
+    private TrafficTickMetrics trafficTickMetrics;
 
     @InjectMocks
     private TrafficDeductOrchestratorService trafficDeductOrchestratorService;
