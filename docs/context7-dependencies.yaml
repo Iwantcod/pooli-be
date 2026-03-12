@@ -143,6 +143,25 @@ dependencies:
       prompt_prefix: "JUnit Jupiter 5.12.2 기준으로 설명해주세요."
       use_library: "/junit-team/junit5"
 
+  - key: mockito
+    name: "Mockito"
+    context7:
+      primary_library_id: "/mockito/mockito"
+      library_kind: "repo"
+      fallback_library_ids: []
+    project_versions:
+      mockito_core: "5.17.0"
+      mockito_junit_jupiter: "5.17.0"
+    artifacts:
+      - "org.mockito:mockito-core"
+      - "org.mockito:mockito-junit-jupiter"
+    resolved_versions:
+      "org.mockito:mockito-core": "5.17.0"
+      "org.mockito:mockito-junit-jupiter": "5.17.0"
+    codex_usage:
+      prompt_prefix: "Mockito 5.17.0 기준으로 설명해주세요."
+      use_library: "/mockito/mockito"
+
   - key: aws_sdk_java_v2
     name: "AWS SDK for Java v2"
     context7:

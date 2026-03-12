@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
+import com.pooli.monitoring.metrics.TrafficRequestMetrics;
 import com.pooli.traffic.controller.TrafficController;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,7 +39,8 @@ class TrafficProfileBootTest {
             .withBean(TrafficInFlightDedupeService.class, () -> mock(TrafficInFlightDedupeService.class))
             .withBean(TrafficDeductDonePersistenceService.class, () -> mock(TrafficDeductDonePersistenceService.class))
             .withBean(TrafficRedisKeyFactory.class, () -> mock(TrafficRedisKeyFactory.class))
-            .withBean(TrafficRedisRuntimePolicy.class, () -> mock(TrafficRedisRuntimePolicy.class));
+            .withBean(TrafficRedisRuntimePolicy.class, () -> mock(TrafficRedisRuntimePolicy.class))
+            .withBean(TrafficRequestMetrics.class, () -> mock(TrafficRequestMetrics.class));
 
     @Nested
     @DisplayName("프로파일별 빈 활성화 검증")

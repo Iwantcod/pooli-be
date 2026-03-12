@@ -30,6 +30,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.pooli.monitoring.metrics.TrafficHydrateMetrics;
+import com.pooli.monitoring.metrics.TrafficRefillMetrics;
 import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.TrafficRefillPlan;
@@ -58,6 +60,12 @@ class TrafficHydrateRefillAdapterServiceTest {
 
     @Mock
     private TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
+
+    @Mock
+    private TrafficHydrateMetrics trafficHydrateMetrics;
+
+    @Mock
+    private TrafficRefillMetrics trafficRefillMetrics;
 
     @InjectMocks
     private TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
