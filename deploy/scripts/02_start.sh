@@ -67,21 +67,62 @@ cp /srv/pooli/deploy/.env /srv/pooli/.env
 chmod 600 /srv/pooli/.env
 
 # 2.5) DG 기준 프로파일을 .env에 강제 주입
-if grep -q '^SPRING_PROFILES_ACTIVE=' /srv/pooli/.env; then
-  sed -i "s/^SPRING_PROFILES_ACTIVE=.*/SPRING_PROFILES_ACTIVE=${TARGET_PROFILE}/" /srv/pooli/.env
-else
-  echo "SPRING_PROFILES_ACTIVE=${TARGET_PROFILE}" >> /srv/pooli/.env
-fi
+TMP_ENV="$(mktemp)"
+awk -v profile="${TARGET_PROFILE}" '
+  BEGIN { updated = 0 }
+  {
+    gsub(/\r$/, "", $0)
+    if ($0 ~ /^SPRING_PROFILES_ACTIVE=/) {
+      print "SPRING_PROFILES_ACTIVE=" profile
+      updated = 1
+      next
+    }
+    print
+  }
+  END {
+    if (updated == 0) {
+      print "SPRING_PROFILES_ACTIVE=" profile
+    }
+  }
+' /srv/pooli/.env > "${TMP_ENV}"
+mv "${TMP_ENV}" /srv/pooli/.env
+chmod 600 /srv/pooli/.env
+echo "[start] enforced profile in /srv/pooli/.env:"
+grep '^SPRING_PROFILES_ACTIVE=' /srv/pooli/.env || true
 
 # 3) aws cli 존재 확인 (없으면 여기서 종료)
 command -v aws >/dev/null 2>&1 || { echo "[start] ERROR: aws cli not installed"; exit 127; }
 
 # 4) ECR 로그인
-aws ecr get-login-password --region "${AWS_REGION}" \
-| docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+echo "[start] ecr login registry=${ECR_REGISTRY} region=${AWS_REGION}"
+if ! ECR_PASSWORD="$(aws ecr get-login-password --region "${AWS_REGION}")"; then
+  echo "[start] ERROR: failed to get ECR auth token. Check IAM permission: ecr:GetAuthorizationToken"
+  aws sts get-caller-identity || true
+  exit 1
+fi
+
+if ! printf '%s' "${ECR_PASSWORD}" | docker login --username AWS --password-stdin "${ECR_REGISTRY}"; then
+  echo "[start] ERROR: docker login failed for ${ECR_REGISTRY}"
+  exit 1
+fi
 
 # 5) compose 기동
 cleanup_old_pooli_images
 docker compose -f /srv/pooli/docker-compose.yml pull
-docker compose -f /srv/pooli/docker-compose.yml up -d --remove-orphans
+docker compose -f /srv/pooli/docker-compose.yml up -d --remove-orphans --force-recreate
+
+for i in {1..20}; do
+  CONTAINER_PROFILE="$(docker inspect pooli --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^SPRING_PROFILES_ACTIVE=' | head -n1 || true)"
+  if [[ "${CONTAINER_PROFILE}" == *"${TARGET_PROFILE}"* ]]; then
+    echo "[start] container profile verified: ${CONTAINER_PROFILE}"
+    break
+  fi
+
+  if [ "$i" -eq 20 ]; then
+    echo "[start] ERROR: profile mismatch expected=${TARGET_PROFILE} actual=${CONTAINER_PROFILE:-<none>}"
+    exit 1
+  fi
+  sleep 1
+done
+
 docker ps
