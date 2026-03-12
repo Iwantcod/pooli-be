@@ -18,7 +18,7 @@ public class TrafficTickMetrics {
 
     @PostConstruct
     void init() {
-        tickLagTimer = Timer.builder("traffic_tick_lag_seconds")
+        tickLagTimer = Timer.builder("traffic_tick_lag")
                 .description("Tick start lag from scheduled time")
                 .publishPercentileHistogram()
                 .register(meterRegistry);
