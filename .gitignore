@@ -38,6 +38,7 @@ out/
 .vscode/
 
 .env
+.env.bak
 AGENTS.md
 
 ### 테스트 데이터 csv 및 sql 파일 ###
