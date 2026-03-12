@@ -51,7 +51,8 @@ public class SecurityConfig {
                     "/api/auth/logout",
                     "/api/traffic/requests",
                     "/error",
-                    "/actuator/**"
+                    "/actuator/**",
+                    "/api/test/**"
                 ).permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated()
