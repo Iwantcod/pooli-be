@@ -17,6 +17,26 @@ set +a
 : "${ECR_REGISTRY:?ECR_REGISTRY is required}"
 : "${ECR_REPOSITORY:?ECR_REPOSITORY is required}"
 
+cleanup_old_pooli_images() {
+  local repo image tag
+  repo="${ECR_REGISTRY}/${ECR_REPOSITORY}"
+
+  echo "[start] cleanup old images for repo=${repo} keep_tag=${IMAGE_TAG}"
+  docker images --format '{{.Repository}}:{{.Tag}}' "${repo}" \
+    | while read -r image; do
+        [ -z "${image}" ] && continue
+        tag="${image##*:}"
+        if [ "${tag}" = "${IMAGE_TAG}" ] || [ "${tag}" = "<none>" ]; then
+          continue
+        fi
+        echo "[start] removing old image: ${image}"
+        docker image rm -f "${image}" || true
+      done
+
+  # dangling 레이어 정리
+  docker image prune -f || true
+}
+
 # 0.5) 배포 그룹 이름으로 실행 프로파일을 결정
 DG_NAME="${DEPLOYMENT_GROUP_NAME:-}"
 case "$DG_NAME" in
@@ -61,6 +81,7 @@ aws ecr get-login-password --region "${AWS_REGION}" \
 | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
 # 5) compose 기동
+cleanup_old_pooli_images
 docker compose -f /srv/pooli/docker-compose.yml pull
 docker compose -f /srv/pooli/docker-compose.yml up -d --remove-orphans
 docker ps
