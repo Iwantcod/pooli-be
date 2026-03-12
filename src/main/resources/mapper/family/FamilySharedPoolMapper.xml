@@ -94,11 +94,13 @@
         GROUP BY f.family_id, f.pool_base_data, f.pool_total_data, f.pool_remaining_data
     </select>
 
-    <!-- GET /api/shared-pools/limits 용 -->
+    <!-- GET /api/shared-pools/limit 용 -->
     <select id="selectSharedDataThreshold" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
         SELECT
             f.family_threshold,
-            f.is_threshold_active
+            f.is_threshold_active,
+            f.pool_total_data,
+            f.pool_remaining_data
         FROM FAMILY f
         WHERE f.family_id = #{familyId}
           AND f.deleted_at IS NULL
@@ -144,5 +146,38 @@
         FROM FAMILY_LINE
         WHERE family_id = #{familyId}
     </select>
+    
+    <select id="selectFamilyPoolTotalData" resultType="java.lang.Long">
+	      SELECT f.pool_total_data
+	      FROM FAMILY f
+	      WHERE f.family_id = #{familyId}
+	        AND f.deleted_at IS NULL
+	</select>
+	
+	<select id="selectFamilyMonthlySharedUsageByLine"
+	          resultType="com.pooli.family.domain.dto.response.SharedPoolMonthlyUsageResDto$MemberUsageDto">
+	      SELECT
+	          u.user_name AS userName,
+	          l.phone AS phoneNumber,
+	          COALESCE(SUM(fsud.usage_amount), 0) AS monthlySharedPoolUsage
+	      FROM FAMILY_LINE fl
+	      JOIN FAMILY f
+	        ON f.family_id = fl.family_id
+	       AND f.deleted_at IS NULL
+	      JOIN LINE l
+	        ON l.line_id = fl.line_id
+	       AND l.deleted_at IS NULL
+	      JOIN USERS u
+	        ON u.user_id = l.user_id
+	       AND u.deleted_at IS NULL
+	      LEFT JOIN FAMILY_SHARED_USAGE_DAILY fsud
+	        ON fsud.family_id = fl.family_id
+	       AND fsud.line_id = fl.line_id
+	       AND fsud.deleted_at IS NULL
+	       AND fsud.usage_date >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+	       AND fsud.usage_date &lt;  DATE_ADD(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
+	      WHERE fl.family_id = #{familyId}
+	      GROUP BY u.user_name, l.phone, l.line_id
+	</select>
 
 </mapper>

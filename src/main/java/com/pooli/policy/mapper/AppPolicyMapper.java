@@ -26,6 +26,8 @@ public interface AppPolicyMapper {
     List<AppPolicyResDto> findApplicationsWithPolicy(AppPolicySearchCondReqDto request);
     // 동적 조건 기반 앱 정책 목록 전체 건수 조회
     Long countApplicationsWithPolicy(AppPolicySearchCondReqDto request);
+    // lineId 기준 삭제되지 않은 앱 정책 전체 조회(트래픽 hydration 스냅샷 용도)
+    List<AppPolicy> findAllEntityByLineId(@Param("lineId") Long lineId);
 
 
     /*

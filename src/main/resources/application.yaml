@@ -93,6 +93,10 @@ app:
     reclaim-min-idle-ms: ${STREAMS_RECLAIM_MIN_IDLE_MS:70000}
     max-retry: ${STREAMS_MAX_RETRY:3}
     key-traffic-dlq: ${STREAMS_KEY_TRAFFIC_DLQ:traffic:deduct:dlq}
+  policy:
+    bootstrap:
+      reconcile-interval-ms: ${POLICY_BOOTSTRAP_RECONCILE_INTERVAL_MS:300000}
+      reconcile-initial-delay-ms: ${POLICY_BOOTSTRAP_RECONCILE_INITIAL_DELAY_MS:60000}
 
 # ==========================================================
 # AWS S3 CONFIG

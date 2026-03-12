@@ -1,5 +1,6 @@
 package com.pooli.family.service;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.family.exception.SharedPoolErrorCode;
 
@@ -136,9 +137,16 @@ public class FamilySharedPoolsService {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
+        // 슬라이더 범위 계산
+        Long poolTotal = domain.getPoolTotalData() != null ? domain.getPoolTotalData() : 0L;
+        Long poolRemaining = domain.getPoolRemainingData() != null ? domain.getPoolRemainingData() : 0L;
+        Long usedData = poolTotal - poolRemaining; // 사용한 공유 데이터양
+
         return SharedDataThresholdResDto.builder()
                 .isThresholdActive(domain.getIsThresholdActive())
                 .familyThreshold(domain.getFamilyThreshold())
+                .minThreshold(usedData)
+                .maxThreshold(poolTotal)
                 .build();
     }
 
@@ -147,6 +155,24 @@ public class FamilySharedPoolsService {
 
         // 알람: 가족 전체에게 임계치 변경 알림
         sendAlarmToFamily(familyId, null, AlarmType.SHARED_POOL_THRESHOLD_CHANGE);
+    }
+    
+    public SharedPoolMonthlyUsageResDto getFamilyMonthlySharedUsageTotal(AuthUserDetails principal) {
+    	
+    	Long familyId = getFamilyIdByLineId(principal.getLineId());
+    	
+    	Long sharedPoolTotalData = sharedPoolMapper.selectFamilyPoolTotalData(familyId);
+        if (sharedPoolTotalData == null) {
+            throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
+        }
+        
+        List<SharedPoolMonthlyUsageResDto.MemberUsageDto> membersUsageList =
+                sharedPoolMapper.selectFamilyMonthlySharedUsageByLine(familyId);
+
+        return SharedPoolMonthlyUsageResDto.builder()
+                .sharedPoolTotalData(sharedPoolTotalData)
+                .membersUsageList(membersUsageList)
+                .build();
     }
 
     /**
