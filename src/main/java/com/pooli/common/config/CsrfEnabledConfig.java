@@ -32,7 +32,8 @@ public class CsrfEnabledConfig {
                     "/v3/api-docs/**",
                     "/api/auth/admin/login",
                     "/api/auth/user/login",
-                    "/api/auth/logout"
+                    "/api/auth/logout",
+                    "/api/traffic/requests"
                 )
             );
     }
