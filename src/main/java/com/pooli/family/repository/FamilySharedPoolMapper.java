@@ -1,10 +1,12 @@
 package com.pooli.family.repository;
 
-import com.pooli.family.domain.entity.SharedPoolDomain;
+import java.util.List;
+
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import java.util.List;
+import com.pooli.family.domain.dto.response.SharedPoolMonthlyUsageResDto;
+import com.pooli.family.domain.entity.SharedPoolDomain;
 
 @Mapper
 public interface FamilySharedPoolMapper {
@@ -43,4 +45,13 @@ public interface FamilySharedPoolMapper {
 
     // 알람 전송용: 가족의 모든 멤버 lineId 조회
     List<Long> selectLineIdsByFamilyId(@Param("familyId") Long familyId);
+    
+    // 가족 공유풀 총 데이터 조회
+    Long selectFamilyPoolTotalData(@Param("familyId") Long familyId);
+
+    // 당 월 가족 
+    List<SharedPoolMonthlyUsageResDto.MemberUsageDto> selectFamilyMonthlySharedUsageByLine(
+            @Param("familyId") Long familyId
+    );
+    
 }

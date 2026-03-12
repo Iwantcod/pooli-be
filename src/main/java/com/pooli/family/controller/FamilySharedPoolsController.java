@@ -166,4 +166,23 @@ public class FamilySharedPoolsController {
         familySharedPoolsService.updateSharedDataThreshold(familyId, request);
         return ResponseEntity.ok().build();
     }
+    
+    
+    
+    @Operation(
+            summary = "가족 공유풀 사용량 조회 ",
+            description = "로그인 회선 기준 가족 공유풀 사용량 조회"
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "임계치 수정 성공"),
+        @ApiResponse(responseCode = "401", description = "인증 실패"),
+        @ApiResponse(responseCode = "404", description = "공유풀 정보를 찾을 수 없음"),
+        @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
+    @GetMapping("/usage/monthly-total")
+    public ResponseEntity<SharedPoolMonthlyUsageResDto> getFamilyMonthlySharedUsageTotal(
+            @AuthenticationPrincipal AuthUserDetails principal
+    ) {
+        return ResponseEntity.ok(familySharedPoolsService.getFamilyMonthlySharedUsageTotal(principal));
+    }
 }

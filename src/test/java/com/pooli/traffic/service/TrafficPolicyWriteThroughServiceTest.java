@@ -3,6 +3,8 @@ package com.pooli.traffic.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
@@ -28,6 +30,7 @@ import org.springframework.data.redis.core.ValueOperations;
 
 import com.pooli.policy.domain.dto.response.RepeatBlockDayResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
+import com.pooli.policy.domain.entity.AppPolicy;
 import com.pooli.policy.domain.enums.DayOfWeek;
 
 /**
@@ -99,6 +102,80 @@ class TrafficPolicyWriteThroughServiceTest {
             verify(hashOperations).delete("pooli:app_data_daily_limit:101", "limit:301");
             verify(hashOperations).delete("pooli:app_speed_limit:101", "speed:301");
             verify(setOperations).remove("pooli:app_whitelist:101", "301");
+        }
+    }
+
+    @Nested
+    @DisplayName("syncAppPolicySnapshot 테스트")
+    class SyncAppPolicySnapshotTest {
+
+        @Test
+        @DisplayName("line 단위 app 정책 키를 비우고 활성 정책만 스냅샷으로 적재")
+        void rebuildsAppPolicySnapshotWithActivePoliciesOnly() {
+            // given
+            when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
+            when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
+            when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(cacheStringRedisTemplate.opsForSet()).thenReturn(setOperations);
+
+            AppPolicy activeWhitelisted = AppPolicy.builder()
+                    .lineId(101L)
+                    .applicationId(301)
+                    .dataLimit(1024L)
+                    .speedLimit(2048)
+                    .isActive(true)
+                    .isWhitelist(true)
+                    .build();
+            AppPolicy inactive = AppPolicy.builder()
+                    .lineId(101L)
+                    .applicationId(302)
+                    .dataLimit(333L)
+                    .speedLimit(444)
+                    .isActive(false)
+                    .isWhitelist(true)
+                    .build();
+
+            // when
+            trafficPolicyWriteThroughService.syncAppPolicySnapshot(101L, List.of(activeWhitelisted, inactive));
+
+            // then
+            verify(cacheStringRedisTemplate).delete(List.of(
+                    "pooli:app_data_daily_limit:101",
+                    "pooli:app_speed_limit:101",
+                    "pooli:app_whitelist:101"
+            ));
+            verify(hashOperations).putAll("pooli:app_data_daily_limit:101", Map.of("limit:301", "1024"));
+            verify(hashOperations).putAll("pooli:app_speed_limit:101", Map.of("speed:301", "2048"));
+            verify(setOperations).add("pooli:app_whitelist:101", "301");
+        }
+
+        @Test
+        @DisplayName("활성 정책이 없으면 3개 app 정책 키 초기화만 수행")
+        void clearsAppPolicyKeysWhenNoActivePolicies() {
+            // given
+            when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
+            when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
+            when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+
+            AppPolicy inactive = AppPolicy.builder()
+                    .lineId(101L)
+                    .applicationId(302)
+                    .isActive(false)
+                    .build();
+
+            // when
+            trafficPolicyWriteThroughService.syncAppPolicySnapshot(101L, List.of(inactive));
+
+            // then
+            verify(cacheStringRedisTemplate).delete(List.of(
+                    "pooli:app_data_daily_limit:101",
+                    "pooli:app_speed_limit:101",
+                    "pooli:app_whitelist:101"
+            ));
+            verify(hashOperations, times(0)).putAll(eq("pooli:app_data_daily_limit:101"), anyMap());
+            verify(hashOperations, times(0)).putAll(eq("pooli:app_speed_limit:101"), anyMap());
+            verify(setOperations, times(0)).add(eq("pooli:app_whitelist:101"), anyString());
         }
     }
 

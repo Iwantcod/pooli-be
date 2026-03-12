@@ -74,30 +74,20 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * 핵심 처리 로직을 실행하고 결과를 반환합니다.
+     * 개인풀 차감 Lua를 실행합니다.
+     * keys/args 구성은 호출자(TrafficHydrateRefillAdapterService)가 명세 순서대로 전달합니다.
      */
-    public TrafficLuaExecutionResult executeDeductIndivTick(String remainingIndivKey, long currentTickTargetData) {
-        // 개인풀 차감 스크립트는 answer/status JSON 문자열을 반환한다.
-        String rawJson = executeStringSingle(
-                TrafficLuaScriptType.DEDUCT_INDIV_TICK,
-                List.of(remainingIndivKey),
-                List.of(String.valueOf(currentTickTargetData))
-        );
-
+    public TrafficLuaExecutionResult executeDeductIndivTick(List<String> keys, List<String> args) {
+        String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_INDIV_TICK, keys, args);
         return parseDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_INDIV_TICK);
     }
 
     /**
-     * 핵심 처리 로직을 실행하고 결과를 반환합니다.
+     * 공유풀 차감 Lua를 실행합니다.
+     * keys/args 구성은 호출자(TrafficHydrateRefillAdapterService)가 명세 순서대로 전달합니다.
      */
-    public TrafficLuaExecutionResult executeDeductSharedTick(String remainingSharedKey, long currentTickTargetData) {
-        // 공유풀 차감 스크립트도 동일하게 answer/status JSON 계약을 사용한다.
-        String rawJson = executeStringSingle(
-                TrafficLuaScriptType.DEDUCT_SHARED_TICK,
-                List.of(remainingSharedKey),
-                List.of(String.valueOf(currentTickTargetData))
-        );
-
+    public TrafficLuaExecutionResult executeDeductSharedTick(List<String> keys, List<String> args) {
+        String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_SHARED_TICK, keys, args);
         return parseDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_SHARED_TICK);
     }
 
