@@ -654,7 +654,6 @@ class UserPolicyServiceImplTest {
 
             AppPolicyResDto appBase = AppPolicyResDto.builder()
                     .appPolicyId(null)
-                    .lineId(100L)
                     .appId(10)
                     .appName("YouTube")
                     .build();
@@ -673,6 +672,8 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getAppPolicyId()).isEqualTo(55L);
             assertThat(result.getIsActive()).isTrue();
+            verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
+            verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
         }
 
         @Test
