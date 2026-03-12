@@ -9,6 +9,7 @@ import java.util.List;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import com.pooli.monitoring.metrics.TrafficRefillMetrics;
 import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.TrafficRefillPlan;
@@ -46,7 +47,9 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficQuotaSourcePort trafficQuotaSourcePort;
     private final TrafficQuotaCacheService trafficQuotaCacheService;
     private final TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
-
+    private final TrafficRefillMetrics trafficRefillMetrics;
+    
+    
     /**
      * 개인풀 차감 경로를 실행합니다.
      *
@@ -264,6 +267,7 @@ public class TrafficHydrateRefillAdapterService {
                         poolType,
                         gateStatus
                 );
+                trafficRefillMetrics.increment(poolType.name(), "gate_" + gateStatus.name().toLowerCase());
                 return retriedResult;
             }
 
@@ -281,6 +285,7 @@ public class TrafficHydrateRefillAdapterService {
                         poolType,
                         lockKey
                 );
+                trafficRefillMetrics.increment(poolType.name(), "lock_not_owned");
                 return retriedResult;
             }
 
@@ -309,6 +314,7 @@ public class TrafficHydrateRefillAdapterService {
                             actualRefillAmount,
                             dbRemainingAfter
                     );
+                    trafficRefillMetrics.increment(poolType.name(), "db_noop");
                     return retriedResult;
                 }
 
@@ -335,6 +341,7 @@ public class TrafficHydrateRefillAdapterService {
                         actualRefillAmount,
                         dbRemainingAfter
                 );
+                trafficRefillMetrics.increment(poolType.name(), "refill_applied");
 
                 // 리필 후 동일 tick 차감을 1회 재시도한다.
                 retriedResult = executeDeduct(poolType, payload, balanceKey, currentTickTargetData);
