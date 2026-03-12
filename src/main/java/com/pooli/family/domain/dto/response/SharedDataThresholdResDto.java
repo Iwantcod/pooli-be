@@ -14,4 +14,8 @@ public class SharedDataThresholdResDto {
     @Schema(description = "가족 공유 데이터 사용량 임계치 값(단위: Byte)", example = "1000")
     private Long familyThreshold;
 
+    @Schema(description = "임계치 슬라이더 최솟값: 사용한 공유 데이터양(단위: Byte)", example = "3000")
+    private Long minThreshold;
+    @Schema(description = "임계치 슬라이더 최댓값: 가족 공유풀 총량(단위: Byte)", example = "20000")
+    private Long maxThreshold;
 }
