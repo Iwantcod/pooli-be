@@ -780,9 +780,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 }
 
                 // 알람 전송
-                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                alarmHistoryService.createAlarm(newAppPolicy.getLineId(), AlarmCode.POLICY_LIMIT,
                         AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
-                alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                alarmHistoryService.createAlarm(newAppPolicy.getLineId(), AlarmCode.POLICY_LIMIT,
                         AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
 
                 AppPolicyResDto createdResponse = AppPolicyResDto.builder()
