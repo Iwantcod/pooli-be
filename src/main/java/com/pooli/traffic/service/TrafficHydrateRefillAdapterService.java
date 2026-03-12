@@ -1,7 +1,10 @@
 package com.pooli.traffic.service;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.List;
 
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -29,12 +32,20 @@ public class TrafficHydrateRefillAdapterService {
 
     private static final int HYDRATE_RETRY_MAX = 1;
     private static final int REFILL_RETRY_MAX = 1;
+    private static final long POLICY_REPEAT_BLOCK_ID = 1L;
+    private static final long POLICY_IMMEDIATE_BLOCK_ID = 2L;
+    private static final long POLICY_LINE_LIMIT_SHARED_ID = 3L;
+    private static final long POLICY_LINE_LIMIT_DAILY_ID = 4L;
+    private static final long POLICY_APP_DATA_ID = 5L;
+    private static final long POLICY_APP_SPEED_ID = 6L;
+    private static final long POLICY_APP_WHITELIST_ID = 7L;
 
     private final TrafficLuaScriptInfraService trafficLuaScriptInfraService;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficQuotaSourcePort trafficQuotaSourcePort;
     private final TrafficQuotaCacheService trafficQuotaCacheService;
+    private final TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
 
     /**
      * 개인풀 차감 경로를 실행합니다.
@@ -93,11 +104,23 @@ public class TrafficHydrateRefillAdapterService {
             return errorResult();
         }
 
+        try {
+            trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
+        } catch (RuntimeException e) {
+            log.error(
+                    "traffic_line_policy_hydration_failed traceId={} lineId={}",
+                    payload.getTraceId(),
+                    payload.getLineId(),
+                    e
+            );
+            return errorResult();
+        }
+
         YearMonth targetMonth = resolveTargetMonth(payload);
         String balanceKey = resolveBalanceKey(poolType, payload, targetMonth);
 
         // 1차 Lua 차감 실행
-        TrafficLuaExecutionResult initialResult = executeDeduct(poolType, balanceKey, currentTickTargetData);
+        TrafficLuaExecutionResult initialResult = executeDeduct(poolType, payload, balanceKey, currentTickTargetData);
 
         // HYDRATE 분기: 키 미존재 시 hydrate -> 동일 tick 1회 재시도
         TrafficLuaExecutionResult afterHydrateResult = handleHydrateIfNeeded(
@@ -155,7 +178,7 @@ public class TrafficHydrateRefillAdapterService {
             long monthlyExpireAt = trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth);
             trafficQuotaCacheService.hydrateBalance(balanceKey, initialAmount, monthlyExpireAt);
 
-            retriedResult = executeDeduct(poolType, balanceKey, currentTickTargetData);
+            retriedResult = executeDeduct(poolType, payload, balanceKey, currentTickTargetData);
             if (retriedResult.getStatus() != TrafficLuaStatus.HYDRATE) {
                 // HYDRATE에서 벗어나면 즉시 결과를 반환한다.
                 return retriedResult;
@@ -314,7 +337,7 @@ public class TrafficHydrateRefillAdapterService {
                 );
 
                 // 리필 후 동일 tick 차감을 1회 재시도한다.
-                retriedResult = executeDeduct(poolType, balanceKey, currentTickTargetData);
+                retriedResult = executeDeduct(poolType, payload, balanceKey, currentTickTargetData);
                 return retriedResult;
             } finally {
                 // 성공/실패와 무관하게 lock은 반드시 소유자 기준으로 해제한다.
@@ -335,13 +358,105 @@ public class TrafficHydrateRefillAdapterService {
      */
     private TrafficLuaExecutionResult executeDeduct(
             TrafficPoolType poolType,
+            TrafficPayloadReqDto payload,
             String balanceKey,
             long currentTickTargetData
     ) {
+        // 정책 게이트/사용량 키를 Lua에서 함께 처리할 수 있도록 현재 시각 기반 파생 키를 구성한다.
+        LocalDateTime now = LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
+        LocalDate targetDate = now.toLocalDate();
+        YearMonth targetUsageMonth = YearMonth.from(now);
+        long nowEpochSecond = now.atZone(trafficRedisRuntimePolicy.zoneId()).toEpochSecond();
+        int dayNum = now.getDayOfWeek().getValue() % 7;
+        int secOfDay = now.toLocalTime().toSecondOfDay();
+        long dailyExpireAt = trafficRedisRuntimePolicy.resolveDailyExpireAtEpochSeconds(targetDate);
+        long monthlyExpireAt = trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetUsageMonth);
+
+        String policyRepeatKey = trafficRedisKeyFactory.policyKey(POLICY_REPEAT_BLOCK_ID);
+        String policyImmediateKey = trafficRedisKeyFactory.policyKey(POLICY_IMMEDIATE_BLOCK_ID);
+        String policyLineLimitSharedKey = trafficRedisKeyFactory.policyKey(POLICY_LINE_LIMIT_SHARED_ID);
+        String policyLineLimitDailyKey = trafficRedisKeyFactory.policyKey(POLICY_LINE_LIMIT_DAILY_ID);
+        String policyAppDataKey = trafficRedisKeyFactory.policyKey(POLICY_APP_DATA_ID);
+        String policyAppSpeedKey = trafficRedisKeyFactory.policyKey(POLICY_APP_SPEED_ID);
+        String policyAppWhitelistKey = trafficRedisKeyFactory.policyKey(POLICY_APP_WHITELIST_ID);
+
+        String appWhitelistKey = trafficRedisKeyFactory.appWhitelistKey(payload.getLineId());
+        String immediatelyBlockEndKey = trafficRedisKeyFactory.immediatelyBlockEndKey(payload.getLineId());
+        String repeatBlockKey = trafficRedisKeyFactory.repeatBlockKey(payload.getLineId());
+        String dailyTotalLimitKey = trafficRedisKeyFactory.dailyTotalLimitKey(payload.getLineId());
+        String dailyTotalUsageKey = trafficRedisKeyFactory.dailyTotalUsageKey(payload.getLineId(), targetDate);
+        String appDataDailyLimitKey = trafficRedisKeyFactory.appDataDailyLimitKey(payload.getLineId());
+        String dailyAppUsageKey = trafficRedisKeyFactory.dailyAppUsageKey(payload.getLineId(), targetDate);
+        String appSpeedLimitKey = trafficRedisKeyFactory.appSpeedLimitKey(payload.getLineId());
+
         // 풀 유형에 맞는 Lua 스크립트를 선택해 차감 실행한다.
         return switch (poolType) {
-            case INDIVIDUAL -> trafficLuaScriptInfraService.executeDeductIndivTick(balanceKey, currentTickTargetData);
-            case SHARED -> trafficLuaScriptInfraService.executeDeductSharedTick(balanceKey, currentTickTargetData);
+            case INDIVIDUAL -> {
+                String speedBucketKey = trafficRedisKeyFactory.speedBucketIndividualKey(payload.getLineId(), nowEpochSecond);
+                List<String> keys = List.of(
+                        balanceKey,
+                        policyRepeatKey,
+                        policyImmediateKey,
+                        policyLineLimitDailyKey,
+                        policyAppDataKey,
+                        policyAppSpeedKey,
+                        policyAppWhitelistKey,
+                        appWhitelistKey,
+                        immediatelyBlockEndKey,
+                        repeatBlockKey,
+                        dailyTotalLimitKey,
+                        dailyTotalUsageKey,
+                        appDataDailyLimitKey,
+                        dailyAppUsageKey,
+                        appSpeedLimitKey,
+                        speedBucketKey
+                );
+                List<String> args = List.of(
+                        String.valueOf(currentTickTargetData),
+                        String.valueOf(payload.getAppId()),
+                        String.valueOf(dayNum),
+                        String.valueOf(secOfDay),
+                        String.valueOf(nowEpochSecond),
+                        String.valueOf(dailyExpireAt)
+                );
+                yield trafficLuaScriptInfraService.executeDeductIndivTick(keys, args);
+            }
+            case SHARED -> {
+                String monthlySharedLimitKey = trafficRedisKeyFactory.monthlySharedLimitKey(payload.getLineId());
+                String monthlySharedUsageKey = trafficRedisKeyFactory.monthlySharedUsageKey(payload.getLineId(), targetUsageMonth);
+                String speedBucketKey = trafficRedisKeyFactory.speedBucketSharedKey(payload.getFamilyId(), nowEpochSecond);
+                List<String> keys = List.of(
+                        balanceKey,
+                        policyRepeatKey,
+                        policyImmediateKey,
+                        policyLineLimitSharedKey,
+                        policyLineLimitDailyKey,
+                        policyAppDataKey,
+                        policyAppSpeedKey,
+                        policyAppWhitelistKey,
+                        appWhitelistKey,
+                        immediatelyBlockEndKey,
+                        repeatBlockKey,
+                        dailyTotalLimitKey,
+                        dailyTotalUsageKey,
+                        monthlySharedLimitKey,
+                        monthlySharedUsageKey,
+                        appDataDailyLimitKey,
+                        dailyAppUsageKey,
+                        appSpeedLimitKey,
+                        speedBucketKey
+                );
+                List<String> args = List.of(
+                        String.valueOf(currentTickTargetData),
+                        String.valueOf(payload.getAppId()),
+                        String.valueOf(dayNum),
+                        String.valueOf(secOfDay),
+                        String.valueOf(nowEpochSecond),
+                        String.valueOf(dailyExpireAt),
+                        String.valueOf(monthlyExpireAt)
+                );
+                yield trafficLuaScriptInfraService.executeDeductSharedTick(keys, args);
+            }
         };
     }
 
@@ -399,8 +514,8 @@ public class TrafficHydrateRefillAdapterService {
     /**
      * 풀 처리에 필요한 필수 payload 값이 모두 있는지 검증합니다.
      *
-     * <p>공통 필수값: traceId, apiTotalData(0 이상)<br>
-     * 풀별 필수값: INDIVIDUAL=lineId, SHARED=familyId
+     * <p>공통 필수값: traceId, lineId, appId, apiTotalData(0 이상)<br>
+     * 풀별 필수값: INDIVIDUAL=lineId, SHARED=familyId(+lineId 공통 필수)
      *
      * @param poolType 검증 대상 풀 유형
      * @param payload 검증할 요청 컨텍스트
@@ -416,11 +531,17 @@ public class TrafficHydrateRefillAdapterService {
         if (payload.getApiTotalData() == null || payload.getApiTotalData() < 0) {
             return false;
         }
+        if (payload.getLineId() == null || payload.getLineId() <= 0) {
+            return false;
+        }
+        if (payload.getAppId() == null || payload.getAppId() < 0) {
+            return false;
+        }
 
         // 풀별 키 생성에 필요한 식별자가 없으면 처리할 수 없다.
         return switch (poolType) {
-            case INDIVIDUAL -> payload.getLineId() != null;
-            case SHARED -> payload.getFamilyId() != null;
+            case INDIVIDUAL -> true;
+            case SHARED -> payload.getFamilyId() != null && payload.getFamilyId() > 0;
         };
     }
 

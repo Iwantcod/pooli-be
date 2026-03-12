@@ -1,9 +1,11 @@
 package com.pooli.traffic.service;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
@@ -18,6 +20,7 @@ import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.policy.domain.dto.response.RepeatBlockDayResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
+import com.pooli.policy.domain.entity.AppPolicy;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -200,6 +203,69 @@ public class TrafficPolicyWriteThroughService {
                     cacheStringRedisTemplate.opsForHash().delete(appDataDailyLimitKey, appDataLimitField(appId));
                     cacheStringRedisTemplate.opsForHash().delete(appSpeedLimitKey, appSpeedLimitField(appId));
                     cacheStringRedisTemplate.opsForSet().remove(appWhitelistKey, appMember);
+                }
+        );
+    }
+
+    /**
+     * 앱 정책 스냅샷을 Redis에 일괄 반영합니다.
+     * line 단위 app 정책 키 3종을 먼저 비운 뒤, 활성 정책만 다시 적재합니다.
+     */
+    public void syncAppPolicySnapshot(long lineId, List<AppPolicy> appPolicies) {
+        executeAfterCommit(
+                "app_policy_snapshot_sync lineId=" + lineId,
+                () -> {
+                    String appDataDailyLimitKey = trafficRedisKeyFactory.appDataDailyLimitKey(lineId);
+                    String appSpeedLimitKey = trafficRedisKeyFactory.appSpeedLimitKey(lineId);
+                    String appWhitelistKey = trafficRedisKeyFactory.appWhitelistKey(lineId);
+
+                    cacheStringRedisTemplate.delete(List.of(
+                            appDataDailyLimitKey,
+                            appSpeedLimitKey,
+                            appWhitelistKey
+                    ));
+
+                    if (appPolicies == null || appPolicies.isEmpty()) {
+                        return;
+                    }
+
+                    Map<String, String> dataLimitHash = new HashMap<>();
+                    Map<String, String> speedLimitHash = new HashMap<>();
+                    Set<String> whitelistMembers = new HashSet<>();
+
+                    for (AppPolicy appPolicy : appPolicies) {
+                        if (appPolicy == null || appPolicy.getApplicationId() == null) {
+                            continue;
+                        }
+                        if (!Boolean.TRUE.equals(appPolicy.getIsActive())) {
+                            continue;
+                        }
+
+                        int appId = appPolicy.getApplicationId();
+                        long normalizedDataLimit = appPolicy.getDataLimit() == null ? -1L : appPolicy.getDataLimit();
+                        int normalizedSpeedLimit = appPolicy.getSpeedLimit() == null ? -1 : appPolicy.getSpeedLimit();
+
+                        dataLimitHash.put(appDataLimitField(appId), String.valueOf(normalizedDataLimit));
+                        speedLimitHash.put(appSpeedLimitField(appId), String.valueOf(normalizedSpeedLimit));
+
+                        if (Boolean.TRUE.equals(appPolicy.getIsWhitelist())) {
+                            whitelistMembers.add(String.valueOf(appId));
+                        }
+                    }
+
+                    HashOperations<String, String, String> hashOps = cacheStringRedisTemplate.opsForHash();
+                    if (!dataLimitHash.isEmpty()) {
+                        hashOps.putAll(appDataDailyLimitKey, dataLimitHash);
+                    }
+                    if (!speedLimitHash.isEmpty()) {
+                        hashOps.putAll(appSpeedLimitKey, speedLimitHash);
+                    }
+                    if (!whitelistMembers.isEmpty()) {
+                        cacheStringRedisTemplate.opsForSet().add(
+                                appWhitelistKey,
+                                whitelistMembers.toArray(new String[0])
+                        );
+                    }
                 }
         );
     }
