@@ -5,10 +5,6 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
-import com.pooli.notification.domain.enums.AlarmCode;
-import com.pooli.notification.domain.enums.AlarmType;
-import com.pooli.notification.service.AlarmHistoryService;
-import com.pooli.traffic.service.TrafficPolicyWriteThroughService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,16 +19,6 @@ import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
 import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.policy.domain.dto.request.*;
-import com.pooli.policy.domain.entity.AppPolicy;
-import com.pooli.policy.domain.entity.LineLimit;
-import com.pooli.policy.domain.dto.request.AppDataLimitUpdateReqDto;
-import com.pooli.policy.domain.dto.request.AppPolicyActiveToggleReqDto;
-import com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto;
-import com.pooli.policy.domain.dto.request.AppSpeedLimitUpdateReqDto;
-import com.pooli.policy.domain.dto.request.ImmediateBlockReqDto;
-import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
-import com.pooli.policy.domain.dto.request.RepeatBlockDayReqDto;
-import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
 import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
 import com.pooli.policy.domain.dto.response.AppPolicyResDto;
 import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
@@ -48,12 +34,12 @@ import com.pooli.policy.domain.enums.PolicyScope;
 import com.pooli.policy.domain.enums.SortType;
 import com.pooli.policy.exception.PolicyErrorCode;
 import com.pooli.policy.mapper.AppPolicyMapper;
-import com.pooli.policy.mapper.LineLimitMapper;
 import com.pooli.policy.mapper.ImmediateBlockMapper;
 import com.pooli.policy.mapper.LineLimitMapper;
 import com.pooli.policy.mapper.PolicyBackOfficeMapper;
 import com.pooli.policy.mapper.RepeatBlockDayMapper;
 import com.pooli.policy.mapper.RepeatBlockMapper;
+import com.pooli.traffic.service.TrafficPolicyWriteThroughService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -75,6 +61,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     private final RepeatBlockDayMapper repeatBlockDayMapper;
     private final ImmediateBlockMapper immediateBlockMapper;
     private final ObjectProvider<TrafficPolicyWriteThroughService> trafficPolicyWriteThroughServiceProvider;
+    private final ObjectProvider<PolicyWriteAuditService> policyWriteAuditServiceProvider;
 
     @Override
     public List<ActivePolicyResDto> getActivePolicies() {
@@ -380,8 +367,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitByLineId(lineId);
         if (lineLimit.isPresent()) {
             // 삭제 상태가 아닌 lineLimit 레코드가 존재하는 경우
-            boolean newDailyLimitActive = !lineLimit.get().getIsDailyLimitActive();
-            int def = lineLimitMapper.updateIsDailyLimitActiveById(lineLimit.get().getLimitId(), newDailyLimitActive);
+            LineLimit currentLineLimit = lineLimit.get();
+            boolean newDailyLimitActive = !currentLineLimit.getIsDailyLimitActive();
+            int def = lineLimitMapper.updateIsDailyLimitActiveById(currentLineLimit.getLimitId(), newDailyLimitActive);
             if (def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
@@ -396,19 +384,27 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                     "line_limit_toggle_daily lineId=" + lineId,
                     writeThroughService -> writeThroughService.syncLineLimit(
                             lineId,
-                            lineLimit.get().getDailyDataLimit(),
+                            currentLineLimit.getDailyDataLimit(),
                             newDailyLimitActive,
-                            lineLimit.get().getSharedDataLimit(),
-                            lineLimit.get().getIsSharedLimitActive()
+                            currentLineLimit.getSharedDataLimit(),
+                            currentLineLimit.getIsSharedLimitActive()
                     )
             );
 
+            applyWriteAudit(
+                    PolicyWriteEventType.CHANGE,
+                    "toggleDailyTotalLimitPolicy",
+                    currentLineLimit,
+                    auth,
+                    currentLineLimit.getLineId()
+            );
+
             return LimitPolicyResDto.builder()
-                    .lineLimitId(lineLimit.get().getLimitId())
-                    .dailyDataLimit(lineLimit.get().getDailyDataLimit())
+                    .lineLimitId(currentLineLimit.getLimitId())
+                    .dailyDataLimit(currentLineLimit.getDailyDataLimit())
                     .isDailyDataLimitActive(newDailyLimitActive)
-                    .sharedDataLimit(lineLimit.get().getSharedDataLimit())
-                    .isSharedDataLimitActive(lineLimit.get().getIsSharedLimitActive())
+                    .sharedDataLimit(currentLineLimit.getSharedDataLimit())
+                    .isSharedDataLimitActive(currentLineLimit.getIsSharedLimitActive())
                     .build();
         } else {
             // lineLimit 레코드가 없거나, 삭제 상태인 경우 새 레코드 insert
@@ -426,7 +422,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(lineLimit.get().getLineId(), auth.getLineId(), auth);
+        LineLimit currentLineLimit = lineLimit.get();
+        checkIsSameFamilyGroup(currentLineLimit.getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int def = lineLimitMapper.updateDailyDataLimit(request);
@@ -434,26 +431,34 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
-        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE,
+        alarmHistoryService.createAlarm(currentLineLimit.getLineId(), AlarmCode.POLICY_CHANGE,
                 AlarmType.POLICY_UPDATE_DAYDATA_LIMIT);
 
         applyWriteThrough(
-                "line_limit_update_daily_value lineId=" + lineLimit.get().getLineId(),
+                "line_limit_update_daily_value lineId=" + currentLineLimit.getLineId(),
                 writeThroughService -> writeThroughService.syncLineLimit(
-                        lineLimit.get().getLineId(),
+                        currentLineLimit.getLineId(),
                         request.getPolicyValue(),
-                        lineLimit.get().getIsDailyLimitActive(),
-                        lineLimit.get().getSharedDataLimit(),
-                        lineLimit.get().getIsSharedLimitActive()
+                        currentLineLimit.getIsDailyLimitActive(),
+                        currentLineLimit.getSharedDataLimit(),
+                        currentLineLimit.getIsSharedLimitActive()
                 )
         );
 
+        applyWriteAudit(
+                PolicyWriteEventType.CHANGE,
+                "updateDailyTotalLimitPolicyValue",
+                currentLineLimit,
+                auth,
+                currentLineLimit.getLineId()
+        );
+
         return LimitPolicyResDto.builder()
-                .lineLimitId(lineLimit.get().getLimitId())
+                .lineLimitId(currentLineLimit.getLimitId())
                 .dailyDataLimit(request.getPolicyValue())
-                .isDailyDataLimitActive(lineLimit.get().getIsDailyLimitActive())
-                .sharedDataLimit(lineLimit.get().getSharedDataLimit())
-                .isSharedDataLimitActive(lineLimit.get().getIsSharedLimitActive())
+                .isDailyDataLimitActive(currentLineLimit.getIsDailyLimitActive())
+                .sharedDataLimit(currentLineLimit.getSharedDataLimit())
+                .isSharedDataLimitActive(currentLineLimit.getIsSharedLimitActive())
                 .build();
     }
 
@@ -467,35 +472,45 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitByLineId(lineId);
         if (lineLimit.isPresent()) {
             // 삭제 상태가 아닌 lineLimit 레코드가 존재하는 경우
-            boolean newSharedLimitActive = !lineLimit.get().getIsSharedLimitActive();
-            int def = lineLimitMapper.updateIsSharedLimitActiveById(lineLimit.get().getLimitId(), newSharedLimitActive);
+            LineLimit currentLineLimit = lineLimit.get();
+            boolean newSharedLimitActive = !currentLineLimit.getIsSharedLimitActive();
+            int def = lineLimitMapper.updateIsSharedLimitActiveById(currentLineLimit.getLimitId(), newSharedLimitActive);
             if (def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
             if (newSharedLimitActive) {
-                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                alarmHistoryService.createAlarm(currentLineLimit.getLineId(), AlarmCode.POLICY_LIMIT,
                         AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
             } else {
-                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                alarmHistoryService.createAlarm(currentLineLimit.getLineId(), AlarmCode.POLICY_LIMIT,
                         AlarmType.POLICY_DELETE_SHAREDATA_LIMIT);
             }
 
 
             applyWriteThrough(
-                    "line_limit_toggle_shared lineId=" + lineLimit.get().getLineId(),
+                    "line_limit_toggle_shared lineId=" + currentLineLimit.getLineId(),
                     writeThroughService -> writeThroughService.syncLineLimit(
-                            lineLimit.get().getLineId(),
-                            lineLimit.get().getDailyDataLimit(),
-                            lineLimit.get().getIsDailyLimitActive(),
-                            lineLimit.get().getSharedDataLimit(),
+                            currentLineLimit.getLineId(),
+                            currentLineLimit.getDailyDataLimit(),
+                            currentLineLimit.getIsDailyLimitActive(),
+                            currentLineLimit.getSharedDataLimit(),
                             newSharedLimitActive
                     )
             );
+
+            applyWriteAudit(
+                    PolicyWriteEventType.CHANGE,
+                    "toggleSharedPoolLimitPolicy",
+                    currentLineLimit,
+                    auth,
+                    currentLineLimit.getLineId()
+            );
+
             return LimitPolicyResDto.builder()
-                    .lineLimitId(lineLimit.get().getLimitId())
-                    .dailyDataLimit(lineLimit.get().getDailyDataLimit())
-                    .isDailyDataLimitActive(lineLimit.get().getIsDailyLimitActive())
-                    .sharedDataLimit(lineLimit.get().getSharedDataLimit())
+                    .lineLimitId(currentLineLimit.getLimitId())
+                    .dailyDataLimit(currentLineLimit.getDailyDataLimit())
+                    .isDailyDataLimitActive(currentLineLimit.getIsDailyLimitActive())
+                    .sharedDataLimit(currentLineLimit.getSharedDataLimit())
                     .isSharedDataLimitActive(newSharedLimitActive)
                     .build();
         } else {
@@ -555,7 +570,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(lineLimit.get().getLineId(), auth.getLineId(), auth);
+        LineLimit currentLineLimit = lineLimit.get();
+        checkIsSameFamilyGroup(currentLineLimit.getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int def = lineLimitMapper.updateSharedDataLimit(request);
@@ -563,25 +579,33 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
-        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
+        alarmHistoryService.createAlarm(currentLineLimit.getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
 
         applyWriteThrough(
-                "line_limit_update_shared_value lineId=" + lineLimit.get().getLineId(),
+                "line_limit_update_shared_value lineId=" + currentLineLimit.getLineId(),
                 writeThroughService -> writeThroughService.syncLineLimit(
-                        lineLimit.get().getLineId(),
-                        lineLimit.get().getDailyDataLimit(),
-                        lineLimit.get().getIsDailyLimitActive(),
+                        currentLineLimit.getLineId(),
+                        currentLineLimit.getDailyDataLimit(),
+                        currentLineLimit.getIsDailyLimitActive(),
                         request.getPolicyValue(),
-                        lineLimit.get().getIsSharedLimitActive()
+                        currentLineLimit.getIsSharedLimitActive()
                 )
         );
 
+        applyWriteAudit(
+                PolicyWriteEventType.CHANGE,
+                "updateSharedPoolLimitPolicyValue",
+                currentLineLimit,
+                auth,
+                currentLineLimit.getLineId()
+        );
+
         return LimitPolicyResDto.builder()
-                .lineLimitId(lineLimit.get().getLimitId())
-                .dailyDataLimit(lineLimit.get().getDailyDataLimit())
-                .isDailyDataLimitActive(lineLimit.get().getIsDailyLimitActive())
+                .lineLimitId(currentLineLimit.getLimitId())
+                .dailyDataLimit(currentLineLimit.getDailyDataLimit())
+                .isDailyDataLimitActive(currentLineLimit.getIsDailyLimitActive())
                 .sharedDataLimit(request.getPolicyValue())
-                .isSharedDataLimitActive(lineLimit.get().getIsSharedLimitActive())
+                .isSharedDataLimitActive(currentLineLimit.getIsSharedLimitActive())
                 .build();
     }
 
@@ -643,14 +667,19 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     @Override
     @Transactional
     public AppPolicyResDto updateAppDataLimit(AppDataLimitUpdateReqDto request, AuthUserDetails auth) {
-        // 1. 대상 appPolicy DTO 조회
+        // 1. 대상 appPolicy Entity/DTO 조회
+        Optional<AppPolicy> appPolicyEntity = appPolicyMapper.findEntityExistById(request.getAppPolicyId());
+        if (appPolicyEntity.isEmpty()) {
+            throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
+        }
         Optional<AppPolicyResDto> appPolicy = appPolicyMapper.findDtoExistById(request.getAppPolicyId());
         if (appPolicy.isEmpty()) {
             throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
         }
+        AppPolicy currentAppPolicy = appPolicyEntity.get();
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
+        checkIsSameFamilyGroup(currentAppPolicy.getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int ret = appPolicyMapper.updateDataLimit(request.getAppPolicyId(), request.getValue());
@@ -658,7 +687,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
 
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE,
+        alarmHistoryService.createAlarm(currentAppPolicy.getLineId(), AlarmCode.POLICY_CHANGE,
                 AlarmType.POLICY_UPDATE_APP_USAGE_LIMIT);
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
         AppPolicyResDto updatedResponse = appPolicy.get().toBuilder()
@@ -677,27 +706,40 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 )
         );
 
+        applyWriteAudit(
+                PolicyWriteEventType.CHANGE,
+                "updateAppDataLimit",
+                currentAppPolicy,
+                auth,
+                updatedResponse.getLineId()
+        );
+
         return updatedResponse;
     }
 
     @Override
     @Transactional
     public AppPolicyResDto updateAppSpeedLimit(AppSpeedLimitUpdateReqDto request, AuthUserDetails auth) {
-        // 1. 대상 appPolicy DTO 조회
+        // 1. 대상 appPolicy Entity/DTO 조회
+        Optional<AppPolicy> appPolicyEntity = appPolicyMapper.findEntityExistById(request.getAppPolicyId());
+        if (appPolicyEntity.isEmpty()) {
+            throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
+        }
         Optional<AppPolicyResDto> appPolicy = appPolicyMapper.findDtoExistById(request.getAppPolicyId());
         if (appPolicy.isEmpty()) {
             throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
         }
+        AppPolicy currentAppPolicy = appPolicyEntity.get();
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
+        checkIsSameFamilyGroup(currentAppPolicy.getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int ret = appPolicyMapper.updateSpeedLimit(request.getAppPolicyId(), request.getValue());
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE,
+        alarmHistoryService.createAlarm(currentAppPolicy.getLineId(), AlarmCode.POLICY_CHANGE,
                 AlarmType.POLICY_UPDATE_DATA_SPEED_LIMIT);
 
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
@@ -717,6 +759,14 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 )
         );
 
+        applyWriteAudit(
+                PolicyWriteEventType.CHANGE,
+                "updateAppSpeedLimit",
+                currentAppPolicy,
+                auth,
+                updatedResponse.getLineId()
+        );
+
         return updatedResponse;
     }
 
@@ -732,8 +782,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (appPolicy.isPresent()) {
             if (appPolicy.get().getAppPolicyId() != null) {
                 // 3-1. 기존 정책이 존재한다면 is_active를 반대값으로 설정(toggle)
+                Long appPolicyId = appPolicy.get().getAppPolicyId();
+                AppPolicy preImage = appPolicyMapper.findEntityExistById(appPolicyId).orElse(null);
                 boolean newIsActive = !appPolicy.get().getIsActive();
-                int ret = appPolicyMapper.updateIsActive(appPolicy.get().getAppPolicyId(), newIsActive);
+                int ret = appPolicyMapper.updateIsActive(appPolicyId, newIsActive);
                 if (ret != 1) {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
                 }
@@ -762,6 +814,14 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                                 updatedResponse.getDailyLimitSpeed(),
                                 Boolean.TRUE.equals(updatedResponse.getIsWhiteList())
                         )
+                );
+
+                applyWriteAudit(
+                        PolicyWriteEventType.CHANGE,
+                        "toggleAppPolicyActive",
+                        preImage,
+                        auth,
+                        updatedResponse.getLineId()
                 );
 
                 return updatedResponse;
@@ -824,6 +884,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (appPolicy.isEmpty()) {
             throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
         }
+        AppPolicy preImage = appPolicyMapper.findEntityExistById(appPolicyId).orElse(null);
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
         checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
@@ -861,6 +922,14 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 )
         );
 
+        applyWriteAudit(
+                PolicyWriteEventType.CHANGE,
+                "toggleAppPolicyWhitelist",
+                preImage,
+                auth,
+                updatedResponse.getLineId()
+        );
+
         return updatedResponse;
     }
 
@@ -875,6 +944,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
         // 대상 레코드의 회선과 동일 가족에 속했는지 검증
         checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
+        AppPolicy preImage = appPolicy.get();
 
         // soft delete
         int ret = appPolicyMapper.setDeleted(appPolicyId);
@@ -892,6 +962,14 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                         appPolicy.get().getLineId(),
                         appPolicy.get().getApplicationId()
                 )
+        );
+
+        applyWriteAudit(
+                PolicyWriteEventType.DELETE,
+                "deleteAppPolicy",
+                preImage,
+                auth,
+                appPolicy.get().getLineId()
         );
     }
 
@@ -936,6 +1014,70 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         callback.accept(writeThroughService);
+    }
+
+    private void applyWriteAudit(
+            PolicyWriteEventType eventType,
+            String sourceMethod,
+            LineLimit preImage,
+            AuthUserDetails auth,
+            Long lineId
+    ) {
+        if (preImage == null) {
+            return;
+        }
+
+        // 단위 테스트(@InjectMocks) 환경에서는 ObjectProvider 주입이 생략될 수 있다.
+        if (policyWriteAuditServiceProvider == null) {
+            return;
+        }
+
+        PolicyWriteAuditService auditService = policyWriteAuditServiceProvider.getIfAvailable();
+        if (auditService == null) {
+            // Mongo 구성이 없는 프로파일에서는 감사 저장을 생략한다.
+            log.debug("policy_write_audit_skipped table=LINE_LIMIT event={} line_id={} reason=no_mongodb_profile", eventType, lineId);
+            return;
+        }
+
+        auditService.saveLineLimitPreImageAfterCommit(
+                eventType,
+                sourceMethod,
+                preImage,
+                auth.getUserId(),
+                auth.getLineId()
+        );
+    }
+
+    private void applyWriteAudit(
+            PolicyWriteEventType eventType,
+            String sourceMethod,
+            AppPolicy preImage,
+            AuthUserDetails auth,
+            Long lineId
+    ) {
+        if (preImage == null) {
+            return;
+        }
+
+        // 단위 테스트(@InjectMocks) 환경에서는 ObjectProvider 주입이 생략될 수 있다.
+        if (policyWriteAuditServiceProvider == null) {
+            return;
+        }
+
+        PolicyWriteAuditService auditService = policyWriteAuditServiceProvider.getIfAvailable();
+        if (auditService == null) {
+            // Mongo 구성이 없는 프로파일에서는 감사 저장을 생략한다.
+            log.debug("policy_write_audit_skipped table=APP_POLICY event={} line_id={} reason=no_mongodb_profile", eventType, lineId);
+            return;
+        }
+
+        auditService.saveAppPolicyPreImageAfterCommit(
+                eventType,
+                sourceMethod,
+                preImage,
+                auth.getUserId(),
+                auth.getLineId()
+        );
     }
 
     /**
