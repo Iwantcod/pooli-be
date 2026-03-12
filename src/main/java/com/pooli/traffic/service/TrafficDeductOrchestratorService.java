@@ -1,12 +1,13 @@
 package com.pooli.traffic.service;
 
 import java.time.LocalDateTime;
-import java.util.concurrent.TimeUnit;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import com.pooli.monitoring.metrics.TrafficTickMetrics;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
@@ -41,6 +42,7 @@ public class TrafficDeductOrchestratorService {
     private final TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
     private final TrafficRecentUsageBucketService trafficRecentUsageBucketService;
     private final TrafficTickPacer trafficTickPacer;
+    private final TrafficTickMetrics trafficTickMetrics;
 
     /**
       * `orchestrate` 처리 목적에 맞는 핵심 로직을 수행합니다.
@@ -69,6 +71,9 @@ public class TrafficDeductOrchestratorService {
                 // tick당 1초 슬롯을 맞추기 위해 시작 시각까지 대기한다.
                 // 처리 지연으로 슬롯이 지난 경우 대기 없이 진행하고 lag만 기록한다.
                 long lagMs = trafficTickPacer.awaitTickStart(orchestrationStartNano, tick);
+                
+                // Metric -> Lag 기록
+                trafficTickMetrics.recordLagMillis(lagMs);
                 long tickStartedNano = System.nanoTime();
 
                 int remainingTicks = (MAX_TICKS - tick) + 1;
