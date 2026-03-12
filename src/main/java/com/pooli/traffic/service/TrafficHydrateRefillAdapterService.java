@@ -9,6 +9,7 @@ import java.util.List;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import com.pooli.monitoring.metrics.TrafficHydrateMetrics;
 import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.TrafficRefillPlan;
@@ -46,6 +47,7 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficQuotaSourcePort trafficQuotaSourcePort;
     private final TrafficQuotaCacheService trafficQuotaCacheService;
     private final TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
+    private final TrafficHydrateMetrics trafficHydrateMetrics;
 
     /**
      * 개인풀 차감 경로를 실행합니다.
@@ -177,6 +179,7 @@ public class TrafficHydrateRefillAdapterService {
             long initialAmount = trafficQuotaSourcePort.loadInitialAmount(poolType, payload, targetMonth);
             long monthlyExpireAt = trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth);
             trafficQuotaCacheService.hydrateBalance(balanceKey, initialAmount, monthlyExpireAt);
+            trafficHydrateMetrics.incrementHydrate(poolType);
 
             retriedResult = executeDeduct(poolType, payload, balanceKey, currentTickTargetData);
             if (retriedResult.getStatus() != TrafficLuaStatus.HYDRATE) {
