@@ -58,6 +58,7 @@ public class TrafficRequestEnqueueService {
      * @return enqueue 완료 응답(traceId, enqueuedAt)
      */
     public TrafficGenerateResDto enqueue(TrafficGenerateReqDto request) {
+        long start = System.currentTimeMillis();
         trafficRequestMetrics.incrementRequest();
 
         String traceId = resolveTraceId();
@@ -76,6 +77,9 @@ public class TrafficRequestEnqueueService {
 
         // Streams 명세(field=payload, value=json)에 맞춰 단일 레코드를 적재한다.
         RecordId recordId = addToStream(payloadJson);
+
+        long duration = System.currentTimeMillis() - start;
+        trafficRequestMetrics.recordEnqueueLatency(duration);
 
         log.info(
                 "traffic_enqueue_success traceId={} streamKey={} recordId={}",
