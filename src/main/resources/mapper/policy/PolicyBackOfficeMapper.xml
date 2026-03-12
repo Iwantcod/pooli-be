@@ -13,8 +13,20 @@
 	        policy_name,
 	        is_new AS isNew
 	    FROM POLICY
-	    WHERE is_active = true
+		    WHERE is_active = true
 
+	    </select>
+
+    <select id="selectPolicyActivationSnapshot"
+            resultType="com.pooli.policy.domain.dto.response.PolicyActivationSnapshotResDto">
+        SELECT
+            policy_id AS policyId,
+            is_active AS isActive,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM POLICY
+        WHERE deleted_at IS NULL
+        ORDER BY policy_id ASC
     </select>
-    
+	    
 </mapper>
