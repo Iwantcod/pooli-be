@@ -82,17 +82,19 @@ app:
       port: ${STREAMS_REDIS_PORT}
       password: ${STREAMS_REDIS_PASSWORD}
   streams:
-    key-traffic-request: ${STREAMS_KEY_TRAFFIC_REQUEST:traffic:deduct:request}
-    group-traffic: ${STREAMS_GROUP_TRAFFIC:traffic-deduct-cg}
-    consumer-name: ${STREAMS_CONSUMER_NAME:${HOSTNAME:pooli}-${SERVER_PORT:8080}}
+    key-traffic-request: ${STREAMS_KEY_TRAFFIC_REQUEST}
+    group-traffic: ${STREAMS_GROUP_TRAFFIC}
+    consumer-name: ${STREAMS_CONSUMER_NAME}
     consumer-enabled: ${STREAMS_CONSUMER_ENABLED:true}
     worker-thread-count: ${STREAMS_WORKER_THREAD_COUNT:8}
     read-count: ${STREAMS_READ_COUNT:20}
+    # 레디스 pending에 몇개 있는지 조회 / 상한값을 둬서 조회 부담 내리기
+    metrics-pending-scan-count: ${STREAMS_METRICS_PENDING_SCAN_COUNT:100}
     block-ms: ${STREAMS_BLOCK_MS:2000}
     reclaim-interval-ms: ${STREAMS_RECLAIM_INTERVAL_MS:5000}
     reclaim-min-idle-ms: ${STREAMS_RECLAIM_MIN_IDLE_MS:70000}
     max-retry: ${STREAMS_MAX_RETRY:3}
-    key-traffic-dlq: ${STREAMS_KEY_TRAFFIC_DLQ:traffic:deduct:dlq}
+    key-traffic-dlq: ${STREAMS_KEY_TRAFFIC_DLQ}
   policy:
     bootstrap:
       reconcile-interval-ms: ${POLICY_BOOTSTRAP_RECONCILE_INTERVAL_MS:300000}
@@ -115,7 +117,7 @@ management:
         include: health,prometheus
   endpoint:
     health:
-      show-details: never
+      show-details: always
   metrics:
     tags:
       application: pooli-be

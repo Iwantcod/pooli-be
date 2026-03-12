@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.pooli.monitoring.metrics.TrafficDlqMetrics;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.domain.Range;
@@ -46,6 +47,8 @@ public class TrafficStreamInfraService {
     @Qualifier("streamsStringRedisTemplate")
     private final StringRedisTemplate streamsStringRedisTemplate;
     private final AppStreamsProperties appStreamsProperties;
+
+    private final TrafficDlqMetrics trafficDlqMetrics;
 
     /**
      * Streams 전용 RedisTemplate에서 StreamOperations 핸들을 반환합니다.
@@ -227,10 +230,14 @@ public class TrafficStreamInfraService {
         dlqValue.put("sourceRecordId", sourceRecordId);
         dlqValue.put("failedAt", String.valueOf(System.currentTimeMillis()));
 
-        return streamOps().add(
+        RecordId recordId = streamOps().add(
                 StreamRecords.string(dlqValue)
                         .withStreamKey(appStreamsProperties.getKeyTrafficDlq())
         );
+
+        trafficDlqMetrics.incrementDlqByReason(reason);
+
+        return recordId;
     }
 
     /**
