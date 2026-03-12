@@ -117,7 +117,7 @@ management:
         include: health,prometheus
   endpoint:
     health:
-      show-details: never
+      show-details: always
   metrics:
     tags:
       application: pooli-be
