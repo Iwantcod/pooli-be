@@ -38,7 +38,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResDto> handleApplicationException(ApplicationException ex, HttpServletRequest request) {
         ErrorCode errorCode = ex.getErrorCode();
 
-        log.warn(
+        log.error(
                 "application_error traceId={} uri={} errorCode={} message={}",
                 MDC.get(TRACE_ID_KEY),
                 request.getRequestURI(),
