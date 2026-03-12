@@ -18,12 +18,13 @@ public class TrafficRefillMetrics {
     }
 
     public void increment(String poolType, String result) {
-        Counter.builder("traffic_refill_total")
-                .description("Refill attempts by pool type and result")
-                .tag("pool_type", poolType)
-                .tag("result", result)
-                .register(meterRegistry)
-                .increment();
+    	
+    	meterRegistry.counter(
+                "traffic_refill_total",
+                "pool_type", poolType,
+                "result", result
+        ).increment();
+    	
     }
 
 }
