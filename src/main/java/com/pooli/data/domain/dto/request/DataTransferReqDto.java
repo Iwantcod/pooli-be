@@ -15,6 +15,6 @@ public class DataTransferReqDto {
     @Schema(description = "도착 회선 ID", example = "2")
     private Integer toLineId;
 
-    @Schema(description = "이체 데이터 용량(MB)", example = "1024")
+    @Schema(description = "이체 데이터 용량(Byte)", example = "1073741824")
     private Long amount;
 }
