@@ -127,9 +127,9 @@
     <!-- GET /api/shared-pools/detail 용: 공유풀 데이터 사용 제한량 조회 -->
     <select id="selectSharedDataLimit" resultType="java.lang.Long">
         SELECT shared_data_limit
-        FROM SHARED_LIMIT
+        FROM LINE_LIMIT
         WHERE line_id = #{lineId}
-          AND is_active = true
+          AND is_shared_limit_active = true
           AND deleted_at IS NULL
     </select>
 

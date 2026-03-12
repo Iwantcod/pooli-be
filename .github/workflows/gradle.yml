@@ -121,6 +121,7 @@ jobs:
             --deployment-group-name "${RELEASE_GROUP}" \
             --deployment-config-name CodeDeployDefault.OneAtATime \
             --s3-location bucket=${BUCKET},key=${S3_KEY},bundleType=zip \
+            --file-exists-behavior OVERWRITE \
             --description "Release deploy ${GITHUB_SHA}" \
             --query "deploymentId" \
             --output text)
@@ -133,6 +134,7 @@ jobs:
             --deployment-group-name "${TRAFFIC_GROUP}" \
             --deployment-config-name CodeDeployDefault.OneAtATime \
             --s3-location bucket=${BUCKET},key=${S3_KEY},bundleType=zip \
+            --file-exists-behavior OVERWRITE \
             --description "Traffic deploy ${GITHUB_SHA}" \
             --query "deploymentId" \
             --output text)
