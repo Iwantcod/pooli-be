@@ -55,6 +55,13 @@ Spring Boot 기반 API 서버로, Redis Stream 기반 메시지 처리와 Promet
 ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)
 ![Loki](https://img.shields.io/badge/Loki-F46800?style=for-the-badge&logo=grafana&logoColor=white)
 
+## Architecture
+### Infra
+<img width="2760" height="1504" alt="image" src="https://github.com/user-attachments/assets/ec412e75-ad15-41f9-8062-e78d4dd43d2b" />
+
+
+### Monitoring 
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/dfca9e4b-c6cd-42bb-a0c4-018cec5bc577" />
 
 
 ## 주요 API 도메인
