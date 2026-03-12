@@ -20,6 +20,7 @@ public class AppStreamsProperties {
     private boolean consumerEnabled;
     private int workerThreadCount;
     private int readCount;
+    private int metricsPendingScanCount;
     private long blockMs;
     private long reclaimIntervalMs;
     private long reclaimMinIdleMs;
