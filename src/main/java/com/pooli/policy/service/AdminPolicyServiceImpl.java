@@ -52,12 +52,8 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
             );
         }
 
-        AdminPolicyResDto response = AdminPolicyResDto.builder()
-                .policyId(request.getPolicyId())
-                .policyName(request.getPolicyName())
-                .policyCategoryId(request.getPolicyCategoryId())
-                .isActive(false)
-                .build();
+        // DB 최신 상태 재조회 (updatedAt 등 포함)
+        AdminPolicyResDto response = adminPolicyMapper.selectPolicyById(request.getPolicyId());
 
         // MongoDB 이력 저장
         policyHistoryService.log("ADMIN_POLICY", "CREATE", request.getPolicyId(), null, response);
@@ -81,12 +77,8 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
                 writeThroughService -> writeThroughService.syncPolicyActivation(policyId, false)
         );
 
-        AdminPolicyResDto updated = AdminPolicyResDto.builder()
-                .policyId(policyId)
-                .policyName(request.getPolicyName())
-                .policyCategoryId(request.getPolicyCategoryId())
-                .isActive(request.getIsActive())
-                .build();
+        // DB 최신 상태 재조회 (updatedAt 등 포함)
+        AdminPolicyResDto updated = adminPolicyMapper.selectPolicyById(policyId);
         
         // MongoDB 이력 저장
         policyHistoryService.log("ADMIN_POLICY", "UPDATE", policyId, existing, updated);
@@ -138,9 +130,13 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
                 existing.getPolicyName()
         );
 
+        // DB 최신 상태 재조회 (updatedAt 등 포함)
+        AdminPolicyResDto updated = adminPolicyMapper.selectPolicyById(policyId);
+
         AdminPolicyActiveResDto response = AdminPolicyActiveResDto.builder()
                 .policyId(policyId)
                 .isActive(request.getIsActive())
+                .updatedAt(updated.getUpdatedAt())
                 .build();
         
         // MongoDB 이력 저장
@@ -160,10 +156,8 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
     	
         adminPolicyMapper.insertCategory(request);
 
-        AdminPolicyCateResDto response = AdminPolicyCateResDto.builder()
-                .policyCategoryId(request.getPolicyCategoryId())
-                .policyCategoryName(request.getPolicyCategoryName())
-                .build();
+        // DB 최신 상태 재조회 (updatedAt 등 포함)
+        AdminPolicyCateResDto response = adminPolicyMapper.selectCategoryById(request.getPolicyCategoryId());
 
         // MongoDB 이력 저장
         policyHistoryService.log("ADMIN_POLICY_CATEGORY", "CREATE", request.getPolicyCategoryId(), null, response);
@@ -186,10 +180,8 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
     	    
         adminPolicyMapper.updateCategory(policyCategoryId, request);
 
-        AdminPolicyCateResDto response = AdminPolicyCateResDto.builder()
-                .policyCategoryId(policyCategoryId)
-                .policyCategoryName(request.getPolicyCategoryName())
-                .build();
+        // DB 최신 상태 재조회 (updatedAt 등 포함)
+        AdminPolicyCateResDto response = adminPolicyMapper.selectCategoryById(policyCategoryId);
         
         // MongoDB 이력 저장
         policyHistoryService.log("ADMIN_POLICY_CATEGORY", "UPDATE", policyCategoryId, category, response);

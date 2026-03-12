@@ -1,5 +1,7 @@
 package com.pooli.policy.domain.dto.response;
 
+import java.time.LocalDateTime;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -19,5 +21,8 @@ public class AdminPolicyActiveResDto {
 
     @Schema(description = "활성화 상태", example = "true")
     private Boolean isActive;
+
+    @Schema(description = "최종 수정일", example = "2024-03-03T23:00:00")
+    private LocalDateTime updatedAt;
 
 }
