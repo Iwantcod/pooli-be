@@ -102,12 +102,39 @@ jobs:
         run: |
           aws s3 cp revision.zip "s3://${{ secrets.CODEDEPLOY_S3_BUCKET }}/release/${GITHUB_SHA}.zip"
 
-      # 12) CodeDeploy 배포 트리거 (S3 revision)
-      - name: Create CodeDeploy deployment
+      # 12) CodeDeploy 배포 트리거 (release -> traffic 순차)
+      - name: Create CodeDeploy deployments (sequential)
         run: |
-          aws deploy create-deployment \
-            --application-name "${{ secrets.CODEDEPLOY_APP_NAME }}" \
-            --deployment-group-name "${{ secrets.CODEDEPLOY_DEPLOYMENT_GROUP }}" \
+          APP_NAME="${{ secrets.CODEDEPLOY_APP_NAME }}"
+          BUCKET="${{ secrets.CODEDEPLOY_S3_BUCKET }}"
+          S3_KEY="release/${GITHUB_SHA}.zip"
+
+          # 새 시크릿이 없으면 기본 그룹명을 사용
+          RELEASE_GROUP="${{ secrets.CODEDEPLOY_RELEASE_DEPLOYMENT_GROUP }}"
+          TRAFFIC_GROUP="${{ secrets.CODEDEPLOY_TRAFFIC_DEPLOYMENT_GROUP }}"
+          : "${RELEASE_GROUP:=pooli-release-group}"
+          : "${TRAFFIC_GROUP:=pooli-traffic-group}"
+
+          echo "release group: ${RELEASE_GROUP}"
+          RELEASE_DEPLOY_ID=$(aws deploy create-deployment \
+            --application-name "${APP_NAME}" \
+            --deployment-group-name "${RELEASE_GROUP}" \
             --deployment-config-name CodeDeployDefault.OneAtATime \
-            --s3-location bucket=${{ secrets.CODEDEPLOY_S3_BUCKET }},key=release/${GITHUB_SHA}.zip,bundleType=zip \
-            --description "Deploy ${GITHUB_SHA}"
+            --s3-location bucket=${BUCKET},key=${S3_KEY},bundleType=zip \
+            --description "Release deploy ${GITHUB_SHA}" \
+            --query "deploymentId" \
+            --output text)
+          echo "release deployment id: ${RELEASE_DEPLOY_ID}"
+          aws deploy wait deployment-successful --deployment-id "${RELEASE_DEPLOY_ID}"
+
+          echo "traffic group: ${TRAFFIC_GROUP}"
+          TRAFFIC_DEPLOY_ID=$(aws deploy create-deployment \
+            --application-name "${APP_NAME}" \
+            --deployment-group-name "${TRAFFIC_GROUP}" \
+            --deployment-config-name CodeDeployDefault.OneAtATime \
+            --s3-location bucket=${BUCKET},key=${S3_KEY},bundleType=zip \
+            --description "Traffic deploy ${GITHUB_SHA}" \
+            --query "deploymentId" \
+            --output text)
+          echo "traffic deployment id: ${TRAFFIC_DEPLOY_ID}"
+          aws deploy wait deployment-successful --deployment-id "${TRAFFIC_DEPLOY_ID}"
