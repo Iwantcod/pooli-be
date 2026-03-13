@@ -38,6 +38,8 @@ class AdminPolicyServiceImplTest {
     private AdminPolicyMapper adminPolicyMapper;
     @Mock
     private AlarmHistoryService alarmHistoryService;
+    @Mock
+    private PolicyHistoryService policyHistoryService;
 
     @InjectMocks
     private AdminPolicyServiceImpl adminPolicyService;
@@ -95,6 +97,13 @@ class AdminPolicyServiceImplTest {
                 arg.setPolicyId(10);
                 return 1;
             }).when(adminPolicyMapper).insertPolicy(any());
+            when(adminPolicyMapper.selectPolicyById(10)).thenReturn(
+                    AdminPolicyResDto.builder()
+                            .policyId(10)
+                            .policyName("신규 정책")
+                            .policyCategoryId(1)
+                            .build()
+            );
 
             // when
             AdminPolicyResDto result = adminPolicyService.createPolicy(req);
@@ -114,7 +123,10 @@ class AdminPolicyServiceImplTest {
             req.setPolicyCategoryId(5);
             req.setIsActive(true);
             when(adminPolicyMapper.selectPolicyById(policyId))
-                    .thenReturn(AdminPolicyResDto.builder().policyId(policyId).policyName("기존").build());
+                    .thenReturn(
+                            AdminPolicyResDto.builder().policyId(policyId).policyName("기존").build(),
+                            AdminPolicyResDto.builder().policyId(policyId).policyName("수정 정책").policyCategoryId(5).build()
+                    );
             when(adminPolicyMapper.updatePolicy(eq(policyId), any())).thenReturn(1);
 
             // when
@@ -186,6 +198,12 @@ class AdminPolicyServiceImplTest {
                 arg.setPolicyCategoryId(20);
                 return 1;
             }).when(adminPolicyMapper).insertCategory(any());
+            when(adminPolicyMapper.selectCategoryById(20)).thenReturn(
+                    AdminPolicyCateResDto.builder()
+                            .policyCategoryId(20)
+                            .policyCategoryName("광고")
+                            .build()
+            );
 
             // when
             AdminPolicyCateResDto result = adminPolicyService.createCategory(req);
@@ -202,7 +220,10 @@ class AdminPolicyServiceImplTest {
             AdminCategoryReqDto req = new AdminCategoryReqDto();
             req.setPolicyCategoryName("수정카테고리");
             when(adminPolicyMapper.selectCategoryById(categoryId))
-                    .thenReturn(AdminPolicyCateResDto.builder().policyCategoryId(categoryId).policyCategoryName("기존").build());
+                    .thenReturn(
+                            AdminPolicyCateResDto.builder().policyCategoryId(categoryId).policyCategoryName("기존").build(),
+                            AdminPolicyCateResDto.builder().policyCategoryId(categoryId).policyCategoryName("수정카테고리").build()
+                    );
             when(adminPolicyMapper.updateCategory(eq(categoryId), any())).thenReturn(1);
 
             // when

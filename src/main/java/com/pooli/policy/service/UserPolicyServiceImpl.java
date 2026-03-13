@@ -26,7 +26,6 @@ import com.pooli.policy.domain.dto.request.ImmediateBlockReqDto;
 import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
 import com.pooli.policy.domain.dto.request.RepeatBlockDayReqDto;
 import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
-import com.pooli.policy.domain.dto.request.*;
 import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
 import com.pooli.policy.domain.dto.response.AppPolicyResDto;
 import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
@@ -70,7 +69,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     private final RepeatBlockDayMapper repeatBlockDayMapper;
     private final ImmediateBlockMapper immediateBlockMapper;
     private final ObjectProvider<TrafficPolicyWriteThroughService> trafficPolicyWriteThroughServiceProvider;
-    private final ObjectProvider<PolicyWriteAuditService> policyWriteAuditServiceProvider;
 
     @Override
     public List<ActivePolicyResDto> getActivePolicies() {
