@@ -99,10 +99,16 @@ if current_amount < 0 then
   return as_json(0, "HYDRATE")
 end
 
+local final_status = "OK"
 local answer = math.min(current_amount, target_data)
+
+if current_amount < target_data then
+  final_status = "NO_BALANCE"
+end
+
 if answer <= 0 then
   redis.call("HSET", remaining_key, "is_empty", "1")
-  return as_json(0, "NO_BALANCE")
+  return as_json(0, final_status)
 end
 
 local app_member = tostring(math.floor(app_id))
@@ -186,4 +192,4 @@ redis.call("EXPIREAT", daily_total_usage_key, daily_expire_at)
 redis.call("HINCRBY", daily_app_usage_key, app_usage_field, answer)
 redis.call("EXPIREAT", daily_app_usage_key, daily_expire_at)
 
-return as_json(answer, "OK")
+return as_json(answer, final_status)
