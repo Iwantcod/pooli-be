@@ -21,7 +21,7 @@ import com.pooli.family.domain.dto.request.UpdateVisibilityReqDto;
 import com.pooli.family.domain.dto.response.FamilyMemberSummaryResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
-import com.pooli.family.error.FamilyErrorCode;
+import com.pooli.family.exception.FamilyErrorCode;
 import com.pooli.family.mapper.FamilyMapper;
 
 @ExtendWith(MockitoExtension.class)

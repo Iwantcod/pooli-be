@@ -70,7 +70,13 @@ public class FamilySharedPoolsController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "데이터 담기 성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청 파라미터"),
+            @ApiResponse(responseCode = "400",
+                    description = """
+					잘못된 요청
+					 - COMMON:4000 요청 형식 불일치
+                     - COMMON:4001 요청 DTO 필드 유효성 검증 실패
+                     - SHARED_POOL:4002 이번 달 공유풀 데이터 담기 최대 용량(60GB)을 초과
+					"""),
             @ApiResponse(responseCode = "404", description = "유저 및 가족 정보를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
