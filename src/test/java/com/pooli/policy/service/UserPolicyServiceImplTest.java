@@ -59,9 +59,7 @@ import com.pooli.policy.mapper.LineLimitMapper;
 import com.pooli.policy.mapper.PolicyBackOfficeMapper;
 import com.pooli.policy.mapper.RepeatBlockDayMapper;
 import com.pooli.policy.mapper.RepeatBlockMapper;
-import com.pooli.policy.service.PolicyHistoryService;
-import com.pooli.traffic.service.TrafficPolicyWriteThroughService;
-import com.pooli.traffic.service.TrafficPolicyWriteThroughService;
+import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
 
 @ExtendWith(MockitoExtension.class)
 class UserPolicyServiceImplTest {

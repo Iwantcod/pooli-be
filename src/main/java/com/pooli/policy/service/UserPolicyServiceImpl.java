@@ -46,7 +46,7 @@ import com.pooli.policy.mapper.LineLimitMapper;
 import com.pooli.policy.mapper.PolicyBackOfficeMapper;
 import com.pooli.policy.mapper.RepeatBlockDayMapper;
 import com.pooli.policy.mapper.RepeatBlockMapper;
-import com.pooli.traffic.service.TrafficPolicyWriteThroughService;
+import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

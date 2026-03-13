@@ -74,6 +74,20 @@ Step별 핵심:
 - 최종 상태 판정: Plane C
 - Redis 키/정책 규칙: Plane A
 
+## 4.1 서비스/테스트 패키지 역할 매핑 (구현 반영)
+
+현재 코드베이스는 `traffic.service`를 아래 4개 하위 패키지로 분리해 관리한다.
+
+| 패키지 | 연관 Plane | 역할 요약 | 대표 클래스 |
+| --- | --- | --- | --- |
+| `com.pooli.traffic.service.runtime` | Plane A | Redis/Lua 실행 계약, 키/TTL 규칙, dedupe/버킷 관리 | `TrafficLuaScriptInfraService`, `TrafficRedisKeyFactory`, `TrafficRecentUsageBucketService` |
+| `com.pooli.traffic.service.invoke` | Plane B | API 수신, Streams 적재/소비, reclaim/DLQ, DONE 저장 트리거 | `TrafficRequestEnqueueService`, `TrafficStreamConsumerRunner`, `TrafficStreamInfraService`, `TrafficDeductDoneLogService` |
+| `com.pooli.traffic.service.decision` | Plane C | 이벤트 단위 오케스트레이션, hydrate/refill 의사결정, DB refill 원자성 | `TrafficDeductOrchestratorService`, `TrafficHydrateRefillAdapterService`, `TrafficDefaultQuotaSourceAdapter` |
+| `com.pooli.traffic.service.policy` | Plane A + C 경계 | 정책 bootstrap/hydration/write-through로 정책 정합성 유지 | `TrafficPolicyBootstrapService`, `TrafficLinePolicyHydrationService`, `TrafficPolicyWriteThroughService` |
+
+테스트 패키지도 동일한 역할 경계를 따르며 `src/test/java/com/pooli/traffic/service/{runtime,invoke,decision,policy}` 구조를 기본으로 사용한다.
+프로파일 조합 검증(`TrafficProfileBootTest`)은 cross-plane 성격이므로 `src/test/java/com/pooli/traffic/service` 루트에 유지한다.
+
 ## 5. Contract v1 (Locked)
 
 이 섹션이 계약의 단일 진실원(Single Source of Truth)이다.
@@ -354,4 +368,3 @@ PR 체크리스트:
 | payload 검증 실패 처리 | B |
 | DB deadlock 재시도 정책 | C |
 | Redis lock heartbeat/release | A |
-

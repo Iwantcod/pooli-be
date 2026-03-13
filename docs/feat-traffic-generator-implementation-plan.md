@@ -83,8 +83,8 @@
 
 ### 3.8 HYDRATE/REFILL 어댑터 구현
 - 작업:
-  - HYDRATE 반환 시 DB hydrate 후 동일 tick 1회 재시도
-  - 매 tick 처리마다 `answer > 0`인 실제 차감량을 속도 버킷에 기록
+  - HYDRATE 반환 시 DB hydrate 후 동일 이벤트 처리 사이클에서 1회 재시도
+  - 이벤트 처리마다 `answer > 0`인 실제 차감량을 속도 버킷에 기록
     - 개인풀: lineId 버킷, 공유풀: familyId 버킷으로 분리 집계
     - 같은 초 다중 기록은 누적 증가(`INCRBY`)로 합산
   - NO_BALANCE 반환 시 refill gate -> lock 획득 시 DB refill -> 재호출
@@ -106,14 +106,14 @@
   - DB 차감량과 Redis 충전량이 항상 동일함을 테스트로 보장
   - 10초 평균/계산/fallback 규칙이 테스트로 재현됨
 
-### 3.9 10-tick 오케스트레이터 구현
+### 3.9 이벤트 단일 사이클 오케스트레이터 구현
 - 작업:
-  - tick을 초당 1개 슬롯으로 실행(총 10 tick 기준 10초 창)
-  - `currentTickTargetData = ceil(apiRemainingData / remainingTicks)`
-  - 개인풀 우선 -> 잔여(residual) 조건 시 공유풀 차감
-  - 회복 불가 상태 즉시 종료
-  - 조기 종료(`apiRemainingData == 0`) 구현
+  - tick 루프/1초 대기 제거
+  - 개인풀 1회 차감 후 `residual = max(apiTotalData - indivDeducted, 0)` 계산
+  - `residual > 0 && individualStatus == NO_BALANCE`일 때만 공유풀 보완 차감
+  - 최종 상태 판정: `ERROR/예외=FAILED`, `remaining=0=SUCCESS`, 그 외 `PARTIAL_SUCCESS`
 - 완료 기준:
+  - 메시지 1건 처리에서 tick 대기 코드가 실행되지 않음
   - `SUCCESS`, `PARTIAL_SUCCESS`, `FAILED` 상태 판정 재현
 
 ### 3.10 동시성/중복 처리 구현
@@ -150,7 +150,7 @@
       `repeat_block`, `policy:{policyId}`를 즉시 동기화
   - 실패 시 재시도/오류 로그 추가
 - 완료 기준:
-  - 정책 변경 후 다음 tick부터 Redis 반영 확인
+  - 정책 변경 후 다음 이벤트부터 Redis 반영 확인
 
 ### 3.14 테스트/릴리스
 - 작업:

@@ -7,10 +7,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
 import com.pooli.monitoring.metrics.TrafficRequestMetrics;
 import com.pooli.traffic.controller.TrafficController;
+import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
+import com.pooli.traffic.service.invoke.*;
+import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
+import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
+import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
@@ -28,7 +36,8 @@ class TrafficProfileBootTest {
                     TrafficRequestEnqueueService.class,
                     TrafficStreamConsumerRunner.class,
                     TrafficStreamReclaimService.class,
-                    TrafficPolicyWriteThroughService.class
+                    TrafficPolicyWriteThroughService.class,
+                    TrafficProfileBootTest.TestBeans.class
             )
             .withBean(AppStreamsProperties.class, AppStreamsProperties::new)
             .withBean(ObjectMapper.class, ObjectMapper::new)
@@ -37,9 +46,8 @@ class TrafficProfileBootTest {
             .withBean(TrafficStreamInfraService.class, () -> mock(TrafficStreamInfraService.class))
             .withBean(TrafficDeductOrchestratorService.class, () -> mock(TrafficDeductOrchestratorService.class))
             .withBean(TrafficInFlightDedupeService.class, () -> mock(TrafficInFlightDedupeService.class))
-            .withBean(TrafficDeductDonePersistenceService.class, () -> mock(TrafficDeductDonePersistenceService.class))
+            .withBean(TrafficDeductDoneLogService.class, () -> mock(TrafficDeductDoneLogService.class))
             .withBean(TrafficRedisKeyFactory.class, () -> mock(TrafficRedisKeyFactory.class))
-            .withBean(TrafficRedisRuntimePolicy.class, () -> mock(TrafficRedisRuntimePolicy.class))
             .withBean(TrafficRequestMetrics.class, () -> mock(TrafficRequestMetrics.class));
 
     @Nested
@@ -47,17 +55,17 @@ class TrafficProfileBootTest {
     class ProfileActivationTest {
 
         @Test
-        @DisplayName("api 프로파일에서는 producer/controller만 활성화")
+        @DisplayName("api 프로파일에서는 producer/controller/write-through가 활성화")
         void apiProfileActivatesProducerOnly() {
             contextRunner
                     .withPropertyValues("spring.profiles.active=api")
                     .run(context -> {
                         assertThat(context).hasSingleBean(TrafficController.class);
                         assertThat(context).hasSingleBean(TrafficRequestEnqueueService.class);
+                        assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
 
                         assertThat(context).doesNotHaveBean(TrafficStreamConsumerRunner.class);
                         assertThat(context).doesNotHaveBean(TrafficStreamReclaimService.class);
-                        assertThat(context).doesNotHaveBean(TrafficPolicyWriteThroughService.class);
                     });
         }
 
@@ -88,6 +96,16 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficStreamReclaimService.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
                     });
+        }
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestBeans {
+
+        @Bean
+        TrafficRedisRuntimePolicy trafficRedisRuntimePolicy() {
+            // write-through 서비스가 어떤 프로파일에서도 안정적으로 주입되도록 테스트 전용 빈을 둔다.
+            return mock(TrafficRedisRuntimePolicy.class);
         }
     }
 }
