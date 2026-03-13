@@ -16,6 +16,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -130,6 +132,38 @@ class TrafficDeductDoneLogServiceTest {
             assertEquals(90L, savedLog.getDeductedTotalBytes());
         }
 
+        @ParameterizedTest
+        @EnumSource(
+                value = TrafficLuaStatus.class,
+                names = {
+                        "BLOCKED_IMMEDIATE",
+                        "BLOCKED_REPEAT",
+                        "HIT_DAILY_LIMIT",
+                        "HIT_MONTHLY_SHARED_LIMIT",
+                        "HIT_APP_DAILY_LIMIT",
+                        "HIT_APP_SPEED"
+                }
+        )
+        @DisplayName("정책 실패 상태는 DONE 이력의 lastLuaStatus로 그대로 저장된다")
+        void storesPolicyFailureStatusInDoneHistory(TrafficLuaStatus policyFailureStatus) {
+            // when
+            boolean saved = trafficDeductDoneLogService.saveIfAbsent(
+                    payload(),
+                    result(TrafficFinalStatus.PARTIAL_SUCCESS, policyFailureStatus, 0L, 100L),
+                    "1-1"
+            );
+
+            // then
+            assertTrue(saved);
+            ArgumentCaptor<TrafficDeductDoneLog> captor = ArgumentCaptor.forClass(TrafficDeductDoneLog.class);
+            verify(trafficDeductDoneLogRepository).insert(captor.capture());
+            TrafficDeductDoneLog savedLog = captor.getValue();
+            assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS.name(), savedLog.getFinalStatus());
+            assertEquals(policyFailureStatus.name(), savedLog.getLastLuaStatus());
+            assertEquals(0L, savedLog.getDeductedTotalBytes());
+            assertEquals(100L, savedLog.getApiRemainingData());
+        }
+
         @Test
         @DisplayName("traceId UNIQUE 중복이면 false를 반환한다")
         void returnsFalseWhenDuplicateKey() {
@@ -171,13 +205,22 @@ class TrafficDeductDoneLogServiceTest {
     }
 
     private TrafficDeductResultResDto result() {
+        return result(TrafficFinalStatus.PARTIAL_SUCCESS, TrafficLuaStatus.NO_BALANCE, 90L, 10L);
+    }
+
+    private TrafficDeductResultResDto result(
+            TrafficFinalStatus finalStatus,
+            TrafficLuaStatus lastLuaStatus,
+            long deductedTotalBytes,
+            long apiRemainingData
+    ) {
         return TrafficDeductResultResDto.builder()
                 .traceId("trace-001")
                 .apiTotalData(100L)
-                .deductedTotalBytes(90L)
-                .apiRemainingData(10L)
-                .finalStatus(TrafficFinalStatus.PARTIAL_SUCCESS)
-                .lastLuaStatus(TrafficLuaStatus.NO_BALANCE)
+                .deductedTotalBytes(deductedTotalBytes)
+                .apiRemainingData(apiRemainingData)
+                .finalStatus(finalStatus)
+                .lastLuaStatus(lastLuaStatus)
                 .createdAt(LocalDateTime.now().minusSeconds(1))
                 .finishedAt(LocalDateTime.now())
                 .build();

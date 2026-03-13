@@ -26,6 +26,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.MDC;
@@ -182,6 +183,48 @@ class TrafficStreamConsumerRunnerTest {
             String doneLog = findDoneLog(listAppender);
             assertTrue(doneLog.startsWith("traffic_stream_record_done_duplicate"));
             assertFalse(doneLog.contains("body="));
+
+            Logger logger = (Logger) LoggerFactory.getLogger(TrafficStreamConsumerRunner.class);
+            logger.detachAppender(listAppender);
+        }
+
+        @Test
+        @DisplayName("정책 차단 결과도 DONE 저장 후 ACK/release를 수행한다")
+        void acknowledgeWhenPolicyBlockedResultIsSaved() {
+            // given
+            String payloadJson = "{\"traceId\":\"trace-blocked\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("6-0", payloadJson);
+            TrafficDeductResultResDto orchestratorResult = TrafficDeductResultResDto.builder()
+                    .traceId("trace-blocked")
+                    .apiTotalData(100L)
+                    .finalStatus(TrafficFinalStatus.PARTIAL_SUCCESS)
+                    .deductedTotalBytes(0L)
+                    .apiRemainingData(100L)
+                    .lastLuaStatus(TrafficLuaStatus.BLOCKED_IMMEDIATE)
+                    .build();
+            ListAppender<ILoggingEvent> listAppender = attachAppender();
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-blocked")).thenReturn(false);
+            when(trafficInFlightDedupeService.tryClaim("trace-blocked")).thenReturn(true);
+            when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("6-0"))).thenReturn(true);
+
+            // when
+            invokeHandleRecord(record);
+
+            // then
+            ArgumentCaptor<TrafficDeductResultResDto> resultCaptor =
+                    ArgumentCaptor.forClass(TrafficDeductResultResDto.class);
+            verify(trafficDeductDoneLogService).saveIfAbsent(any(), resultCaptor.capture(), eq("6-0"));
+            verify(trafficStreamInfraService).acknowledge(record.getId());
+            verify(trafficInFlightDedupeService).release("trace-blocked");
+            assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, resultCaptor.getValue().getFinalStatus());
+            assertEquals(TrafficLuaStatus.BLOCKED_IMMEDIATE, resultCaptor.getValue().getLastLuaStatus());
+
+            String doneLog = findDoneLog(listAppender);
+            assertTrue(doneLog.contains("final_status=PARTIAL_SUCCESS"));
+            assertTrue(doneLog.contains("last_lua_status=BLOCKED_IMMEDIATE"));
 
             Logger logger = (Logger) LoggerFactory.getLogger(TrafficStreamConsumerRunner.class);
             logger.detachAppender(listAppender);
