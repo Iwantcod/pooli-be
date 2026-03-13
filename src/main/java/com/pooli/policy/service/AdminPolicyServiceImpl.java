@@ -8,7 +8,7 @@ import com.pooli.notification.domain.dto.request.NotiSendReqDto;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.domain.enums.NotificationTargetType;
 import com.pooli.notification.service.AlarmHistoryService;
-import com.pooli.traffic.service.TrafficPolicyWriteThroughService;
+import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

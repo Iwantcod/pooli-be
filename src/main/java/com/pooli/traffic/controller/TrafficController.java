@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.pooli.traffic.domain.dto.request.TrafficGenerateReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficGenerateResDto;
-import com.pooli.traffic.service.TrafficRequestEnqueueService;
+import com.pooli.traffic.service.invoke.TrafficRequestEnqueueService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
