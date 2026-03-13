@@ -56,7 +56,7 @@ public interface FamilySharedPoolMapper {
     );
 
     Long selectMonthlyContributionByFamilyId(
-            @Param("familyId") Long familyId,
+            @Param("lineId") Long lineId,
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate
     );

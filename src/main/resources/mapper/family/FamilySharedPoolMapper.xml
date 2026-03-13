@@ -40,7 +40,7 @@
     <select id="selectMonthlyContributionByFamilyId" resultType="java.lang.Long">
         SELECT COALESCE(SUM(contribution_amount), 0)
         FROM FAMILY_SHARED_USAGE_DAILY
-        WHERE family_id = #{familyId}
+        WHERE line_id = #{lineId}
         AND usage_date >= #{startDate}
         AND usage_date &lt; #{endDate}
         AND deleted_at IS NULL

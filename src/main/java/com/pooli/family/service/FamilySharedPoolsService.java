@@ -77,7 +77,7 @@ public class FamilySharedPoolsService {
 
         // 공유풀 최대 용량 검증
         Long currentMonthContribution = sharedPoolMapper.selectMonthlyContributionByFamilyId(
-                familyId,
+                lineId,
                 LocalDate.now().withDayOfMonth(1),
                 LocalDate.now().plusDays(1) // 포함 안함
         );
