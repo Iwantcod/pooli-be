@@ -148,7 +148,7 @@ public class DataController {
     ) {
     	
     	
-    	AppDataUsageResDto response = dataService.getAppDataUsage(lineId, yearMonth);
+    	AppDataUsageResDto response = dataService.getAppDataUsage(lineId, yearMonth,principal);
         return ResponseEntity.ok(response);
     }
 
