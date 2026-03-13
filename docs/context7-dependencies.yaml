@@ -105,6 +105,28 @@ dependencies:
       prompt_prefix: "Spring Data Redis 3.5.8 + Lettuce 6.6.0.RELEASE 기준으로 설명해주세요."
       use_library: "/spring-projects/spring-data-redis"
 
+  - key: mongodb
+    name: "MongoDB (Spring Data MongoDB)"
+    context7:
+      primary_library_id: "/spring-projects/spring-data-mongodb"
+      library_kind: "repo"
+      fallback_library_ids: []
+    project_versions:
+      starter: "3.5.10"
+      spring_data_mongodb: "4.5.8"
+      mongodb_driver_sync: "5.5.2"
+    artifacts:
+      - "org.springframework.boot:spring-boot-starter-data-mongodb"
+      - "org.springframework.data:spring-data-mongodb"
+      - "org.mongodb:mongodb-driver-sync"
+    resolved_versions:
+      "org.springframework.boot:spring-boot-starter-data-mongodb": "3.5.10"
+      "org.springframework.data:spring-data-mongodb": "4.5.8"
+      "org.mongodb:mongodb-driver-sync": "5.5.2"
+    codex_usage:
+      prompt_prefix: "Spring Data MongoDB 4.5.8 + MongoDB Driver Sync 5.5.2 기준으로 설명해주세요."
+      use_library: "/spring-projects/spring-data-mongodb"
+
   - key: jdbc
     name: "JDBC (Spring Data JDBC + Spring JDBC)"
     context7:
