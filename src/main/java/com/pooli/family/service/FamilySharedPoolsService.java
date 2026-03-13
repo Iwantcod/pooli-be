@@ -2,12 +2,14 @@ package com.pooli.family.service;
 
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
+import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.family.domain.dto.mongo.SharedPoolTransferLog;
 import com.pooli.family.exception.SharedPoolErrorCode;
 
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
 import com.pooli.family.domain.dto.response.*;
 import com.pooli.family.domain.entity.SharedPoolDomain;
+import com.pooli.family.mapper.FamilyMapper;
 import com.pooli.family.mapper.FamilySharedPoolMapper;
 import com.pooli.family.repository.mongo.SharedPoolTransferLogRepository;
 import com.pooli.notification.domain.enums.AlarmCode;
@@ -19,13 +21,26 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
 public class FamilySharedPoolsService {
 
+    private static final DateTimeFormatter HISTORY_EVENT_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+    private static final DateTimeFormatter YEAR_MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
+
     private final FamilySharedPoolMapper sharedPoolMapper;
+    private final FamilyMapper familyMapper;
     private final AlarmHistoryService alarmHistoryService;
     private final SharedPoolTransferLogRepository transferLogRepository;
 
@@ -160,6 +175,39 @@ public class FamilySharedPoolsService {
                 .build();
     }
 
+    public List<SharedPoolHistoryItemResDto> getSharedPoolHistory(AuthUserDetails principal, Integer yearMonth) {
+        YearMonth targetMonth = parseYearMonth(yearMonth);
+        Long lineId = principal.getLineId();
+        Long familyId = getFamilyIdByLineId(lineId);
+        LocalDate startDate = targetMonth.atDay(1);
+        LocalDate endDate = targetMonth.plusMonths(1).atDay(1);
+        ZoneId zoneId = ZoneId.systemDefault();
+
+        Map<Long, String> userNameByLineId = familyMapper.selectFamilyMembersSimpleByLineId(lineId).stream()
+                .collect(Collectors.toMap(
+                        FamilyMembersSimpleResDto::getLineId,
+                        FamilyMembersSimpleResDto::getUserName,
+                        (existingValue, replacementValue) -> existingValue
+                ));
+
+        List<SharedPoolHistoryItemResDto> usageHistory =
+                sharedPoolMapper.selectSharedPoolUsageHistory(familyId, startDate, endDate);
+
+        List<SharedPoolHistoryItemResDto> contributionHistory = transferLogRepository
+                .findByFamilyIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                        familyId,
+                        startDate.atStartOfDay(zoneId).toInstant(),
+                        endDate.atStartOfDay(zoneId).toInstant()
+                )
+                .stream()
+                .map(log -> toContributionHistoryItem(log, userNameByLineId, zoneId))
+                .toList();
+
+        return Stream.concat(contributionHistory.stream(), usageHistory.stream())
+                .sorted(Comparator.comparing(this::parseOccurredAtForSort).reversed())
+                .toList();
+    }
+
     public SharedDataThresholdResDto getSharedDataThreshold(Long familyId) {
         SharedPoolDomain domain = sharedPoolMapper.selectSharedDataThreshold(familyId);
 
@@ -203,6 +251,50 @@ public class FamilySharedPoolsService {
                 .sharedPoolTotalData(sharedPoolTotalData)
                 .membersUsageList(membersUsageList)
                 .build();
+    }
+
+    /**
+     * 가족 구성원 전체에게 알람을 전송하는 헬퍼 메서드
+     * @param excludeLineId 본인 제외 (null이면 전체에게 보냄)
+     */
+    private YearMonth parseYearMonth(Integer yearMonth) {
+        if (yearMonth == null) {
+            throw new ApplicationException(CommonErrorCode.INVALID_REQUEST_PARAM, "yearMonth는 yyyyMM 형식이어야 합니다.");
+        }
+
+        String value = String.valueOf(yearMonth);
+        if (value.length() != 6) {
+            throw new ApplicationException(CommonErrorCode.INVALID_REQUEST_PARAM, "yearMonth는 yyyyMM 형식이어야 합니다.");
+        }
+
+        try {
+            return YearMonth.parse(value, YEAR_MONTH_FORMATTER);
+        } catch (DateTimeParseException exception) {
+            throw new ApplicationException(CommonErrorCode.INVALID_REQUEST_PARAM, "yearMonth는 yyyyMM 형식이어야 합니다.");
+        }
+    }
+
+    private SharedPoolHistoryItemResDto toContributionHistoryItem(
+            SharedPoolTransferLog log,
+            Map<Long, String> userNameByLineId,
+            ZoneId zoneId
+    ) {
+        return SharedPoolHistoryItemResDto.builder()
+                .eventType("CONTRIBUTION")
+                .title("데이터 보내기")
+                .userName(userNameByLineId.getOrDefault(log.getLineId(), "알 수 없음"))
+                .occurredAt(log.getCreatedAt().atZone(zoneId).toLocalDateTime().format(HISTORY_EVENT_FORMATTER))
+                .amount(log.getAmount())
+                .precision("EVENT")
+                .build();
+    }
+
+    private LocalDateTime parseOccurredAtForSort(SharedPoolHistoryItemResDto item) {
+        if ("DAY".equals(item.getPrecision())) {
+            return LocalDate.parse(item.getOccurredAt()).atStartOfDay();
+        }
+
+        return LocalDateTime.parse(item.getOccurredAt(), HISTORY_EVENT_FORMATTER);
     }
 
     /**

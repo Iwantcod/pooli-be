@@ -16,6 +16,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @Tag(name = "Shared Pool", description = "가족 공유데이터 관련 API")
 @RestController
 @RequestMapping("/api/shared-pools")
@@ -190,5 +192,23 @@ public class FamilySharedPoolsController {
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
         return ResponseEntity.ok(familySharedPoolsService.getFamilyMonthlySharedUsageTotal(principal));
+    }
+
+    @Operation(
+            summary = "공유 데이터 히스토리 조회",
+            description = "월 단위로 공유 데이터 보내기와 일별 사용 집계를 함께 조회합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "400", description = "yearMonth 형식 오류"),
+            @ApiResponse(responseCode = "404", description = "공유 데이터 정보를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
+    @GetMapping("/history")
+    public ResponseEntity<List<SharedPoolHistoryItemResDto>> getSharedPoolHistory(
+            @AuthenticationPrincipal AuthUserDetails principal,
+            @RequestParam(name = "yearMonth") Integer yearMonth
+    ) {
+        return ResponseEntity.ok(familySharedPoolsService.getSharedPoolHistory(principal, yearMonth));
     }
 }
