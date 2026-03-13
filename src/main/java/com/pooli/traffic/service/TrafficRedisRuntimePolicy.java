@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
  * 명세 고정값(Asia/Seoul, 일말+8h, 월말+10d, lock/inflight 상수)을 한 곳에서 관리합니다.
  */
 @Component
-@Profile({"local", "traffic"})
+@Profile({"local", "traffic", "api"})
 public class TrafficRedisRuntimePolicy {
 
     public static final long LOCK_TTL_MS = 3000L;

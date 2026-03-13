@@ -3,7 +3,7 @@
 ## **1) 목적**
 
 - 범위:
-- 10초 총량 요청 처리 방식
+- 요청 이벤트 단위 처리 방식
 - Redis 데이터 모델/TTL 기준
 - Lua 스크립트 종류/반환값/호출 순서
 - 트래픽 처리 서버 오케스트레이션
@@ -11,13 +11,11 @@
 
 ## **2) 용어**
 
-*델타: 최근 10초 간 발생한 평균 데이터 사용량*
+*델타: 최근 10초 간 발생한 평균 데이터 사용량(리필 계산용)*
 
-- `tick`: 내부 처리 단위. 1초 고정.
-- `api total data`: API 요청 본문에 포함된 향후 10초 총 데이터량(Byte).
-- `api remaining data`: API 요청 전체 범위에서 아직 처리되지 않은 데이터량(Byte).
-- `remaining_ticks`: 10초 윈도우에서 남아있는 tick 개수.
-- `tick residual data`(기존 `remaining tick` 대체): 특정 tick 내부 미처리 데이터량(Byte).
+- `api total data`: API 요청 이벤트 1건에서 처리할 데이터량(Byte).
+- `api remaining data`: API 요청 이벤트 1건에서 아직 처리되지 않은 데이터량(Byte).
+- `residual data`: 개인풀 처리 후 남은 미처리 데이터량(Byte).
 - `traceId`: API 서버가 생성하여 MQ 메시지에 넣는 UUID.
 - `refill unit`: 리필 단위(델타 * 10, 0이라면 api total data).
 - `redis threshold`: 리필 임계치(델타 * 3, 0이라면 api total data의 30%).
@@ -36,7 +34,7 @@ API 서버:
 트래픽 처리 서버:
 
 - MQ 메시지 소비
-- 1초 tick 단위 차감
+- 이벤트 단일 사이클 차감(개인풀 우선, 필요 시 공유풀 보완)
 - 최종 결과 영속 저장 후 XACK
 
 저장소:
@@ -163,8 +161,8 @@ API 서버:
 
 | **스크립트** | **목적** | **주요 입력** | **주요 읽기/쓰기** | **반환** |
 | --- | --- | --- | --- | --- |
-| deduct_indiv_tick.lua | 개인풀 tick 차감 + 정책 검증 + usage 갱신 | lineId, appId, currentTickTargetData, nowSec, traceId | 개인풀 잔량, 차단/제한, 일사용량, 앱사용량, 속도누적 | JSON 문자열(`{"answer":n,"status":"..."}`) |
-| deduct_shared_tick.lua | 공유풀 tick 차감 + 정책 검증 + usage 갱신 | lineId, familyId, appId, currentTickTargetData, nowSec, traceId | 공유풀 잔량, 차단/제한, 일/월사용량, 앱사용량, 속도누적 | JSON 문자열(`{"answer":n,"status":"..."}`) |
+| deduct_indiv_tick.lua | 개인풀 요청량 차감 + 정책 검증 + usage 갱신 | lineId, appId, requestedData, nowSec, traceId | 개인풀 잔량, 차단/제한, 일사용량, 앱사용량, 속도누적 | JSON 문자열(`{"answer":n,"status":"..."}`) |
+| deduct_shared_tick.lua | 공유풀 요청량 차감 + 정책 검증 + usage 갱신 | lineId, familyId, appId, requestedData, nowSec, traceId | 공유풀 잔량, 차단/제한, 일/월사용량, 앱사용량, 속도누적 | JSON 문자열(`{"answer":n,"status":"..."}`) |
 | refill_gate.lua | refill 필요 여부 + lock 획득 판정 | poolType, ownerId, threshold, traceId | 잔량, is_empty, lock 키 | FAIL/SKIP/OK/WAIT |
 | lock_heartbeat.lua | lock 소유자 TTL 연장 | lockKey, traceId, ttlMs | lock 키 | 1(성공)/0(실패) |
 | lock_release.lua | lock 소유자 해제 | lockKey, traceId | lock 키 | 1(해제)/0(무시) |
@@ -172,23 +170,21 @@ API 서버:
 ## **9) Lua 사용 순서**
 
 1. 메시지 소비 후 dedupe:run:{traceId} 선점(SET NX EX).
-2. tick 루프 시작 (tick=1..10).
-3. tick 목표량 계산 후 deduct_indiv_tick.lua 호출.
-4. 개인풀 status가 HYDRATE면 DB hydrate 후 같은 tick에서 개인풀 Lua 1회 재호출.
+2. 이벤트 요청량(`apiTotalData`)으로 deduct_indiv_tick.lua 호출.
+3. 개인풀 status가 HYDRATE면 DB hydrate 후 같은 이벤트에서 개인풀 Lua 1회 재호출.
+4. 개인풀 차감 후 residual data 계산.
 5. 개인풀 status가 NO_BALANCE면 refill_gate.lua 호출.
 6. refill 결과가 OK면 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount = min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 개인풀 Lua를 1회 재호출한다(heartbeat 유지).
-7. 그래도 tick residual data > 0이고 개인풀 status가 NO_BALANCE면 deduct_shared_tick.lua 호출.
+7. 그래도 residual data > 0이고 개인풀 status가 NO_BALANCE면 deduct_shared_tick.lua 호출.
 8. 공유풀도 HYDRATE/NO_BALANCE/refill 동일 규칙 적용.
-9. tick 종료 후 api remaining data 감소.
-10. 10 tick 종료 또는 조기 종료 시 최종 상태 저장.
+9. 이벤트 단일 사이클 종료 후 최종 상태 저장.
 11. 최종 상태 영속 저장 성공 후 XACK.
 12. dedupe:run:{traceId} 정리.
 
-## **10) tick 목표량 계산**
+## **10) residual 계산**
 
-- 동적 분배:
-- current_tick_target_data = ceil(api_remaining_data / remaining_ticks)
-- 예: 103KB는 이상적인 경우 11,11,11,10,10,10,10,10,10,10
+- 개인풀 차감 후:
+- residual_data = max(api_total_data - individual_deducted, 0)
 
 ## **11) 정책 적용 순서**
 
@@ -357,7 +353,7 @@ API 서버:
 ## **13) 키 미존재/HYDRATE 규칙**
 
 - key 미존재 시 Lua는 HYDRATE 반환
-- 트래픽 처리 서버는 DB hydrate 후 같은 tick에서 1회 재시도
+- 트래픽 처리 서버는 DB hydrate 후 같은 이벤트 처리 사이클에서 1회 재시도
 - 앱 정책 미존재는 무제한으로 간주
 - hydrate 실패 또는 재실패 시 ERROR, 5xx 로그 기록 후 종료
 
@@ -377,7 +373,7 @@ API 서버:
 - 처리 전제:
 - 정상 시나리오에서는 같은 `lineId + appId` 조합이 동시에 실행되는 경우가 논리적으로 발생하지 않는다.
 - 예외 시나리오(재전달/중복 전달/재시도 경쟁)에서는 Redis dedupe 및 DONE idempotency로 정합성을 보장한다.
-- 하나의 데이터 처리 요청(10 tick)은 단일 스레드에서 순차 실행한다.
+- 하나의 데이터 처리 요청 이벤트는 단일 스레드에서 순차 실행한다.
 - dedupe는 Redis(in-flight) + 영속 저장소(DONE) 이중 보장
 - refill은 Redis lock + DB row lock(`SELECT ... FOR UPDATE`)의 이중 잠금으로 보호한다.
 - DB 차감량과 Redis 충전량의 불일치는 refill ledger 재처리 대상으로 관리한다.
@@ -388,48 +384,37 @@ API 서버:
 1. API 서버가 요청 수신 후 traceId 생성, MQ 적재.
 2. 트래픽 처리 서버가 메시지 소비, in-flight dedupe 선점.
 3. api_remaining_data = api_total_data 초기화.
-4. tick=1..10 반복:
-5. remaining_ticks 계산.
-6. current_tick_target_data 계산.
-7. 개인풀 Lua 실행.
-8. HYDRATE면 hydrate + 개인풀 재시도 1회.
-9. NO_BALANCE면 refill gate 실행.
-10. OK로 lock 획득 시 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount=min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 개인풀 재시도 1회.
-11. 개인풀 후 tick_residual_data > 0이고 status가 NO_BALANCE면 공유풀 Lua 실행.
-12. 공유풀에서도 HYDRATE/refill 동일 처리.
-13. 해당 tick 차감량만큼 api_remaining_data 감소.
-14. 회복 불가 상태면 즉시 종료.
-15. api_remaining_data == 0이면 조기 종료.
-16. 루프 종료 후 결과 상태 계산:
+4. 개인풀 Lua 실행.
+5. HYDRATE면 hydrate + 개인풀 재시도 1회.
+6. NO_BALANCE면 refill gate 실행.
+7. OK로 lock 획득 시 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount=min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 개인풀 재시도 1회.
+8. 개인풀 처리 후 residual_data > 0이고 status가 NO_BALANCE면 공유풀 Lua 실행.
+9. 공유풀에서도 HYDRATE/refill 동일 처리.
+10. 이벤트 단일 사이클 종료 후 결과 상태 계산:
     - api_remaining_data == 0 -> SUCCESS
     - api_remaining_data > 0 -> PARTIAL_SUCCESS
     - 시스템 예외 -> FAILED
-17. 최종 결과를 영속 저장소에 기록.
-18. 영속 저장 성공 후 XACK.
-19. in-flight dedupe 정리.
+11. 최종 결과를 영속 저장소에 기록.
+12. 영속 저장 성공 후 XACK.
+13. in-flight dedupe 정리.
 
 ### 16) 수정본(가독성 향상)
 
 1. 트래픽 처리 서버가 MQ 메시지(traceId, lineId, familyId, appId, apiTotalData)를 수신한다.
 2. dedupe:run:{traceId}를 선점한다. 실패 시 중복 처리 정책에 따라 스킵/종료한다.
 3. api_remaining_data = apiTotalData로 초기화한다.
-4. tick=1..10 루프를 시작한다.
-5. remaining_ticks를 계산하고 current_tick_target_data = ceil(api_remaining_data / remaining_ticks)를 구한다.
-6. `deduct_indiv_tick.lua`를 호출한다.
-7. Lua는 원자적으로 검증 -> answer 계산 -> 차감/집계 -> JSON(`{"answer":...,"status":"..."}`) 반환을 수행한다.
-8. 개인풀 결과가 HYDRATE면 DB hydrate 후 같은 tick에서 `deduct_indiv_tick.lua` 1회 재호출한다.
-9. 개인풀 결과가 NO_BALANCE면 `refill_gate.lua`를 호출한다.
-10. refill 결과가 OK면 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount=min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 같은 tick에서 `deduct_indiv_tick.lua` 1회 재호출한다.
-11. 개인풀 처리 후 tick_residual_data = current_tick_target_data - indiv_answer_total을 계산한다.
-12. tick_residual_data > 0이고 개인풀 최종 status가 NO_BALANCE인 경우에만 `deduct_shared_tick.lua`를 호출한다.
-13. 공유풀도 동일하게 HYDRATE -> hydrate 1회 재호출, NO_BALANCE -> refill_gate -> 필요 시 재호출 규칙을 적용한다.
-14. 공유풀까지 끝난 뒤 해당 tick의 실제 총 차감량(개인+공유)만큼 api_remaining_data를 감소시킨다.
-15. 최종 status가 BLOCKED_*, HIT_*, ERROR이면 로그를 남기고 즉시 종료한다.
-16. api_remaining_data == 0이면 조기 종료한다.
-17. 10 tick 종료 후 api_remaining_data == 0이면 SUCCESS, 아니면 PARTIAL_SUCCESS, 시스템 예외면 FAILED를 결정한다.
-18. 최종 결과를 영속 저장소에 저장한다(DONE).
-19. DONE 저장 성공 후 XACK한다.
-20. dedupe:run:{traceId}를 정리하고 종료한다.
+4. `deduct_indiv_tick.lua`를 호출한다.
+5. Lua는 원자적으로 검증 -> answer 계산 -> 차감/집계 -> JSON(`{"answer":...,"status":"..."}`) 반환을 수행한다.
+6. 개인풀 결과가 HYDRATE면 DB hydrate 후 같은 이벤트 처리 사이클에서 `deduct_indiv_tick.lua`를 1회 재호출한다.
+7. 개인풀 결과가 NO_BALANCE면 `refill_gate.lua`를 호출한다.
+8. refill 결과가 OK면 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount=min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 같은 이벤트 처리 사이클에서 `deduct_indiv_tick.lua`를 1회 재호출한다.
+9. 개인풀 처리 후 `residual_data = max(apiTotalData - indiv_answer_total, 0)`를 계산한다.
+10. residual_data > 0이고 개인풀 최종 status가 NO_BALANCE인 경우에만 `deduct_shared_tick.lua`를 호출한다.
+11. 공유풀도 동일하게 HYDRATE -> hydrate 1회 재호출, NO_BALANCE -> refill_gate -> 필요 시 재호출 규칙을 적용한다.
+12. 이벤트 단일 처리 종료 후 api_remaining_data == 0이면 SUCCESS, 아니면 PARTIAL_SUCCESS, 시스템 예외면 FAILED를 결정한다.
+13. 최종 결과를 영속 저장소에 저장한다(DONE).
+14. DONE 저장 성공 후 XACK한다.
+15. dedupe:run:{traceId}를 정리하고 종료한다.
 
 ## **17) 프로파일 운영 규칙 (추가 확정)**
 
@@ -440,7 +425,7 @@ API 서버:
     - cache용 Redis에는 접근하지 않으며, streams용 Redis에는 접근한다.
     - 세션용 Redis는 별도 인프라이며 기존 설정대로 사용한다.
 - `traffic` 프로파일: 트래픽 처리 서버 역할만 수행한다.
-    - MQ/Streams 소비, 1초 tick 차감 오케스트레이션, DONE 저장, XACK 수행
+    - MQ/Streams 소비, 이벤트 단일 사이클 차감 오케스트레이션, DONE 저장, XACK 수행
     - cache용 Redis, streams용 Redis 모두 접근한다.
 - 배포 방식: 동일 애플리케이션 아티팩트를 프로파일만 다르게 실행한다.
     - 예: `SPRING_PROFILES_ACTIVE=api` 또는 `SPRING_PROFILES_ACTIVE=traffic`

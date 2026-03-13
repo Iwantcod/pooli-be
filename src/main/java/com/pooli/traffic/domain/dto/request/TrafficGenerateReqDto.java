@@ -27,6 +27,6 @@ public class TrafficGenerateReqDto {
     @Schema(description = "애플리케이션 ID", example = "12")
     private Integer appId;
 
-    @Schema(description = "향후 10초 총 데이터량(Byte)", example = "1048576")
+    @Schema(description = "요청 이벤트 데이터량(Byte)", example = "1048576")
     private Long apiTotalData;
 }

@@ -27,7 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Streams BLOCK 소비 루프를 실행하는 러너입니다.
  * poller 스레드는 레코드를 읽고, worker 풀은 레코드 처리 로직을 병렬 수행합니다.
- * worker는 payload 역직렬화 후 10-tick 오케스트레이터를 호출합니다.
+ * worker는 payload 역직렬화 후 이벤트 단일 사이클 오케스트레이터를 호출합니다.
  */
 @Slf4j
 @Component
@@ -43,7 +43,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final AppStreamsProperties appStreamsProperties;
     // payload JSON 역직렬화 도구
     private final ObjectMapper objectMapper;
-    // 10-tick 차감 오케스트레이션 서비스
+    // 이벤트 단위 차감 오케스트레이션 서비스
     private final TrafficDeductOrchestratorService trafficDeductOrchestratorService;
     // in-flight dedupe 선점 서비스(traceId 기준)
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
@@ -303,7 +303,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     return;
                 }
 
-                // 10-tick 오케스트레이터를 실행해 개인풀/공유풀 차감 결과를 계산한다.
+                // 이벤트 단위 오케스트레이터를 실행해 개인풀/공유풀 차감 결과를 계산한다.
                 TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
                 // Mongo 완료 로그 저장을 먼저 수행한다.
