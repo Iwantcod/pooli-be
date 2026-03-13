@@ -152,11 +152,11 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 현재 결과가 HYDRATE일 때만 DB 원천값으로 Redis 키를 복구하고 재시도합니다.
+     * 현재 결과가 HYDRATE일 때만 Redis 잔량 키를 0으로 초기화하고 재시도합니다.
      *
      * <p>처리 규칙:
      * - status가 HYDRATE가 아니면 입력 결과를 그대로 반환
-     * - HYDRATE면 DB 초기량으로 `hydrateBalance` 수행 후 같은 tick에서 Lua 1회 재호출
+     * - HYDRATE면 잔량을 0으로 초기화(`hydrateBalance`) 후 같은 tick에서 Lua 1회 재호출
      * - 재시도 후에도 HYDRATE면 상위가 실패/후속 분기를 결정하도록 그대로 반환
      *
      * @param poolType 처리 대상 풀 유형
@@ -181,10 +181,10 @@ public class TrafficHydrateRefillAdapterService {
 
         TrafficLuaExecutionResult retriedResult = currentResult;
         for (int retry = 0; retry < HYDRATE_RETRY_MAX; retry++) {
-            // DB hydrate 연동 전 단계이므로 source port가 제공하는 초기값으로 키를 복구한다.
-            long initialAmount = trafficQuotaSourcePort.loadInitialAmount(poolType, payload, targetMonth);
+            // HYDRATE는 DB 잔량을 조회하지 않고 0으로만 키를 초기화한다.
+            // 실제 잔량 충전은 NO_BALANCE 분기에서 REFILL 절차로 처리한다.
             long monthlyExpireAt = trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth);
-            trafficQuotaCacheService.hydrateBalance(balanceKey, initialAmount, monthlyExpireAt);
+            trafficQuotaCacheService.hydrateBalance(balanceKey, 0L, monthlyExpireAt);
             if (poolType == TrafficPoolType.INDIVIDUAL) {
                 // 개인풀 잔량 해시에 QoS를 함께 기록해 Lua/후속 처리에서 즉시 참조할 수 있게 한다.
                 long qosSpeedLimit = trafficQuotaSourcePort.loadIndividualQosSpeedLimit(payload);
