@@ -112,8 +112,7 @@ public class TrafficHydrateRefillAdapterService {
             trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
         } catch (RuntimeException e) {
             log.error(
-                    "traffic_line_policy_hydration_failed traceId={} lineId={}",
-                    payload.getTraceId(),
+                    "traffic_line_policy_hydration_failed lineId={}",
                     payload.getLineId(),
                     e
             );
@@ -241,8 +240,7 @@ public class TrafficHydrateRefillAdapterService {
                     : refillPlan.getSource();
 
             log.info(
-                    "traffic_refill_plan_resolved traceId={} poolType={} balanceKey={} currentAmount={} delta={} bucketCount={} refillUnit={} threshold={} source={}",
-                    payload.getTraceId(),
+                    "traffic_refill_plan_resolved poolType={} balanceKey={} currentAmount={} delta={} bucketCount={} refillUnit={} threshold={} source={}",
                     poolType,
                     balanceKey,
                     currentAmount,
@@ -264,8 +262,7 @@ public class TrafficHydrateRefillAdapterService {
             if (gateStatus != TrafficRefillGateStatus.OK) {
                 // WAIT/SKIP/FAIL이면 현재 tick에서 리필을 진행하지 않고 기존 결과를 유지한다.
                 log.debug(
-                        "traffic_refill_gate_not_ok traceId={} poolType={} gateStatus={}",
-                        payload.getTraceId(),
+                        "traffic_refill_gate_not_ok poolType={} gateStatus={}",
                         poolType,
                         gateStatus
                 );
@@ -282,8 +279,7 @@ public class TrafficHydrateRefillAdapterService {
             if (!lockOwned) {
                 // lock 소유권이 없으면 동시성 충돌 가능성이 있어 리필을 건너뛴다.
                 log.debug(
-                        "traffic_refill_lock_not_owned traceId={} poolType={} lockKey={}",
-                        payload.getTraceId(),
+                        "traffic_refill_lock_not_owned poolType={} lockKey={}",
                         poolType,
                         lockKey
                 );
@@ -304,8 +300,7 @@ public class TrafficHydrateRefillAdapterService {
                 if (actualRefillAmount <= 0) {
                     // DB에서 실제 차감된 양이 없으면 Redis 충전 없이 현재 결과를 유지한다.
                     log.debug(
-                            "traffic_refill_db_noop traceId={} poolType={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
-                            payload.getTraceId(),
+                            "traffic_refill_db_noop poolType={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
                             poolType,
                             requestedRefillUnit,
                             threshold,
@@ -330,8 +325,7 @@ public class TrafficHydrateRefillAdapterService {
                 );
                 trafficQuotaCacheService.refillBalance(balanceKey, actualRefillAmount, monthlyExpireAt);
                 log.info(
-                        "traffic_refill_applied traceId={} poolType={} balanceKey={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
-                        payload.getTraceId(),
+                        "traffic_refill_applied poolType={} balanceKey={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
                         poolType,
                         balanceKey,
                         requestedRefillUnit,

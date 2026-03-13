@@ -41,6 +41,8 @@ out/
 .env.bak
 AGENTS.md
 
+/docs/role-c-step1-validation-test-plan.md
+
 ### 테스트 데이터 csv 및 sql 파일 ###
 scripts/test-data/output
 scripts/test-data/__pycache__

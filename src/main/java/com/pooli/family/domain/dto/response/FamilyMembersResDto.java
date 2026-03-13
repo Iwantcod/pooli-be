@@ -57,7 +57,7 @@ public class FamilyMembersResDto {
         @Schema(description = "기본 제공 데이터 잔량(byte)", example = "5000")
         private Long remainingData;
 
-        @Schema(description = "기본 제공 데이터량(MB)", example = "10000")
+        @Schema(description = "기본 제공 데이터량(byte)", example = "10000")
         private Long basicDataAmount;
 
         @Schema(description = "가족 역할 (OWNER / MEMBER)", example = "OWNER")

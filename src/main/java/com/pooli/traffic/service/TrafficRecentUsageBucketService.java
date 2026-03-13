@@ -75,8 +75,7 @@ public class TrafficRecentUsageBucketService {
             }
         } catch (Exception e) {
             log.warn(
-                    "traffic_speed_bucket_record_failed traceId={} poolType={} ownerId={} usedBytes={}",
-                    payload.getTraceId(),
+                    "traffic_speed_bucket_record_failed poolType={} ownerId={} usedBytes={}",
                     poolType,
                     ownerId,
                     usedBytes,
