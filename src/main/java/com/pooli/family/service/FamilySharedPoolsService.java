@@ -14,6 +14,7 @@ import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +22,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class FamilySharedPoolsService {
@@ -106,14 +108,24 @@ public class FamilySharedPoolsService {
         sharedPoolMapper.insertContribution(familyId, lineId, amount);
 
         // Mongo 로그 저장
-        SharedPoolTransferLog log = SharedPoolTransferLog.builder()
-                .familyId(familyId)
-                .lineId(lineId)
-                .amount(amount)
-                .createdAt(Instant.now())
-                .build();
+        try {
+            // Mongo 로그 저장
+            SharedPoolTransferLog logEntry = SharedPoolTransferLog.builder()
+                    .familyId(familyId)
+                    .lineId(lineId)
+                    .amount(amount)
+                    .createdAt(Instant.now())
+                    .build();
 
-        transferLogRepository.save(log);
+            transferLogRepository.save(logEntry);
+
+            log.info("MongoDB에 공유풀 충전 로그 저장 완료: lineId={}, familyId={}, amount={}", lineId, familyId, amount);
+
+        } catch (Exception e) {
+            // MongoDB 저장 실패 시 처리
+            log.error("MongoDB 로그 저장 실패: lineId={}, familyId={}, amount={}, error={}",
+                    lineId, familyId, amount, e.getMessage(), e);
+        }
 
         // 4. 알람: 가족 전체 (본인 제외)에게 데이터 담기 알림
         sendAlarmToFamily(familyId, lineId, AlarmType.SHARED_POOL_CONTRIBUTION);
