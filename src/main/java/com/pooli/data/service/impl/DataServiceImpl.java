@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.data.domain.dto.response.AppDataUsageResDto;
 import com.pooli.data.domain.dto.response.DataBalancesResDto;
@@ -55,7 +56,7 @@ public class DataServiceImpl implements DataService {
 	}
 
 	@Override
-	public AppDataUsageResDto getAppDataUsage(Long lineId, Integer month) {
+	public AppDataUsageResDto getAppDataUsage(Long lineId, Integer month, AuthUserDetails principal) {
 
         validateMonth(month);
 
@@ -63,8 +64,11 @@ public class DataServiceImpl implements DataService {
 
         FamilyLine familyLine = familyLineMapper.findByLineId(lineId)
                 .orElseThrow(() -> new ApplicationException(DataErrorCode.DATA_NOT_FOUND));
+        
+        boolean isPublic = Boolean.TRUE.equals(permissionEnabled) && Boolean.TRUE.equals(familyLine.getIsPublic());
+        boolean isSelf = principal.getLineId() != null && principal.getLineId().equals(lineId);
 
-        if (!Boolean.TRUE.equals(permissionEnabled) || !Boolean.TRUE.equals(familyLine.getIsPublic())) {
+        if (!isPublic && !isSelf) {
             return AppDataUsageResDto.builder()
                     .isPublic(false)
                     .totalUsedAmount(null)
@@ -83,7 +87,7 @@ public class DataServiceImpl implements DataService {
                 .sum();
 
         AppDataUsageResDto response = AppDataUsageResDto.builder()
-                .isPublic(true)
+                .isPublic(isPublic)
                 .totalUsedAmount(total)
                 .apps(apps)
                 .build();
