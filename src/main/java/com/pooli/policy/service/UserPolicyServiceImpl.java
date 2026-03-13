@@ -369,7 +369,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         Long maxDailyData = lineLimitMapper.selectPlanDataLimitByLineId(lineId);
 
         if (maxDailyData != null && maxDailyData == -1L) {
-            maxDailyData = 100L;
+            maxDailyData = 50L;
         }
 
         if (lineLimit.isPresent()) {
@@ -947,9 +947,22 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         List<RepeatBlockPolicyResDto> repeatBlockPolicyList = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
 
         ImmediateBlockResDto immediateBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
-
+        
+        // 3. 데이터 사용량 및 공유 제한 정책 조회
+        LimitPolicyResDto limitPolicy = getLimitPolicy(lineId, auth);
+        		
+        // 4. 현재 적용 중인 앱 정책 목록 조회
+        AppPolicySearchCondReqDto query = AppPolicySearchCondReqDto.builder()
+                .lineId(lineId)
+                .policyScope(PolicyScope.APPLIED)
+                .pageNumber(0)
+                .pageSize(100)
+                .offset(0)
+                .build();
+    	List<AppPolicyResDto> appPolicyList = appPolicyMapper.findApplicationsWithPolicy(query);
+        
         // null 안전하게 처리
-        ImmediateBlockResDto immBlock = (immediateBlock != null)
+        ImmediateBlockResDto immRes = (immediateBlock != null)
                 ? ImmediateBlockResDto.builder()
                         .lineId(lineId)
                         .blockEndAt(immediateBlock.getBlockEndAt())
@@ -958,7 +971,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
         return AppliedPolicyResDto.builder()
                 .repeatBlockPolicyList(repeatBlockPolicyList)
-                .immediateBlock(immBlock)
+                .immediateBlock(immRes)
+                .limitPolicy(limitPolicy)
+                .appPolicyList(appPolicyList)
                 .build();
 
     }
