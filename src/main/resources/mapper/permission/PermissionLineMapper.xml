@@ -8,6 +8,7 @@
         <constructor>
             <arg column="family_id"        javaType="java.lang.Long"/>
             <arg column="line_id"          javaType="java.lang.Long"/>
+            <arg column="user_name"        javaType="java.lang.String"/>
             <arg column="permission_id"    javaType="java.lang.Integer"/>
             <arg column="permission_title" javaType="java.lang.String"/>
             <arg column="is_enable"        javaType="java.lang.Boolean"/>
@@ -19,6 +20,7 @@
     <select id="findByLineId" resultMap="memberPermissionResultMap">
         SELECT fl.family_id,
                pl.line_id,
+               u.user_name,
                pl.permission_id,
                p.permission_title,
                pl.is_enable,
@@ -26,6 +28,8 @@
         FROM PERMISSION_LINE pl
                  JOIN PERMISSION p ON pl.permission_id = p.permission_id
                  JOIN FAMILY_LINE fl ON pl.line_id = fl.line_id
+                 JOIN LINE l ON l.line_id = fl.line_id
+				 JOIN USERS u ON u.user_id = l.user_id
         WHERE pl.line_id = #{lineId}
           AND p.deleted_at IS NULL
     </select>
@@ -34,6 +38,7 @@
     <select id="findByFamilyIdAndLineId" resultMap="memberPermissionResultMap">
         SELECT fl.family_id,
                pl.line_id,
+               u.user_name,
                pl.permission_id,
                p.permission_title,
                pl.is_enable,
@@ -41,6 +46,8 @@
         FROM PERMISSION_LINE pl
                  JOIN PERMISSION p ON pl.permission_id = p.permission_id
                  JOIN FAMILY_LINE fl ON pl.line_id = fl.line_id
+                 JOIN LINE l ON l.line_id = fl.line_id
+				 JOIN USERS u ON u.user_id = l.user_id
         WHERE fl.family_id = #{familyId}
           AND pl.line_id = #{lineId}
           AND p.deleted_at IS NULL
@@ -62,6 +69,7 @@
     <select id="findByFamilyId" resultMap="memberPermissionResultMap">
         SELECT fl.family_id,
                fl.line_id,
+               u.user_name,
                p.permission_id,
                p.permission_title,
                COALESCE(pl.is_enable, false) AS is_enable,
@@ -69,6 +77,8 @@
         FROM FAMILY_LINE fl
                  CROSS JOIN PERMISSION p
                  LEFT JOIN PERMISSION_LINE pl ON pl.line_id = fl.line_id AND pl.permission_id = p.permission_id
+                 JOIN LINE l ON l.line_id = fl.line_id
+				 JOIN USERS u ON u.user_id = l.user_id
         WHERE fl.family_id = #{familyId}
           AND p.deleted_at IS NULL
 
