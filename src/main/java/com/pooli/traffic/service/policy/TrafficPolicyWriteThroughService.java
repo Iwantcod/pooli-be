@@ -39,6 +39,7 @@ public class TrafficPolicyWriteThroughService {
 
     private static final int WRITE_THROUGH_RETRY_MAX = 3;
     private static final long WRITE_THROUGH_RETRY_BACKOFF_MS = 50L;
+    private static final int APP_SPEED_LIMIT_UPLOAD_MULTIPLIER = 125;
 
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
@@ -166,7 +167,7 @@ public class TrafficPolicyWriteThroughService {
                     }
 
                     long normalizedDataLimit = dataLimit == null ? -1L : dataLimit;
-                    int normalizedSpeedLimit = speedLimit == null ? -1 : speedLimit;
+                    int normalizedSpeedLimit = normalizeAppSpeedLimitForRedis(speedLimit);
 
                     cacheStringRedisTemplate.opsForHash().put(
                             appDataDailyLimitKey,
@@ -245,7 +246,7 @@ public class TrafficPolicyWriteThroughService {
 
                         int appId = appPolicy.getApplicationId();
                         long normalizedDataLimit = appPolicy.getDataLimit() == null ? -1L : appPolicy.getDataLimit();
-                        int normalizedSpeedLimit = appPolicy.getSpeedLimit() == null ? -1 : appPolicy.getSpeedLimit();
+                        int normalizedSpeedLimit = normalizeAppSpeedLimitForRedis(appPolicy.getSpeedLimit());
 
                         dataLimitHash.put(appDataLimitField(appId), String.valueOf(normalizedDataLimit));
                         speedLimitHash.put(appSpeedLimitField(appId), String.valueOf(normalizedSpeedLimit));
@@ -395,6 +396,20 @@ public class TrafficPolicyWriteThroughService {
             return -1L;
         }
         return limit == null ? -1L : limit;
+    }
+
+    /**
+     * app 속도 제한값을 Redis 저장 규격으로 정규화합니다.
+     * - null/-1: 무제한 센티널 유지
+     * - 그 외: Lua에서 사용하는 단위로 맞추기 위해 125배 변환
+     */
+    private int normalizeAppSpeedLimitForRedis(Integer speedLimit) {
+        if(speedLimit == null) {
+            return -1;
+        } else if(speedLimit <= 0) {
+            return speedLimit;
+        }
+        return speedLimit * APP_SPEED_LIMIT_UPLOAD_MULTIPLIER;
     }
 
     /**
