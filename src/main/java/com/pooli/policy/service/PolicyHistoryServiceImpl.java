@@ -16,9 +16,7 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.auth.service.AuthUserDetails;
-import com.pooli.policy.domain.entity.AdminHistory;
 import com.pooli.policy.domain.entity.PolicyHistory;
-import com.pooli.policy.repository.AdminHistoryRepository;
 import com.pooli.policy.repository.PolicyHistoryRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -30,10 +28,8 @@ import lombok.extern.slf4j.Slf4j;
 public class PolicyHistoryServiceImpl implements PolicyHistoryService {
 
     private final PolicyHistoryRepository policyHistoryRepository;
-    private final AdminHistoryRepository adminHistoryRepository;
     private final ObjectMapper objectMapper;
 
-    private static final Set<String> ADMIN_TABLES = Set.of("ADMIN_POLICY", "ADMIN_POLICY_CATEGORY");
 
     @Override
     public void log(String tableName, String event, Object targetId, Object before, Object after) {
@@ -49,37 +45,22 @@ public class PolicyHistoryServiceImpl implements PolicyHistoryService {
 
             String targetIdStr = targetId != null ? String.valueOf(targetId) : null;
             Map<String, Object> details = calculateDetails(event, before, after);
-
-            if (isAdminTable(tableName)) {
-                AdminHistory adminHistory = AdminHistory.builder()
-                        .tableName(tableName)
-                        .timestamp(LocalDateTime.now())
-                        .targetId(targetIdStr)
-                        .userId(userId)
-                        .event(event)
-                        .update(details)
-                        .build();
-                adminHistoryRepository.save(adminHistory);
-            } else {
-                PolicyHistory policyHistory = PolicyHistory.builder()
-                        .tableName(tableName)
-                        .timestamp(LocalDateTime.now())
-                        .targetId(targetIdStr)
-                        .userId(userId)
-                        .lineId(lineId)
-                        .event(event)
-                        .update(details)
-                        .build();
-                policyHistoryRepository.save(policyHistory);
-            }
+ 
+            PolicyHistory policyHistory = PolicyHistory.builder()
+                    .tableName(tableName)
+                    .timestamp(LocalDateTime.now())
+                    .targetId(targetIdStr)
+                    .userId(userId)
+                    .lineId(lineId)
+                    .event(event)
+                    .update(details)
+                    .build();
+            policyHistoryRepository.save(policyHistory);
         } catch (Exception e) {
             log.error("Failed to log policy history", e);
         }
     }
 
-    private boolean isAdminTable(String tableName) {
-        return tableName != null && ADMIN_TABLES.contains(tableName.toUpperCase());
-    }
 
     private Map<String, Object> calculateDetails(String event, Object before, Object after) {
         if (!"UPDATE".equalsIgnoreCase(event) || (before == null && after == null)) {
