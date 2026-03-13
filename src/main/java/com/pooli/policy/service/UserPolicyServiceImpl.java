@@ -18,6 +18,14 @@ import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
 import com.pooli.permission.mapper.FamilyLineMapper;
+import com.pooli.policy.domain.dto.request.AppDataLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.AppPolicyActiveToggleReqDto;
+import com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto;
+import com.pooli.policy.domain.dto.request.AppSpeedLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.ImmediateBlockReqDto;
+import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
+import com.pooli.policy.domain.dto.request.RepeatBlockDayReqDto;
+import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
 import com.pooli.policy.domain.dto.request.*;
 import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
 import com.pooli.policy.domain.dto.response.AppPolicyResDto;
@@ -49,6 +57,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class UserPolicyServiceImpl implements UserPolicyService {
 
+    private final PolicyHistoryService policyHistoryService;
     private final AlarmHistoryService alarmHistoryService;
 
     private final FamilyLineMapper familyLineMapper;
@@ -113,10 +122,12 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         List<RepeatBlockPolicyResDto> latestRepeatBlocks = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
         applyWriteThrough(
                 "repeat_block_create lineId=" + lineId,
-                writeThroughService -> writeThroughService.syncRepeatBlock(lineId, latestRepeatBlocks)
-        );
+                writeThroughService -> writeThroughService.syncRepeatBlock(lineId, latestRepeatBlocks));
 
         alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.CREATE_REPEAT_BLOCK);
+
+        // MongoDB 이력 저장
+        policyHistoryService.log("REPEAT_BLOCK", "CREATE", request.getRepeatBlockId(), null, request);
 
         // DTO 반환
         List<RepeatBlockDayResDto> dayResList = days != null
@@ -150,10 +161,27 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         request.setRepeatBlockId(repeatBlockId);
 
         // 반복 차단 요일 및 시간대 정보를 삭제한 후 새로 삽입하기
-        deleteRepeatBlockPolicy(repeatBlockId, auth);
-        RepeatBlockPolicyResDto updated = createRepeatBlockPolicy(request, auth);
+        // 내부에서 create/delete 이력이 중복으로 남지 않도록 주의 (이 코드는 연쇄 호출 구조임)
+        repeatBlockMapper.deleteRepeatBlock(repeatBlockId);
+        repeatBlockDayMapper.deleteRepeatDayBlock(repeatBlockId);
+
+        repeatBlockMapper.insertRepeatBlock(request);
+        if (request.getDays() != null && !request.getDays().isEmpty()) {
+            repeatBlockDayMapper.insertRepeatBlockDays(request.getRepeatBlockId(), request.getDays());
+        }
+
+        List<RepeatBlockPolicyResDto> latestRepeatBlocks = repeatBlockMapper
+                .selectRepeatBlocksByLineId(exist.getLineId());
+        applyWriteThrough(
+                "repeat_block_update lineId=" + exist.getLineId(),
+                writeThroughService -> writeThroughService.syncRepeatBlock(exist.getLineId(), latestRepeatBlocks));
+
         alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.UPDATE_REPEAT_BLOCK);
-        return updated;
+
+        // MongoDB 이력 저장 (UPDATE)
+        policyHistoryService.log("REPEAT_BLOCK", "UPDATE", repeatBlockId, exist, request);
+
+        return repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
     }
 
     @Override
@@ -172,13 +200,16 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         repeatBlockDayMapper.deleteRepeatDayBlock(repeatBlockId);
 
         // 삭제 후 활성 반복 차단 목록을 다시 읽어 Redis hash를 갱신한다.
-        List<RepeatBlockPolicyResDto> latestRepeatBlocks = repeatBlockMapper.selectRepeatBlocksByLineId(exist.getLineId());
+        List<RepeatBlockPolicyResDto> latestRepeatBlocks = repeatBlockMapper
+                .selectRepeatBlocksByLineId(exist.getLineId());
         applyWriteThrough(
                 "repeat_block_delete lineId=" + exist.getLineId(),
-                writeThroughService -> writeThroughService.syncRepeatBlock(exist.getLineId(), latestRepeatBlocks)
-        );
+                writeThroughService -> writeThroughService.syncRepeatBlock(exist.getLineId(), latestRepeatBlocks));
 
         alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.DELETE_REPEAT_BLOCK);
+
+        // MongoDB 이력 저장
+        policyHistoryService.log("REPEAT_BLOCK", "DELETE", repeatBlockId, exist, null);
 
         return RepeatBlockPolicyResDto.builder()
                 .repeatBlockId(repeatBlockId)
@@ -307,15 +338,19 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             AuthUserDetails auth) {
         checkIsSameFamilyGroup(lineId, auth.getLineId(), auth);
 
+        // 즉시 차단 시각 변경 이력 저장
+        ImmediateBlockResDto before = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
         immediateBlockMapper.updateImmediateBlockPolicy(lineId, request);
 
         // 즉시 차단 종료 시각 변경은 단일 키 갱신으로 즉시 반영한다.
         applyWriteThrough(
                 "immediate_block_update lineId=" + lineId,
-                writeThroughService -> writeThroughService.syncImmediateBlockEnd(lineId, request.getBlockEndAt())
-        );
+                writeThroughService -> writeThroughService.syncImmediateBlockEnd(lineId, request.getBlockEndAt()));
 
         alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.UPDATE_IMMEDIATE_BLOCK);
+
+        // MongoDB 이력 저장
+        policyHistoryService.log("IMMEDIATE_BLOCK", "UPDATE", lineId, before, request);
 
         return ImmediateBlockResDto.builder()
                 .lineId(lineId)
@@ -336,7 +371,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         Long maxDailyData = lineLimitMapper.selectPlanDataLimitByLineId(lineId);
 
         if (maxDailyData != null && maxDailyData == -1L) {
-        	maxDailyData = 100L;
+            maxDailyData = 50L;
         }
 
         if (lineLimit.isPresent()) {
@@ -367,13 +402,11 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitByLineId(lineId);
         if (lineLimit.isPresent()) {
             // 삭제 상태가 아닌 lineLimit 레코드가 존재하는 경우
-            LineLimit currentLineLimit = lineLimit.get();
-            boolean newDailyLimitActive = !currentLineLimit.getIsDailyLimitActive();
-            int def = lineLimitMapper.updateIsDailyLimitActiveById(currentLineLimit.getLimitId(), newDailyLimitActive);
+            boolean newDailyLimitActive = !lineLimit.get().getIsDailyLimitActive();
+            int def = lineLimitMapper.updateIsDailyLimitActiveById(lineLimit.get().getLimitId(), newDailyLimitActive);
             if (def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
-            LineLimit updatedLineLimit = lineLimitMapper.getExistLineLimitById(currentLineLimit.getLimitId()).orElse(null);
             if (newDailyLimitActive) {
                 alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT);
             } else {
@@ -385,32 +418,25 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                     "line_limit_toggle_daily lineId=" + lineId,
                     writeThroughService -> writeThroughService.syncLineLimit(
                             lineId,
-                            currentLineLimit.getDailyDataLimit(),
+                            lineLimit.get().getDailyDataLimit(),
                             newDailyLimitActive,
-                            currentLineLimit.getSharedDataLimit(),
-                            currentLineLimit.getIsSharedLimitActive()
-                    )
-            );
+                            lineLimit.get().getSharedDataLimit(),
+                            lineLimit.get().getIsSharedLimitActive()));
 
-            applyWriteAudit(
-                    PolicyWriteEventType.UPDATE,
-                    "toggleDailyTotalLimitPolicy",
-                    currentLineLimit,
-                    updatedLineLimit,
-                    auth,
-                    currentLineLimit.getLineId()
-            );
+            // MongoDB 이력 저장
+            policyHistoryService.log("LINE_LIMIT", "UPDATE", lineLimit.get().getLimitId(), lineLimit.get(),
+                    newDailyLimitActive);
 
             return LimitPolicyResDto.builder()
-                    .lineLimitId(currentLineLimit.getLimitId())
-                    .dailyDataLimit(currentLineLimit.getDailyDataLimit())
+                    .lineLimitId(lineLimit.get().getLimitId())
+                    .dailyDataLimit(lineLimit.get().getDailyDataLimit())
                     .isDailyDataLimitActive(newDailyLimitActive)
-                    .sharedDataLimit(currentLineLimit.getSharedDataLimit())
-                    .isSharedDataLimitActive(currentLineLimit.getIsSharedLimitActive())
+                    .sharedDataLimit(lineLimit.get().getSharedDataLimit())
+                    .isSharedDataLimitActive(lineLimit.get().getIsSharedLimitActive())
                     .build();
         } else {
             // lineLimit 레코드가 없거나, 삭제 상태인 경우 새 레코드 insert
-            return insertNewLineLimit(lineId, auth);
+            return insertNewLineLimit(lineId);
         }
     }
 
@@ -424,45 +450,35 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        LineLimit currentLineLimit = lineLimit.get();
-        checkIsSameFamilyGroup(currentLineLimit.getLineId(), auth.getLineId(), auth);
+        checkIsSameFamilyGroup(lineLimit.get().getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int def = lineLimitMapper.updateDailyDataLimit(request);
         if (def != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
-        LineLimit updatedLineLimit = lineLimitMapper.getExistLineLimitById(currentLineLimit.getLimitId()).orElse(null);
 
-        alarmHistoryService.createAlarm(currentLineLimit.getLineId(), AlarmCode.POLICY_CHANGE,
+        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE,
                 AlarmType.POLICY_UPDATE_DAYDATA_LIMIT);
 
         applyWriteThrough(
-                "line_limit_update_daily_value lineId=" + currentLineLimit.getLineId(),
+                "line_limit_update_daily_value lineId=" + lineLimit.get().getLineId(),
                 writeThroughService -> writeThroughService.syncLineLimit(
-                        currentLineLimit.getLineId(),
+                        lineLimit.get().getLineId(),
                         request.getPolicyValue(),
-                        currentLineLimit.getIsDailyLimitActive(),
-                        currentLineLimit.getSharedDataLimit(),
-                        currentLineLimit.getIsSharedLimitActive()
-                )
-        );
+                        lineLimit.get().getIsDailyLimitActive(),
+                        lineLimit.get().getSharedDataLimit(),
+                        lineLimit.get().getIsSharedLimitActive()));
 
-        applyWriteAudit(
-                PolicyWriteEventType.UPDATE,
-                "updateDailyTotalLimitPolicyValue",
-                currentLineLimit,
-                updatedLineLimit,
-                auth,
-                currentLineLimit.getLineId()
-        );
+        // MongoDB 이력 저장
+        policyHistoryService.log("LINE_LIMIT", "UPDATE", lineLimit.get().getLimitId(), lineLimit.get(), request);
 
         return LimitPolicyResDto.builder()
-                .lineLimitId(currentLineLimit.getLimitId())
+                .lineLimitId(lineLimit.get().getLimitId())
                 .dailyDataLimit(request.getPolicyValue())
-                .isDailyDataLimitActive(currentLineLimit.getIsDailyLimitActive())
-                .sharedDataLimit(currentLineLimit.getSharedDataLimit())
-                .isSharedDataLimitActive(currentLineLimit.getIsSharedLimitActive())
+                .isDailyDataLimitActive(lineLimit.get().getIsDailyLimitActive())
+                .sharedDataLimit(lineLimit.get().getSharedDataLimit())
+                .isSharedDataLimitActive(lineLimit.get().getIsSharedLimitActive())
                 .build();
     }
 
@@ -476,52 +492,42 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         Optional<LineLimit> lineLimit = lineLimitMapper.getExistLineLimitByLineId(lineId);
         if (lineLimit.isPresent()) {
             // 삭제 상태가 아닌 lineLimit 레코드가 존재하는 경우
-            LineLimit currentLineLimit = lineLimit.get();
-            boolean newSharedLimitActive = !currentLineLimit.getIsSharedLimitActive();
-            int def = lineLimitMapper.updateIsSharedLimitActiveById(currentLineLimit.getLimitId(), newSharedLimitActive);
+            boolean newSharedLimitActive = !lineLimit.get().getIsSharedLimitActive();
+            int def = lineLimitMapper.updateIsSharedLimitActiveById(lineLimit.get().getLimitId(), newSharedLimitActive);
             if (def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
-            LineLimit updatedLineLimit = lineLimitMapper.getExistLineLimitById(currentLineLimit.getLimitId()).orElse(null);
             if (newSharedLimitActive) {
-                alarmHistoryService.createAlarm(currentLineLimit.getLineId(), AlarmCode.POLICY_LIMIT,
+                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT,
                         AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
             } else {
-                alarmHistoryService.createAlarm(currentLineLimit.getLineId(), AlarmCode.POLICY_LIMIT,
+                alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_LIMIT,
                         AlarmType.POLICY_DELETE_SHAREDATA_LIMIT);
             }
 
-
             applyWriteThrough(
-                    "line_limit_toggle_shared lineId=" + currentLineLimit.getLineId(),
+                    "line_limit_toggle_shared lineId=" + lineLimit.get().getLineId(),
                     writeThroughService -> writeThroughService.syncLineLimit(
-                            currentLineLimit.getLineId(),
-                            currentLineLimit.getDailyDataLimit(),
-                            currentLineLimit.getIsDailyLimitActive(),
-                            currentLineLimit.getSharedDataLimit(),
-                            newSharedLimitActive
-                    )
-            );
+                            lineLimit.get().getLineId(),
+                            lineLimit.get().getDailyDataLimit(),
+                            lineLimit.get().getIsDailyLimitActive(),
+                            lineLimit.get().getSharedDataLimit(),
+                            newSharedLimitActive));
 
-            applyWriteAudit(
-                    PolicyWriteEventType.UPDATE,
-                    "toggleSharedPoolLimitPolicy",
-                    currentLineLimit,
-                    updatedLineLimit,
-                    auth,
-                    currentLineLimit.getLineId()
-            );
+            // MongoDB 이력 저장
+            policyHistoryService.log("LINE_LIMIT", "UPDATE", lineLimit.get().getLimitId(), lineLimit.get(),
+                    newSharedLimitActive);
 
             return LimitPolicyResDto.builder()
-                    .lineLimitId(currentLineLimit.getLimitId())
-                    .dailyDataLimit(currentLineLimit.getDailyDataLimit())
-                    .isDailyDataLimitActive(currentLineLimit.getIsDailyLimitActive())
-                    .sharedDataLimit(currentLineLimit.getSharedDataLimit())
+                    .lineLimitId(lineLimit.get().getLimitId())
+                    .dailyDataLimit(lineLimit.get().getDailyDataLimit())
+                    .isDailyDataLimitActive(lineLimit.get().getIsDailyLimitActive())
+                    .sharedDataLimit(lineLimit.get().getSharedDataLimit())
                     .isSharedDataLimitActive(newSharedLimitActive)
                     .build();
         } else {
             // lineLimit 레코드가 없거나, 삭제 상태인 경우 새 레코드 insert
-            return insertNewLineLimit(lineId, auth);
+            return insertNewLineLimit(lineId);
         }
     }
 
@@ -531,7 +537,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
      * @param lineId 회선 식별자
      * @return LimitPolicyResDto
      */
-    private LimitPolicyResDto insertNewLineLimit(Long lineId, AuthUserDetails auth) {
+    private LimitPolicyResDto insertNewLineLimit(Long lineId) {
         LineLimit newLineLimit = LineLimit.builder()
                 .lineId(lineId)
                 .dailyDataLimit(-1L)
@@ -553,19 +559,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                         newLineLimit.getDailyDataLimit(),
                         newLineLimit.getIsDailyLimitActive(),
                         newLineLimit.getSharedDataLimit(),
-                        newLineLimit.getIsSharedLimitActive()
-                )
-        );
-        LineLimit createdLineLimit = lineLimitMapper.getExistLineLimitById(newLineLimit.getLimitId()).orElse(newLineLimit);
-
-        applyWriteAudit(
-                PolicyWriteEventType.CREATE,
-                "insertNewLineLimit",
-                null,
-                createdLineLimit,
-                auth,
-                lineId
-        );
+                        newLineLimit.getIsSharedLimitActive()));
 
         return LimitPolicyResDto.builder()
                 .lineLimitId(newLineLimit.getLimitId())
@@ -586,44 +580,35 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        LineLimit currentLineLimit = lineLimit.get();
-        checkIsSameFamilyGroup(currentLineLimit.getLineId(), auth.getLineId(), auth);
+        checkIsSameFamilyGroup(lineLimit.get().getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int def = lineLimitMapper.updateSharedDataLimit(request);
         if (def != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
-        LineLimit updatedLineLimit = lineLimitMapper.getExistLineLimitById(currentLineLimit.getLimitId()).orElse(null);
 
-        alarmHistoryService.createAlarm(currentLineLimit.getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
+        alarmHistoryService.createAlarm(lineLimit.get().getLineId(), AlarmCode.POLICY_CHANGE,
+                AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
 
         applyWriteThrough(
-                "line_limit_update_shared_value lineId=" + currentLineLimit.getLineId(),
+                "line_limit_update_shared_value lineId=" + lineLimit.get().getLineId(),
                 writeThroughService -> writeThroughService.syncLineLimit(
-                        currentLineLimit.getLineId(),
-                        currentLineLimit.getDailyDataLimit(),
-                        currentLineLimit.getIsDailyLimitActive(),
+                        lineLimit.get().getLineId(),
+                        lineLimit.get().getDailyDataLimit(),
+                        lineLimit.get().getIsDailyLimitActive(),
                         request.getPolicyValue(),
-                        currentLineLimit.getIsSharedLimitActive()
-                )
-        );
+                        lineLimit.get().getIsSharedLimitActive()));
 
-        applyWriteAudit(
-                PolicyWriteEventType.UPDATE,
-                "updateSharedPoolLimitPolicyValue",
-                currentLineLimit,
-                updatedLineLimit,
-                auth,
-                currentLineLimit.getLineId()
-        );
+        // MongoDB 이력 저장
+        policyHistoryService.log("LINE_LIMIT", "UPDATE", lineLimit.get().getLimitId(), lineLimit.get(), request);
 
         return LimitPolicyResDto.builder()
-                .lineLimitId(currentLineLimit.getLimitId())
-                .dailyDataLimit(currentLineLimit.getDailyDataLimit())
-                .isDailyDataLimitActive(currentLineLimit.getIsDailyLimitActive())
+                .lineLimitId(lineLimit.get().getLimitId())
+                .dailyDataLimit(lineLimit.get().getDailyDataLimit())
+                .isDailyDataLimitActive(lineLimit.get().getIsDailyLimitActive())
                 .sharedDataLimit(request.getPolicyValue())
-                .isSharedDataLimitActive(currentLineLimit.getIsSharedLimitActive())
+                .isSharedDataLimitActive(lineLimit.get().getIsSharedLimitActive())
                 .build();
     }
 
@@ -685,28 +670,22 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     @Override
     @Transactional
     public AppPolicyResDto updateAppDataLimit(AppDataLimitUpdateReqDto request, AuthUserDetails auth) {
-        // 1. 대상 appPolicy Entity/DTO 조회
-        Optional<AppPolicy> appPolicyEntity = appPolicyMapper.findEntityExistById(request.getAppPolicyId());
-        if (appPolicyEntity.isEmpty()) {
-            throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
-        }
+        // 1. 대상 appPolicy DTO 조회
         Optional<AppPolicyResDto> appPolicy = appPolicyMapper.findDtoExistById(request.getAppPolicyId());
         if (appPolicy.isEmpty()) {
             throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
         }
-        AppPolicy currentAppPolicy = appPolicyEntity.get();
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(currentAppPolicy.getLineId(), auth.getLineId(), auth);
+        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int ret = appPolicyMapper.updateDataLimit(request.getAppPolicyId(), request.getValue());
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
-        AppPolicy updatedAppPolicy = appPolicyMapper.findEntityExistById(request.getAppPolicyId()).orElse(null);
 
-        alarmHistoryService.createAlarm(currentAppPolicy.getLineId(), AlarmCode.POLICY_CHANGE,
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE,
                 AlarmType.POLICY_UPDATE_APP_USAGE_LIMIT);
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
         AppPolicyResDto updatedResponse = appPolicy.get().toBuilder()
@@ -714,25 +693,19 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 .build();
 
         applyWriteThrough(
-                "app_policy_update_data_limit lineId=" + updatedResponse.getLineId() + " appId=" + updatedResponse.getAppId(),
+                "app_policy_update_data_limit lineId=" + updatedResponse.getLineId() + " appId="
+                        + updatedResponse.getAppId(),
                 writeThroughService -> writeThroughService.syncAppPolicy(
                         updatedResponse.getLineId(),
                         updatedResponse.getAppId(),
                         Boolean.TRUE.equals(updatedResponse.getIsActive()),
                         updatedResponse.getDailyLimitData(),
                         updatedResponse.getDailyLimitSpeed(),
-                        Boolean.TRUE.equals(updatedResponse.getIsWhiteList())
-                )
-        );
+                        Boolean.TRUE.equals(updatedResponse.getIsWhiteList())));
 
-        applyWriteAudit(
-                PolicyWriteEventType.UPDATE,
-                "updateAppDataLimit",
-                currentAppPolicy,
-                updatedAppPolicy,
-                auth,
-                updatedResponse.getLineId()
-        );
+        // MongoDB 이력 저장
+        policyHistoryService.log("APP_POLICY", "UPDATE", updatedResponse.getAppPolicyId(), appPolicy.get(),
+                updatedResponse);
 
         return updatedResponse;
     }
@@ -740,27 +713,21 @@ public class UserPolicyServiceImpl implements UserPolicyService {
     @Override
     @Transactional
     public AppPolicyResDto updateAppSpeedLimit(AppSpeedLimitUpdateReqDto request, AuthUserDetails auth) {
-        // 1. 대상 appPolicy Entity/DTO 조회
-        Optional<AppPolicy> appPolicyEntity = appPolicyMapper.findEntityExistById(request.getAppPolicyId());
-        if (appPolicyEntity.isEmpty()) {
-            throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
-        }
+        // 1. 대상 appPolicy DTO 조회
         Optional<AppPolicyResDto> appPolicy = appPolicyMapper.findDtoExistById(request.getAppPolicyId());
         if (appPolicy.isEmpty()) {
             throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
         }
-        AppPolicy currentAppPolicy = appPolicyEntity.get();
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
-        checkIsSameFamilyGroup(currentAppPolicy.getLineId(), auth.getLineId(), auth);
+        checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
 
         // 3. update 진행
         int ret = appPolicyMapper.updateSpeedLimit(request.getAppPolicyId(), request.getValue());
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
-        AppPolicy updatedAppPolicy = appPolicyMapper.findEntityExistById(request.getAppPolicyId()).orElse(null);
-        alarmHistoryService.createAlarm(currentAppPolicy.getLineId(), AlarmCode.POLICY_CHANGE,
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_CHANGE,
                 AlarmType.POLICY_UPDATE_DATA_SPEED_LIMIT);
 
         // 4. toBuilder()를 활용해 변경 사항이 반영된 응답 DTO 반환
@@ -769,25 +736,19 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 .build();
 
         applyWriteThrough(
-                "app_policy_update_speed_limit lineId=" + updatedResponse.getLineId() + " appId=" + updatedResponse.getAppId(),
+                "app_policy_update_speed_limit lineId=" + updatedResponse.getLineId() + " appId="
+                        + updatedResponse.getAppId(),
                 writeThroughService -> writeThroughService.syncAppPolicy(
                         updatedResponse.getLineId(),
                         updatedResponse.getAppId(),
                         Boolean.TRUE.equals(updatedResponse.getIsActive()),
                         updatedResponse.getDailyLimitData(),
                         updatedResponse.getDailyLimitSpeed(),
-                        Boolean.TRUE.equals(updatedResponse.getIsWhiteList())
-                )
-        );
+                        Boolean.TRUE.equals(updatedResponse.getIsWhiteList())));
 
-        applyWriteAudit(
-                PolicyWriteEventType.UPDATE,
-                "updateAppSpeedLimit",
-                currentAppPolicy,
-                updatedAppPolicy,
-                auth,
-                updatedResponse.getLineId()
-        );
+        // MongoDB 이력 저장
+        policyHistoryService.log("APP_POLICY", "UPDATE", updatedResponse.getAppPolicyId(), appPolicy.get(),
+                updatedResponse);
 
         return updatedResponse;
     }
@@ -804,14 +765,11 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (appPolicy.isPresent()) {
             if (appPolicy.get().getAppPolicyId() != null) {
                 // 3-1. 기존 정책이 존재한다면 is_active를 반대값으로 설정(toggle)
-                Long appPolicyId = appPolicy.get().getAppPolicyId();
-                AppPolicy preImage = appPolicyMapper.findEntityExistById(appPolicyId).orElse(null);
                 boolean newIsActive = !appPolicy.get().getIsActive();
-                int ret = appPolicyMapper.updateIsActive(appPolicyId, newIsActive);
+                int ret = appPolicyMapper.updateIsActive(appPolicy.get().getAppPolicyId(), newIsActive);
                 if (ret != 1) {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
                 }
-                AppPolicy postImage = appPolicyMapper.findEntityExistById(appPolicyId).orElse(null);
                 if (newIsActive) {
                     alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
                             AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
@@ -828,25 +786,19 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                         .build();
 
                 applyWriteThrough(
-                        "app_policy_toggle_active lineId=" + updatedResponse.getLineId() + " appId=" + updatedResponse.getAppId(),
+                        "app_policy_toggle_active lineId=" + updatedResponse.getLineId() + " appId="
+                                + updatedResponse.getAppId(),
                         writeThroughService -> writeThroughService.syncAppPolicy(
                                 updatedResponse.getLineId(),
                                 updatedResponse.getAppId(),
                                 Boolean.TRUE.equals(updatedResponse.getIsActive()),
                                 updatedResponse.getDailyLimitData(),
                                 updatedResponse.getDailyLimitSpeed(),
-                                Boolean.TRUE.equals(updatedResponse.getIsWhiteList())
-                        )
-                );
+                                Boolean.TRUE.equals(updatedResponse.getIsWhiteList())));
 
-                applyWriteAudit(
-                        PolicyWriteEventType.UPDATE,
-                        "toggleAppPolicyActive",
-                        preImage,
-                        postImage,
-                        auth,
-                        updatedResponse.getLineId()
-                );
+                // MongoDB 이력 저장
+                policyHistoryService.log("APP_POLICY", "UPDATE", updatedResponse.getAppPolicyId(), appPolicy.get(),
+                        updatedResponse);
 
                 return updatedResponse;
             } else {
@@ -862,8 +814,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 if (ret != 1) {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
                 }
-                AppPolicy createdAppPolicy = appPolicyMapper.findEntityExistById(newAppPolicy.getAppPolicyId())
-                        .orElse(newAppPolicy);
 
                 // 알람 전송
                 alarmHistoryService.createAlarm(newAppPolicy.getLineId(), AlarmCode.POLICY_LIMIT,
@@ -883,25 +833,19 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                         .build();
 
                 applyWriteThrough(
-                        "app_policy_create lineId=" + createdResponse.getLineId() + " appId=" + createdResponse.getAppId(),
+                        "app_policy_create lineId=" + createdResponse.getLineId() + " appId="
+                                + createdResponse.getAppId(),
                         writeThroughService -> writeThroughService.syncAppPolicy(
                                 createdResponse.getLineId(),
                                 createdResponse.getAppId(),
                                 Boolean.TRUE.equals(createdResponse.getIsActive()),
                                 createdResponse.getDailyLimitData(),
                                 createdResponse.getDailyLimitSpeed(),
-                                Boolean.TRUE.equals(createdResponse.getIsWhiteList())
-                        )
-                );
+                                Boolean.TRUE.equals(createdResponse.getIsWhiteList())));
 
-                applyWriteAudit(
-                        PolicyWriteEventType.CREATE,
-                        "toggleAppPolicyActive",
-                        null,
-                        createdAppPolicy,
-                        auth,
-                        createdResponse.getLineId()
-                );
+                // MongoDB 이력 저장
+                policyHistoryService.log("APP_POLICY", "CREATE", createdResponse.getAppPolicyId(), null,
+                        createdResponse);
 
                 return createdResponse;
             }
@@ -919,7 +863,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (appPolicy.isEmpty()) {
             throw new ApplicationException(PolicyErrorCode.APP_POLICY_NOT_FOUND);
         }
-        AppPolicy preImage = appPolicyMapper.findEntityExistById(appPolicyId).orElse(null);
 
         // 2. 대상 lineId가 동일 가족에 속했는지 검증
         checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
@@ -930,7 +873,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
-        AppPolicy postImage = appPolicyMapper.findEntityExistById(appPolicyId).orElse(null);
 
         // 알람 전송
         if (newIsWhiteList) {
@@ -947,25 +889,19 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 .build();
 
         applyWriteThrough(
-                "app_policy_toggle_whitelist lineId=" + updatedResponse.getLineId() + " appId=" + updatedResponse.getAppId(),
+                "app_policy_toggle_whitelist lineId=" + updatedResponse.getLineId() + " appId="
+                        + updatedResponse.getAppId(),
                 writeThroughService -> writeThroughService.syncAppPolicy(
                         updatedResponse.getLineId(),
                         updatedResponse.getAppId(),
                         Boolean.TRUE.equals(updatedResponse.getIsActive()),
                         updatedResponse.getDailyLimitData(),
                         updatedResponse.getDailyLimitSpeed(),
-                        Boolean.TRUE.equals(updatedResponse.getIsWhiteList())
-                )
-        );
+                        Boolean.TRUE.equals(updatedResponse.getIsWhiteList())));
 
-        applyWriteAudit(
-                PolicyWriteEventType.UPDATE,
-                "toggleAppPolicyWhitelist",
-                preImage,
-                postImage,
-                auth,
-                updatedResponse.getLineId()
-        );
+        // MongoDB 이력 저장
+        policyHistoryService.log("APP_POLICY", "UPDATE", updatedResponse.getAppPolicyId(), appPolicy.get(),
+                updatedResponse);
 
         return updatedResponse;
     }
@@ -981,35 +917,28 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
         // 대상 레코드의 회선과 동일 가족에 속했는지 검증
         checkIsSameFamilyGroup(appPolicy.get().getLineId(), auth.getLineId(), auth);
-        AppPolicy preImage = appPolicy.get();
 
         // soft delete
         int ret = appPolicyMapper.setDeleted(appPolicyId);
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
-        AppPolicy postImage = appPolicyMapper.findEntityById(appPolicyId).orElse(null);
 
         // 알람 전송
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
-        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
+        alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
+                AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
 
         applyWriteThrough(
-                "app_policy_delete lineId=" + appPolicy.get().getLineId() + " appId=" + appPolicy.get().getApplicationId(),
+                "app_policy_delete lineId=" + appPolicy.get().getLineId() + " appId="
+                        + appPolicy.get().getApplicationId(),
                 writeThroughService -> writeThroughService.evictAppPolicy(
                         appPolicy.get().getLineId(),
-                        appPolicy.get().getApplicationId()
-                )
-        );
+                        appPolicy.get().getApplicationId()));
 
-        applyWriteAudit(
-                PolicyWriteEventType.DELETE,
-                "deleteAppPolicy",
-                preImage,
-                postImage,
-                auth,
-                appPolicy.get().getLineId()
-        );
+        // MongoDB 이력 저장
+        policyHistoryService.log("APP_POLICY", "DELETE", appPolicyId, appPolicy.get(), null);
     }
 
     @Override
@@ -1021,8 +950,21 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
         ImmediateBlockResDto immediateBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
 
+        // 3. 데이터 사용량 및 공유 제한 정책 조회
+        LimitPolicyResDto limitPolicy = getLimitPolicy(lineId, auth);
+
+        // 4. 현재 적용 중인 앱 정책 목록 조회
+        AppPolicySearchCondReqDto query = AppPolicySearchCondReqDto.builder()
+                .lineId(lineId)
+                .policyScope(PolicyScope.APPLIED)
+                .pageNumber(0)
+                .pageSize(100)
+                .offset(0)
+                .build();
+    	List<AppPolicyResDto> appPolicyList = appPolicyMapper.findApplicationsWithPolicy(query);
+
         // null 안전하게 처리
-        ImmediateBlockResDto immBlock = (immediateBlock != null)
+        ImmediateBlockResDto immRes = (immediateBlock != null)
                 ? ImmediateBlockResDto.builder()
                         .lineId(lineId)
                         .blockEndAt(immediateBlock.getBlockEndAt())
@@ -1031,21 +973,23 @@ public class UserPolicyServiceImpl implements UserPolicyService {
 
         return AppliedPolicyResDto.builder()
                 .repeatBlockPolicyList(repeatBlockPolicyList)
-                .immediateBlock(immBlock)
+                .immediateBlock(immRes)
+                .limitPolicy(limitPolicy)
+                .appPolicyList(appPolicyList)
                 .build();
 
-	}
+    }
 
     private void applyWriteThrough(
             String operationName,
-            java.util.function.Consumer<TrafficPolicyWriteThroughService> callback
-    ) {
+            java.util.function.Consumer<TrafficPolicyWriteThroughService> callback) {
         // 단위 테스트(@InjectMocks) 환경에서는 ObjectProvider 주입이 생략될 수 있다.
         if (trafficPolicyWriteThroughServiceProvider == null) {
             return;
         }
 
-        TrafficPolicyWriteThroughService writeThroughService = trafficPolicyWriteThroughServiceProvider.getIfAvailable();
+        TrafficPolicyWriteThroughService writeThroughService = trafficPolicyWriteThroughServiceProvider
+                .getIfAvailable();
         if (writeThroughService == null) {
             // api profile처럼 cache Redis가 비활성인 환경에서는 write-through를 건너뛴다.
             log.debug("traffic_policy_write_through_skipped operation={} reason=no_cache_redis_profile", operationName);
@@ -1053,74 +997,6 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         callback.accept(writeThroughService);
-    }
-
-    private void applyWriteAudit(
-            PolicyWriteEventType eventType,
-            String sourceMethod,
-            LineLimit preImage,
-            LineLimit postImage,
-            AuthUserDetails auth,
-            Long lineId
-    ) {
-        if (preImage == null && postImage == null) {
-            return;
-        }
-
-        // 단위 테스트(@InjectMocks) 환경에서는 ObjectProvider 주입이 생략될 수 있다.
-        if (policyWriteAuditServiceProvider == null) {
-            return;
-        }
-
-        PolicyWriteAuditService auditService = policyWriteAuditServiceProvider.getIfAvailable();
-        if (auditService == null) {
-            // Mongo 구성이 없는 프로파일에서는 감사 저장을 생략한다.
-            log.debug("policy_write_audit_skipped table=LINE_LIMIT event={} line_id={} reason=no_mongodb_profile", eventType, lineId);
-            return;
-        }
-
-        auditService.saveLineLimitWriteAuditAfterCommit(
-                eventType,
-                sourceMethod,
-                preImage,
-                postImage,
-                auth.getUserId(),
-                auth.getLineId()
-        );
-    }
-
-    private void applyWriteAudit(
-            PolicyWriteEventType eventType,
-            String sourceMethod,
-            AppPolicy preImage,
-            AppPolicy postImage,
-            AuthUserDetails auth,
-            Long lineId
-    ) {
-        if (preImage == null && postImage == null) {
-            return;
-        }
-
-        // 단위 테스트(@InjectMocks) 환경에서는 ObjectProvider 주입이 생략될 수 있다.
-        if (policyWriteAuditServiceProvider == null) {
-            return;
-        }
-
-        PolicyWriteAuditService auditService = policyWriteAuditServiceProvider.getIfAvailable();
-        if (auditService == null) {
-            // Mongo 구성이 없는 프로파일에서는 감사 저장을 생략한다.
-            log.debug("policy_write_audit_skipped table=APP_POLICY event={} line_id={} reason=no_mongodb_profile", eventType, lineId);
-            return;
-        }
-
-        auditService.saveAppPolicyWriteAuditAfterCommit(
-                eventType,
-                sourceMethod,
-                preImage,
-                postImage,
-                auth.getUserId(),
-                auth.getLineId()
-        );
     }
 
     /**
