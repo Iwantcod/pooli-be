@@ -5,7 +5,7 @@ import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
 import com.pooli.family.domain.dto.response.*;
 import com.pooli.family.domain.entity.SharedPoolDomain;
 import com.pooli.family.exception.SharedPoolErrorCode;
-import com.pooli.family.repository.FamilySharedPoolMapper;
+import com.pooli.family.mapper.FamilySharedPoolMapper;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;

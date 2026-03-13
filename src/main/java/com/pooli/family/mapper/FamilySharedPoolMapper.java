@@ -1,5 +1,6 @@
-package com.pooli.family.repository;
+package com.pooli.family.mapper;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import org.apache.ibatis.annotations.Mapper;
@@ -52,6 +53,12 @@ public interface FamilySharedPoolMapper {
     // 당 월 가족 
     List<SharedPoolMonthlyUsageResDto.MemberUsageDto> selectFamilyMonthlySharedUsageByLine(
             @Param("familyId") Long familyId
+    );
+
+    Long selectMonthlyContributionByFamilyId(
+            @Param("familyId") Long familyId,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate
     );
     
 }

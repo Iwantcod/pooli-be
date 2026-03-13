@@ -2,12 +2,14 @@ package com.pooli.family.service;
 
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
+import com.pooli.family.domain.dto.mongo.SharedPoolTransferLog;
 import com.pooli.family.exception.SharedPoolErrorCode;
 
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
 import com.pooli.family.domain.dto.response.*;
 import com.pooli.family.domain.entity.SharedPoolDomain;
-import com.pooli.family.repository.FamilySharedPoolMapper;
+import com.pooli.family.mapper.FamilySharedPoolMapper;
+import com.pooli.family.repository.mongo.SharedPoolTransferLogRepository;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
@@ -15,8 +17,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +27,7 @@ public class FamilySharedPoolsService {
 
     private final FamilySharedPoolMapper sharedPoolMapper;
     private final AlarmHistoryService alarmHistoryService;
+    private final SharedPoolTransferLogRepository transferLogRepository;
 
     // 세션의 lineId로 familyId를 DB에서 조회하는 헬퍼 메서드
     public Long getFamilyIdByLineId(Long lineId) {
@@ -69,21 +73,47 @@ public class FamilySharedPoolsService {
 
         // 검증: 잔여 데이터가 충전량보다 충분한지 확인
         Long remainingData = sharedPoolMapper.selectRemainingData(lineId);
-        if (remainingData == null) {
-            throw new ApplicationException(SharedPoolErrorCode.LINE_NOT_FOUND);
-        }
-        if (remainingData < amount) {
-            throw new ApplicationException(SharedPoolErrorCode.INSUFFICIENT_DATA);
+        boolean isUnlimited = remainingData != null && remainingData == -1L;
+
+        // 공유풀 최대 용량 검증
+        Long currentMonthContribution = sharedPoolMapper.selectMonthlyContributionByFamilyId(
+                familyId,
+                LocalDate.now().withDayOfMonth(1),
+                LocalDate.now().plusDays(1) // 포함 안함
+        );
+
+        long maxSharedPool = 60L * 1024 * 1024 * 1024; // 60GB
+
+        if (currentMonthContribution + amount > maxSharedPool) {
+            throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_LIMIT_EXCEEDED);
         }
 
-        // 1. 개인 데이터 잔여량 차감
-        sharedPoolMapper.updateLineRemainingData(lineId, amount);
+        // 1. 개인 데이터 잔여량 차감 (무제한 아닐 경우만)
+        if (!isUnlimited) {
+            if (remainingData == null) {
+                throw new ApplicationException(SharedPoolErrorCode.LINE_NOT_FOUND);
+            }
+            if (remainingData < amount) {
+                throw new ApplicationException(SharedPoolErrorCode.INSUFFICIENT_DATA);
+            }
+            sharedPoolMapper.updateLineRemainingData(lineId, amount);
+        }
 
         // 2. 가족 공유풀 총량 및 잔여량 증가
         sharedPoolMapper.updateFamilyPoolData(familyId, amount);
 
         // 3. 충전 이력 기록 (당월 데이터 통합을 위해 DUPLICATE 처리됨)
         sharedPoolMapper.insertContribution(familyId, lineId, amount);
+
+        // Mongo 로그 저장
+        SharedPoolTransferLog log = SharedPoolTransferLog.builder()
+                .familyId(familyId)
+                .lineId(lineId)
+                .amount(amount)
+                .createdAt(Instant.now())
+                .build();
+
+        transferLogRepository.save(log);
 
         // 4. 알람: 가족 전체 (본인 제외)에게 데이터 담기 알림
         sendAlarmToFamily(familyId, lineId, AlarmType.SHARED_POOL_CONTRIBUTION);

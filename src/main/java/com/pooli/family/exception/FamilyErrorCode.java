@@ -1,4 +1,4 @@
-package com.pooli.family.error;
+package com.pooli.family.exception;
 
 import org.springframework.http.HttpStatus;
 
