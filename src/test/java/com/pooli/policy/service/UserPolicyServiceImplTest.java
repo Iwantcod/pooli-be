@@ -13,6 +13,7 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
+import org.mockito.InjectMocks;
 import org.springframework.beans.factory.ObjectProvider;
 
 import org.junit.jupiter.api.DisplayName;
@@ -20,7 +21,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -60,6 +60,7 @@ import com.pooli.policy.mapper.PolicyBackOfficeMapper;
 import com.pooli.policy.mapper.RepeatBlockDayMapper;
 import com.pooli.policy.mapper.RepeatBlockMapper;
 import com.pooli.policy.service.PolicyHistoryService;
+import com.pooli.traffic.service.TrafficPolicyWriteThroughService;
 import com.pooli.traffic.service.TrafficPolicyWriteThroughService;
 
 @ExtendWith(MockitoExtension.class)

@@ -947,10 +947,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         List<RepeatBlockPolicyResDto> repeatBlockPolicyList = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
 
         ImmediateBlockResDto immediateBlock = immediateBlockMapper.selectImmediateBlockPolicy(lineId);
-        
+
         // 3. 데이터 사용량 및 공유 제한 정책 조회
         LimitPolicyResDto limitPolicy = getLimitPolicy(lineId, auth);
-        		
+
         // 4. 현재 적용 중인 앱 정책 목록 조회
         AppPolicySearchCondReqDto query = AppPolicySearchCondReqDto.builder()
                 .lineId(lineId)
@@ -960,7 +960,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 .offset(0)
                 .build();
     	List<AppPolicyResDto> appPolicyList = appPolicyMapper.findApplicationsWithPolicy(query);
-        
+
         // null 안전하게 처리
         ImmediateBlockResDto immRes = (immediateBlock != null)
                 ? ImmediateBlockResDto.builder()
