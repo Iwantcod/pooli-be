@@ -16,6 +16,7 @@ import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -194,10 +195,11 @@ public class FamilySharedPoolsService {
                 sharedPoolMapper.selectSharedPoolUsageHistory(familyId, startDate, endDate);
 
         List<SharedPoolHistoryItemResDto> contributionHistory = transferLogRepository
-                .findByFamilyIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+                .findByFamilyIdAndCreatedAtBetween(
                         familyId,
                         startDate.atStartOfDay(zoneId).toInstant(),
-                        endDate.atStartOfDay(zoneId).toInstant()
+                        endDate.atStartOfDay(zoneId).toInstant(),
+                        Sort.by(Sort.Direction.DESC, "createdAt")
                 )
                 .stream()
                 .map(log -> toContributionHistoryItem(log, userNameByLineId, zoneId))
@@ -255,7 +257,6 @@ public class FamilySharedPoolsService {
 
     /**
      * 가족 구성원 전체에게 알람을 전송하는 헬퍼 메서드
-     * @param excludeLineId 본인 제외 (null이면 전체에게 보냄)
      */
     private YearMonth parseYearMonth(Integer yearMonth) {
         if (yearMonth == null) {
@@ -281,7 +282,7 @@ public class FamilySharedPoolsService {
     ) {
         return SharedPoolHistoryItemResDto.builder()
                 .eventType("CONTRIBUTION")
-                .title("데이터 보내기")
+                .title("데이터 보태기")
                 .userName(userNameByLineId.getOrDefault(log.getLineId(), "알 수 없음"))
                 .occurredAt(log.getCreatedAt().atZone(zoneId).toLocalDateTime().format(HISTORY_EVENT_FORMATTER))
                 .amount(log.getAmount())

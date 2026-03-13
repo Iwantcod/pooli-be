@@ -23,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Sort;
 
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
@@ -354,17 +355,18 @@ class FamilySharedPoolsServiceTest {
                 eq(LocalDate.of(2026, 3, 1)),
                 eq(LocalDate.of(2026, 4, 1))
         )).thenReturn(List.of(usageItem));
-        when(transferLogRepository.findByFamilyIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(
+        when(transferLogRepository.findByFamilyIdAndCreatedAtBetween(
                 eq(1L),
                 eq(LocalDate.of(2026, 3, 1).atStartOfDay(ZoneId.systemDefault()).toInstant()),
-                eq(LocalDate.of(2026, 4, 1).atStartOfDay(ZoneId.systemDefault()).toInstant())
+                eq(LocalDate.of(2026, 4, 1).atStartOfDay(ZoneId.systemDefault()).toInstant()),
+                any(Sort.class)
         )).thenReturn(List.of(contributionLog));
 
         List<SharedPoolHistoryItemResDto> result = service.getSharedPoolHistory(principal, 202603);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).getEventType()).isEqualTo("CONTRIBUTION");
-        assertThat(result.get(0).getTitle()).isEqualTo("데이터 보내기");
+        assertThat(result.get(0).getTitle()).isEqualTo("데이터 보태기");
         assertThat(result.get(0).getUserName()).isEqualTo("김영희");
         assertThat(result.get(0).getPrecision()).isEqualTo("EVENT");
         assertThat(result.get(1).getEventType()).isEqualTo("USAGE");
