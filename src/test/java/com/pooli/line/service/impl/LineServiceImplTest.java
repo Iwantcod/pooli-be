@@ -153,10 +153,10 @@ class LineServiceImplTest {
     void updateIndividualThreshold_notFound_throws() {
         AuthUserDetails principal = principalWithUserIdAndLineId(1L, 10L);
         UpdateIndividualThresholdReqDto request = new UpdateIndividualThresholdReqDto();
-        request.setIndividualThreshold(2000);
+        request.setIndividualThreshold(2000L);
         request.setIsThresholdActive(true);
 
-        when(lineMapper.updateIndividualThreshold(10L, 2000, true)).thenReturn(0);
+        when(lineMapper.updateIndividualThreshold(10L, 2000L, true)).thenReturn(0);
 
         assertThatThrownBy(() -> lineService.updateIndividualThreshold(principal, request))
             .isInstanceOf(ApplicationException.class)
@@ -169,10 +169,10 @@ class LineServiceImplTest {
     void updateIndividualThreshold_success_returnsNull() {
         AuthUserDetails principal = principalWithUserIdAndLineId(1L, 10L);
         UpdateIndividualThresholdReqDto request = new UpdateIndividualThresholdReqDto();
-        request.setIndividualThreshold(2000);
+        request.setIndividualThreshold(2000L);
         request.setIsThresholdActive(false);
 
-        when(lineMapper.updateIndividualThreshold(10L, 2000, false)).thenReturn(1);
+        when(lineMapper.updateIndividualThreshold(10L, 2000L, false)).thenReturn(1);
 
         Void result = lineService.updateIndividualThreshold(principal, request);
 
