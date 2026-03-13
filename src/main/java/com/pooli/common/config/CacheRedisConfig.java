@@ -13,7 +13,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.util.StringUtils;
 
 @Configuration
-@Profile({"local", "traffic"})
 @EnableConfigurationProperties(CacheRedisProperties.class)
 public class CacheRedisConfig {
 
