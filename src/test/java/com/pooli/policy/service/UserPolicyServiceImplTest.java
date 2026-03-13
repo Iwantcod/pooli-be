@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
@@ -413,6 +412,16 @@ class UserPolicyServiceImplTest {
                     .build();
             when(lineLimitMapper.getExistLineLimitByLineId(lineId)).thenReturn(Optional.of(lineLimit));
             when(lineLimitMapper.updateIsDailyLimitActiveById(1L, true)).thenReturn(1);
+            when(lineLimitMapper.getExistLineLimitById(1L)).thenReturn(Optional.of(
+                    LineLimit.builder()
+                            .limitId(1L)
+                            .lineId(lineId)
+                            .dailyDataLimit(1000L)
+                            .isDailyLimitActive(true)
+                            .sharedDataLimit(5000L)
+                            .isSharedLimitActive(true)
+                            .build()
+            ));
             when(policyWriteAuditServiceProvider.getIfAvailable()).thenReturn(policyWriteAuditService);
 
             // when
@@ -421,9 +430,10 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getIsDailyDataLimitActive()).isTrue();
             verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT);
-            verify(policyWriteAuditService).saveLineLimitPreImageAfterCommit(
-                    eq(PolicyWriteEventType.CHANGE),
+            verify(policyWriteAuditService).saveLineLimitWriteAuditAfterCommit(
+                    eq(PolicyWriteEventType.UPDATE),
                     eq("toggleDailyTotalLimitPolicy"),
+                    any(LineLimit.class),
                     any(LineLimit.class),
                     eq(1L),
                     eq(100L)
@@ -449,7 +459,7 @@ class UserPolicyServiceImplTest {
         }
 
         @Test
-        @DisplayName("일일 총량 제한 정책이 없으면 신규 제한 정책을 생성한다")
+        @DisplayName("일일 총량 제한 정책이 없으면 신규 제한 정책 생성 CREATE 감사를 저장한다")
         void toggleDailyTotalLimitPolicy_whenMissing_insertsNew() {
             // given
             Long lineId = 100L;
@@ -462,6 +472,17 @@ class UserPolicyServiceImplTest {
                 field.set(ll, 99L);
                 return 1;
             }).when(lineLimitMapper).createLineLimit(any());
+            when(lineLimitMapper.getExistLineLimitById(99L)).thenReturn(Optional.of(
+                    LineLimit.builder()
+                            .limitId(99L)
+                            .lineId(lineId)
+                            .dailyDataLimit(-1L)
+                            .isDailyLimitActive(true)
+                            .sharedDataLimit(-1L)
+                            .isSharedLimitActive(true)
+                            .build()
+            ));
+            when(policyWriteAuditServiceProvider.getIfAvailable()).thenReturn(policyWriteAuditService);
 
             // when
             LimitPolicyResDto result = userPolicyService.toggleDailyTotalLimitPolicy(lineId, userAuth(100L));
@@ -469,7 +490,14 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getDailyDataLimit()).isEqualTo(-1L);
             assertThat(result.getIsSharedDataLimitActive()).isTrue();
-            verifyNoInteractions(policyWriteAuditServiceProvider);
+            verify(policyWriteAuditService).saveLineLimitWriteAuditAfterCommit(
+                    eq(PolicyWriteEventType.CREATE),
+                    eq("insertNewLineLimit"),
+                    eq(null),
+                    any(LineLimit.class),
+                    eq(1L),
+                    eq(100L)
+            );
         }
 
         @Test
@@ -499,9 +527,10 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getDailyDataLimit()).isEqualTo(777L);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DAYDATA_LIMIT);
-            verify(policyWriteAuditService).saveLineLimitPreImageAfterCommit(
-                    eq(PolicyWriteEventType.CHANGE),
+            verify(policyWriteAuditService).saveLineLimitWriteAuditAfterCommit(
+                    eq(PolicyWriteEventType.UPDATE),
                     eq("updateDailyTotalLimitPolicyValue"),
+                    any(LineLimit.class),
                     any(LineLimit.class),
                     eq(1L),
                     eq(100L)
@@ -540,6 +569,16 @@ class UserPolicyServiceImplTest {
                     .build();
             when(lineLimitMapper.getExistLineLimitByLineId(lineId)).thenReturn(Optional.of(lineLimit));
             when(lineLimitMapper.updateIsSharedLimitActiveById(10L, true)).thenReturn(1);
+            when(lineLimitMapper.getExistLineLimitById(10L)).thenReturn(Optional.of(
+                    LineLimit.builder()
+                            .limitId(10L)
+                            .lineId(lineId)
+                            .dailyDataLimit(1000L)
+                            .isDailyLimitActive(true)
+                            .sharedDataLimit(3000L)
+                            .isSharedLimitActive(true)
+                            .build()
+            ));
             when(policyWriteAuditServiceProvider.getIfAvailable()).thenReturn(policyWriteAuditService);
 
             // when
@@ -548,9 +587,10 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getIsSharedDataLimitActive()).isTrue();
             verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
-            verify(policyWriteAuditService).saveLineLimitPreImageAfterCommit(
-                    eq(PolicyWriteEventType.CHANGE),
+            verify(policyWriteAuditService).saveLineLimitWriteAuditAfterCommit(
+                    eq(PolicyWriteEventType.UPDATE),
                     eq("toggleSharedPoolLimitPolicy"),
+                    any(LineLimit.class),
                     any(LineLimit.class),
                     eq(1L),
                     eq(100L)
@@ -558,8 +598,8 @@ class UserPolicyServiceImplTest {
         }
 
         @Test
-        @DisplayName("공유 풀 제한 정책이 없으면 신규 생성 경로에서 감사 저장을 수행하지 않는다")
-        void toggleSharedPoolLimitPolicy_whenMissing_doesNotAudit() {
+        @DisplayName("공유 풀 제한 정책이 없으면 신규 생성 CREATE 감사를 저장한다")
+        void toggleSharedPoolLimitPolicy_whenMissing_savesCreateAudit() {
             // given
             Long lineId = 100L;
             allowFamily(100L, lineId);
@@ -571,12 +611,30 @@ class UserPolicyServiceImplTest {
                 field.set(ll, 88L);
                 return 1;
             }).when(lineLimitMapper).createLineLimit(any());
+            when(lineLimitMapper.getExistLineLimitById(88L)).thenReturn(Optional.of(
+                    LineLimit.builder()
+                            .limitId(88L)
+                            .lineId(lineId)
+                            .dailyDataLimit(-1L)
+                            .isDailyLimitActive(true)
+                            .sharedDataLimit(-1L)
+                            .isSharedLimitActive(true)
+                            .build()
+            ));
+            when(policyWriteAuditServiceProvider.getIfAvailable()).thenReturn(policyWriteAuditService);
 
             // when
             userPolicyService.toggleSharedPoolLimitPolicy(lineId, userAuth(100L));
 
             // then
-            verifyNoInteractions(policyWriteAuditServiceProvider);
+            verify(policyWriteAuditService).saveLineLimitWriteAuditAfterCommit(
+                    eq(PolicyWriteEventType.CREATE),
+                    eq("insertNewLineLimit"),
+                    eq(null),
+                    any(LineLimit.class),
+                    eq(1L),
+                    eq(100L)
+            );
         }
 
         @Test
@@ -606,9 +664,10 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getSharedDataLimit()).isEqualTo(2222L);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
-            verify(policyWriteAuditService).saveLineLimitPreImageAfterCommit(
-                    eq(PolicyWriteEventType.CHANGE),
+            verify(policyWriteAuditService).saveLineLimitWriteAuditAfterCommit(
+                    eq(PolicyWriteEventType.UPDATE),
                     eq("updateSharedPoolLimitPolicyValue"),
+                    any(LineLimit.class),
                     any(LineLimit.class),
                     eq(1L),
                     eq(100L)
@@ -653,9 +712,10 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getDailyLimitData()).isEqualTo(5000L);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_APP_USAGE_LIMIT);
-            verify(policyWriteAuditService).saveAppPolicyPreImageAfterCommit(
-                    eq(PolicyWriteEventType.CHANGE),
+            verify(policyWriteAuditService).saveAppPolicyWriteAuditAfterCommit(
+                    eq(PolicyWriteEventType.UPDATE),
                     eq("updateAppDataLimit"),
+                    any(AppPolicy.class),
                     any(AppPolicy.class),
                     eq(1L),
                     eq(100L)
@@ -724,9 +784,10 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getDailyLimitSpeed()).isEqualTo(70);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_DATA_SPEED_LIMIT);
-            verify(policyWriteAuditService).saveAppPolicyPreImageAfterCommit(
-                    eq(PolicyWriteEventType.CHANGE),
+            verify(policyWriteAuditService).saveAppPolicyWriteAuditAfterCommit(
+                    eq(PolicyWriteEventType.UPDATE),
                     eq("updateAppSpeedLimit"),
+                    any(AppPolicy.class),
                     any(AppPolicy.class),
                     eq(1L),
                     eq(100L)
@@ -766,9 +827,10 @@ class UserPolicyServiceImplTest {
             assertThat(result.getIsActive()).isTrue();
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
-            verify(policyWriteAuditService).saveAppPolicyPreImageAfterCommit(
-                    eq(PolicyWriteEventType.CHANGE),
+            verify(policyWriteAuditService).saveAppPolicyWriteAuditAfterCommit(
+                    eq(PolicyWriteEventType.UPDATE),
                     eq("toggleAppPolicyActive"),
+                    any(AppPolicy.class),
                     any(AppPolicy.class),
                     eq(1L),
                     eq(100L)
@@ -776,7 +838,7 @@ class UserPolicyServiceImplTest {
         }
 
         @Test
-        @DisplayName("앱 정책이 없으면 신규 앱 정책을 생성하고 활성화한다")
+        @DisplayName("앱 정책이 없으면 신규 앱 정책 생성 CREATE 감사를 저장한다")
         void toggleAppPolicyActive_newInsert_success() {
             // given
             AppPolicyActiveToggleReqDto req = new AppPolicyActiveToggleReqDto();
@@ -797,6 +859,17 @@ class UserPolicyServiceImplTest {
                 f.set(arg, 55L);
                 return 1;
             }).when(appPolicyMapper).insertAppPolicy(any());
+            when(appPolicyMapper.findEntityExistById(55L)).thenReturn(Optional.of(
+                    AppPolicy.builder()
+                            .appPolicyId(55L)
+                            .lineId(100L)
+                            .applicationId(10)
+                            .dataLimit(-1L)
+                            .speedLimit(-1)
+                            .isActive(true)
+                            .build()
+            ));
+            when(policyWriteAuditServiceProvider.getIfAvailable()).thenReturn(policyWriteAuditService);
 
             // when
             AppPolicyResDto result = userPolicyService.toggleAppPolicyActive(req, userAuth(100L));
@@ -806,7 +879,14 @@ class UserPolicyServiceImplTest {
             assertThat(result.getIsActive()).isTrue();
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DATA_SPEED_LIMIT);
-            verifyNoInteractions(policyWriteAuditServiceProvider);
+            verify(policyWriteAuditService).saveAppPolicyWriteAuditAfterCommit(
+                    eq(PolicyWriteEventType.CREATE),
+                    eq("toggleAppPolicyActive"),
+                    eq(null),
+                    any(AppPolicy.class),
+                    eq(1L),
+                    eq(100L)
+            );
         }
 
         @Test
@@ -850,9 +930,10 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getIsWhiteList()).isTrue();
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_ADD_WHITELIST);
-            verify(policyWriteAuditService).saveAppPolicyPreImageAfterCommit(
-                    eq(PolicyWriteEventType.CHANGE),
+            verify(policyWriteAuditService).saveAppPolicyWriteAuditAfterCommit(
+                    eq(PolicyWriteEventType.UPDATE),
                     eq("toggleAppPolicyWhitelist"),
+                    any(AppPolicy.class),
                     any(AppPolicy.class),
                     eq(1L),
                     eq(100L)
@@ -867,6 +948,14 @@ class UserPolicyServiceImplTest {
             when(appPolicyMapper.findEntityExistById(1L)).thenReturn(Optional.of(appPolicy));
             allowFamily(100L, 100L);
             when(appPolicyMapper.setDeleted(1L)).thenReturn(1);
+            when(appPolicyMapper.findEntityById(1L)).thenReturn(Optional.of(
+                    AppPolicy.builder()
+                            .appPolicyId(1L)
+                            .lineId(100L)
+                            .applicationId(10)
+                            .deletedAt(LocalDateTime.of(2026, 3, 13, 10, 0))
+                            .build()
+            ));
             when(policyWriteAuditServiceProvider.getIfAvailable()).thenReturn(policyWriteAuditService);
 
             // when
@@ -876,9 +965,10 @@ class UserPolicyServiceImplTest {
             verify(appPolicyMapper).setDeleted(1L);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
             verify(alarmHistoryService).createAlarm(100L, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_DATA_SPEED_LIMIT);
-            verify(policyWriteAuditService).saveAppPolicyPreImageAfterCommit(
+            verify(policyWriteAuditService).saveAppPolicyWriteAuditAfterCommit(
                     eq(PolicyWriteEventType.DELETE),
                     eq("deleteAppPolicy"),
+                    any(AppPolicy.class),
                     any(AppPolicy.class),
                     eq(1L),
                     eq(100L)

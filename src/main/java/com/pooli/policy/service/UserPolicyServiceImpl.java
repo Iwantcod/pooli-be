@@ -373,6 +373,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             if (def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
+            LineLimit updatedLineLimit = lineLimitMapper.getExistLineLimitById(currentLineLimit.getLimitId()).orElse(null);
             if (newDailyLimitActive) {
                 alarmHistoryService.createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.POLICY_CREATE_DAYDATA_LIMIT);
             } else {
@@ -392,9 +393,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             );
 
             applyWriteAudit(
-                    PolicyWriteEventType.CHANGE,
+                    PolicyWriteEventType.UPDATE,
                     "toggleDailyTotalLimitPolicy",
                     currentLineLimit,
+                    updatedLineLimit,
                     auth,
                     currentLineLimit.getLineId()
             );
@@ -408,7 +410,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                     .build();
         } else {
             // lineLimit 레코드가 없거나, 삭제 상태인 경우 새 레코드 insert
-            return insertNewLineLimit(lineId);
+            return insertNewLineLimit(lineId, auth);
         }
     }
 
@@ -430,6 +432,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (def != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
+        LineLimit updatedLineLimit = lineLimitMapper.getExistLineLimitById(currentLineLimit.getLimitId()).orElse(null);
 
         alarmHistoryService.createAlarm(currentLineLimit.getLineId(), AlarmCode.POLICY_CHANGE,
                 AlarmType.POLICY_UPDATE_DAYDATA_LIMIT);
@@ -446,9 +449,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         );
 
         applyWriteAudit(
-                PolicyWriteEventType.CHANGE,
+                PolicyWriteEventType.UPDATE,
                 "updateDailyTotalLimitPolicyValue",
                 currentLineLimit,
+                updatedLineLimit,
                 auth,
                 currentLineLimit.getLineId()
         );
@@ -478,6 +482,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             if (def != 1) {
                 throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
             }
+            LineLimit updatedLineLimit = lineLimitMapper.getExistLineLimitById(currentLineLimit.getLimitId()).orElse(null);
             if (newSharedLimitActive) {
                 alarmHistoryService.createAlarm(currentLineLimit.getLineId(), AlarmCode.POLICY_LIMIT,
                         AlarmType.POLICY_CREATE_SHAREDATA_LIMIT);
@@ -499,9 +504,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             );
 
             applyWriteAudit(
-                    PolicyWriteEventType.CHANGE,
+                    PolicyWriteEventType.UPDATE,
                     "toggleSharedPoolLimitPolicy",
                     currentLineLimit,
+                    updatedLineLimit,
                     auth,
                     currentLineLimit.getLineId()
             );
@@ -515,7 +521,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                     .build();
         } else {
             // lineLimit 레코드가 없거나, 삭제 상태인 경우 새 레코드 insert
-            return insertNewLineLimit(lineId);
+            return insertNewLineLimit(lineId, auth);
         }
     }
 
@@ -525,7 +531,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
      * @param lineId 회선 식별자
      * @return LimitPolicyResDto
      */
-    private LimitPolicyResDto insertNewLineLimit(Long lineId) {
+    private LimitPolicyResDto insertNewLineLimit(Long lineId, AuthUserDetails auth) {
         LineLimit newLineLimit = LineLimit.builder()
                 .lineId(lineId)
                 .dailyDataLimit(-1L)
@@ -549,6 +555,16 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                         newLineLimit.getSharedDataLimit(),
                         newLineLimit.getIsSharedLimitActive()
                 )
+        );
+        LineLimit createdLineLimit = lineLimitMapper.getExistLineLimitById(newLineLimit.getLimitId()).orElse(newLineLimit);
+
+        applyWriteAudit(
+                PolicyWriteEventType.CREATE,
+                "insertNewLineLimit",
+                null,
+                createdLineLimit,
+                auth,
+                lineId
         );
 
         return LimitPolicyResDto.builder()
@@ -578,6 +594,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (def != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
+        LineLimit updatedLineLimit = lineLimitMapper.getExistLineLimitById(currentLineLimit.getLimitId()).orElse(null);
 
         alarmHistoryService.createAlarm(currentLineLimit.getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.POLICY_UPDATE_SHAREDATA_LIMIT);
 
@@ -593,9 +610,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         );
 
         applyWriteAudit(
-                PolicyWriteEventType.CHANGE,
+                PolicyWriteEventType.UPDATE,
                 "updateSharedPoolLimitPolicyValue",
                 currentLineLimit,
+                updatedLineLimit,
                 auth,
                 currentLineLimit.getLineId()
         );
@@ -686,6 +704,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
+        AppPolicy updatedAppPolicy = appPolicyMapper.findEntityExistById(request.getAppPolicyId()).orElse(null);
 
         alarmHistoryService.createAlarm(currentAppPolicy.getLineId(), AlarmCode.POLICY_CHANGE,
                 AlarmType.POLICY_UPDATE_APP_USAGE_LIMIT);
@@ -707,9 +726,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         );
 
         applyWriteAudit(
-                PolicyWriteEventType.CHANGE,
+                PolicyWriteEventType.UPDATE,
                 "updateAppDataLimit",
                 currentAppPolicy,
+                updatedAppPolicy,
                 auth,
                 updatedResponse.getLineId()
         );
@@ -739,6 +759,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
+        AppPolicy updatedAppPolicy = appPolicyMapper.findEntityExistById(request.getAppPolicyId()).orElse(null);
         alarmHistoryService.createAlarm(currentAppPolicy.getLineId(), AlarmCode.POLICY_CHANGE,
                 AlarmType.POLICY_UPDATE_DATA_SPEED_LIMIT);
 
@@ -760,9 +781,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         );
 
         applyWriteAudit(
-                PolicyWriteEventType.CHANGE,
+                PolicyWriteEventType.UPDATE,
                 "updateAppSpeedLimit",
                 currentAppPolicy,
+                updatedAppPolicy,
                 auth,
                 updatedResponse.getLineId()
         );
@@ -789,6 +811,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 if (ret != 1) {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
                 }
+                AppPolicy postImage = appPolicyMapper.findEntityExistById(appPolicyId).orElse(null);
                 if (newIsActive) {
                     alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT,
                             AlarmType.POLICY_CREATE_APP_USAGE_LIMIT);
@@ -817,9 +840,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 );
 
                 applyWriteAudit(
-                        PolicyWriteEventType.CHANGE,
+                        PolicyWriteEventType.UPDATE,
                         "toggleAppPolicyActive",
                         preImage,
+                        postImage,
                         auth,
                         updatedResponse.getLineId()
                 );
@@ -838,6 +862,8 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 if (ret != 1) {
                     throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
                 }
+                AppPolicy createdAppPolicy = appPolicyMapper.findEntityExistById(newAppPolicy.getAppPolicyId())
+                        .orElse(newAppPolicy);
 
                 // 알람 전송
                 alarmHistoryService.createAlarm(newAppPolicy.getLineId(), AlarmCode.POLICY_LIMIT,
@@ -868,6 +894,15 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                         )
                 );
 
+                applyWriteAudit(
+                        PolicyWriteEventType.CREATE,
+                        "toggleAppPolicyActive",
+                        null,
+                        createdAppPolicy,
+                        auth,
+                        createdResponse.getLineId()
+                );
+
                 return createdResponse;
             }
         } else {
@@ -895,6 +930,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
+        AppPolicy postImage = appPolicyMapper.findEntityExistById(appPolicyId).orElse(null);
 
         // 알람 전송
         if (newIsWhiteList) {
@@ -923,9 +959,10 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         );
 
         applyWriteAudit(
-                PolicyWriteEventType.CHANGE,
+                PolicyWriteEventType.UPDATE,
                 "toggleAppPolicyWhitelist",
                 preImage,
+                postImage,
                 auth,
                 updatedResponse.getLineId()
         );
@@ -951,6 +988,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         if (ret != 1) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
         }
+        AppPolicy postImage = appPolicyMapper.findEntityById(appPolicyId).orElse(null);
 
         // 알람 전송
         alarmHistoryService.createAlarm(appPolicy.get().getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.POLICY_DELETE_APP_USAGE_LIMIT);
@@ -968,6 +1006,7 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 PolicyWriteEventType.DELETE,
                 "deleteAppPolicy",
                 preImage,
+                postImage,
                 auth,
                 appPolicy.get().getLineId()
         );
@@ -1020,10 +1059,11 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             PolicyWriteEventType eventType,
             String sourceMethod,
             LineLimit preImage,
+            LineLimit postImage,
             AuthUserDetails auth,
             Long lineId
     ) {
-        if (preImage == null) {
+        if (preImage == null && postImage == null) {
             return;
         }
 
@@ -1039,10 +1079,11 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             return;
         }
 
-        auditService.saveLineLimitPreImageAfterCommit(
+        auditService.saveLineLimitWriteAuditAfterCommit(
                 eventType,
                 sourceMethod,
                 preImage,
+                postImage,
                 auth.getUserId(),
                 auth.getLineId()
         );
@@ -1052,10 +1093,11 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             PolicyWriteEventType eventType,
             String sourceMethod,
             AppPolicy preImage,
+            AppPolicy postImage,
             AuthUserDetails auth,
             Long lineId
     ) {
-        if (preImage == null) {
+        if (preImage == null && postImage == null) {
             return;
         }
 
@@ -1071,10 +1113,11 @@ public class UserPolicyServiceImpl implements UserPolicyService {
             return;
         }
 
-        auditService.saveAppPolicyPreImageAfterCommit(
+        auditService.saveAppPolicyWriteAuditAfterCommit(
                 eventType,
                 sourceMethod,
                 preImage,
+                postImage,
                 auth.getUserId(),
                 auth.getLineId()
         );

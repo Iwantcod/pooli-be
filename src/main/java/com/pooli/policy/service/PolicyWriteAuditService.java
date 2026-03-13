@@ -1,6 +1,9 @@
 package com.pooli.policy.service;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Objects;
+import java.util.Set;
 
 import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -21,85 +24,114 @@ import lombok.extern.slf4j.Slf4j;
  * 정책 쓰기 감사(Audit) 전용 서비스입니다.
  *
  * <p>역할:
- * <p>- RDB 쓰기 직전(pre-image) 엔티티를 Mongo 문서로 변환해 저장
+ * <p>- before/after 엔티티를 비교해 변경 컬럼만 update 필드로 저장
  * <p>- 저장 시점은 트랜잭션 커밋 이후(afterCommit)로 맞춰 정합성 유지
  * <p>- Mongo 저장 실패는 비즈니스 흐름을 깨지 않도록 로그만 남기고 흡수(best-effort)
  */
 public class PolicyWriteAuditService {
 
-    private static final String LINE_LIMIT_AUDIT_COLLECTION = "line_limit_write_audit";
-    private static final String APP_POLICY_AUDIT_COLLECTION = "app_policy_write_audit";
+    private static final String POLICY_HISTORY_COLLECTION = "policy_history";
+    private static final String TABLE_LINE_LIMIT = "LINE_LIMIT";
+    private static final String TABLE_APP_POLICY = "APP_POLICY";
 
     private final MongoTemplate mongoTemplate;
 
     /**
-     * LINE_LIMIT 변경/삭제 직전 엔티티를 감사 컬렉션에 저장합니다.
-     *
-     * <p>문서는 LINE_LIMIT 컬럼명과 동일한 snake_case 키를 사용합니다.
-     * <p>실제 Mongo 저장은 {@link #executeAfterCommit(String, Document, PolicyWriteEventType, String, Object, Long)}
-     * 를 통해 커밋 이후 시점에 수행됩니다.
+     * LINE_LIMIT 쓰기 이벤트 감사 문서를 저장합니다.
      */
-    public void saveLineLimitPreImageAfterCommit(
+    public void saveLineLimitWriteAuditAfterCommit(
             PolicyWriteEventType eventType,
             String sourceMethod,
             LineLimit preImage,
+            LineLimit postImage,
             Long actorUserId,
             Long actorLineId
     ) {
-        // 감사 대상이 없거나 이벤트 타입이 없으면 저장하지 않습니다.
-        if (preImage == null || eventType == null) {
+        if (eventType == null || (preImage == null && postImage == null)) {
             return;
         }
 
-        // 조회한 pre-image(Entity)를 Mongo 문서로 변환한 뒤 snake_case 키로 정규화합니다.
-        Document document = buildSnakeCaseDocument(preImage);
+        Object recordPk = resolveRecordPk(
+                preImage != null ? preImage.getLimitId() : null,
+                postImage != null ? postImage.getLimitId() : null
+        );
 
-        // 공통 감사 메타 정보를 추가합니다.
-        appendAuditMetadata(document, eventType, sourceMethod, actorUserId, actorLineId);
-
-        // 커밋 이후에 Mongo 반영되도록 위임합니다.
-        executeAfterCommit(
-                LINE_LIMIT_AUDIT_COLLECTION,
-                document,
+        saveAuditAfterCommit(
+                TABLE_LINE_LIMIT,
                 eventType,
                 sourceMethod,
-                preImage.getLimitId(),
-                preImage.getLineId()
+                recordPk,
+                preImage,
+                postImage,
+                actorUserId,
+                actorLineId
         );
     }
 
     /**
-     * APP_POLICY 변경/삭제 직전 엔티티를 감사 컬렉션에 저장합니다.
-     *
-     * <p>문서는 APP_POLICY 컬럼명과 동일한 snake_case 키를 사용합니다.
+     * APP_POLICY 쓰기 이벤트 감사 문서를 저장합니다.
      */
-    public void saveAppPolicyPreImageAfterCommit(
+    public void saveAppPolicyWriteAuditAfterCommit(
             PolicyWriteEventType eventType,
             String sourceMethod,
             AppPolicy preImage,
+            AppPolicy postImage,
             Long actorUserId,
             Long actorLineId
     ) {
-        // 감사 대상이 없거나 이벤트 타입이 없으면 저장하지 않습니다.
-        if (preImage == null || eventType == null) {
+        if (eventType == null || (preImage == null && postImage == null)) {
             return;
         }
 
-        // 조회한 pre-image(Entity)를 Mongo 문서로 변환한 뒤 snake_case 키로 정규화합니다.
-        Document document = buildSnakeCaseDocument(preImage);
+        Object recordPk = resolveRecordPk(
+                preImage != null ? preImage.getAppPolicyId() : null,
+                postImage != null ? postImage.getAppPolicyId() : null
+        );
 
-        // 공통 감사 메타 정보를 추가합니다.
-        appendAuditMetadata(document, eventType, sourceMethod, actorUserId, actorLineId);
-
-        // 커밋 이후에 Mongo 반영되도록 위임합니다.
-        executeAfterCommit(
-                APP_POLICY_AUDIT_COLLECTION,
-                document,
+        saveAuditAfterCommit(
+                TABLE_APP_POLICY,
                 eventType,
                 sourceMethod,
-                preImage.getAppPolicyId(),
-                preImage.getLineId()
+                recordPk,
+                preImage,
+                postImage,
+                actorUserId,
+                actorLineId
         );
+    }
+
+    /**
+     * before/after를 비교해 공통 감사 문서를 만들고 afterCommit 시점에 저장합니다.
+     */
+    private void saveAuditAfterCommit(
+            String tableName,
+            PolicyWriteEventType eventType,
+            String sourceMethod,
+            Object recordPk,
+            Object preImage,
+            Object postImage,
+            Long actorUserId,
+            Long actorLineId
+    ) {
+        Document before = buildSnakeCaseDocument(preImage);
+        Document after = buildSnakeCaseDocument(postImage);
+        Document update = buildUpdateDocument(before, after);
+
+        // 실제로 값이 달라진 컬럼이 없으면 감사 문서를 남기지 않습니다.
+        if (update.isEmpty()) {
+            return;
+        }
+
+        Document auditDocument = new Document();
+        auditDocument.put("table_name", tableName);
+        auditDocument.put("timestamp", LocalDateTime.now());
+        auditDocument.put("record_pk", recordPk);
+        auditDocument.put("actor_user_id", actorUserId);
+        auditDocument.put("actor_line_id", actorLineId);
+        auditDocument.put("event", eventType.name());
+        auditDocument.put("update", update);
+
+        executeAfterCommit(auditDocument, eventType, sourceMethod, recordPk, actorLineId);
     }
 
     /**
@@ -107,34 +139,29 @@ public class PolicyWriteAuditService {
      *
      * <p>- 트랜잭션 활성: afterCommit 콜백에 등록
      * <p>- 트랜잭션 비활성: 즉시 실행
-     *
-     * <p>Mongo 오류는 로그로 남기고 흡수해 본 쓰기 흐름을 유지합니다.
      */
     private void executeAfterCommit(
-            String collectionName,
-            Document document,
+            Document auditDocument,
             PolicyWriteEventType eventType,
             String sourceMethod,
-            Object primaryKey,
+            Object recordPk,
             Long lineId
     ) {
-        // Mongo 저장 실패는 best-effort 정책으로 예외 전파하지 않습니다.
         Runnable writeOperation = () -> {
             try {
-                mongoTemplate.insert(document, collectionName);
+                mongoTemplate.insert(auditDocument, POLICY_HISTORY_COLLECTION);
             } catch (RuntimeException e) {
                 log.warn(
-                        "policy_write_audit_failed event_type={} method={} pk={} line_id={}",
+                        "policy_history_write_failed event_type={} method={} pk={} line_id={}",
                         eventType,
                         sourceMethod,
-                        primaryKey,
+                        recordPk,
                         lineId,
                         e
                 );
             }
         };
 
-        // DB 트랜잭션 중이라면 커밋 성공 이후에만 감사 문서를 저장합니다.
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -145,39 +172,19 @@ public class PolicyWriteAuditService {
             return;
         }
 
-        // 트랜잭션이 없다면 즉시 저장합니다.
         writeOperation.run();
     }
 
     /**
-     * 모든 감사 문서에 공통 메타 필드를 채웁니다.
-     *
-     * <p>누가(actor), 어떤 메서드에서(source), 어떤 이벤트(event), 언제(occurred_at)
-     * 발생했는지 추적하기 위한 필드입니다.
+     * Entity/DTO를 snake_case 필드명 문서로 정규화합니다.
      */
-    private void appendAuditMetadata(
-            Document document,
-            PolicyWriteEventType eventType,
-            String sourceMethod,
-            Long actorUserId,
-            Long actorLineId
-    ) {
-        document.put("audit_event_type", eventType.name());
-        document.put("audit_source_method", sourceMethod);
-        document.put("audit_occurred_at", LocalDateTime.now());
-        document.put("audit_actor_user_id", actorUserId);
-        document.put("audit_actor_line_id", actorLineId);
-    }
+    private Document buildSnakeCaseDocument(Object source) {
+        if (source == null) {
+            return new Document();
+        }
 
-    /**
-     * Entity/DTO 기반 pre-image를 Mongo 문서로 변환한 뒤, 필드명을 snake_case로 정규화합니다.
-     *
-     * <p>요구사항인 "RDB 컬럼명 그대로 저장"을 맞추기 위해 camelCase 프로퍼티명을 snake_case로 변환합니다.
-     * <p>Spring Data MongoDB converter가 생성한 내부 타입 메타 필드(_class)는 감사 문서에서 제거합니다.
-     */
-    private Document buildSnakeCaseDocument(Object preImage) {
         Document mapped = new Document();
-        mongoTemplate.getConverter().write(preImage, mapped);
+        mongoTemplate.getConverter().write(source, mapped);
 
         Document normalized = new Document();
         mapped.forEach((key, value) -> {
@@ -187,6 +194,31 @@ public class PolicyWriteAuditService {
             normalized.put(toSnakeCase(key), value);
         });
         return normalized;
+    }
+
+    /**
+     * before/after 값이 다른 컬럼만 update 문서로 구성합니다.
+     */
+    private Document buildUpdateDocument(Document before, Document after) {
+        Document update = new Document();
+        Set<String> keys = new LinkedHashSet<>();
+        keys.addAll(before.keySet());
+        keys.addAll(after.keySet());
+
+        for (String key : keys) {
+            Object beforeValue = before.get(key);
+            Object afterValue = after.get(key);
+            if (Objects.equals(beforeValue, afterValue)) {
+                continue;
+            }
+            update.put(key, new Document("before", beforeValue).append("after", afterValue));
+        }
+
+        return update;
+    }
+
+    private Object resolveRecordPk(Object preRecordPk, Object postRecordPk) {
+        return preRecordPk != null ? preRecordPk : postRecordPk;
     }
 
     private String toSnakeCase(String input) {
