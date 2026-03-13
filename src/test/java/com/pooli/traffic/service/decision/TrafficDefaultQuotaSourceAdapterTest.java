@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
@@ -134,7 +135,7 @@ class TrafficDefaultQuotaSourceAdapterTest {
 
             when(trafficRefillSourceMapper.selectIndividualRemainingForUpdate(11L))
                     .thenAnswer(invocation -> remaining.get());
-            when(trafficRefillSourceMapper.selectIndividualRemaining(11L))
+            Mockito.lenient().when(trafficRefillSourceMapper.selectIndividualRemaining(11L))
                     .thenAnswer(invocation -> remaining.get());
             when(trafficRefillSourceMapper.deductIndividualRemaining(11L, 10L))
                     .thenAnswer(invocation -> {
