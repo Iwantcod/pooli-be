@@ -33,7 +33,7 @@ public interface LineMapper {
 	
 	int updateIndividualThreshold(
 	          @Param("lineId") Long lineId,
-	          @Param("individualThreshold") Integer individualThreshold,
+	          @Param("individualThreshold") Long individualThreshold,
 	          @Param("isThresholdActive") Boolean isThresholdActive
 	  );
 	
