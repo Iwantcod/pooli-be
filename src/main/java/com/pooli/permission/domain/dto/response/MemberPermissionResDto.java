@@ -22,6 +22,9 @@ public class MemberPermissionResDto {
     @Schema(description = "회선 ID", example = "1001")
     private Long lineId;
 
+    @Schema(description = "사용자 이름", example = "김철수")
+    private String userName;
+
     @Schema(description = "권한 ID", example = "1")
     private Integer permissionId;
 
