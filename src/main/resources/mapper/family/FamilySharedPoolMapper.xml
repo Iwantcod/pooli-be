@@ -190,4 +190,28 @@
 	      GROUP BY u.user_name, l.phone, l.line_id
 	</select>
 
+    <select id="selectSharedPoolUsageHistory"
+            resultType="com.pooli.family.domain.dto.response.SharedPoolHistoryItemResDto">
+        SELECT
+            'USAGE' AS eventType,
+            '데이터 사용' AS title,
+            u.user_name AS userName,
+            DATE_FORMAT(fsud.usage_date, '%Y-%m-%d') AS occurredAt,
+            fsud.usage_amount AS amount,
+            'DAY' AS precision
+        FROM FAMILY_SHARED_USAGE_DAILY fsud
+        JOIN LINE l
+          ON l.line_id = fsud.line_id
+         AND l.deleted_at IS NULL
+        JOIN USERS u
+          ON u.user_id = l.user_id
+         AND u.deleted_at IS NULL
+        WHERE fsud.family_id = #{familyId}
+          AND fsud.usage_date >= #{startDate}
+          AND fsud.usage_date < #{endDate}
+          AND fsud.usage_amount > 0
+          AND fsud.deleted_at IS NULL
+        ORDER BY fsud.usage_date DESC, fsud.line_id ASC
+    </select>
+
 </mapper>
