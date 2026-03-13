@@ -8,6 +8,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.slf4j.MDC;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.connection.stream.MapRecord;
@@ -32,6 +33,8 @@ import lombok.extern.slf4j.Slf4j;
 @Profile({"local", "traffic"})
 @RequiredArgsConstructor
 public class TrafficStreamConsumerRunner implements SmartLifecycle {
+
+    private static final String TRACE_ID_MDC_KEY = "traceId";
 
     // Streams read/ack/DLQ 인프라 유틸
     private final TrafficStreamInfraService trafficStreamInfraService;
@@ -248,6 +251,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
       * 입력 상태를 해석해 분기별 처리 로직을 수행합니다.
      */
     private void handleRecord(MapRecord<String, String, String> record) {
+        // worker 스레드는 재사용되므로 이전 레코드의 MDC가 남지 않게 먼저 비운다.
+        MDC.remove(TRACE_ID_MDC_KEY);
+
         // DLQ/로그 추적을 위해 레코드 ID를 초기에 추출해 둔다.
         String recordId = record.getId().getValue();
 
@@ -273,66 +279,62 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 return;
             }
 
-            // 이미 DONE 저장된 traceId면 재차감 없이 즉시 ACK해 재전달을 종료한다.
-            if (trafficDeductDonePersistenceService.existsByTraceId(payload.getTraceId())) {
-                log.info(
-                        "traffic_stream_record_already_done recordId={} traceId={}",
-                        recordId,
-                        payload.getTraceId()
-                );
-                trafficStreamInfraService.acknowledge(record.getId());
-                return;
-            }
-
-            // 동일 traceId에 대한 동시/중복 처리 경쟁을 막기 위해 in-flight 선점을 시도한다.
-            // 선점 실패는 이미 다른 워커(또는 다른 인스턴스)가 처리 중이라는 의미이므로
-            // 현재 레코드는 실행을 생략한다.
-            boolean claimed = trafficInFlightDedupeService.tryClaim(payload.getTraceId());
-            if (!claimed) {
-                // 선점 실패 직후 DONE이 이미 저장됐는지 한 번 더 확인한다.
-                // 다른 워커가 처리 완료했다면 ACK로 정리하고, 아니면 재전달에 맡긴다.
+            MDC.put(TRACE_ID_MDC_KEY, payload.getTraceId());
+            try {
+                // 이미 DONE 저장된 traceId면 재차감 없이 즉시 ACK해 재전달을 종료한다.
                 if (trafficDeductDonePersistenceService.existsByTraceId(payload.getTraceId())) {
+                    log.info("traffic_stream_record_already_done recordId={}", recordId);
                     trafficStreamInfraService.acknowledge(record.getId());
+                    return;
                 }
+
+                // 동일 traceId에 대한 동시/중복 처리 경쟁을 막기 위해 in-flight 선점을 시도한다.
+                // 선점 실패는 이미 다른 워커(또는 다른 인스턴스)가 처리 중이라는 의미이므로
+                // 현재 레코드는 실행을 생략한다.
+                boolean claimed = trafficInFlightDedupeService.tryClaim(payload.getTraceId());
+                if (!claimed) {
+                    // 선점 실패 직후 DONE이 이미 저장됐는지 한 번 더 확인한다.
+                    // 다른 워커가 처리 완료했다면 ACK로 정리하고, 아니면 재전달에 맡긴다.
+                    if (trafficDeductDonePersistenceService.existsByTraceId(payload.getTraceId())) {
+                        trafficStreamInfraService.acknowledge(record.getId());
+                    }
+                    log.info("traffic_stream_record_deduped recordId={}", recordId);
+                    return;
+                }
+
+                // 10-tick 오케스트레이터를 실행해 개인풀/공유풀 차감 결과를 계산한다.
+                TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
+
+                // DONE 저장을 먼저 수행한다.
+                // - 신규 저장(1건) 또는 중복 저장(0건)은 모두 idempotent 성공으로 간주한다.
+                // - 저장 예외가 발생하면 ACK를 하지 않아 재전달로 복구한다.
+                boolean saved = trafficDeductDonePersistenceService.saveIfAbsent(payload, result);
+
+                // "저장 성공 후 ACK" 규칙을 보장하기 위해 영속화 이후에만 ACK한다.
+                trafficStreamInfraService.acknowledge(record.getId());
+
+                // ACK까지 성공한 뒤 in-flight 키를 정리한다.
+                trafficInFlightDedupeService.release(payload.getTraceId());
+
                 log.info(
-                        "traffic_stream_record_deduped recordId={} traceId={}",
+                        "traffic_stream_record_done recordId={} persistResult={} finalStatus={} deducted={} remaining={} lastLuaStatus={}",
                         recordId,
-                        payload.getTraceId()
+                        saved ? "SAVED" : "DUPLICATE",
+                        result.getFinalStatus(),
+                        result.getDeductedTotalBytes(),
+                        result.getApiRemainingData(),
+                        result.getLastLuaStatus()
                 );
-                return;
+            } catch (Exception e) {
+                // 처리 중 시스템 예외는 ACK하지 않고 남겨 재전달/reclaim 경로에서 복구한다.
+                log.error("traffic_stream_record_handle_failed recordId={}", recordId, e);
+            } finally {
+                MDC.remove(TRACE_ID_MDC_KEY);
             }
-
-            // 10-tick 오케스트레이터를 실행해 개인풀/공유풀 차감 결과를 계산한다.
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // DONE 저장을 먼저 수행한다.
-            // - 신규 저장(1건) 또는 중복 저장(0건)은 모두 idempotent 성공으로 간주한다.
-            // - 저장 예외가 발생하면 ACK를 하지 않아 재전달로 복구한다.
-            boolean saved = trafficDeductDonePersistenceService.saveIfAbsent(payload, result);
-
-            // "저장 성공 후 ACK" 규칙을 보장하기 위해 영속화 이후에만 ACK한다.
-            trafficStreamInfraService.acknowledge(record.getId());
-
-            // ACK까지 성공한 뒤 in-flight 키를 정리한다.
-            trafficInFlightDedupeService.release(payload.getTraceId());
-
-            log.info(
-                    "traffic_stream_record_done recordId={} traceId={} persistResult={} finalStatus={} deducted={} remaining={} lastLuaStatus={}",
-                    recordId,
-                    result.getTraceId(),
-                    saved ? "SAVED" : "DUPLICATE",
-                    result.getFinalStatus(),
-                    result.getDeductedTotalBytes(),
-                    result.getApiRemainingData(),
-                    result.getLastLuaStatus()
-            );
         } catch (JsonProcessingException e) {
             // 스키마 불일치/JSON 파손은 재처리해도 복구가 어려우므로 DLQ로 분기한다.
             trafficStreamInfraService.writeDlq(payloadJson, "payload 역직렬화 실패", recordId);
             trafficStreamInfraService.acknowledge(record.getId());
-        } catch (Exception e) {
-            // 처리 중 시스템 예외는 ACK하지 않고 남겨 재전달/reclaim 경로에서 복구한다.
-            log.error("traffic_stream_record_handle_failed recordId={}", recordId, e);
         }
     }
 

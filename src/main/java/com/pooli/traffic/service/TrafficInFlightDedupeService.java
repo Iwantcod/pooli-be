@@ -42,7 +42,7 @@ public class TrafficInFlightDedupeService {
 
         boolean acquired = Boolean.TRUE.equals(claimed);
         if (!acquired) {
-            log.info("traffic_dedupe_claim_skipped traceId={} key={}", traceId, dedupeKey);
+            log.info("traffic_dedupe_claim_skipped key={}", dedupeKey);
         }
         return acquired;
     }

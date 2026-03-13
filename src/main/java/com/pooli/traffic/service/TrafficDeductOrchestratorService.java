@@ -79,8 +79,7 @@ public class TrafficDeductOrchestratorService {
                 int remainingTicks = (MAX_TICKS - tick) + 1;
                 long currentTickTargetData = calculateCurrentTickTarget(apiRemainingData, remainingTicks);
                 log.debug(
-                        "traffic_tick_started traceId={} tick={} lagMs={} currentTickTargetData={} apiRemainingBefore={}",
-                        payload == null ? null : payload.getTraceId(),
+                        "traffic_tick_started tick={} lagMs={} currentTickTargetData={} apiRemainingBefore={}",
                         tick,
                         lagMs,
                         currentTickTargetData,
@@ -100,8 +99,7 @@ public class TrafficDeductOrchestratorService {
                 // 개인풀 결과가 회복 불가면 즉시 종료한다.
                 if (isUnrecoverableStatus(individualResult.getStatus())) {
                     log.debug(
-                            "traffic_orchestrator_unrecoverable_individual traceId={} tick={} status={}",
-                            payload == null ? null : payload.getTraceId(),
+                            "traffic_orchestrator_unrecoverable_individual tick={} status={}",
                             tick,
                             individualResult.getStatus()
                     );
@@ -123,8 +121,7 @@ public class TrafficDeductOrchestratorService {
                     // 공유풀 결과가 회복 불가면 즉시 종료한다.
                     if (isUnrecoverableStatus(sharedResult.getStatus())) {
                         log.debug(
-                                "traffic_orchestrator_unrecoverable_shared traceId={} tick={} status={}",
-                                payload == null ? null : payload.getTraceId(),
+                                "traffic_orchestrator_unrecoverable_shared tick={} status={}",
                                 tick,
                                 sharedResult.getStatus()
                         );
@@ -134,8 +131,7 @@ public class TrafficDeductOrchestratorService {
 
                 long processingMs = nanosToMillis(System.nanoTime() - tickStartedNano);
                 log.debug(
-                        "traffic_tick_completed traceId={} tick={} processingMs={} apiRemainingAfter={} deductedTotalBytes={}",
-                        payload == null ? null : payload.getTraceId(),
+                        "traffic_tick_completed tick={} processingMs={} apiRemainingAfter={} deductedTotalBytes={}",
                         tick,
                         processingMs,
                         apiRemainingData,
@@ -147,7 +143,7 @@ public class TrafficDeductOrchestratorService {
             finalStatus = resolveFinalStatus(apiRemainingData, lastLuaStatus);
         } catch (Exception e) {
             // 시스템 예외는 FAILED로 고정하고, 마지막 상태는 ERROR로 남긴다.
-            log.error("traffic_orchestrator_failed traceId={}", payload == null ? null : payload.getTraceId(), e);
+            log.error("traffic_orchestrator_failed", e);
             finalStatus = TrafficFinalStatus.FAILED;
             lastLuaStatus = TrafficLuaStatus.ERROR;
         }
