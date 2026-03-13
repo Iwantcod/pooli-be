@@ -13,7 +13,7 @@ public class UpdateIndividualThresholdReqDto {
 
     @NotNull @NotEmpty
     @Schema(description = "개인 데이터 임계치(MB)", example = "3000")
-    private Integer individualThreshold;
+    private Long individualThreshold;
 
     @NotNull @NotEmpty
     @Schema(description = "임계치 활성화 여부", example = "true")
