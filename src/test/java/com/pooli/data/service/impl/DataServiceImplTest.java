@@ -15,6 +15,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.data.domain.dto.response.AppDataUsageResDto;
 import com.pooli.data.domain.dto.response.DataBalancesResDto;
@@ -116,7 +117,9 @@ class DataServiceImplTest {
     @Test
     @DisplayName("앱 데이터 사용량: month 형식이 잘못되면 INVALID_MONTH")
     void getAppDataUsage_invalidMonth_throws() {
-        assertThatThrownBy(() -> dataService.getAppDataUsage(1L, 202313))
+        AuthUserDetails principal = principalWithLineId(2L);
+
+        assertThatThrownBy(() -> dataService.getAppDataUsage(1L, 202313, principal))
             .isInstanceOf(ApplicationException.class)
             .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
                 .isEqualTo(DataErrorCode.INVALID_MONTH));
@@ -125,10 +128,11 @@ class DataServiceImplTest {
     @Test
     @DisplayName("앱 데이터 사용량: 회선 없음이면 DATA_NOT_FOUND")
     void getAppDataUsage_familyLineNotFound_throws() {
+        AuthUserDetails principal = principalWithLineId(2L);
         when(permissionLineMapper.isPermissionEnabledByTitle(1L)).thenReturn(true);
         when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> dataService.getAppDataUsage(1L, 202603))
+        assertThatThrownBy(() -> dataService.getAppDataUsage(1L, 202603, principal))
             .isInstanceOf(ApplicationException.class)
             .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
                 .isEqualTo(DataErrorCode.DATA_NOT_FOUND));
@@ -137,10 +141,11 @@ class DataServiceImplTest {
     @Test
     @DisplayName("앱 데이터 사용량: 권한 비활성 또는 비공개면 isPublic=false 반환")
     void getAppDataUsage_permissionDisabled_returnsPrivate() {
+        AuthUserDetails principal = principalWithLineId(2L);
         when(permissionLineMapper.isPermissionEnabledByTitle(1L)).thenReturn(false);
         when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.of(familyLine(false)));
 
-        AppDataUsageResDto result = dataService.getAppDataUsage(1L, 202603);
+        AppDataUsageResDto result = dataService.getAppDataUsage(1L, 202603, principal);
 
         assertThat(result.getIsPublic()).isFalse();
         assertThat(result.getTotalUsedAmount()).isNull();
@@ -150,10 +155,11 @@ class DataServiceImplTest {
     @Test
     @DisplayName("앱 데이터 사용량: 권한 활성이나 비공개면 isPublic=false 반환")
     void getAppDataUsage_notPublic_returnsPrivate() {
+        AuthUserDetails principal = principalWithLineId(2L);
         when(permissionLineMapper.isPermissionEnabledByTitle(1L)).thenReturn(true);
         when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.of(familyLine(false)));
 
-        AppDataUsageResDto result = dataService.getAppDataUsage(1L, 202603);
+        AppDataUsageResDto result = dataService.getAppDataUsage(1L, 202603, principal);
 
         assertThat(result.getIsPublic()).isFalse();
     }
@@ -161,11 +167,12 @@ class DataServiceImplTest {
     @Test
     @DisplayName("앱 데이터 사용량: 앱 목록 비어있으면 DATA_NOT_FOUND")
     void getAppDataUsage_emptyApps_throws() {
+        AuthUserDetails principal = principalWithLineId(2L);
         when(permissionLineMapper.isPermissionEnabledByTitle(1L)).thenReturn(true);
         when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.of(familyLine(true)));
         when(dataMapper.findAppDataUsageByLineIdAndMonth(1L, 202603)).thenReturn(List.of());
 
-        assertThatThrownBy(() -> dataService.getAppDataUsage(1L, 202603))
+        assertThatThrownBy(() -> dataService.getAppDataUsage(1L, 202603, principal))
             .isInstanceOf(ApplicationException.class)
             .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
                 .isEqualTo(DataErrorCode.DATA_NOT_FOUND));
@@ -174,6 +181,7 @@ class DataServiceImplTest {
     @Test
     @DisplayName("앱 데이터 사용량: 앱 사용량 합산 반환")
     void getAppDataUsage_success_returnsTotal() {
+        AuthUserDetails principal = principalWithLineId(2L);
         List<AppDataUsageResDto.AppUsageDto> apps = List.of(
             AppDataUsageResDto.AppUsageDto.builder().appName("A").usedAmount(100L).build(),
             AppDataUsageResDto.AppUsageDto.builder().appName("B").usedAmount(300L).build()
@@ -182,7 +190,7 @@ class DataServiceImplTest {
         when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.of(familyLine(true)));
         when(dataMapper.findAppDataUsageByLineIdAndMonth(1L, 202603)).thenReturn(apps);
 
-        AppDataUsageResDto result = dataService.getAppDataUsage(1L, 202603);
+        AppDataUsageResDto result = dataService.getAppDataUsage(1L, 202603, principal);
 
         assertThat(result.getIsPublic()).isTrue();
         assertThat(result.getTotalUsedAmount()).isEqualTo(400L);
@@ -291,5 +299,16 @@ class DataServiceImplTest {
     private static int previousYearMonth() {
         YearMonth prev = YearMonth.now().minusMonths(1);
         return prev.getYear() * 100 + prev.getMonthValue();
+    }
+
+    private static AuthUserDetails principalWithLineId(Long lineId) {
+        return AuthUserDetails.builder()
+            .userId(1L)
+            .userName("user")
+            .email("user@example.com")
+            .password("pw")
+            .lineId(lineId)
+            .authorities(List.of())
+            .build();
     }
 }
