@@ -1,14 +1,21 @@
 package com.pooli.family.service;
 
-import com.pooli.common.exception.ApplicationException;
-import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
-import com.pooli.family.domain.dto.response.*;
-import com.pooli.family.domain.entity.SharedPoolDomain;
-import com.pooli.family.exception.SharedPoolErrorCode;
-import com.pooli.family.repository.FamilySharedPoolMapper;
-import com.pooli.notification.domain.enums.AlarmCode;
-import com.pooli.notification.domain.enums.AlarmType;
-import com.pooli.notification.service.AlarmHistoryService;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.Collections;
+import java.util.List;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -16,13 +23,29 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Sort;
 
-import java.util.Collections;
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
+import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.common.exception.ApplicationException;
+import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.family.domain.dto.mongo.SharedPoolTransferLog;
+import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
+import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
+import com.pooli.family.domain.dto.response.FamilySharedPoolResDto;
+import com.pooli.family.domain.dto.response.SharedDataThresholdResDto;
+import com.pooli.family.domain.dto.response.SharedPoolDetailResDto;
+import com.pooli.family.domain.dto.response.SharedPoolHistoryItemResDto;
+import com.pooli.family.domain.dto.response.SharedPoolMainResDto;
+import com.pooli.family.domain.dto.response.SharedPoolMonthlyUsageResDto;
+import com.pooli.family.domain.dto.response.SharedPoolMyStatusResDto;
+import com.pooli.family.domain.entity.SharedPoolDomain;
+import com.pooli.family.exception.SharedPoolErrorCode;
+import com.pooli.family.mapper.FamilyMapper;
+import com.pooli.family.mapper.FamilySharedPoolMapper;
+import com.pooli.family.repository.mongo.SharedPoolTransferLogRepository;
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.service.AlarmHistoryService;
 
 @ExtendWith(MockitoExtension.class)
 class FamilySharedPoolsServiceTest {
@@ -31,15 +54,19 @@ class FamilySharedPoolsServiceTest {
     private FamilySharedPoolMapper sharedPoolMapper;
 
     @Mock
+    private FamilyMapper familyMapper;
+
+    @Mock
     private AlarmHistoryService alarmHistoryService;
+
+    @Mock
+    private SharedPoolTransferLogRepository transferLogRepository;
 
     @InjectMocks
     private FamilySharedPoolsService service;
 
-    // ========== 1. getFamilyIdByLineId ==========
-
     @Test
-    @DisplayName("getFamilyIdByLineId - 정상: lineId로 familyId 반환")
+    @DisplayName("getFamilyIdByLineId returns familyId")
     void getFamilyIdByLineId_success() {
         when(sharedPoolMapper.selectFamilyIdByLineId(101L)).thenReturn(1L);
 
@@ -50,7 +77,7 @@ class FamilySharedPoolsServiceTest {
     }
 
     @Test
-    @DisplayName("getFamilyIdByLineId - 예외: 가족 미가입 시 NOT_FAMILY_MEMBER")
+    @DisplayName("getFamilyIdByLineId throws when line is not in family")
     void getFamilyIdByLineId_notFamilyMember() {
         when(sharedPoolMapper.selectFamilyIdByLineId(999L)).thenReturn(null);
 
@@ -60,10 +87,8 @@ class FamilySharedPoolsServiceTest {
                         .isEqualTo(SharedPoolErrorCode.NOT_FAMILY_MEMBER));
     }
 
-    // ========== 2. getMySharedPoolStatus ==========
-
     @Test
-    @DisplayName("getMySharedPoolStatus - 정상: 개인 데이터 조회 성공")
+    @DisplayName("getMySharedPoolStatus returns member status")
     void getMySharedPoolStatus_success() {
         SharedPoolDomain domain = SharedPoolDomain.builder()
                 .remainingData(8_000_000L)
@@ -79,7 +104,7 @@ class FamilySharedPoolsServiceTest {
     }
 
     @Test
-    @DisplayName("getMySharedPoolStatus - 예외: 데이터 없으면 SHARED_POOL_NOT_FOUND")
+    @DisplayName("getMySharedPoolStatus throws when shared pool is missing")
     void getMySharedPoolStatus_notFound() {
         when(sharedPoolMapper.selectMySharedPoolStatus(999L)).thenReturn(null);
 
@@ -89,10 +114,8 @@ class FamilySharedPoolsServiceTest {
                         .isEqualTo(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND));
     }
 
-    // ========== 3. getFamilySharedPool ==========
-
     @Test
-    @DisplayName("getFamilySharedPool - 정상: 가족 공유풀 5개 필드 반환")
+    @DisplayName("getFamilySharedPool returns family summary")
     void getFamilySharedPool_success() {
         SharedPoolDomain domain = SharedPoolDomain.builder()
                 .poolTotalData(1_000_000L)
@@ -114,7 +137,7 @@ class FamilySharedPoolsServiceTest {
     }
 
     @Test
-    @DisplayName("getFamilySharedPool - 예외: 데이터 없으면 SHARED_POOL_NOT_FOUND")
+    @DisplayName("getFamilySharedPool throws when family pool is missing")
     void getFamilySharedPool_notFound() {
         when(sharedPoolMapper.selectFamilySharedPool(999L)).thenReturn(null);
 
@@ -124,12 +147,12 @@ class FamilySharedPoolsServiceTest {
                         .isEqualTo(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND));
     }
 
-    // ========== 4. contributeToSharedPool ==========
-
     @Test
-    @DisplayName("contributeToSharedPool - 정상: 잔량 충분 시 3단 트랜잭션 수행 + 알람 전송")
+    @DisplayName("contributeToSharedPool updates pool and stores Mongo log")
     void contributeToSharedPool_success() {
         when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
+        when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(0L);
         when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L, 201L));
 
         service.contributeToSharedPool(101L, 1L, 500_000L);
@@ -137,16 +160,17 @@ class FamilySharedPoolsServiceTest {
         verify(sharedPoolMapper).updateLineRemainingData(101L, 500_000L);
         verify(sharedPoolMapper).updateFamilyPoolData(1L, 500_000L);
         verify(sharedPoolMapper).insertContribution(1L, 101L, 500_000L);
-        // 알람: 본인(101) 제외, user2(201)에게만 전송
-        verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY),
-                eq(AlarmType.SHARED_POOL_CONTRIBUTION));
+        verify(transferLogRepository).save(any(SharedPoolTransferLog.class));
+        verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY), eq(AlarmType.SHARED_POOL_CONTRIBUTION));
         verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any());
     }
 
     @Test
-    @DisplayName("contributeToSharedPool - 예외: 회선 없으면 LINE_NOT_FOUND")
+    @DisplayName("contributeToSharedPool throws when line is missing")
     void contributeToSharedPool_lineNotFound() {
         when(sharedPoolMapper.selectRemainingData(999L)).thenReturn(null);
+        when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(999L), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(0L);
 
         assertThatThrownBy(() -> service.contributeToSharedPool(999L, 1L, 500_000L))
                 .isInstanceOf(ApplicationException.class)
@@ -154,12 +178,15 @@ class FamilySharedPoolsServiceTest {
                         .isEqualTo(SharedPoolErrorCode.LINE_NOT_FOUND));
 
         verify(sharedPoolMapper, never()).updateLineRemainingData(anyLong(), anyLong());
+        verify(transferLogRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("contributeToSharedPool - 예외: 잔량 부족 시 INSUFFICIENT_DATA")
+    @DisplayName("contributeToSharedPool throws when member data is insufficient")
     void contributeToSharedPool_insufficientData() {
         when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(100L);
+        when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(0L);
 
         assertThatThrownBy(() -> service.contributeToSharedPool(101L, 1L, 500_000L))
                 .isInstanceOf(ApplicationException.class)
@@ -167,12 +194,11 @@ class FamilySharedPoolsServiceTest {
                         .isEqualTo(SharedPoolErrorCode.INSUFFICIENT_DATA));
 
         verify(sharedPoolMapper, never()).updateLineRemainingData(anyLong(), anyLong());
+        verify(transferLogRepository, never()).save(any());
     }
 
-    // ========== 5. getSharedPoolDetail ==========
-
     @Test
-    @DisplayName("getSharedPoolDetail - 정상: SHARED_LIMIT 없을 때 풀 값 그대로 반환")
+    @DisplayName("getSharedPoolDetail returns pool values without line limit")
     void getSharedPoolDetail_withoutLimit() {
         SharedPoolDomain domain = SharedPoolDomain.builder()
                 .basicDataAmount(10_000_000L)
@@ -191,7 +217,7 @@ class FamilySharedPoolsServiceTest {
     }
 
     @Test
-    @DisplayName("getSharedPoolDetail - 정상: SHARED_LIMIT 있을 때 Math.min 적용")
+    @DisplayName("getSharedPoolDetail applies line limit with min comparison")
     void getSharedPoolDetail_withLimit() {
         SharedPoolDomain domain = SharedPoolDomain.builder()
                 .basicDataAmount(10_000_000L)
@@ -205,14 +231,12 @@ class FamilySharedPoolsServiceTest {
 
         SharedPoolDetailResDto result = service.getSharedPoolDetail(1L, 101L);
 
-        // min(1,000,000, 500,000) = 500,000
         assertThat(result.getSharedPoolTotalAmount()).isEqualTo(500_000L);
-        // min(800,000, 500,000) = 500,000
         assertThat(result.getSharedPoolRemainingAmount()).isEqualTo(500_000L);
     }
 
     @Test
-    @DisplayName("getSharedPoolDetail - 예외: 데이터 없으면 SHARED_POOL_NOT_FOUND")
+    @DisplayName("getSharedPoolDetail throws when shared pool detail is missing")
     void getSharedPoolDetail_notFound() {
         when(sharedPoolMapper.selectSharedPoolDetail(999L, 999L)).thenReturn(null);
 
@@ -222,10 +246,8 @@ class FamilySharedPoolsServiceTest {
                         .isEqualTo(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND));
     }
 
-    // ========== 6. getSharedPoolMain ==========
-
     @Test
-    @DisplayName("getSharedPoolMain - 정상: 메인 대시보드 4개 필드 반환")
+    @DisplayName("getSharedPoolMain returns dashboard summary")
     void getSharedPoolMain_success() {
         SharedPoolDomain domain = SharedPoolDomain.builder()
                 .poolBaseData(0L)
@@ -245,7 +267,7 @@ class FamilySharedPoolsServiceTest {
     }
 
     @Test
-    @DisplayName("getSharedPoolMain - 예외: 데이터 없으면 SHARED_POOL_NOT_FOUND")
+    @DisplayName("getSharedPoolMain throws when dashboard data is missing")
     void getSharedPoolMain_notFound() {
         when(sharedPoolMapper.selectSharedPoolMain(999L)).thenReturn(null);
 
@@ -255,14 +277,14 @@ class FamilySharedPoolsServiceTest {
                         .isEqualTo(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND));
     }
 
-    // ========== 7. getSharedDataThreshold ==========
-
     @Test
-    @DisplayName("getSharedDataThreshold - 정상: 임계치 활성/값 반환")
+    @DisplayName("getSharedDataThreshold returns threshold range")
     void getSharedDataThreshold_success() {
         SharedPoolDomain domain = SharedPoolDomain.builder()
                 .isThresholdActive(true)
                 .familyThreshold(200_000L)
+                .poolTotalData(500_000L)
+                .poolRemainingData(300_000L)
                 .build();
 
         when(sharedPoolMapper.selectSharedDataThreshold(1L)).thenReturn(domain);
@@ -271,10 +293,12 @@ class FamilySharedPoolsServiceTest {
 
         assertThat(result.getIsThresholdActive()).isTrue();
         assertThat(result.getFamilyThreshold()).isEqualTo(200_000L);
+        assertThat(result.getMinThreshold()).isEqualTo(200_000L);
+        assertThat(result.getMaxThreshold()).isEqualTo(500_000L);
     }
 
     @Test
-    @DisplayName("getSharedDataThreshold - 예외: 데이터 없으면 SHARED_POOL_NOT_FOUND")
+    @DisplayName("getSharedDataThreshold throws when threshold data is missing")
     void getSharedDataThreshold_notFound() {
         when(sharedPoolMapper.selectSharedDataThreshold(999L)).thenReturn(null);
 
@@ -284,10 +308,8 @@ class FamilySharedPoolsServiceTest {
                         .isEqualTo(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND));
     }
 
-    // ========== 8. updateSharedDataThreshold ==========
-
     @Test
-    @DisplayName("updateSharedDataThreshold - 정상: Mapper 호출 + 알람 전송 검증")
+    @DisplayName("updateSharedDataThreshold updates threshold and sends family alarms")
     void updateSharedDataThreshold_success() {
         UpdateSharedDataThresholdReqDto request = new UpdateSharedDataThresholdReqDto();
         request.setNewFamilyThreshold(100_000L);
@@ -296,23 +318,84 @@ class FamilySharedPoolsServiceTest {
         service.updateSharedDataThreshold(1L, request);
 
         verify(sharedPoolMapper).updateSharedDataThreshold(1L, 100_000L);
-        // 알람: 가족 전체(101, 201) 모두에게 전송
-        verify(alarmHistoryService).createAlarm(eq(101L), eq(AlarmCode.FAMILY),
-                eq(AlarmType.SHARED_POOL_THRESHOLD_CHANGE));
-        verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY),
-                eq(AlarmType.SHARED_POOL_THRESHOLD_CHANGE));
+        verify(alarmHistoryService).createAlarm(eq(101L), eq(AlarmCode.FAMILY), eq(AlarmType.SHARED_POOL_THRESHOLD_CHANGE));
+        verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY), eq(AlarmType.SHARED_POOL_THRESHOLD_CHANGE));
     }
 
-    // ========== 9. 알람 전송 추가 검증 ==========
+    @Test
+    @DisplayName("getSharedPoolHistory merges contribution and usage history")
+    void getSharedPoolHistory_success() {
+        AuthUserDetails principal = AuthUserDetails.builder()
+                .lineId(101L)
+                .build();
+
+        SharedPoolTransferLog contributionLog = SharedPoolTransferLog.builder()
+                .familyId(1L)
+                .lineId(101L)
+                .amount(5_000_000_000L)
+                .createdAt(Instant.parse("2026-03-15T05:22:00Z"))
+                .build();
+
+        SharedPoolHistoryItemResDto usageItem = SharedPoolHistoryItemResDto.builder()
+                .eventType("USAGE")
+                .title("데이터 사용")
+                .userName("박아들")
+                .occurredAt("2026-03-15")
+                .amount(1_200_000_000L)
+                .precision("DAY")
+                .build();
+
+        when(sharedPoolMapper.selectFamilyIdByLineId(101L)).thenReturn(1L);
+        when(familyMapper.selectFamilyMembersSimpleByLineId(101L)).thenReturn(List.of(
+                FamilyMembersSimpleResDto.builder().lineId(101L).userName("김영희").build(),
+                FamilyMembersSimpleResDto.builder().lineId(201L).userName("박아들").build()
+        ));
+        when(sharedPoolMapper.selectSharedPoolUsageHistory(
+                eq(1L),
+                eq(LocalDate.of(2026, 3, 1)),
+                eq(LocalDate.of(2026, 4, 1))
+        )).thenReturn(List.of(usageItem));
+        when(transferLogRepository.findByFamilyIdAndCreatedAtBetween(
+                eq(1L),
+                eq(LocalDate.of(2026, 3, 1).atStartOfDay(ZoneId.systemDefault()).toInstant()),
+                eq(LocalDate.of(2026, 4, 1).atStartOfDay(ZoneId.systemDefault()).toInstant()),
+                any(Sort.class)
+        )).thenReturn(List.of(contributionLog));
+
+        List<SharedPoolHistoryItemResDto> result = service.getSharedPoolHistory(principal, 202603);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).getEventType()).isEqualTo("CONTRIBUTION");
+        assertThat(result.get(0).getTitle()).isEqualTo("데이터 보태기");
+        assertThat(result.get(0).getUserName()).isEqualTo("김영희");
+        assertThat(result.get(0).getPrecision()).isEqualTo("EVENT");
+        assertThat(result.get(1).getEventType()).isEqualTo("USAGE");
+        assertThat(result.get(1).getPrecision()).isEqualTo("DAY");
+    }
+
+    @Test
+    @DisplayName("getSharedPoolHistory throws for invalid yearMonth")
+    void getSharedPoolHistory_invalidYearMonth() {
+        AuthUserDetails principal = AuthUserDetails.builder()
+                .lineId(101L)
+                .build();
+
+        assertThatThrownBy(() -> service.getSharedPoolHistory(principal, 20261))
+                .isInstanceOf(ApplicationException.class)
+                .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
+                        .isEqualTo(CommonErrorCode.INVALID_REQUEST_PARAM));
+    }
 
     @Nested
-    @DisplayName("알람 전송 검증")
+    @DisplayName("alarm dispatch")
     class AlarmTest {
 
         @Test
-        @DisplayName("데이터 담기 - 가족이 본인만 있으면 알람 미전송")
+        @DisplayName("contribution alarm skips when there are no other members")
         void contributeAlarm_noOtherMembers() {
             when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
+            when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
+                    .thenReturn(0L);
             when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L));
 
             service.contributeToSharedPool(101L, 1L, 500_000L);
@@ -321,20 +404,21 @@ class FamilySharedPoolsServiceTest {
         }
 
         @Test
-        @DisplayName("데이터 담기 - 가족 멤버 3명이면 본인 제외 2명에게 알람")
+        @DisplayName("contribution alarm notifies every member except actor")
         void contributeAlarm_threeMembers() {
             when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
+            when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
+                    .thenReturn(0L);
             when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L, 201L, 301L));
 
             service.contributeToSharedPool(101L, 1L, 500_000L);
 
-            verify(alarmHistoryService, times(2)).createAlarm(anyLong(), eq(AlarmCode.FAMILY),
-                    eq(AlarmType.SHARED_POOL_CONTRIBUTION));
+            verify(alarmHistoryService, times(2)).createAlarm(anyLong(), eq(AlarmCode.FAMILY), eq(AlarmType.SHARED_POOL_CONTRIBUTION));
             verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any());
         }
 
         @Test
-        @DisplayName("임계치 수정 - 가족 멤버가 없으면 알람 미전송")
+        @DisplayName("threshold alarm is skipped when family has no members")
         void thresholdAlarm_noMembers() {
             UpdateSharedDataThresholdReqDto request = new UpdateSharedDataThresholdReqDto();
             request.setNewFamilyThreshold(50_000L);

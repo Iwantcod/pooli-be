@@ -16,6 +16,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @Tag(name = "Shared Pool", description = "가족 공유데이터 관련 API")
 @RestController
 @RequestMapping("/api/shared-pools")
@@ -70,7 +72,13 @@ public class FamilySharedPoolsController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "데이터 담기 성공"),
-            @ApiResponse(responseCode = "400", description = "잘못된 요청 파라미터"),
+            @ApiResponse(responseCode = "400",
+                    description = """
+					잘못된 요청
+					 - COMMON:4000 요청 형식 불일치
+                     - COMMON:4001 요청 DTO 필드 유효성 검증 실패
+                     - SHARED_POOL:4002 이번 달 공유풀 데이터 담기 최대 용량(60GB)을 초과
+					"""),
             @ApiResponse(responseCode = "404", description = "유저 및 가족 정보를 찾을 수 없음"),
             @ApiResponse(responseCode = "500", description = "서버 오류")
     })
@@ -184,5 +192,23 @@ public class FamilySharedPoolsController {
             @AuthenticationPrincipal AuthUserDetails principal
     ) {
         return ResponseEntity.ok(familySharedPoolsService.getFamilyMonthlySharedUsageTotal(principal));
+    }
+
+    @Operation(
+            summary = "공유 데이터 히스토리 조회",
+            description = "월 단위로 공유 데이터 보내기와 일별 사용 집계를 함께 조회합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "400", description = "yearMonth 형식 오류"),
+            @ApiResponse(responseCode = "404", description = "공유 데이터 정보를 찾을 수 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 오류")
+    })
+    @GetMapping("/history")
+    public ResponseEntity<List<SharedPoolHistoryItemResDto>> getSharedPoolHistory(
+            @AuthenticationPrincipal AuthUserDetails principal,
+            @RequestParam(name = "yearMonth") Integer yearMonth
+    ) {
+        return ResponseEntity.ok(familySharedPoolsService.getSharedPoolHistory(principal, yearMonth));
     }
 }

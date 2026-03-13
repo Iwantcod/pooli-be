@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
   "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.pooli.family.repository.FamilySharedPoolMapper">
+<mapper namespace="com.pooli.family.mapper.FamilySharedPoolMapper">
 
     <!-- GET /api/shared-pools/my 용 -->
     <select id="selectMySharedPoolStatus" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
@@ -34,6 +34,16 @@
         WHERE f.family_id = #{familyId}
           AND f.deleted_at IS NULL
         GROUP BY f.family_id, f.pool_base_data, f.pool_total_data, f.pool_remaining_data
+    </select>
+
+    <!-- POST /api/shared-pools 용 (해당 월 기준 공유풀 기여량 조회) -->
+    <select id="selectMonthlyContributionByFamilyId" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(contribution_amount), 0)
+        FROM FAMILY_SHARED_USAGE_DAILY
+        WHERE line_id = #{lineId}
+        AND usage_date >= #{startDate}
+        AND usage_date &lt; #{endDate}
+        AND deleted_at IS NULL
     </select>
 
     <!-- POST /api/shared-pools 용 (데이터 담기 1: 회선 잔여량 차감) -->
@@ -179,5 +189,29 @@
 	      WHERE fl.family_id = #{familyId}
 	      GROUP BY u.user_name, l.phone, l.line_id
 	</select>
+
+    <select id="selectSharedPoolUsageHistory"
+            resultType="com.pooli.family.domain.dto.response.SharedPoolHistoryItemResDto">
+        SELECT
+            'USAGE' AS eventType,
+            '데이터 사용' AS title,
+            u.user_name AS userName,
+            DATE_FORMAT(fsud.usage_date, '%Y-%m-%d') AS occurredAt,
+            fsud.usage_amount AS amount,
+            'DAY' AS `precision`
+        FROM FAMILY_SHARED_USAGE_DAILY fsud
+        JOIN LINE l
+          ON l.line_id = fsud.line_id
+         AND l.deleted_at IS NULL
+        JOIN USERS u
+          ON u.user_id = l.user_id
+         AND u.deleted_at IS NULL
+        WHERE fsud.family_id = #{familyId}
+          AND fsud.usage_date >= #{startDate}
+          AND fsud.usage_date &lt; #{endDate}
+          AND fsud.usage_amount > 0
+          AND fsud.deleted_at IS NULL
+        ORDER BY fsud.usage_date DESC, fsud.line_id ASC
+    </select>
 
 </mapper>

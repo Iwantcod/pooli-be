@@ -77,7 +77,7 @@ public class MemberPermissionController {
     @PreAuthorize("@authz.requireAdminOrOwner(authentication)")
     @GetMapping("/family")
     public ResponseEntity<MemberPermissionListResDto> getFamilyMemberPermissions(
-            @Parameter(description = "회선 ID (관리자 전용)", example = "1001") @RequestParam(required = false) Long lineId,
+            @Parameter(description = "회선 ID (관리자 전용)", example = "1001") @RequestParam(required = false, name = "lineId") Long lineId,
             @AuthenticationPrincipal AuthUserDetails userDetails) {
         return ResponseEntity.ok(memberPermissionService.getFamilyMemberPermissions(lineId, userDetails));
     }
@@ -106,7 +106,7 @@ public class MemberPermissionController {
     @PreAuthorize("@authz.requireAdminOrOwner(authentication)")
     @GetMapping
     public ResponseEntity<MemberPermissionListResDto> getMemberPermissions(
-            @Parameter(description = "회선 ID", example = "1001") @RequestParam Long lineId,
+            @Parameter(description = "회선 ID", example = "1001") @RequestParam(value = "lineId") Long lineId,
             @AuthenticationPrincipal AuthUserDetails userDetails) {
         return ResponseEntity.ok(memberPermissionService.getMemberPermissions(lineId, userDetails));
     }

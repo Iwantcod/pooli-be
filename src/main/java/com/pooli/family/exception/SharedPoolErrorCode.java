@@ -31,6 +31,13 @@ public enum SharedPoolErrorCode implements ErrorCode {
             HttpStatus.BAD_REQUEST,
             "SHARED_POOL:4001",
             "잔여 데이터가 부족합니다."
+    ),
+
+    // 공유풀 월 최대 용량 초과
+    SHARED_POOL_LIMIT_EXCEEDED(
+            HttpStatus.BAD_REQUEST,
+            "SHARED_POOL:4002",
+            "이번 달 공유풀 데이터 담기 최대 용량(60GB)을 초과했습니다."
     );
 
     private final HttpStatus httpStatus;
