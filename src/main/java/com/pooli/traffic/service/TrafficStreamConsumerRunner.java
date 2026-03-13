@@ -1,5 +1,6 @@
 package com.pooli.traffic.service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -46,8 +47,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final TrafficDeductOrchestratorService trafficDeductOrchestratorService;
     // in-flight dedupe 선점 서비스(traceId 기준)
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
-    // DONE 영속화 서비스(traceId UNIQUE idempotency)
-    private final TrafficDeductDonePersistenceService trafficDeductDonePersistenceService;
+    // Mongo 완료 로그 서비스(traceId UNIQUE idempotency)
+    private final TrafficDeductDoneLogService trafficDeductDoneLogService;
     // pending reclaim/retry/DLQ 분기 서비스
     private final TrafficStreamReclaimService trafficStreamReclaimService;
 
@@ -281,8 +282,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
             MDC.put(TRACE_ID_MDC_KEY, payload.getTraceId());
             try {
-                // 이미 DONE 저장된 traceId면 재차감 없이 즉시 ACK해 재전달을 종료한다.
-                if (trafficDeductDonePersistenceService.existsByTraceId(payload.getTraceId())) {
+                // 이미 완료 로그가 저장된 traceId면 재차감 없이 즉시 ACK해 재전달을 종료한다.
+                if (trafficDeductDoneLogService.existsByTraceId(payload.getTraceId())) {
                     log.info("traffic_stream_record_already_done recordId={}", recordId);
                     trafficStreamInfraService.acknowledge(record.getId());
                     return;
@@ -293,9 +294,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 // 현재 레코드는 실행을 생략한다.
                 boolean claimed = trafficInFlightDedupeService.tryClaim(payload.getTraceId());
                 if (!claimed) {
-                    // 선점 실패 직후 DONE이 이미 저장됐는지 한 번 더 확인한다.
+                    // 선점 실패 직후 완료 로그가 이미 저장됐는지 한 번 더 확인한다.
                     // 다른 워커가 처리 완료했다면 ACK로 정리하고, 아니면 재전달에 맡긴다.
-                    if (trafficDeductDonePersistenceService.existsByTraceId(payload.getTraceId())) {
+                    if (trafficDeductDoneLogService.existsByTraceId(payload.getTraceId())) {
                         trafficStreamInfraService.acknowledge(record.getId());
                     }
                     log.info("traffic_stream_record_deduped recordId={}", recordId);
@@ -305,10 +306,10 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 // 10-tick 오케스트레이터를 실행해 개인풀/공유풀 차감 결과를 계산한다.
                 TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
-                // DONE 저장을 먼저 수행한다.
-                // - 신규 저장(1건) 또는 중복 저장(0건)은 모두 idempotent 성공으로 간주한다.
+                // Mongo 완료 로그 저장을 먼저 수행한다.
+                // - 신규 저장(true) 또는 중복 저장(false)은 모두 idempotent 성공으로 간주한다.
                 // - 저장 예외가 발생하면 ACK를 하지 않아 재전달로 복구한다.
-                boolean saved = trafficDeductDonePersistenceService.saveIfAbsent(payload, result);
+                boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload, result, recordId);
 
                 // "저장 성공 후 ACK" 규칙을 보장하기 위해 영속화 이후에만 ACK한다.
                 trafficStreamInfraService.acknowledge(record.getId());
@@ -316,14 +317,26 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 // ACK까지 성공한 뒤 in-flight 키를 정리한다.
                 trafficInFlightDedupeService.release(payload.getTraceId());
 
+                LocalDateTime loggedAt = LocalDateTime.now();
+                String logEventName = saved ? "traffic_stream_record_done" : "traffic_stream_record_done_duplicate";
                 log.info(
-                        "traffic_stream_record_done recordId={} persistResult={} finalStatus={} deducted={} remaining={} lastLuaStatus={}",
+                        logEventName + " "
+                                + "trace_id={} record_id={} line_id={} family_id={} app_id={} "
+                                + "api_total_data={} deducted_total_bytes={} api_remaining_data={} "
+                                + "final_status={} last_lua_status={} created_at={} finished_at={} logged_at={}",
+                        payload.getTraceId(),
                         recordId,
-                        saved ? "SAVED" : "DUPLICATE",
-                        result.getFinalStatus(),
+                        payload.getLineId(),
+                        payload.getFamilyId(),
+                        payload.getAppId(),
+                        result.getApiTotalData(),
                         result.getDeductedTotalBytes(),
                         result.getApiRemainingData(),
-                        result.getLastLuaStatus()
+                        result.getFinalStatus(),
+                        result.getLastLuaStatus(),
+                        result.getCreatedAt(),
+                        result.getFinishedAt(),
+                        loggedAt
                 );
             } catch (Exception e) {
                 // 처리 중 시스템 예외는 ACK하지 않고 남겨 재전달/reclaim 경로에서 복구한다.

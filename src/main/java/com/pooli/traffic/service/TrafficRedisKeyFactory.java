@@ -16,7 +16,7 @@ import lombok.RequiredArgsConstructor;
  * app.redis.namespace를 앞에 붙여 환경별 키 충돌을 방지합니다.
  */
 @Component
-@Profile({"local", "traffic"})
+@Profile({"local", "api", "traffic"})
 @RequiredArgsConstructor
 public class TrafficRedisKeyFactory {
 

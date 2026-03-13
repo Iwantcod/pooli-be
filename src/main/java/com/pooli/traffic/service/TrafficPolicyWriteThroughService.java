@@ -31,7 +31,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Service
-@Profile({"local", "traffic"})
+@Profile({"local", "api", "traffic"})
 @RequiredArgsConstructor
 public class TrafficPolicyWriteThroughService {
 
