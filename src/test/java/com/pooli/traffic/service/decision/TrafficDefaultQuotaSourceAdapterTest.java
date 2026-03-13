@@ -178,6 +178,59 @@ class TrafficDefaultQuotaSourceAdapterTest {
         }
     }
 
+    @Nested
+    @DisplayName("loadIndividualQosSpeedLimit 테스트")
+    class LoadIndividualQosSpeedLimitTest {
+
+        @Test
+        @DisplayName("qos_speed_limit 원천값에 125를 곱해 반환")
+        void multipliesQosSpeedLimitBy125() {
+            // given
+            TrafficPayloadReqDto payload = payload();
+            when(trafficRefillSourceMapper.selectIndividualQosSpeedLimit(11L)).thenReturn(40L);
+
+            // when
+            long result = trafficDefaultQuotaSourceAdapter.loadIndividualQosSpeedLimit(payload);
+
+            // then
+            assertEquals(5_000L, result);
+        }
+
+        @Test
+        @DisplayName("qos_speed_limit이 0이면 0을 반환")
+        void keepsZeroQosValue() {
+            // given
+            TrafficPayloadReqDto payload = payload();
+            when(trafficRefillSourceMapper.selectIndividualQosSpeedLimit(11L)).thenReturn(0L);
+
+            // when
+            long result = trafficDefaultQuotaSourceAdapter.loadIndividualQosSpeedLimit(payload);
+
+            // then
+            assertEquals(0L, result);
+        }
+
+        @Test
+        @DisplayName("qos_speed_limit이 null/음수면 0으로 보정")
+        void normalizesInvalidQosValuesToZero() {
+            // given
+            TrafficPayloadReqDto payload = payload();
+            when(trafficRefillSourceMapper.selectIndividualQosSpeedLimit(11L))
+                    .thenReturn(null)
+                    .thenReturn(-3L);
+
+            // when
+            long resultWhenNull = trafficDefaultQuotaSourceAdapter.loadIndividualQosSpeedLimit(payload);
+            long resultWhenNegative = trafficDefaultQuotaSourceAdapter.loadIndividualQosSpeedLimit(payload);
+
+            // then
+            assertAll(
+                    () -> assertEquals(0L, resultWhenNull),
+                    () -> assertEquals(0L, resultWhenNegative)
+            );
+        }
+    }
+
     private TrafficPayloadReqDto payload() {
         return TrafficPayloadReqDto.builder()
                 .traceId("trace-001")

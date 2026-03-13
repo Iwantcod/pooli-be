@@ -27,6 +27,16 @@ public interface TrafficQuotaSourcePort {
     long loadInitialAmount(TrafficPoolType poolType, TrafficPayloadReqDto payload, YearMonth targetMonth);
 
     /**
+     * 개인풀 잔량 해시에 저장할 QoS 값을 조회합니다.
+     *
+     * <p>반환값은 Redis에 바로 저장 가능한 최종 값(배율 적용 포함)이어야 합니다.
+     *
+     * @param payload 요청 컨텍스트(lineId 포함)
+     * @return 개인풀 QoS 값(0 이상)
+     */
+    long loadIndividualQosSpeedLimit(TrafficPayloadReqDto payload);
+
+    /**
      * 리필 여부 판단에 필요한 계산 결과(delta, refillUnit, threshold 등)를 반환합니다.
      *
      * <p>호출 시점:

@@ -24,6 +24,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class TrafficDefaultQuotaSourceAdapter implements TrafficQuotaSourcePort {
 
+    private static final long QOS_UPLOAD_MULTIPLIER = 125L;
+
     private final TrafficRefillSourceMapper trafficRefillSourceMapper;
     private final TrafficRecentUsageBucketService trafficRecentUsageBucketService;
 
@@ -44,6 +46,21 @@ public class TrafficDefaultQuotaSourceAdapter implements TrafficQuotaSourcePort 
     public long loadInitialAmount(TrafficPoolType poolType, TrafficPayloadReqDto payload, YearMonth targetMonth) {
         // hydrate 시점의 원천 잔량을 DB에서 읽어 Redis 초기값으로 사용한다.
         return readRemainingAmount(poolType, payload);
+    }
+
+    /**
+     * 개인풀 잔량 해시에 저장할 QoS 값을 조회합니다.
+     * LINE -> PLAN 조인으로 qos_speed_limit 원천값을 읽고, Redis 저장 규격에 맞게 125배로 변환합니다.
+     */
+    @Override
+    public long loadIndividualQosSpeedLimit(TrafficPayloadReqDto payload) {
+        if (payload == null || payload.getLineId() == null) {
+            return 0L;
+        }
+
+        Long rawQosSpeedLimit = trafficRefillSourceMapper.selectIndividualQosSpeedLimit(payload.getLineId());
+        long normalizedQosSpeedLimit = normalizeNonNegative(rawQosSpeedLimit);
+        return normalizedQosSpeedLimit * QOS_UPLOAD_MULTIPLIER;
     }
 
     /**
@@ -208,6 +225,17 @@ public class TrafficDefaultQuotaSourceAdapter implements TrafficQuotaSourcePort 
      */
     private long normalizePositive(Long value) {
         if (value == null || value <= 0) {
+            return 0L;
+        }
+        return value;
+    }
+
+    /**
+     * QoS 원천값은 0 이상만 허용합니다.
+     * null/음수는 비정상 데이터로 간주하고 0으로 보정합니다.
+     */
+    private long normalizeNonNegative(Long value) {
+        if (value == null || value < 0) {
             return 0L;
         }
         return value;

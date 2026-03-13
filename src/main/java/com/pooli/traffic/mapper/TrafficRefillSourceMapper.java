@@ -16,6 +16,11 @@ public interface TrafficRefillSourceMapper {
     Long selectIndividualRemaining(@Param("lineId") Long lineId);
 
     /**
+     * 개인 회선의 요금제 QoS 속도 제한 값을 조회합니다.
+     */
+    Long selectIndividualQosSpeedLimit(@Param("lineId") Long lineId);
+
+    /**
      * 개인풀 원천 잔량을 row lock과 함께 조회합니다.
      */
     Long selectIndividualRemainingForUpdate(@Param("lineId") Long lineId);

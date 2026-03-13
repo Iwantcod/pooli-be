@@ -185,6 +185,11 @@ public class TrafficHydrateRefillAdapterService {
             long initialAmount = trafficQuotaSourcePort.loadInitialAmount(poolType, payload, targetMonth);
             long monthlyExpireAt = trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth);
             trafficQuotaCacheService.hydrateBalance(balanceKey, initialAmount, monthlyExpireAt);
+            if (poolType == TrafficPoolType.INDIVIDUAL) {
+                // 개인풀 잔량 해시에 QoS를 함께 기록해 Lua/후속 처리에서 즉시 참조할 수 있게 한다.
+                long qosSpeedLimit = trafficQuotaSourcePort.loadIndividualQosSpeedLimit(payload);
+                trafficQuotaCacheService.putQos(balanceKey, qosSpeedLimit);
+            }
             trafficHydrateMetrics.incrementHydrate(poolType);
 
             retriedResult = executeDeduct(poolType, payload, balanceKey, currentTickTargetData);

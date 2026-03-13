@@ -57,6 +57,15 @@ public class TrafficQuotaCacheService {
     }
 
     /**
+     * 개인풀 잔량 해시에 QoS 값을 기록합니다.
+     * null/음수는 허용하지 않으므로 0 이상으로 정규화해 저장합니다.
+     */
+    public void putQos(String balanceKey, long qos) {
+        long normalizedQos = Math.max(0L, qos);
+        cacheStringRedisTemplate.opsForHash().put(balanceKey, "qos", String.valueOf(normalizedQos));
+    }
+
+    /**
       * `refillBalance` 처리 목적에 맞는 핵심 로직을 수행합니다.
      */
     public void refillBalance(String balanceKey, long refillAmount, long expireAtEpochSeconds) {
