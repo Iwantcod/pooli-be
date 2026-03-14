@@ -35,6 +35,8 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 import com.pooli.monitoring.metrics.TrafficHydrateMetrics;
 import com.pooli.monitoring.metrics.TrafficRefillMetrics;
@@ -48,6 +50,12 @@ import com.pooli.traffic.domain.enums.TrafficRefillGateStatus;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficHydrateRefillAdapterServiceTest {
+
+    @Mock
+    private StringRedisTemplate cacheStringRedisTemplate;
+
+    @Mock
+    private ValueOperations<String, String> valueOperations;
 
     @Mock
     private TrafficLuaScriptInfraService trafficLuaScriptInfraService;
@@ -88,7 +96,14 @@ class TrafficHydrateRefillAdapterServiceTest {
             stubIndividualDeductKeys();
             when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
             when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+            when(trafficRedisKeyFactory.indivHydrateLockKey(11L)).thenReturn("pooli:indiv_hydrate_lock:11");
             when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(any())).thenReturn(1_770_000_000L);
+            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.setIfAbsent(
+                    "pooli:indiv_hydrate_lock:11",
+                    payload.getTraceId(),
+                    java.time.Duration.ofMillis(TrafficRedisRuntimePolicy.LOCK_TTL_MS)
+            )).thenReturn(true);
             when(trafficLuaScriptInfraService.executeDeductIndivTick(anyList(), anyList()))
                     .thenReturn(luaResult(0L, TrafficLuaStatus.HYDRATE))
                     .thenReturn(luaResult(80L, TrafficLuaStatus.OK));
@@ -105,8 +120,42 @@ class TrafficHydrateRefillAdapterServiceTest {
             );
             verify(trafficQuotaCacheService).hydrateBalance("pooli:remaining_indiv_amount:11:202603", 0L, 1_770_000_000L);
             verify(trafficQuotaCacheService).putQos("pooli:remaining_indiv_amount:11:202603", 2_500L);
+            verify(trafficLuaScriptInfraService).executeLockRelease("pooli:indiv_hydrate_lock:11", payload.getTraceId());
             verify(trafficQuotaSourcePort, never())
                     .loadInitialAmount(eq(TrafficPoolType.INDIVIDUAL), eq(payload), any());
+        }
+
+        @Test
+        @DisplayName("HYDRATE + 락 미획득이면 짧은 대기 후 차감 재시도 1회")
+        void hydrateLockMissThenRetrySuccess() {
+            // given
+            TrafficPayloadReqDto payload = createPayload();
+            stubIndividualDeductKeys();
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+            when(trafficRedisKeyFactory.indivHydrateLockKey(11L)).thenReturn("pooli:indiv_hydrate_lock:11");
+            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.setIfAbsent(
+                    "pooli:indiv_hydrate_lock:11",
+                    payload.getTraceId(),
+                    java.time.Duration.ofMillis(TrafficRedisRuntimePolicy.LOCK_TTL_MS)
+            )).thenReturn(false);
+            when(trafficLuaScriptInfraService.executeDeductIndivTick(anyList(), anyList()))
+                    .thenReturn(luaResult(0L, TrafficLuaStatus.HYDRATE))
+                    .thenReturn(luaResult(40L, TrafficLuaStatus.OK));
+
+            // when
+            TrafficLuaExecutionResult result =
+                    trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L);
+
+            // then
+            assertAll(
+                    () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
+                    () -> assertEquals(40L, result.getAnswer())
+            );
+            verify(trafficQuotaCacheService, never()).hydrateBalance(anyString(), anyLong(), anyLong());
+            verify(trafficLuaScriptInfraService, never()).executeLockRelease("pooli:indiv_hydrate_lock:11", payload.getTraceId());
+            verify(trafficLuaScriptInfraService, times(2)).executeDeductIndivTick(anyList(), anyList());
         }
 
         @Test
