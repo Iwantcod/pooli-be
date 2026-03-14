@@ -33,28 +33,31 @@ import lombok.extern.slf4j.Slf4j;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final String TRACE_ID_KEY = "traceId";
+    private static final int MAX_LOG_BODY_LENGTH = 1000;
 
     @ExceptionHandler(ApplicationException.class)
     public ResponseEntity<ErrorResDto> handleApplicationException(ApplicationException ex, HttpServletRequest request) {
         ErrorCode errorCode = ex.getErrorCode();
+        String body = truncate((String) request.getAttribute("cachedRequestBody"), MAX_LOG_BODY_LENGTH);
 
         log.error(
                 "application_error traceId={} uri={} errorCode={} message={}",
                 MDC.get(TRACE_ID_KEY),
                 request.getRequestURI(),
                 errorCode.getCode(),
-                ex.getMessage()
+                ex.getMessage(),
+                body
         );
 
 
-        ErrorResDto body = ErrorResDto.builder()
+        ErrorResDto bodyDto = ErrorResDto.builder()
                 .code(errorCode.getCode())
                 .message(ex.getMessage())
                 .timestamp(OffsetDateTime.now().toString())
                 .traceId(MDC.get(TRACE_ID_KEY))
                 .build();
 
-        return ResponseEntity.status(errorCode.getHttpStatus()).body(body);
+        return ResponseEntity.status(errorCode.getHttpStatus()).body(bodyDto);
     }
 
     // COMMON-4000: 요청 형식 불일치 (JSON 파싱/역직렬화 실패)
@@ -328,5 +331,11 @@ public class GlobalExceptionHandler {
                 .name(error.getField())
                 .reason(error.getDefaultMessage())
                 .build();
+    }
+
+    private String truncate(String str, int maxLength) {
+        if (str == null) return null;
+        if (str.length() <= maxLength) return str;
+        return str.substring(0, maxLength) + "...(truncated)";
     }
 }
