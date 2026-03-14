@@ -27,62 +27,61 @@
 	</select>
 	
 	
-    <select id="selectFamilyMembers"
-          resultType="com.pooli.family.domain.dto.response.FamilyMembersResDto$FamilyMemberDto">
+	<select id="selectFamilyMembers"
+	          resultType="com.pooli.family.domain.dto.response.FamilyMembersResDto$FamilyMemberDto">
+			  SELECT
+	    u.user_id             AS userId,
+	    l.line_id             AS lineId,
+	    l.plan_id             AS planId,
+	    u.user_name           AS userName,
+	    l.phone               AS phone,
+	    p.plan_name           AS planName,
+	    l.remaining_data      AS remainingData,
+	    p.basic_data_amount   AS basicDataAmount,
+	    fl.role               AS role,
+	    CASE
+	      WHEN COALESCE(ll.is_shared_limit_active, FALSE) = FALSE THEN f.pool_total_data
+	      ELSE ll.shared_data_limit
+	    END AS sharedPoolTotalAmount,
+	    CASE
+	      WHEN COALESCE(ll.is_shared_limit_active, FALSE) = FALSE THEN f.pool_remaining_data
+	      WHEN ll.shared_data_limit = -1 THEN -1
+	      ELSE GREATEST(
+	             ll.shared_data_limit - COALESCE(fsu.monthly_shared_usage, 0),
+	             0
+	           )
+	    END AS sharedPoolRemainingAmount,
+	    CASE WHEN l.line_id = #{lineId} THEN TRUE ELSE FALSE END AS isMe
+	  FROM FAMILY_LINE fl
+	  JOIN LINE  l ON fl.line_id = l.line_id
+	  JOIN USERS u ON l.user_id = u.user_id
+	  JOIN PLAN  p ON l.plan_id = p.plan_id
+	  JOIN FAMILY f ON fl.family_id = f.family_id
+	  LEFT JOIN LINE_LIMIT ll
+	    ON ll.line_id = l.line_id
+	    AND ll.deleted_at IS NULL
+	  LEFT JOIN (
 	    SELECT
-	      u.user_id             AS userId,
-	      l.line_id             AS lineId,
-	      l.plan_id             AS planId,
-	      u.user_name           AS userName,
-	      l.phone               AS phone,
-	      p.plan_name           AS planName,
-	      l.remaining_data      AS remainingData,
-	      p.basic_data_amount   AS basicDataAmount,
-	      fl.role               AS role,
-	      CASE
-	        WHEN COALESCE(ll.is_shared_limit_active, FALSE) = FALSE THEN f.pool_total_data
-	        ELSE ll.shared_data_limit
-	      END AS sharedPoolTotalAmount,
-	      CASE
-	        WHEN COALESCE(ll.is_shared_limit_active, FALSE) = FALSE THEN f.pool_remaining_data
-	        WHEN ll.shared_data_limit = -1 THEN -1
-	        ELSE GREATEST(
-	               ll.shared_data_limit - COALESCE(fsu.monthly_shared_usage, 0),
-	               0
-	             )
-	      END AS sharedPoolRemainingAmount,
-	      CASE WHEN l.line_id = #{lineId} THEN TRUE ELSE FALSE END AS isMe
-	    FROM FAMILY_LINE fl
-	    JOIN LINE  l ON fl.line_id = l.line_id
-	    JOIN USERS u ON l.user_id = u.user_id
-	    JOIN PLAN  p ON l.plan_id = p.plan_id
-	    JOIN FAMILY f ON fl.family_id = f.family_id
-	    LEFT JOIN LINE_LIMIT ll
-	      ON ll.line_id = l.line_id
-	      AND ll.deleted_at IS NULL
-	    LEFT JOIN (
-	      SELECT
-	        family_id,
-	        SUM(usage_amount) AS monthly_shared_usage
-	      FROM FAMILY_SHARED_USAGE_DAILY
-	      WHERE deleted_at IS NULL
-	        AND usage_date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
-	        AND usage_date &lt; DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
-	      GROUP BY family_id
-	    ) fsu
-	      ON fsu.family_id = f.family_id
-	    WHERE fl.family_id = #{familyId}
-	      AND l.deleted_at IS NULL
-	      AND u.deleted_at IS NULL
-	      AND p.deleted_at IS NULL
-	      AND f.deleted_at IS NULL
-	    ORDER BY
-	      CASE
-	        WHEN fl.role = 'OWNER' THEN 0
-	        WHEN l.line_id = #{lineId} THEN 1
-	        ELSE 2
-	      END,
-	      l.line_id ASC
+	      family_id,
+	      SUM(usage_amount) AS monthly_shared_usage
+	    FROM FAMILY_SHARED_USAGE_DAILY
+	    WHERE deleted_at IS NULL
+	      AND family_id = #{familyId}
+	    GROUP BY family_id
+	  ) fsu
+	    ON fsu.family_id = f.family_id
+	  WHERE fl.family_id = #{familyId}
+	    AND l.deleted_at IS NULL
+	    AND u.deleted_at IS NULL
+	    AND p.deleted_at IS NULL
+	    AND f.deleted_at IS NULL
+	  ORDER BY
+	    CASE
+	      WHEN fl.role = 'OWNER' THEN 0
+	      WHEN l.line_id = #{lineId} THEN 1
+	      ELSE 2
+	    END,
+	    l.line_id ASC;
 	</select>
 	
 	<select id="selectFamilyMembersSimpleByLineId"
