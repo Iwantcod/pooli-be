@@ -32,7 +32,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Service class for traffic deduct, hydrate, and refill decision flow.
+ * 차감 결과에 따라 hydrate 및 refill 복구 흐름을 연결하는 어댑터 서비스입니다.
  */
 @Slf4j
 @Service
@@ -70,21 +70,21 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficRefillMetrics trafficRefillMetrics;
 
     /**
-     * Executes executeIndividualWithRecovery workflow.
+     * 개인풀 차감과 복구 흐름을 실행합니다.
      */
     public TrafficLuaExecutionResult executeIndividualWithRecovery(TrafficPayloadReqDto payload, long requestedDataBytes) {
         return executeWithRecovery(TrafficPoolType.INDIVIDUAL, payload, requestedDataBytes);
     }
 
     /**
-     * Executes executeSharedWithRecovery workflow.
+     * 공유풀 차감과 복구 흐름을 실행합니다.
      */
     public TrafficLuaExecutionResult executeSharedWithRecovery(TrafficPayloadReqDto payload, long requestedDataBytes) {
         return executeWithRecovery(TrafficPoolType.SHARED, payload, requestedDataBytes);
     }
 
     /**
-     * Executes executeWithRecovery workflow.
+     * 풀 유형에 맞는 차감, hydrate, refill 복구 흐름을 순차 실행합니다.
      */
     private TrafficLuaExecutionResult executeWithRecovery(
             TrafficPoolType poolType,
@@ -131,7 +131,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Handles handleHydrateIfNeeded logic.
+     * HYDRATE 상태일 때 캐시를 복구한 뒤 재차감합니다.
      */
     private TrafficLuaExecutionResult handleHydrateIfNeeded(
             TrafficPoolType poolType,
@@ -176,7 +176,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Handles applyHydrate logic.
+     * DB 원본 잔량과 QoS 정보를 Redis 캐시에 반영합니다.
      */
     private void applyHydrate(
             TrafficPoolType poolType,
@@ -195,7 +195,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Handles handleRefillIfNeeded logic.
+     * NO_BALANCE 상태일 때 리필 게이트와 DB 차감을 거쳐 재차감합니다.
      */
     private TrafficLuaExecutionResult handleRefillIfNeeded(
             TrafficPoolType poolType,
@@ -364,7 +364,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Handles mergeRefillRetryResult logic.
+     * 1차 차감량과 리필 후 재차감량을 합쳐 최종 결과를 만듭니다.
      */
     private TrafficLuaExecutionResult mergeRefillRetryResult(
             long requestedDataBytes,
@@ -384,7 +384,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Executes executeDeduct workflow.
+     * 풀 유형에 맞는 Lua 차감 스크립트를 실행합니다.
      */
     private TrafficLuaExecutionResult executeDeduct(
             TrafficPoolType poolType,
@@ -522,7 +522,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Attempts guarded operation in tryAcquireHydrateLock.
+     * hydrate 처리를 위한 분산 락 획득을 시도합니다.
      */
     private boolean tryAcquireHydrateLock(String lockKey, String traceId) {
         Boolean acquired = cacheStringRedisTemplate.opsForValue().setIfAbsent(
@@ -534,7 +534,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Applies retry backoff wait in sleepHydrateLockWait.
+     * hydrate 락 재시도 전에 잠시 대기합니다.
      */
     private void sleepHydrateLockWait() {
         long waitMs = Math.max(0L, hydrateLockWaitMs);
@@ -549,7 +549,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Resolves status or key data in resolveTargetMonth.
+     * 이벤트가 속한 사용 월을 계산합니다.
      */
     private YearMonth resolveTargetMonth(TrafficPayloadReqDto payload) {
         Long enqueuedAt = payload.getEnqueuedAt();
@@ -561,7 +561,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Checks condition in isPayloadValidForPool.
+     * 풀 유형에 필요한 payload 필수값이 모두 존재하는지 확인합니다.
      */
     private boolean isPayloadValidForPool(TrafficPoolType poolType, TrafficPayloadReqDto payload) {
         if (payload == null) {
@@ -598,7 +598,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Normalizes values in normalizeNonNegative.
+     * Long 값을 0 이상의 값으로 보정합니다.
      */
     private long normalizeNonNegative(Long value) {
         if (value == null || value <= 0) {
@@ -608,7 +608,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Normalizes values in normalizeNonNegativeInt.
+     * Integer 값을 0 이상의 값으로 보정합니다.
      */
     private int normalizeNonNegativeInt(Integer value) {
         if (value == null || value <= 0) {
@@ -618,7 +618,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Clamps numeric range in clampRemaining.
+     * 남은 차감 대상 값을 0 이상으로 보정합니다.
      */
     private long clampRemaining(long value) {
         if (value <= 0) {
@@ -628,7 +628,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Clamps numeric range in clampToMax.
+     * 값이 최대 허용치를 넘지 않도록 제한합니다.
      */
     private long clampToMax(long maxValue, long value) {
         long normalizedMaxValue = Math.max(0L, maxValue);
@@ -639,7 +639,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Handles safeAdd logic.
+     * 오버플로 없이 두 값을 더합니다.
      */
     private long safeAdd(long left, long right) {
         if (left <= 0) {
@@ -655,7 +655,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Handles claimRefillAmountFromDbWithRetry logic.
+     * DB 리필 차감을 재시도 정책과 함께 수행합니다.
      */
     private TrafficDbRefillClaimResult claimRefillAmountFromDbWithRetry(
             TrafficPoolType poolType,
@@ -696,7 +696,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Checks condition in isRetryableDbException.
+     * DB 예외가 재시도 가능한 종류인지 판별합니다.
      */
     private boolean isRetryableDbException(RuntimeException exception) {
         Throwable current = exception;
@@ -714,7 +714,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * Applies retry backoff wait in sleepDbRetryBackoff.
+     * DB 재시도 전 backoff 시간만큼 대기합니다.
      */
     private void sleepDbRetryBackoff() {
         try {

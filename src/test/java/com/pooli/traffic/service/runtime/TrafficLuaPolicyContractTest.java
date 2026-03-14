@@ -11,7 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Test class for validating Lua policy contract ordering and guards.
+ * Lua 정책 스크립트의 실행 순서와 가드 조건을 검증하는 테스트입니다.
  */
 class TrafficLuaPolicyContractTest {
 

@@ -30,7 +30,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Service class for traffic deduct, hydrate, and refill decision flow.
+ * 트래픽 차감 및 리필에 사용하는 Lua 스크립트의 로딩과 실행을 담당하는 서비스입니다.
  */
 @Slf4j
 @Service
@@ -53,7 +53,7 @@ public class TrafficLuaScriptInfraService {
 
     @PostConstruct
     /**
-     * Handles preloadScripts logic.
+     * 애플리케이션 시작 시 Lua 스크립트를 등록하고 SHA를 미리 적재합니다.
      */
     public void preloadScripts() {
         for (TrafficLuaScriptType scriptType : TrafficLuaScriptType.values()) {
@@ -66,7 +66,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Executes executeDeductIndividual workflow.
+     * 개인풀 차감 Lua 스크립트를 실행합니다.
      */
     public TrafficLuaExecutionResult executeDeductIndividual(List<String> keys, List<String> args) {
         String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_INDIVIDUAL, keys, args);
@@ -74,7 +74,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Executes executeDeductShared workflow.
+     * 공유풀 차감 Lua 스크립트를 실행합니다.
      */
     public TrafficLuaExecutionResult executeDeductShared(List<String> keys, List<String> args) {
         String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_SHARED, keys, args);
@@ -82,7 +82,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Executes executeRefillGate workflow.
+     * 리필 가능 여부를 판단하는 gate Lua 스크립트를 실행합니다.
      */
     public TrafficRefillGateStatus executeRefillGate(
             String lockKey,
@@ -113,7 +113,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Executes executeLockHeartbeat workflow.
+     * 락 소유 여부를 heartbeat Lua 스크립트로 확인합니다.
      */
     public boolean executeLockHeartbeat(String lockKey, String traceId, long lockTtlMs) {
         Long rawResult = executeLongSingle(
@@ -126,7 +126,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Executes executeLockRelease workflow.
+     * 락 해제 Lua 스크립트를 실행합니다.
      */
     public boolean executeLockRelease(String lockKey, String traceId) {
         Long rawResult = executeLongSingle(
@@ -139,14 +139,14 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Returns data from getPreloadedSha.
+     * 미리 적재한 Lua 스크립트의 SHA를 반환합니다.
      */
     public String getPreloadedSha(TrafficLuaScriptType scriptType) {
         return scriptShaRegistry.get(scriptType);
     }
 
     /**
-     * Executes executeStringSingle workflow.
+     * 문자열 결과를 반환하는 Lua 스크립트를 실행합니다.
      */
     private String executeStringSingle(TrafficLuaScriptType scriptType, List<String> keys, List<String> args) {
         RedisScript<String> script = requireStringScript(scriptType);
@@ -165,7 +165,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Executes executeLongSingle workflow.
+     * 정수 결과를 반환하는 Lua 스크립트를 실행합니다.
      */
     private Long executeLongSingle(TrafficLuaScriptType scriptType, List<String> keys, List<String> args) {
         RedisScript<Long> script = requireLongScript(scriptType);
@@ -184,7 +184,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Parses and validates input in parseDeductResult.
+     * 차감 Lua 결과 JSON을 파싱하고 유효성을 검증합니다.
      */
     private TrafficLuaExecutionResult parseDeductResult(String rawJson, TrafficLuaScriptType scriptType) {
         if (rawJson == null || rawJson.isBlank()) {
@@ -216,7 +216,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Validates required runtime resources in requireStringScript.
+     * 문자열 반환용 Lua 스크립트가 등록되어 있는지 확인합니다.
      */
     private RedisScript<String> requireStringScript(TrafficLuaScriptType scriptType) {
         RedisScript<String> script = stringScriptRegistry.get(scriptType);
@@ -230,7 +230,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Validates required runtime resources in requireLongScript.
+     * 정수 반환용 Lua 스크립트가 등록되어 있는지 확인합니다.
      */
     private RedisScript<Long> requireLongScript(TrafficLuaScriptType scriptType) {
         RedisScript<Long> script = longScriptRegistry.get(scriptType);
@@ -244,7 +244,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Handles registerScript logic.
+     * 스크립트 타입에 맞는 RedisScript 레지스트리에 등록합니다.
      */
     private void registerScript(TrafficLuaScriptType scriptType, String scriptText) {
         switch (scriptType) {
@@ -270,7 +270,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Handles preloadScriptSha logic.
+     * Lua 스크립트를 Redis에 preload하고 SHA를 저장합니다.
      */
     private String preloadScriptSha(TrafficLuaScriptType scriptType, String scriptText) {
         try {
@@ -294,7 +294,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * Handles loadScriptText logic.
+     * classpath에서 Lua 스크립트 본문을 읽어옵니다.
      */
     private String loadScriptText(TrafficLuaScriptType scriptType) {
         ClassPathResource resource = new ClassPathResource(scriptType.getResourcePath());
