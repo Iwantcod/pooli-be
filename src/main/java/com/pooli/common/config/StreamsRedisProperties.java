@@ -12,5 +12,14 @@ public class StreamsRedisProperties {
     private String host;
     private int port;
     private String password;
+    private SentinelProperties sentinel = new SentinelProperties();
+
+    @Getter
+    @Setter
+    public static class SentinelProperties {
+        private String master;
+        private String nodes;
+        private String password;
+    }
 }
 
