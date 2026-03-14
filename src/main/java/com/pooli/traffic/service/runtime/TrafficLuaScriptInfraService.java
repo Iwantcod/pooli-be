@@ -30,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
+ * Service class for traffic deduct, hydrate, and refill decision flow.
  */
 @Slf4j
 @Service
@@ -52,6 +53,7 @@ public class TrafficLuaScriptInfraService {
 
     @PostConstruct
     /**
+     * Handles preloadScripts logic.
      */
     public void preloadScripts() {
         for (TrafficLuaScriptType scriptType : TrafficLuaScriptType.values()) {
@@ -64,6 +66,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Executes executeDeductIndividual workflow.
      */
     public TrafficLuaExecutionResult executeDeductIndividual(List<String> keys, List<String> args) {
         String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_INDIVIDUAL, keys, args);
@@ -71,6 +74,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Executes executeDeductShared workflow.
      */
     public TrafficLuaExecutionResult executeDeductShared(List<String> keys, List<String> args) {
         String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_SHARED, keys, args);
@@ -78,6 +82,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Executes executeRefillGate workflow.
      */
     public TrafficRefillGateStatus executeRefillGate(
             String lockKey,
@@ -108,6 +113,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Executes executeLockHeartbeat workflow.
      */
     public boolean executeLockHeartbeat(String lockKey, String traceId, long lockTtlMs) {
         Long rawResult = executeLongSingle(
@@ -120,6 +126,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Executes executeLockRelease workflow.
      */
     public boolean executeLockRelease(String lockKey, String traceId) {
         Long rawResult = executeLongSingle(
@@ -132,12 +139,14 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Returns data from getPreloadedSha.
      */
     public String getPreloadedSha(TrafficLuaScriptType scriptType) {
         return scriptShaRegistry.get(scriptType);
     }
 
     /**
+     * Executes executeStringSingle workflow.
      */
     private String executeStringSingle(TrafficLuaScriptType scriptType, List<String> keys, List<String> args) {
         RedisScript<String> script = requireStringScript(scriptType);
@@ -156,6 +165,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Executes executeLongSingle workflow.
      */
     private Long executeLongSingle(TrafficLuaScriptType scriptType, List<String> keys, List<String> args) {
         RedisScript<Long> script = requireLongScript(scriptType);
@@ -174,6 +184,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Parses and validates input in parseDeductResult.
      */
     private TrafficLuaExecutionResult parseDeductResult(String rawJson, TrafficLuaScriptType scriptType) {
         if (rawJson == null || rawJson.isBlank()) {
@@ -205,6 +216,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Validates required runtime resources in requireStringScript.
      */
     private RedisScript<String> requireStringScript(TrafficLuaScriptType scriptType) {
         RedisScript<String> script = stringScriptRegistry.get(scriptType);
@@ -218,6 +230,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Validates required runtime resources in requireLongScript.
      */
     private RedisScript<Long> requireLongScript(TrafficLuaScriptType scriptType) {
         RedisScript<Long> script = longScriptRegistry.get(scriptType);
@@ -231,6 +244,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Handles registerScript logic.
      */
     private void registerScript(TrafficLuaScriptType scriptType, String scriptText) {
         switch (scriptType) {
@@ -256,6 +270,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Handles preloadScriptSha logic.
      */
     private String preloadScriptSha(TrafficLuaScriptType scriptType, String scriptText) {
         try {
@@ -279,6 +294,7 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Handles loadScriptText logic.
      */
     private String loadScriptText(TrafficLuaScriptType scriptType) {
         ClassPathResource resource = new ClassPathResource(scriptType.getResourcePath());

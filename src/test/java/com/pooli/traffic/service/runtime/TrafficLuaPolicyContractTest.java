@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
+ * Test class for validating Lua policy contract ordering and guards.
  */
 class TrafficLuaPolicyContractTest {
 

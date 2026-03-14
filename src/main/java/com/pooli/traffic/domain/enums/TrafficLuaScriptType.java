@@ -4,6 +4,8 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 /**
+ * 트래픽 처리에서 사용하는 Lua 스크립트의 식별자와 classpath 위치를 관리합니다.
+ * 스크립트 preload/execute 시 공통 키로 사용됩니다.
  */
 @Getter
 @RequiredArgsConstructor

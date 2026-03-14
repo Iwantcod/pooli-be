@@ -32,6 +32,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
+ * Service class for traffic deduct, hydrate, and refill decision flow.
  */
 @Slf4j
 @Service
@@ -69,24 +70,21 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficRefillMetrics trafficRefillMetrics;
 
     /**
-     *
-     *
+     * Executes executeIndividualWithRecovery workflow.
      */
     public TrafficLuaExecutionResult executeIndividualWithRecovery(TrafficPayloadReqDto payload, long requestedDataBytes) {
         return executeWithRecovery(TrafficPoolType.INDIVIDUAL, payload, requestedDataBytes);
     }
 
     /**
-     *
-     *
+     * Executes executeSharedWithRecovery workflow.
      */
     public TrafficLuaExecutionResult executeSharedWithRecovery(TrafficPayloadReqDto payload, long requestedDataBytes) {
         return executeWithRecovery(TrafficPoolType.SHARED, payload, requestedDataBytes);
     }
 
     /**
-     *
-     *
+     * Executes executeWithRecovery workflow.
      */
     private TrafficLuaExecutionResult executeWithRecovery(
             TrafficPoolType poolType,
@@ -133,8 +131,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     *
-     *
+     * Handles handleHydrateIfNeeded logic.
      */
     private TrafficLuaExecutionResult handleHydrateIfNeeded(
             TrafficPoolType poolType,
@@ -179,6 +176,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * Handles applyHydrate logic.
      */
     private void applyHydrate(
             TrafficPoolType poolType,
@@ -197,8 +195,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     *
-     *
+     * Handles handleRefillIfNeeded logic.
      */
     private TrafficLuaExecutionResult handleRefillIfNeeded(
             TrafficPoolType poolType,
@@ -367,6 +364,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * Handles mergeRefillRetryResult logic.
      */
     private TrafficLuaExecutionResult mergeRefillRetryResult(
             long requestedDataBytes,
@@ -386,7 +384,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     *
+     * Executes executeDeduct workflow.
      */
     private TrafficLuaExecutionResult executeDeduct(
             TrafficPoolType poolType,
@@ -524,6 +522,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * Attempts guarded operation in tryAcquireHydrateLock.
      */
     private boolean tryAcquireHydrateLock(String lockKey, String traceId) {
         Boolean acquired = cacheStringRedisTemplate.opsForValue().setIfAbsent(
@@ -535,6 +534,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * Applies retry backoff wait in sleepHydrateLockWait.
      */
     private void sleepHydrateLockWait() {
         long waitMs = Math.max(0L, hydrateLockWaitMs);
@@ -549,8 +549,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     *
-     *
+     * Resolves status or key data in resolveTargetMonth.
      */
     private YearMonth resolveTargetMonth(TrafficPayloadReqDto payload) {
         Long enqueuedAt = payload.getEnqueuedAt();
@@ -562,8 +561,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     *
-     *
+     * Checks condition in isPayloadValidForPool.
      */
     private boolean isPayloadValidForPool(TrafficPoolType poolType, TrafficPayloadReqDto payload) {
         if (payload == null) {
@@ -600,7 +598,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     *
+     * Normalizes values in normalizeNonNegative.
      */
     private long normalizeNonNegative(Long value) {
         if (value == null || value <= 0) {
@@ -610,7 +608,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     *
+     * Normalizes values in normalizeNonNegativeInt.
      */
     private int normalizeNonNegativeInt(Integer value) {
         if (value == null || value <= 0) {
@@ -620,6 +618,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * Clamps numeric range in clampRemaining.
      */
     private long clampRemaining(long value) {
         if (value <= 0) {
@@ -629,6 +628,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * Clamps numeric range in clampToMax.
      */
     private long clampToMax(long maxValue, long value) {
         long normalizedMaxValue = Math.max(0L, maxValue);
@@ -639,6 +639,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * Handles safeAdd logic.
      */
     private long safeAdd(long left, long right) {
         if (left <= 0) {
@@ -654,6 +655,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * Handles claimRefillAmountFromDbWithRetry logic.
      */
     private TrafficDbRefillClaimResult claimRefillAmountFromDbWithRetry(
             TrafficPoolType poolType,
@@ -694,6 +696,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * Checks condition in isRetryableDbException.
      */
     private boolean isRetryableDbException(RuntimeException exception) {
         Throwable current = exception;
@@ -711,6 +714,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * Applies retry backoff wait in sleepDbRetryBackoff.
      */
     private void sleepDbRetryBackoff() {
         try {
