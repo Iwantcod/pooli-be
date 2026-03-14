@@ -106,11 +106,8 @@ if current_amount < 0 then
   return as_json(0, "HYDRATE")
 end
 
-local answer = math.min(current_amount, target_data)
-if answer <= 0 then
-  redis.call("HSET", remaining_key, "is_empty", "1")
-  return as_json(0, "NO_BALANCE")
-end
+local final_status = "OK"
+local answer = 0
 
 local app_member = tostring(math.floor(app_id))
 local app_usage_field = "app:" .. app_member
@@ -137,7 +134,20 @@ if not whitelist_bypass then
       return as_json(0, "BLOCKED_REPEAT")
     end
   end
+end
 
+-- 차단 정책 판정 이후에 현재 잔량을 평가한다.
+answer = math.min(current_amount, target_data)
+
+if current_amount < target_data then
+  final_status = "NO_BALANCE"
+end
+
+if answer <= 0 then
+  return as_json(0, final_status)
+end
+
+if not whitelist_bypass then
   -- 3) 일 총량 제한
   if is_policy_enabled(policy_daily_key) then
     local daily_limit = tonumber(redis.call("GET", daily_total_limit_key) or "-1")
@@ -194,13 +204,6 @@ end
 -- 실제 차감/사용량 반영
 redis.call("HINCRBY", remaining_key, "amount", -answer)
 
-local remaining_after = current_amount - answer
-if remaining_after <= 0 then
-  redis.call("HSET", remaining_key, "is_empty", "1")
-else
-  redis.call("HSET", remaining_key, "is_empty", "0")
-end
-
 redis.call("INCRBY", daily_total_usage_key, answer)
 redis.call("EXPIREAT", daily_total_usage_key, daily_expire_at)
 redis.call("INCRBY", monthly_shared_usage_key, answer)
@@ -208,4 +211,4 @@ redis.call("EXPIREAT", monthly_shared_usage_key, monthly_expire_at)
 redis.call("HINCRBY", daily_app_usage_key, app_usage_field, answer)
 redis.call("EXPIREAT", daily_app_usage_key, daily_expire_at)
 
-return as_json(answer, "OK")
+return as_json(answer, final_status)

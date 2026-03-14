@@ -15,9 +15,11 @@ import com.pooli.family.repository.mongo.SharedPoolTransferLogRepository;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
+import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Sort;
@@ -47,6 +49,7 @@ public class FamilySharedPoolsService {
     private final FamilyMapper familyMapper;
     private final AlarmHistoryService alarmHistoryService;
     private final SharedPoolTransferLogRepository transferLogRepository;
+    private final ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
 
     // 세션의 lineId로 familyId를 DB에서 조회하는 헬퍼 메서드
     public Long getFamilyIdByLineId(Long lineId) {
@@ -120,6 +123,7 @@ public class FamilySharedPoolsService {
 
         // 2. 가족 공유풀 총량 및 잔여량 증가
         sharedPoolMapper.updateFamilyPoolData(familyId, amount);
+        syncSharedPoolDbEmptyFlagAfterContribution(familyId);
 
         // 3. 충전 이력 기록 (당월 데이터 통합을 위해 DUPLICATE 처리됨)
         sharedPoolMapper.insertContribution(familyId, lineId, amount);
@@ -146,6 +150,25 @@ public class FamilySharedPoolsService {
 
         // 4. 알람: 가족 전체 (본인 제외)에게 데이터 담기 알림
         sendAlarmToFamily(familyId, lineId, AlarmType.SHARED_POOL_CONTRIBUTION);
+    }
+
+    /**
+     * 공유풀 충전이 성공한 경우, 해당 월 공유풀 잔량 키의 DB 고갈 플래그를 0으로 동기화합니다.
+     */
+    private void syncSharedPoolDbEmptyFlagAfterContribution(Long familyId) {
+        if (familyId == null || familyId <= 0) {
+            return;
+        }
+
+        TrafficBalanceStateWriteThroughService writeThroughService =
+                trafficBalanceStateWriteThroughServiceProvider.getIfAvailable();
+        if (writeThroughService == null) {
+            // traffic 프로파일 미사용 환경에서는 write-through를 건너뛴다.
+            log.debug("traffic_balance_state_write_through_unavailable familyId={}", familyId);
+            return;
+        }
+
+        writeThroughService.markSharedBalanceNotEmpty(familyId);
     }
 
     public SharedPoolDetailResDto getSharedPoolDetail(Long familyId, Long lineId) {

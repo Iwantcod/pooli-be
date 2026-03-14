@@ -12,6 +12,15 @@
           AND deleted_at IS NULL
     </select>
 
+    <select id="selectIndividualQosSpeedLimit" resultType="java.lang.Long">
+        SELECT p.qos_speed_limit
+        FROM LINE l
+        JOIN PLAN p ON p.plan_id = l.plan_id
+        WHERE l.line_id = #{lineId}
+          AND l.deleted_at IS NULL
+          AND p.deleted_at IS NULL
+    </select>
+
     <select id="selectIndividualRemainingForUpdate" resultType="java.lang.Long">
         SELECT remaining_data
         FROM LINE

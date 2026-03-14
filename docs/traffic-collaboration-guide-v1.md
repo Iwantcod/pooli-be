@@ -51,12 +51,12 @@ Step별 핵심:
 - Step 1:
   - A: Lua 반환 계약, 키/TTL, lock/dedupe 테스트
   - B: Streams 소비/ACK/DLQ, payload 검증 테스트
-  - C: tick 분배/풀전환/DB 원자성/ledger 전이 테스트
+  - C: 이벤트 단일 사이클(개인풀 1회 -> residual -> 조건부 공유풀 1회) + HYDRATE/REFILL 테스트
   - 공통: 실패 로그 구현, 불필요한 성공 로그 제거
 - Step 2:
   - A: `EVALSHA` TPS 최적화, Redis 장애 시 락/중복 반영 방지
   - B: 소비기 스케일아웃, 커넥션풀/리클레임 안정화
-  - C: deadlock 재시도 최적화, refill ledger 재처리 워커
+  - C: hydrate/refill 경합 안정화, 최종 상태 판정 회귀 강화
   - 공통: 로컬 TPS `n100 -> n10000` 정합성 재검증
 - Step 3:
   - 공통: AWS `n100000` E2E, 장애 주입 기반 HA 복구 검증
@@ -65,14 +65,39 @@ Step별 핵심:
 
 | Plane | 역할명 | 소유 책임 | 비소유 책임 |
 | --- | --- | --- | --- |
-| A | Runtime State Owner | Redis/Lua 실행 계약, 키/TTL 규칙, lock/dedupe, speed bucket, policy write-through | 최종 비즈니스 판정, DB 트랜잭션/ledger 전이 |
-| B | Intake & Delivery Owner | API 수신, traceId 부여, Streams 적재/소비, ACK/DLQ/reclaim, DONE 저장 트리거 | tick 분배, refill 계산, Redis 정책 규칙 결정 |
-| C | Decision & Consistency Owner | 10-tick 오케스트레이션, DB refill 원자 처리, ledger 상태 전이/재처리, 최종 판정 | Streams 그룹 운영, Lua 내부 구현 디테일 |
+| A | Runtime State Owner | Redis/Lua 실행 계약, 키/TTL 규칙, lock/dedupe, speed bucket, policy write-through | 최종 비즈니스 판정, DB refill 원자 처리 |
+| B | Intake & Delivery Owner | API 수신, traceId 부여, Streams 적재/소비, payload 검증, reclaim/DLQ, DONE 저장 후 ACK 보장 | 차감/리필 의사결정, Redis 키/TTL 정책 계산 |
+| C | Decision & Consistency Owner | 이벤트 단일 사이클 오케스트레이션(개인풀 1회 -> residual -> 조건부 공유풀 1회), HYDRATE/REFILL 경로, 최종 상태 판정 | Streams 그룹 운영, Lua preload/실행 인프라 |
 
 소유권 고정:
 - ACK/DONE 순서 보장: Plane B
 - 최종 상태 판정: Plane C
 - Redis 키/정책 규칙: Plane A
+
+### 현재 데이터 처리 로직 요약 (코드 기준)
+
+1. API 요청마다 `TrafficRequestEnqueueService`가 `traceId`/`enqueuedAt`을 보강해 Streams에 메시지 1건을 적재한다.
+2. `TrafficStreamConsumerRunner`가 메시지를 읽고 payload 검증/역직렬화 후 `traceId` 중복 완료 여부를 먼저 확인한다.
+3. 완료 이력이 없으면 `TrafficInFlightDedupeService`로 in-flight 선점을 수행한 뒤 오케스트레이터를 실행한다.
+4. `TrafficDeductOrchestratorService`는 이벤트 1건을 단일 사이클로 처리한다.
+5. 처리 순서는 `개인풀 1회 차감 -> residual 계산 -> residual > 0 && NO_BALANCE일 때만 공유풀 1회 차감`이다.
+6. 각 풀 차감 내부는 `HYDRATE 1회 복구 -> REFILL gate/lock/DB claim/Redis refill -> 동일 요청량 1회 재차감` 순서를 유지한다.
+7. 결과는 `TrafficDeductDoneLogService`에 저장 성공 후에만 ACK하며, 저장 실패 시 ACK하지 않아 재전달/reclaim으로 복구한다.
+8. pending 메시지는 `TrafficStreamReclaimService`가 `min-idle/max-retry` 기준으로 재처리 또는 DLQ로 분기한다.
+
+## 4.1 서비스/테스트 패키지 역할 매핑 (구현 반영)
+
+현재 코드베이스는 `traffic.service`를 아래 4개 하위 패키지로 분리해 관리한다.
+
+| 패키지 | 연관 Plane | 역할 요약 | 대표 클래스 |
+| --- | --- | --- | --- |
+| `com.pooli.traffic.service.runtime` | Plane A | Redis/Lua 실행 계약, 키/TTL 규칙, dedupe/버킷 관리 | `TrafficLuaScriptInfraService`, `TrafficRedisKeyFactory`, `TrafficRecentUsageBucketService` |
+| `com.pooli.traffic.service.invoke` | Plane B | API 수신, Streams 적재/소비, reclaim/DLQ, DONE 저장 트리거 | `TrafficRequestEnqueueService`, `TrafficStreamConsumerRunner`, `TrafficStreamInfraService`, `TrafficDeductDoneLogService` |
+| `com.pooli.traffic.service.decision` | Plane C | 이벤트 단위 오케스트레이션, hydrate/refill 의사결정, DB refill 원자성 | `TrafficDeductOrchestratorService`, `TrafficHydrateRefillAdapterService`, `TrafficDefaultQuotaSourceAdapter` |
+| `com.pooli.traffic.service.policy` | Plane A + C 경계 | 정책 bootstrap/hydration/write-through로 정책 정합성 유지 | `TrafficPolicyBootstrapService`, `TrafficLinePolicyHydrationService`, `TrafficPolicyWriteThroughService` |
+
+테스트 패키지도 동일한 역할 경계를 따르며 `src/test/java/com/pooli/traffic/service/{runtime,invoke,decision,policy}` 구조를 기본으로 사용한다.
+프로파일 조합 검증(`TrafficProfileBootTest`)은 cross-plane 성격이므로 `src/test/java/com/pooli/traffic/service` 루트에 유지한다.
 
 ## 5. Contract v1 (Locked)
 
@@ -148,7 +173,7 @@ c_to_b_result:
 ```mermaid
 graph LR
     A["Plane A<br/>Redis + Lua"] --> D["통합 테스트"]
-    B["Plane B<br/>Streams + MQ"] --> D
+    B["Plane B<br/>Streams + Intake"] --> D
     C["Plane C<br/>DB + 오케스트레이터"] --> D
     B -- "요청 전달" --> C
     C -- "런타임 실행 요청" --> A
@@ -177,25 +202,25 @@ Mermaid 미지원 뷰어용:
 ### 7.1 Plane A (Runtime State Owner)
 
 주요 작업:
-- 3.6 Lua 자산화: SHA preload, `EVALSHA`, JSON 파싱
-- 3.7 Redis 규칙: namespace, 일/월 `EXPIREAT`, speed bucket TTL
-- 3.8 Redis 측 계산/버킷 규칙: delta, 10초 평균/fallback
-- 3.10 동시성/중복: `dedupe:run:{traceId}`, lock heartbeat/release
-- 3.13 정책 write-through
+- Lua 자산화: SHA preload, `EVALSHA`, 반환 JSON 파싱
+- Redis 규칙: namespace, 일/월 `EXPIREAT`, speed bucket TTL, lock TTL
+- 최근 사용량 버킷 집계 기반 refill plan(delta/unit/threshold) 계산
+- 동시성/중복 제어: `dedupe:run:{traceId}`, lock heartbeat/release
+- 정책 write-through/bootstrap/hydration 지원을 위한 키 규칙 제공
 
 주요 파일:
-- `src/main/java/com/pooli/traffic/service/TrafficLuaScriptInfraService.java`
-- `src/main/java/com/pooli/traffic/service/TrafficRedisKeyFactory.java`
-- `src/main/java/com/pooli/traffic/service/TrafficRedisRuntimePolicy.java`
-- `src/main/java/com/pooli/traffic/service/TrafficRecentUsageBucketService.java`
-- `src/main/java/com/pooli/traffic/service/TrafficInFlightDedupeService.java`
-- `src/main/java/com/pooli/traffic/service/TrafficQuotaCacheService.java`
-- `src/main/java/com/pooli/traffic/service/TrafficPolicyWriteThroughService.java`
+- `src/main/java/com/pooli/traffic/service/runtime/TrafficLuaScriptInfraService.java`
+- `src/main/java/com/pooli/traffic/service/runtime/TrafficRedisKeyFactory.java`
+- `src/main/java/com/pooli/traffic/service/runtime/TrafficRedisRuntimePolicy.java`
+- `src/main/java/com/pooli/traffic/service/runtime/TrafficRecentUsageBucketService.java`
+- `src/main/java/com/pooli/traffic/service/runtime/TrafficInFlightDedupeService.java`
+- `src/main/java/com/pooli/traffic/service/runtime/TrafficQuotaCacheService.java`
+- `src/main/java/com/pooli/traffic/service/policy/TrafficPolicyWriteThroughService.java`
 - `src/main/resources/lua/traffic/*.lua`
 
 도메인/메트릭:
 - 도메인: `TrafficLuaExecutionResult`, `TrafficRefillPlan`, `TrafficLuaDeductResDto`, `TrafficLuaScriptType`, `TrafficLuaStatus`, `TrafficRefillGateStatus`
-- 메트릭: `TrafficTickMetrics`, `TrafficRefillMetrics`, `TrafficHydrateMetrics`
+- 메트릭: `TrafficRefillMetrics`, `TrafficHydrateMetrics`
 
 HA 책임:
 - Lua 비정상 응답 방어
@@ -207,25 +232,26 @@ HA 책임:
 
 주요 작업:
 - 3.2 설정 분리: `local/api/traffic`, `.env` 키 매핑
-- 3.3/3.4 DTO 검증, API 엔드포인트(`XADD`), traceId 생성
-- 3.5/3.11 `XREADGROUP BLOCK`, DONE 영속 후 ACK 보장
-- 3.12 `XPENDING/XCLAIM`, max retry 초과 DLQ
+- API 엔드포인트(`XADD`), traceId 생성, payload 직렬화
+- `XREADGROUP BLOCK` 소비/워커 분배, payload 검증/역직렬화
+- DONE 저장 성공 후 ACK 보장(`persist_success_then_ack_only`)
+- `XPENDING/XCLAIM` 기반 reclaim, max retry 초과 DLQ 분기
 
 주요 파일:
-- `src/main/java/com/pooli/traffic/service/TrafficStreamConsumerRunner.java`
-- `src/main/java/com/pooli/traffic/service/TrafficStreamInfraService.java`
-- `src/main/java/com/pooli/traffic/service/TrafficStreamReclaimService.java`
-- `src/main/java/com/pooli/traffic/service/TrafficRequestEnqueueService.java`
-- `src/main/java/com/pooli/traffic/service/TrafficPayloadValidationService.java`
-- `src/main/java/com/pooli/traffic/service/TrafficDeductDonePersistenceService.java`
+- `src/main/java/com/pooli/traffic/service/invoke/TrafficStreamConsumerRunner.java`
+- `src/main/java/com/pooli/traffic/service/invoke/TrafficStreamInfraService.java`
+- `src/main/java/com/pooli/traffic/service/invoke/TrafficStreamReclaimService.java`
+- `src/main/java/com/pooli/traffic/service/invoke/TrafficRequestEnqueueService.java`
+- `src/main/java/com/pooli/traffic/service/invoke/TrafficPayloadValidationService.java`
+- `src/main/java/com/pooli/traffic/service/invoke/TrafficDeductDoneLogService.java`
 - `src/main/java/com/pooli/traffic/controller/TrafficController.java`
-- `src/main/java/com/pooli/traffic/mapper/TrafficDeductDoneMapper.java`
+- `src/main/java/com/pooli/traffic/repository/TrafficDeductDoneLogRepository.java`
 - `src/main/java/com/pooli/traffic/config/TrafficSchedulingConfig.java`
 - `src/main/java/com/pooli/common/config/StreamsRedisConfig.java`
 
 도메인/메트릭:
 - 도메인: `TrafficStreamFields`, `TrafficPayloadReqDto`, `TrafficGenerateReqDto`, `TrafficGenerateResDto`, `TrafficDeductDone`
-- 메트릭: `TrafficRequestMetrics`, `TrafficDlqMetrics`, `RedisStreamMetrics`, `TrafficGeneratorMetrics`
+- 메트릭: `TrafficRequestMetrics`, `TrafficDlqMetrics`, `TrafficGeneratorMetrics`
 
 HA 책임:
 - 빈/깨진 payload 방어
@@ -236,28 +262,25 @@ HA 책임:
 ### 7.3 Plane C (Decision & Consistency Owner)
 
 주요 작업:
-- 3.9 10-tick 오케스트레이터 (분배/전환/조기 종료)
-- 3.8 `SELECT ... FOR UPDATE` 기반 actual refill 정합성
-- 3.15 ledger 상태 전이 `INIT -> DB_DEDUCTED -> REDIS_APPLIED`
-- 3.14/3.16 deadlock 재시도, 월 경계, soft-delete, 음수 잔량 방어
+- 이벤트 단일 사이클 오케스트레이터(개인풀 1회 -> residual -> 조건부 공유풀 1회)
+- `SELECT ... FOR UPDATE` 기반 actual refill 정합성 확보
+- HYDRATE 1회 복구 + REFILL gate/lock/DB claim/Redis refill/재차감
+- 최종 상태 판정(`FAILED`, `SUCCESS`, `PARTIAL_SUCCESS`)과 경계값 방어
 
 주요 파일:
-- `src/main/java/com/pooli/traffic/service/TrafficDeductOrchestratorService.java`
-- `src/main/java/com/pooli/traffic/service/TrafficHydrateRefillAdapterService.java`
-- `src/main/java/com/pooli/traffic/service/TrafficDefaultQuotaSourceAdapter.java`
-- `src/main/java/com/pooli/traffic/service/TrafficQuotaSourcePort.java`
+- `src/main/java/com/pooli/traffic/service/decision/TrafficDeductOrchestratorService.java`
+- `src/main/java/com/pooli/traffic/service/decision/TrafficHydrateRefillAdapterService.java`
+- `src/main/java/com/pooli/traffic/service/decision/TrafficDefaultQuotaSourceAdapter.java`
+- `src/main/java/com/pooli/traffic/service/decision/TrafficQuotaSourcePort.java`
 - `src/main/java/com/pooli/traffic/mapper/TrafficRefillSourceMapper.java`
-- `src/main/java/com/pooli/traffic/service/TrafficSystemTickPacer.java`
-- `src/main/java/com/pooli/traffic/service/TrafficLinePolicyHydrationService.java`
-- `src/main/java/com/pooli/traffic/service/TrafficPolicyBootstrapService.java`
-- `(신규) refill ledger DDL/Mapper`
+- `src/main/java/com/pooli/traffic/service/policy/TrafficLinePolicyHydrationService.java`
+- `src/main/java/com/pooli/traffic/service/policy/TrafficPolicyBootstrapService.java`
 
 도메인:
 - `TrafficDbRefillClaimResult`, `TrafficDeductResultResDto`, `TrafficFinalStatus`, `TrafficPoolType`
 
 HA 책임:
 - `SUCCESS/PARTIAL_SUCCESS/FAILED` 판정 일관성
-- ledger 전이 누락/중복 방지
 - DB deadlock, Redis 충전 실패, 월 경계/음수 잔량 장애 복구
 
 ## 8. 테스트 게이트 (필수)
@@ -275,10 +298,10 @@ Plane B:
 - consumer 재기동 후 pending 복구
 
 Plane C:
-- `ceil(apiRemaining/remainingTicks)` 분배 규칙 검증
-- 개인풀 -> 공유풀 전환 규칙 검증
-- DB 원자성 + ledger 전이 검증
-- deadlock 재시도 상한/월 경계/음수 잔량 방어 검증
+- 개인풀 1회 차감 후 residual 계산 규칙 검증
+- `residual > 0 && 개인풀 NO_BALANCE` 조건에서만 공유풀 보완 차감 검증
+- HYDRATE 1회 재시도 + REFILL gate/lock/DB claim/Redis refill/재차감 검증
+- final status 판정 및 `apiTotalData <= 0` 경계값 검증
 
 통합 게이트:
 - Contract 호환성(`B->C`, `C<->A`, `C->B`)
@@ -354,4 +377,3 @@ PR 체크리스트:
 | payload 검증 실패 처리 | B |
 | DB deadlock 재시도 정책 | C |
 | Redis lock heartbeat/release | A |
-

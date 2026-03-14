@@ -23,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Sort;
 
 import com.pooli.auth.service.AuthUserDetails;
@@ -46,6 +47,7 @@ import com.pooli.family.repository.mongo.SharedPoolTransferLogRepository;
 import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
+import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
 
 @ExtendWith(MockitoExtension.class)
 class FamilySharedPoolsServiceTest {
@@ -61,6 +63,12 @@ class FamilySharedPoolsServiceTest {
 
     @Mock
     private SharedPoolTransferLogRepository transferLogRepository;
+
+    @Mock
+    private ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
+
+    @Mock
+    private TrafficBalanceStateWriteThroughService trafficBalanceStateWriteThroughService;
 
     @InjectMocks
     private FamilySharedPoolsService service;
@@ -154,12 +162,15 @@ class FamilySharedPoolsServiceTest {
         when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
                 .thenReturn(0L);
         when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L, 201L));
+        when(trafficBalanceStateWriteThroughServiceProvider.getIfAvailable())
+                .thenReturn(trafficBalanceStateWriteThroughService);
 
         service.contributeToSharedPool(101L, 1L, 500_000L);
 
         verify(sharedPoolMapper).updateLineRemainingData(101L, 500_000L);
         verify(sharedPoolMapper).updateFamilyPoolData(1L, 500_000L);
         verify(sharedPoolMapper).insertContribution(1L, 101L, 500_000L);
+        verify(trafficBalanceStateWriteThroughService).markSharedBalanceNotEmpty(1L);
         verify(transferLogRepository).save(any(SharedPoolTransferLog.class));
         verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY), eq(AlarmType.SHARED_POOL_CONTRIBUTION));
         verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any());
