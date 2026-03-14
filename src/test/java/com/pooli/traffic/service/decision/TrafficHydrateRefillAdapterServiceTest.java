@@ -635,8 +635,6 @@ class TrafficHydrateRefillAdapterServiceTest {
         when(trafficRedisKeyFactory.sharedRefillLockKey(22L)).thenReturn("pooli:shared_refill_lock:22");
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(any())).thenReturn(1_770_000_000L);
 
-        // 1筌??⑤벊??? 筌△몿而? Redis 41?癒?퐣 target 50 ?遺욧퍕 -> answer 41, status NO_BALANCE
-        // ?귐뗫툡 ????媛먨첎? ??? residual 9筌?筌ｌ꼶??
         when(trafficLuaScriptInfraService.executeDeductShared(anyList(), anyList()))
                 .thenReturn(luaResult(41L, TrafficLuaStatus.NO_BALANCE))
                 .thenReturn(luaResult(9L, TrafficLuaStatus.OK));

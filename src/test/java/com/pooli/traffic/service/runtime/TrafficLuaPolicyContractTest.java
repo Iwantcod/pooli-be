@@ -11,8 +11,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Lua ?類ㅼ퐠 ??쎄쾿?깆?????怨쀪퐨??뽰맄/?遺우뵠?紐꺿봺??쎈뱜 ??됱뇚 ?④쑴鍮??獄쏅뗀??? ??낅즲嚥??⑥쥙???롫뮉 ???뮞?紐꾩뿯??덈뼄.
- * ??쎄쾿?깆?????쎈뻬 野껉퀗?든몴?筌욊낯??野꺜筌앹빜釉?????? ???뮞?硫? ?곕떽???띾┛ ?袁㏉돱筌왖, ??뽮퐣 ???????쥓?ㅵ칰?揶쏅Ŋ???몃빍??
  */
 class TrafficLuaPolicyContractTest {
 
@@ -65,10 +63,10 @@ class TrafficLuaPolicyContractTest {
         int speedIndex = script.indexOf("if is_policy_enabled(policy_app_speed_key)");
         int writeIndex = script.indexOf("redis.call(\"HINCRBY\", remaining_key, \"amount\", -answer)");
 
-        assertTrue(bypassGuardIndex >= 0, "whitelist bypass guard揶쎛 ?袁⑥뵭??롢늺 ????몃빍??");
-        assertTrue(immediateIndex > bypassGuardIndex, "筌앸맩?놅㎕?ㅻ뼊 野꺜????whitelist guard ??꾩뜎????됰선????몃빍??");
-        assertTrue(speedIndex > immediateIndex, "??얜즲 ??쀫립 野꺜?????類ㅼ퐠 ?브쑨由??됰뗀以??筌띾뜆?筌띾맩肉???됰선????몃빍??");
-        assertTrue(writeIndex > speedIndex, "?類ㅼ퐠 ?브쑨由??됰뗀以??ル굝利??袁⑸퓠筌???쇱젫 筌△몿而????묐뻬??뤿선????몃빍??");
+        assertTrue(bypassGuardIndex >= 0, "Whitelist bypass guard must exist.");
+        assertTrue(immediateIndex > bypassGuardIndex, "Immediate policy check must run after whitelist guard.");
+        assertTrue(speedIndex > immediateIndex, "App speed policy check must run after immediate policy check.");
+        assertTrue(writeIndex > speedIndex, "Redis write must run after policy checks.");
     }
 
     @Test
@@ -81,11 +79,11 @@ class TrafficLuaPolicyContractTest {
         int speedIndex = script.indexOf("if is_policy_enabled(policy_app_speed_key)");
         int writeIndex = script.indexOf("redis.call(\"HINCRBY\", remaining_key, \"amount\", -answer)");
 
-        assertTrue(bypassGuardIndex >= 0, "whitelist bypass guard揶쎛 ?袁⑥뵭??롢늺 ????몃빍??");
-        assertTrue(immediateIndex > bypassGuardIndex, "筌앸맩?놅㎕?ㅻ뼊 野꺜????whitelist guard ??꾩뜎????됰선????몃빍??");
-        assertTrue(monthlySharedIndex > immediateIndex, "???⑤벊??? ??쀫립 野꺜????????쀫립 ??꾩뜎???????뤿선????몃빍??");
-        assertTrue(speedIndex > monthlySharedIndex, "??얜즲 ??쀫립 野꺜?????類ㅼ퐠 ?브쑨由??됰뗀以??筌띾뜆?筌띾맩肉???됰선????몃빍??");
-        assertTrue(writeIndex > speedIndex, "?類ㅼ퐠 ?브쑨由??됰뗀以??ル굝利??袁⑸퓠筌???쇱젫 筌△몿而????묐뻬??뤿선????몃빍??");
+        assertTrue(bypassGuardIndex >= 0, "Whitelist bypass guard must exist.");
+        assertTrue(immediateIndex > bypassGuardIndex, "Immediate policy check must run after whitelist guard.");
+        assertTrue(monthlySharedIndex > immediateIndex, "Shared monthly policy check must run after immediate policy check.");
+        assertTrue(speedIndex > monthlySharedIndex, "App speed policy check must run after shared monthly policy check.");
+        assertTrue(writeIndex > speedIndex, "Redis write must run after policy checks.");
     }
 
     @Test
@@ -117,8 +115,8 @@ class TrafficLuaPolicyContractTest {
         String individualScript = Files.readString(INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
         String sharedScript = Files.readString(SHARED_SCRIPT, StandardCharsets.UTF_8);
 
-        assertTrue(!individualScript.contains("is_empty"), "揶쏆뮇??? 筌△몿而?Lua?癒?퐣 is_empty ?怨뚮┛????볤탢??뤿선????몃빍??");
-        assertTrue(!sharedScript.contains("is_empty"), "?⑤벊??? 筌△몿而?Lua?癒?퐣 is_empty ?怨뚮┛????볤탢??뤿선????몃빍??");
+        assertTrue(!individualScript.contains("is_empty"), "Individual deduct script must not write is_empty flag.");
+        assertTrue(!sharedScript.contains("is_empty"), "Shared deduct script must not write is_empty flag.");
     }
 
     @Test
@@ -136,10 +134,10 @@ class TrafficLuaPolicyContractTest {
         int previousIndex = -1;
         for (String fragment : fragments) {
             int currentIndex = script.indexOf(fragment);
-            assertTrue(currentIndex >= 0, "??쎄쾿?깆???癒?퐣 ?袁⑸땾 鈺곌퀗而??筌≪뼚? 筌륁궢六??щ빍?? fragment=" + fragment);
+            assertTrue(currentIndex >= 0, "Required fragment not found. fragment=" + fragment);
             assertTrue(
                     currentIndex > previousIndex,
-                    "?類ㅼ퐠 ??뽮퐣揶쎛 獄쏅뗀??????щ빍?? fragment=" + fragment + ", previousIndex=" + previousIndex + ", currentIndex=" + currentIndex
+                    "Fragments must appear in order. fragment=" + fragment + ", previousIndex=" + previousIndex + ", currentIndex=" + currentIndex
             );
             previousIndex = currentIndex;
         }

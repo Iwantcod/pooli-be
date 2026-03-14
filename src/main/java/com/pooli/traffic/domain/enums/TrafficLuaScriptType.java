@@ -4,8 +4,6 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 /**
- * ?몃옒??泥섎━?먯꽌 ?ъ슜?섎뒗 Lua ?ㅽ겕由쏀듃???앸퀎?먯? classpath ?꾩튂瑜?愿由ы빀?덈떎.
- * ?ㅽ겕由쏀듃 preload/execute ??怨듯넻 ?ㅻ줈 ?ъ슜?⑸땲??
  */
 @Getter
 @RequiredArgsConstructor

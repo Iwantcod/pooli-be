@@ -1,6 +1,4 @@
 -- deduct_shared.lua
--- 獄쏆꼹???類ㅻ뻼: {"answer":number,"status":"..."} JSON ?얜챷???
--- ?類ㅼ퐠 ?怨몄뒠 ??뽮퐣(?⑤벊???):
 -- whitelist -> immediate -> repeat -> daily -> monthly_shared -> app_daily -> app_speed
 
 local function as_json(answer, status)
@@ -120,7 +118,6 @@ if is_policy_enabled(policy_whitelist_key) and app_whitelist_key and app_whiteli
 end
 
 if not whitelist_bypass then
-  -- 1) 筌앸맩??筌△뫀??
   if is_policy_enabled(policy_immediate_key) then
     local block_end_at = tonumber(redis.call("GET", immediately_block_end_key) or "0")
     if block_end_at > 0 and now_epoch_second <= block_end_at then
@@ -128,7 +125,6 @@ if not whitelist_bypass then
     end
   end
 
-  -- 2) 獄쏆꼶??筌△뫀??
   if is_policy_enabled(policy_repeat_key) then
     if is_in_repeat_block(repeat_block_key, day_num, sec_of_day) then
       return as_json(0, "BLOCKED_REPEAT")
@@ -136,7 +132,6 @@ if not whitelist_bypass then
   end
 end
 
--- 筌△뫀???類ㅼ퐠 ?癒?젟 ??꾩뜎???袁⑹삺 ?遺얠쎗???????뺣뼄.
 answer = math.min(current_amount, target_data)
 
 if current_amount < target_data then
@@ -148,7 +143,6 @@ if answer <= 0 then
 end
 
 if not whitelist_bypass then
-  -- 3) ???μ빖????쀫립
   if is_policy_enabled(policy_daily_key) then
     local daily_limit = tonumber(redis.call("GET", daily_total_limit_key) or "-1")
     if daily_limit >= 0 then
@@ -161,7 +155,6 @@ if not whitelist_bypass then
     end
   end
 
-  -- 4) ???⑤벊??? ??쀫립
   if is_policy_enabled(policy_shared_key) then
     local monthly_limit = tonumber(redis.call("GET", monthly_shared_limit_key) or "-1")
     if monthly_limit >= 0 then
@@ -174,7 +167,6 @@ if not whitelist_bypass then
     end
   end
 
-  -- 5) ?????μ빖????쀫립
   if is_policy_enabled(policy_app_data_key) then
     local app_daily_limit = tonumber(redis.call("HGET", app_data_daily_limit_key, app_limit_field) or "-1")
     if app_daily_limit >= 0 then
@@ -187,7 +179,6 @@ if not whitelist_bypass then
     end
   end
 
-  -- 6) ????얜즲 ??쀫립(?λ뜄??
   if is_policy_enabled(policy_app_speed_key) then
     local app_speed_limit = tonumber(redis.call("HGET", app_speed_limit_key, app_speed_field) or "-1")
     if app_speed_limit >= 0 then
@@ -201,7 +192,6 @@ if not whitelist_bypass then
   end
 end
 
--- ??쇱젫 筌△몿而??????獄쏆꼷??
 redis.call("HINCRBY", remaining_key, "amount", -answer)
 
 redis.call("INCRBY", daily_total_usage_key, answer)
