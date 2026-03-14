@@ -38,9 +38,11 @@ class TrafficDeductOrchestratorServiceTest {
     private TrafficDeductOrchestratorService trafficDeductOrchestratorService;
 
     @Nested
+    @DisplayName("orchestrate 테스트")
     class OrchestrateTest {
 
         @Test
+        @DisplayName("개인풀이 요청량을 전량 처리하면 SUCCESS를 반환한다")
         void successWhenIndividualHandlesAll() {
             // given
             TrafficPayloadReqDto payload = payload(103L);
@@ -53,7 +55,7 @@ class TrafficDeductOrchestratorServiceTest {
             // then
             verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 103L);
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
-            verify(trafficRecentUsageBucketService).recordUsage(
+            verify(trafficRecentUsageBucketService).recordTickUsage(
                     com.pooli.traffic.domain.enums.TrafficPoolType.INDIVIDUAL,
                     payload,
                     103L
@@ -67,6 +69,7 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
+        @DisplayName("개인풀 NO_BALANCE + residual 발생 시 공유풀 보완 차감")
         void individualNoBalanceThenSharedCompensation() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
@@ -81,12 +84,12 @@ class TrafficDeductOrchestratorServiceTest {
             // then
             verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
             verify(trafficHydrateRefillAdapterService).executeSharedWithRecovery(payload, 96L);
-            verify(trafficRecentUsageBucketService).recordUsage(
+            verify(trafficRecentUsageBucketService).recordTickUsage(
                     com.pooli.traffic.domain.enums.TrafficPoolType.INDIVIDUAL,
                     payload,
                     4L
             );
-            verify(trafficRecentUsageBucketService).recordUsage(
+            verify(trafficRecentUsageBucketService).recordTickUsage(
                     com.pooli.traffic.domain.enums.TrafficPoolType.SHARED,
                     payload,
                     96L
@@ -101,6 +104,7 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
+        @DisplayName("개인풀이 NO_BALANCE여도 residual이 0이면 공유풀을 호출하지 않는다")
         void noSharedWhenResidualIsZeroEvenNoBalance() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
@@ -122,6 +126,7 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
+        @DisplayName("개인풀 상태가 NO_BALANCE가 아니면 residual이 남아도 공유풀을 호출하지 않는다")
         void noSharedWhenIndividualStatusIsNotNoBalance() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
@@ -143,6 +148,7 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
+        @DisplayName("개인풀이 BLOCKED 상태이면 공유풀 보완 없이 PARTIAL_SUCCESS를 반환한다")
         void partialSuccessWhenIndividualBlocked() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
@@ -165,6 +171,7 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
+        @DisplayName("ERROR 상태면 즉시 종료하고 FAILED")
         void failedOnErrorStatus() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
@@ -186,6 +193,7 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
+        @DisplayName("요청량이 0이면 차감 호출 없이 SUCCESS를 반환한다")
         void successWhenApiTotalDataIsZero() {
             // given
             TrafficPayloadReqDto payload = payload(0L);
@@ -205,6 +213,7 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
+        @DisplayName("요청량이 음수여도 0으로 보정해 차감 호출 없이 SUCCESS를 반환한다")
         void successWhenApiTotalDataIsNegative() {
             // given
             TrafficPayloadReqDto payload = payload(-10L);
@@ -224,6 +233,7 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
+        @DisplayName("차감 어댑터 예외 발생 시 FAILED로 종료하고 lastLuaStatus는 ERROR로 설정한다")
         void failedWhenAdapterThrowsException() {
             // given
             TrafficPayloadReqDto payload = payload(100L);

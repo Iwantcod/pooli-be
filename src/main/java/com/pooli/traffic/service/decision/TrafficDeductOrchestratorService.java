@@ -17,8 +17,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * ?몃옒??李④컧 ?대깽??1嫄댁쓣 ?⑥씪 ?ъ씠?대줈 泥섎━?섎뒗 ?ㅼ??ㅽ듃?덉씠???쒕퉬?ㅼ엯?덈떎.
- * 媛쒖씤? ?곗꽑 李④컧 ??residual???④퀬 媛쒖씤? ?곹깭媛 NO_BALANCE???뚮쭔 怨듭쑀? 蹂댁셿 李④컧???섑뻾?⑸땲??
+ * 트래픽 차감 이벤트 1건을 단일 사이클로 처리하는 오케스트레이션 서비스입니다.
+ * 개인풀 우선 차감 후 residual이 남고 개인풀 상태가 NO_BALANCE일 때만 공유풀 보완 차감을 수행합니다.
  */
 @Slf4j
 @Service
@@ -30,7 +30,7 @@ public class TrafficDeductOrchestratorService {
     private final TrafficRecentUsageBucketService trafficRecentUsageBucketService;
 
     /**
-      * ?대깽??1嫄댁쓽 紐⑺몴 ?곗씠?곕웾(apiTotalData)??泥섎━?섍퀬 理쒖쥌 ?곹깭瑜?諛섑솚?⑸땲??
+      * 이벤트 1건의 목표 데이터량(apiTotalData)을 처리하고 최종 상태를 반환합니다.
      */
     public TrafficDeductResultResDto orchestrate(TrafficPayloadReqDto payload) {
         LocalDateTime startedAt = LocalDateTime.now();
@@ -50,9 +50,9 @@ public class TrafficDeductOrchestratorService {
                 long indivDeducted = normalizeNonNegative(individualResult.getAnswer());
                 deductedTotalBytes += indivDeducted;
                 apiRemainingData = clampRemaining(apiRemainingData - indivDeducted);
-                trafficRecentUsageBucketService.recordUsage(TrafficPoolType.INDIVIDUAL, payload, indivDeducted);
+                trafficRecentUsageBucketService.recordTickUsage(TrafficPoolType.INDIVIDUAL, payload, indivDeducted);
 
-                // residual? 媛쒖씤? 泥섎━ ???대깽???붿껌??apiTotalData)?먯꽌 ?⑥? 誘몄쿂由щ웾?낅땲??
+                // residual은 개인풀 처리 후 이벤트 요청량(apiTotalData)에서 남은 미처리량입니다.
                 long residualData = apiRemainingData;
                 if (residualData > 0 && individualResult.getStatus() == TrafficLuaStatus.NO_BALANCE) {
                     TrafficLuaExecutionResult sharedResult =
@@ -62,7 +62,7 @@ public class TrafficDeductOrchestratorService {
                     long sharedDeducted = normalizeNonNegative(sharedResult.getAnswer());
                     deductedTotalBytes += sharedDeducted;
                     apiRemainingData = clampRemaining(apiRemainingData - sharedDeducted);
-                    trafficRecentUsageBucketService.recordUsage(TrafficPoolType.SHARED, payload, sharedDeducted);
+                    trafficRecentUsageBucketService.recordTickUsage(TrafficPoolType.SHARED, payload, sharedDeducted);
                 }
             }
 
@@ -86,11 +86,11 @@ public class TrafficDeductOrchestratorService {
     }
 
     /**
-     * ?낅젰媛믨낵 ?뺤콉??諛뷀깢?쇰줈 理쒖쥌 ?ъ슜 媛믪쓣 怨꾩궛??諛섑솚?⑸땲??
+     * 입력값과 정책을 바탕으로 최종 사용 값을 계산해 반환합니다.
      */
     private TrafficFinalStatus resolveFinalStatus(long apiRemainingData, TrafficLuaStatus lastLuaStatus) {
         if (lastLuaStatus == TrafficLuaStatus.ERROR) {
-            // Lua ERROR???쒖뒪???곗씠???ㅻ쪟 ?깃꺽?대?濡?FAILED濡??댁꽍?쒕떎.
+            // Lua ERROR는 시스템/데이터 오류 성격이므로 FAILED로 해석한다.
             return TrafficFinalStatus.FAILED;
         }
         if (apiRemainingData <= 0) {
@@ -100,7 +100,7 @@ public class TrafficDeductOrchestratorService {
     }
 
     /**
-      * `clampRemaining` 泥섎━ 紐⑹쟻??留욌뒗 ?듭떖 濡쒖쭅???섑뻾?⑸땲??
+      * `clampRemaining` 처리 목적에 맞는 핵심 로직을 수행합니다.
      */
     private long clampRemaining(long value) {
         if (value <= 0) {
@@ -110,7 +110,7 @@ public class TrafficDeductOrchestratorService {
     }
 
     /**
-     * 鍮꾩젙??媛믪쓣 諛⑹뼱?섍퀬 ?덉쟾???쒖? 媛믪쑝濡?蹂댁젙?⑸땲??
+     * 비정상 값을 방어하고 안전한 표준 값으로 보정합니다.
      */
     private long normalizeNonNegative(Long value) {
         if (value == null || value <= 0) {
