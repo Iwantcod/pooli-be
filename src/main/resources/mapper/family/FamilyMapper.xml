@@ -27,8 +27,8 @@
 	</select>
 	
 	
-    <select id="selectFamilyMembers"
-          resultType="com.pooli.family.domain.dto.response.FamilyMembersResDto$FamilyMemberDto">
+	<select id="selectFamilyMembers"
+	          resultType="com.pooli.family.domain.dto.response.FamilyMembersResDto$FamilyMemberDto">
 	    SELECT
 	      u.user_id             AS userId,
 	      l.line_id             AS lineId,
@@ -51,12 +51,6 @@
 	               0
 	             )
 	      END AS sharedPoolRemainingAmount,
-	      CASE WHEN l.line_id = #{lineId} THEN TRUE ELSE FALSE END AS isMe
-	    FROM FAMILY_LINE fl
-	    JOIN LINE  l ON fl.line_id = l.line_id
-	    JOIN USERS u ON l.user_id = u.user_id
-	    JOIN PLAN  p ON l.plan_id = p.plan_id
-	    JOIN FAMILY f ON fl.family_id = f.family_id
 	    LEFT JOIN LINE_LIMIT ll
 	      ON ll.line_id = l.line_id
 	      AND ll.deleted_at IS NULL
@@ -66,11 +60,8 @@
 	        SUM(usage_amount) AS monthly_shared_usage
 	      FROM FAMILY_SHARED_USAGE_DAILY
 	      WHERE deleted_at IS NULL
-	        AND usage_date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
-	        AND usage_date &lt; DATE_ADD(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
+	        AND family_id = #{familyId}
 	      GROUP BY family_id
-	    ) fsu
-	      ON fsu.family_id = f.family_id
 	    WHERE fl.family_id = #{familyId}
 	      AND l.deleted_at IS NULL
 	      AND u.deleted_at IS NULL
