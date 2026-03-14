@@ -56,7 +56,6 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
     private String maskSensitiveInfo(String body) {
         if (body == null) return null;
         return body
-                .replaceAll("(?i)\"password\"\\s*:\\s*\"[^\"]+\"", "\"password\":\"****\"")
-                .replaceAll("(?i)\"token\"\\s*:\\s*\"[^\"]+\"", "\"token\":\"****\"");
+                .replaceAll("(?i)\"password\"\\s*:\\s*\"[^\"]+\"", "\"password\":\"****\"");
     }
 }
