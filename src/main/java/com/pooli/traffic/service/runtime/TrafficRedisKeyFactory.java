@@ -169,6 +169,20 @@ public class TrafficRedisKeyFactory {
     /**
       * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
      */
+    public String indivHydrateLockKey(long lineId) {
+        return namespaced("indiv_hydrate_lock:" + lineId);
+    }
+
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
+    public String sharedHydrateLockKey(long familyId) {
+        return namespaced("shared_hydrate_lock:" + familyId);
+    }
+
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String qosKey(long lineId) {
         return namespaced("qos:" + lineId);
     }

@@ -96,6 +96,7 @@ public class TrafficLuaScriptInfraService {
      */
     public TrafficRefillGateStatus executeRefillGate(
             String lockKey,
+            String balanceKey,
             String traceId,
             long lockTtlMs,
             long currentAmount,
@@ -104,7 +105,7 @@ public class TrafficLuaScriptInfraService {
         // refill gate는 단일 문자열 상태(FAIL/SKIP/OK/WAIT)를 반환한다.
         String statusText = executeStringSingle(
                 TrafficLuaScriptType.REFILL_GATE,
-                List.of(lockKey),
+                List.of(lockKey, balanceKey),
                 List.of(
                         traceId,
                         String.valueOf(lockTtlMs),

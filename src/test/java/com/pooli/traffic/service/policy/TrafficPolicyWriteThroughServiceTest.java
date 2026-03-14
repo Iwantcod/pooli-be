@@ -105,6 +105,40 @@ class TrafficPolicyWriteThroughServiceTest {
             verify(hashOperations).delete("pooli:app_speed_limit:101", "speed:301");
             verify(setOperations).remove("pooli:app_whitelist:101", "301");
         }
+
+        @Test
+        @DisplayName("활성 정책이면 속도 제한값을 125배로 변환해 Redis에 저장")
+        void writesSpeedLimitWithMultiplier() {
+            // given
+            when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
+            when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
+            when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(cacheStringRedisTemplate.opsForSet()).thenReturn(setOperations);
+
+            // when
+            trafficPolicyWriteThroughService.syncAppPolicy(101L, 301, true, 1000L, 20, false);
+
+            // then
+            verify(hashOperations).put("pooli:app_speed_limit:101", "speed:301", "2500");
+        }
+
+        @Test
+        @DisplayName("속도 제한이 무제한(-1)이면 센티널 값을 그대로 저장")
+        void keepsUnlimitedSpeedSentinel() {
+            // given
+            when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
+            when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
+            when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(cacheStringRedisTemplate.opsForSet()).thenReturn(setOperations);
+
+            // when
+            trafficPolicyWriteThroughService.syncAppPolicy(101L, 301, true, 1000L, -1, false);
+
+            // then
+            verify(hashOperations).put("pooli:app_speed_limit:101", "speed:301", "-1");
+        }
     }
 
     @Nested
@@ -148,7 +182,7 @@ class TrafficPolicyWriteThroughServiceTest {
                     "pooli:app_whitelist:101"
             ));
             verify(hashOperations).putAll("pooli:app_data_daily_limit:101", Map.of("limit:301", "1024"));
-            verify(hashOperations).putAll("pooli:app_speed_limit:101", Map.of("speed:301", "2048"));
+            verify(hashOperations).putAll("pooli:app_speed_limit:101", Map.of("speed:301", "256000"));
             verify(setOperations).add("pooli:app_whitelist:101", "301");
         }
 

@@ -16,7 +16,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Service
-@Profile({"local", "traffic"})
+@Profile({"local", "api", "traffic"})
 @RequiredArgsConstructor
 public class TrafficQuotaCacheService {
 
@@ -43,6 +43,17 @@ public class TrafficQuotaCacheService {
     }
 
     /**
+     * DB 원천 잔량 고갈 여부를 is_empty 필드(1/0)로 기록합니다.
+     */
+    public void writeDbEmptyFlag(String balanceKey, boolean isDbEmpty) {
+        cacheStringRedisTemplate.opsForHash().put(
+                balanceKey,
+                "is_empty",
+                isDbEmpty ? "1" : "0"
+        );
+    }
+
+    /**
       * `hydrateBalance` 처리 목적에 맞는 핵심 로직을 수행합니다.
      */
     public void hydrateBalance(String balanceKey, long initialAmount, long expireAtEpochSeconds) {
@@ -50,10 +61,20 @@ public class TrafficQuotaCacheService {
 
         // HYDRATE 단계는 키가 없던 상태를 복구하는 목적이므로 putIfAbsent를 사용한다.
         cacheStringRedisTemplate.opsForHash().putIfAbsent(balanceKey, "amount", String.valueOf(normalizedAmount));
-        cacheStringRedisTemplate.opsForHash().putIfAbsent(balanceKey, "is_empty", normalizedAmount <= 0 ? "1" : "0");
+        // hydrate 기본값은 DB 고갈 "미확정" 상태이므로 0으로 시작한다.
+        cacheStringRedisTemplate.opsForHash().putIfAbsent(balanceKey, "is_empty", "0");
 
         // 월별 잔량 키는 명세에 맞춰 월말+10d 시점으로 만료를 설정한다.
         cacheStringRedisTemplate.expireAt(balanceKey, Instant.ofEpochSecond(expireAtEpochSeconds));
+    }
+
+    /**
+     * 개인풀 잔량 해시에 QoS 값을 기록합니다.
+     * null/음수는 허용하지 않으므로 0 이상으로 정규화해 저장합니다.
+     */
+    public void putQos(String balanceKey, long qos) {
+        long normalizedQos = Math.max(0L, qos);
+        cacheStringRedisTemplate.opsForHash().put(balanceKey, "qos", String.valueOf(normalizedQos));
     }
 
     /**
@@ -67,8 +88,8 @@ public class TrafficQuotaCacheService {
         }
 
         // 리필은 기존 잔량에 누적 증가시키는 동작이므로 increment를 사용한다.
+        // is_empty는 DB 고갈 플래그이므로 여기서 변경하지 않고 어댑터(DB claim 결과)에서만 갱신한다.
         cacheStringRedisTemplate.opsForHash().increment(balanceKey, "amount", normalizedRefillAmount);
-        cacheStringRedisTemplate.opsForHash().put(balanceKey, "is_empty", "0");
 
         // 리필 시점에도 동일 TTL 정책을 유지한다.
         cacheStringRedisTemplate.expireAt(balanceKey, Instant.ofEpochSecond(expireAtEpochSeconds));
