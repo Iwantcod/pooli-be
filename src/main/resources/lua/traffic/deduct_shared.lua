@@ -1,7 +1,5 @@
--- deduct_indiv_tick.lua
--- 반환 형식: {"answer":number,"status":"..."} JSON 문자열
--- 정책 적용 순서(개인풀):
--- whitelist -> immediate -> repeat -> daily -> app_daily -> app_speed
+-- deduct_shared.lua
+-- whitelist -> immediate -> repeat -> daily -> monthly_shared -> app_daily -> app_speed
 
 local function as_json(answer, status)
   return cjson.encode({ answer = answer, status = status })
@@ -50,19 +48,22 @@ end
 local remaining_key = KEYS[1]
 local policy_repeat_key = KEYS[2]
 local policy_immediate_key = KEYS[3]
-local policy_daily_key = KEYS[4]
-local policy_app_data_key = KEYS[5]
-local policy_app_speed_key = KEYS[6]
-local policy_whitelist_key = KEYS[7]
-local app_whitelist_key = KEYS[8]
-local immediately_block_end_key = KEYS[9]
-local repeat_block_key = KEYS[10]
-local daily_total_limit_key = KEYS[11]
-local daily_total_usage_key = KEYS[12]
-local app_data_daily_limit_key = KEYS[13]
-local daily_app_usage_key = KEYS[14]
-local app_speed_limit_key = KEYS[15]
-local speed_bucket_key = KEYS[16]
+local policy_shared_key = KEYS[4]
+local policy_daily_key = KEYS[5]
+local policy_app_data_key = KEYS[6]
+local policy_app_speed_key = KEYS[7]
+local policy_whitelist_key = KEYS[8]
+local app_whitelist_key = KEYS[9]
+local immediately_block_end_key = KEYS[10]
+local repeat_block_key = KEYS[11]
+local daily_total_limit_key = KEYS[12]
+local daily_total_usage_key = KEYS[13]
+local monthly_shared_limit_key = KEYS[14]
+local monthly_shared_usage_key = KEYS[15]
+local app_data_daily_limit_key = KEYS[16]
+local daily_app_usage_key = KEYS[17]
+local app_speed_limit_key = KEYS[18]
+local speed_bucket_key = KEYS[19]
 
 -- ARGV
 local target_data = tonumber(ARGV[1])
@@ -71,6 +72,7 @@ local day_num = tonumber(ARGV[3])
 local sec_of_day = tonumber(ARGV[4])
 local now_epoch_second = tonumber(ARGV[5])
 local daily_expire_at = tonumber(ARGV[6])
+local monthly_expire_at = tonumber(ARGV[7])
 
 if not remaining_key or remaining_key == "" then
   return as_json(-1, "ERROR")
@@ -93,6 +95,9 @@ end
 if not daily_expire_at or daily_expire_at <= 0 then
   return as_json(-1, "ERROR")
 end
+if not monthly_expire_at or monthly_expire_at <= 0 then
+  return as_json(-1, "ERROR")
+end
 
 local current_amount = tonumber(redis.call("HGET", remaining_key, "amount") or "-1")
 if current_amount < 0 then
@@ -113,7 +118,6 @@ if is_policy_enabled(policy_whitelist_key) and app_whitelist_key and app_whiteli
 end
 
 if not whitelist_bypass then
-  -- 1) 즉시 차단
   if is_policy_enabled(policy_immediate_key) then
     local block_end_at = tonumber(redis.call("GET", immediately_block_end_key) or "0")
     if block_end_at > 0 and now_epoch_second <= block_end_at then
@@ -121,7 +125,6 @@ if not whitelist_bypass then
     end
   end
 
-  -- 2) 반복 차단
   if is_policy_enabled(policy_repeat_key) then
     if is_in_repeat_block(repeat_block_key, day_num, sec_of_day) then
       return as_json(0, "BLOCKED_REPEAT")
@@ -129,7 +132,6 @@ if not whitelist_bypass then
   end
 end
 
--- 차단 정책 판정 이후에 현재 잔량을 평가한다.
 answer = math.min(current_amount, target_data)
 
 if current_amount < target_data then
@@ -141,7 +143,6 @@ if answer <= 0 then
 end
 
 if not whitelist_bypass then
-  -- 3) 일 총량 제한
   if is_policy_enabled(policy_daily_key) then
     local daily_limit = tonumber(redis.call("GET", daily_total_limit_key) or "-1")
     if daily_limit >= 0 then
@@ -154,7 +155,18 @@ if not whitelist_bypass then
     end
   end
 
-  -- 4) 앱 일 총량 제한
+  if is_policy_enabled(policy_shared_key) then
+    local monthly_limit = tonumber(redis.call("GET", monthly_shared_limit_key) or "-1")
+    if monthly_limit >= 0 then
+      local monthly_used = tonumber(redis.call("GET", monthly_shared_usage_key) or "0")
+      local monthly_remaining = math.max(0, monthly_limit - monthly_used)
+      answer = math.min(answer, monthly_remaining)
+      if answer <= 0 then
+        return as_json(0, "HIT_MONTHLY_SHARED_LIMIT")
+      end
+    end
+  end
+
   if is_policy_enabled(policy_app_data_key) then
     local app_daily_limit = tonumber(redis.call("HGET", app_data_daily_limit_key, app_limit_field) or "-1")
     if app_daily_limit >= 0 then
@@ -167,7 +179,6 @@ if not whitelist_bypass then
     end
   end
 
-  -- 5) 앱 속도 제한(초당)
   if is_policy_enabled(policy_app_speed_key) then
     local app_speed_limit = tonumber(redis.call("HGET", app_speed_limit_key, app_speed_field) or "-1")
     if app_speed_limit >= 0 then
@@ -181,12 +192,14 @@ if not whitelist_bypass then
   end
 end
 
--- 실제 차감/사용량 반영
 redis.call("HINCRBY", remaining_key, "amount", -answer)
 
 redis.call("INCRBY", daily_total_usage_key, answer)
 redis.call("EXPIREAT", daily_total_usage_key, daily_expire_at)
+redis.call("INCRBY", monthly_shared_usage_key, answer)
+redis.call("EXPIREAT", monthly_shared_usage_key, monthly_expire_at)
 redis.call("HINCRBY", daily_app_usage_key, app_usage_field, answer)
 redis.call("EXPIREAT", daily_app_usage_key, daily_expire_at)
 
 return as_json(answer, final_status)
+

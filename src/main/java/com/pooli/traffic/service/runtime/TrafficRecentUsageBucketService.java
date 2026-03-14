@@ -19,7 +19,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 최근 차감량 버킷을 Redis에 기록하고 리필 계산값(delta/unit/threshold)을 제공합니다.
+ *  최근 차감량 버킷을 Redis에 기록하고 리필 계산값(delta/unit/threshold)을 제공합니다.
  */
 @Slf4j
 @Service
@@ -38,7 +38,7 @@ public class TrafficRecentUsageBucketService {
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
 
     /**
-     * 현재 tick의 실제 차감량을 "초 단위 속도 버킷"에 기록합니다.
+      현재 tick의 실제 차감량을 "초 단위 속도 버킷"에 기록합니다.
      *
      * <p>동작 규칙:
      * 1) `usedBytes > 0`인 경우에만 기록합니다.
@@ -53,7 +53,7 @@ public class TrafficRecentUsageBucketService {
      * @param payload 요청 컨텍스트(traceId, lineId, familyId 포함)
      * @param usedBytes 현재 tick 실제 차감량(Byte)
      */
-    public void recordTickUsage(TrafficPoolType poolType, TrafficPayloadReqDto payload, long usedBytes) {
+    public void recordUsage(TrafficPoolType poolType, TrafficPayloadReqDto payload, long usedBytes) {
         if (poolType == null || payload == null || usedBytes <= 0) {
             return;
         }
@@ -148,7 +148,7 @@ public class TrafficRecentUsageBucketService {
     }
 
     /**
-     * 버킷 데이터가 없을 때 적용하는 fallback 리필 계획을 생성합니다.
+     버킷 데이터가 없을 때 적용하는 fallback 리필 계획을 생성합니다.
      *
      * <p>fallback 규칙:
      * - refillUnit = max(apiTotalData, 0)
@@ -197,6 +197,7 @@ public class TrafficRecentUsageBucketService {
      * @param poolType 개인/공유 풀 구분
      * @param ownerId lineId 또는 familyId
      * @return 집계 결과(sum, bucketCount)
+     *
      */
     private BucketAggregate aggregateAllBuckets(TrafficPoolType poolType, long ownerId) {
         String pattern = resolveBucketPattern(poolType, ownerId);
@@ -283,7 +284,7 @@ public class TrafficRecentUsageBucketService {
     }
 
     /**
-     * 풀 유형에 맞는 버킷 검색 패턴(`...:*`)을 생성합니다.
+     ** 풀 유형에 맞는 버킷 검색 패턴(`...:*`)을 생성합니다.
      *
      * @param poolType 개인/공유 풀 구분
      * @param ownerId lineId 또는 familyId
@@ -339,6 +340,7 @@ public class TrafficRecentUsageBucketService {
     }
 
     /**
+     
      * Redis 문자열 값을 양수 long으로 파싱합니다.
      *
      * <p>빈 값, 파싱 실패, 0/음수는 모두 0으로 반환합니다.
@@ -357,7 +359,7 @@ public class TrafficRecentUsageBucketService {
     }
 
     /**
-     * 버킷 집계(sum/count)를 함께 전달하기 위한 경량 값 객체입니다.
+    버킷 집계(sum/count)를 함께 전달하기 위한 경량 값 객체입니다.
      */
     private record BucketAggregate(long bucketSum, long bucketCount) {
         /**
