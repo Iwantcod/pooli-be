@@ -19,6 +19,8 @@ class TrafficLuaPolicyContractTest {
             Path.of("src/main/resources/lua/traffic/deduct_indiv_tick.lua");
     private static final Path SHARED_SCRIPT =
             Path.of("src/main/resources/lua/traffic/deduct_shared_tick.lua");
+    private static final Path REFILL_GATE_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/refill_gate.lua");
 
     @Test
     @DisplayName("개인풀 Lua는 whitelist -> immediate -> repeat -> daily -> app_daily -> app_speed 순서를 유지한다")
@@ -87,6 +89,54 @@ class TrafficLuaPolicyContractTest {
         assertTrue(monthlySharedIndex > immediateIndex, "월 공유풀 제한 검사는 일 제한 이후에 평가되어야 합니다.");
         assertTrue(speedIndex > monthlySharedIndex, "속도 제한 검사는 정책 분기 블록의 마지막에 있어야 합니다.");
         assertTrue(endIndex > speedIndex, "정책 분기 블록 종료 후에만 실제 차감이 수행되어야 합니다.");
+    }
+
+    @Test
+    @DisplayName("개인풀 Lua는 차단 정책 검사 이후에 잔량 0 반환 분기를 평가한다")
+    void checksIndividualBlockPolicyBeforeZeroBalanceBranch() throws IOException {
+        String script = Files.readString(INDIVIDUAL_SCRIPT);
+
+        assertAppearsInOrder(
+                script,
+                "if is_policy_enabled(policy_immediate_key)",
+                "if is_policy_enabled(policy_repeat_key)",
+                "if answer <= 0 then"
+        );
+    }
+
+    @Test
+    @DisplayName("공유풀 Lua는 차단 정책 검사 이후에 잔량 0 반환 분기를 평가한다")
+    void checksSharedBlockPolicyBeforeZeroBalanceBranch() throws IOException {
+        String script = Files.readString(SHARED_SCRIPT);
+
+        assertAppearsInOrder(
+                script,
+                "if is_policy_enabled(policy_immediate_key)",
+                "if is_policy_enabled(policy_repeat_key)",
+                "if answer <= 0 then"
+        );
+    }
+
+    @Test
+    @DisplayName("개인/공유 차감 Lua는 is_empty 필드를 직접 갱신하지 않는다")
+    void doesNotWriteDbEmptyFlagInDeductScripts() throws IOException {
+        String individualScript = Files.readString(INDIVIDUAL_SCRIPT);
+        String sharedScript = Files.readString(SHARED_SCRIPT);
+
+        assertTrue(!individualScript.contains("is_empty"), "개인풀 차감 Lua에서 is_empty 쓰기는 제거되어야 합니다.");
+        assertTrue(!sharedScript.contains("is_empty"), "공유풀 차감 Lua에서 is_empty 쓰기는 제거되어야 합니다.");
+    }
+
+    @Test
+    @DisplayName("refill gate는 threshold 비교보다 먼저 is_empty=1 스킵 분기를 평가한다")
+    void refillGateChecksDbEmptyBeforeThreshold() throws IOException {
+        String script = Files.readString(REFILL_GATE_SCRIPT);
+
+        assertAppearsInOrder(
+                script,
+                "if is_empty == 1 then",
+                "if current_amount > threshold then"
+        );
     }
 
     private void assertAppearsInOrder(String script, String... fragments) {

@@ -94,10 +94,10 @@ API 서버:
 
 - remaining_indiv_amount:{lineId}:{yyyymm} (hash, ttl 월말+10d)
     - amount
-    - is_empty
+    - is_empty (DB 원천 잔량 고갈 플래그, `1`=DB remaining<=0, `0`=그 외)
 - remaining_shared_amount:{familyId}:{yyyymm} (hash, ttl 월말+10d)
     - amount
-    - is_empty
+    - is_empty (DB 원천 잔량 고갈 플래그, `1`=DB remaining<=0, `0`=그 외)
 - indiv_refill_lock:{lineId} (string, ttl 3000ms, value=traceId)
 - shared_refill_lock:{familyId} (string, ttl 3000ms, value=traceId)
 - qos:{lineId} (string, ttl 없음)
@@ -147,7 +147,7 @@ API 서버:
 | **코드** | **의미** | **설명** |
 | --- | --- | --- |
 | **OK** | 정상 처리 | 요청이 정상적으로 처리되었으며, 사용량도 허용 범위 내에 있음 |
-| **NO_BALANCE** | 잔량 부족 | 현재 풀(개인 풀 또는 공유 풀)의 잔량이 부족한 상태. 이 경우에만 **리필(refill)** 수행 |
+| **NO_BALANCE** | 잔량 부족 | 현재 풀(개인 풀 또는 공유 풀)의 잔량이 부족한 상태. 단, `is_empty != 1`일 때만 **리필(refill)** 수행 |
 | **BLOCKED_IMMEDIATE** | 즉시 차단 | 즉시 차단 정책이 적용된 상태로 요청이 차단됨 |
 | **BLOCKED_REPEAT** | 반복 차단 | 반복 차단 정책의 시간대에 해당하여 요청이 차단됨 |
 | **HIT_DAILY_LIMIT** | 일 사용량 제한 도달 | 일일 총 사용량 제한에 도달하여 더 이상 요청 처리 불가 |
@@ -163,9 +163,12 @@ API 서버:
 | --- | --- | --- | --- | --- |
 | deduct_indiv_tick.lua | 개인풀 요청량 차감 + 정책 검증 + usage 갱신 | lineId, appId, requestedData, nowSec, traceId | 개인풀 잔량, 차단/제한, 일사용량, 앱사용량, 속도누적 | JSON 문자열(`{"answer":n,"status":"..."}`) |
 | deduct_shared_tick.lua | 공유풀 요청량 차감 + 정책 검증 + usage 갱신 | lineId, familyId, appId, requestedData, nowSec, traceId | 공유풀 잔량, 차단/제한, 일/월사용량, 앱사용량, 속도누적 | JSON 문자열(`{"answer":n,"status":"..."}`) |
-| refill_gate.lua | refill 필요 여부 + lock 획득 판정 | poolType, ownerId, threshold, traceId | 잔량, is_empty, lock 키 | FAIL/SKIP/OK/WAIT |
+| refill_gate.lua | refill 필요 여부 + lock 획득 판정 | lockKey, balanceKey, threshold, traceId | 잔량, DB 고갈 플래그(is_empty), lock 키 | FAIL/SKIP/OK/WAIT |
 | lock_heartbeat.lua | lock 소유자 TTL 연장 | lockKey, traceId, ttlMs | lock 키 | 1(성공)/0(실패) |
 | lock_release.lua | lock 소유자 해제 | lockKey, traceId | lock 키 | 1(해제)/0(무시) |
+
+- `deduct_*` 스크립트는 `is_empty`를 갱신하지 않으며, 해당 플래그는 DB claim 결과 기반으로만 관리한다.
+- `refill_gate.lua`는 `balanceKey`에서 `is_empty`를 직접 읽어 SKIP/진입 여부를 단일 판정한다.
 
 ## **9) Lua 사용 순서**
 
@@ -173,10 +176,10 @@ API 서버:
 2. 이벤트 요청량(`apiTotalData`)으로 deduct_indiv_tick.lua 호출.
 3. 개인풀 status가 HYDRATE면 DB hydrate 후 같은 이벤트에서 개인풀 Lua 1회 재호출.
 4. 개인풀 차감 후 residual data 계산.
-5. 개인풀 status가 NO_BALANCE면 refill_gate.lua 호출.
-6. refill 결과가 OK면 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount = min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 개인풀 Lua를 1회 재호출한다(heartbeat 유지).
+5. 개인풀 status가 NO_BALANCE이고 `is_empty != 1`이면 refill_gate.lua 호출.
+6. refill 결과가 OK면 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount = min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 개인풀 Lua를 **residual(`currentTickTargetData - 1차 answer`) 기준으로 1회 재호출**한다(heartbeat 유지).
 7. 그래도 residual data > 0이고 개인풀 status가 NO_BALANCE면 deduct_shared_tick.lua 호출.
-8. 공유풀도 HYDRATE/NO_BALANCE/refill 동일 규칙 적용.
+8. 공유풀도 HYDRATE/NO_BALANCE(`is_empty != 1` 조건)/refill 동일 규칙 적용.
 9. 이벤트 단일 사이클 종료 후 최종 상태 저장.
 11. 최종 상태 영속 저장 성공 후 XACK.
 12. dedupe:run:{traceId} 정리.
@@ -279,7 +282,7 @@ API 서버:
     2. `delta == 0` 또는 버킷 정보 없음: `refill unit = apiTotalData`, `redis threshold = ceil(apiTotalData * 0.3)`
     3. 계산 결과는 음수가 될 수 없고, `redis threshold` 최소값은 1로 보정한다.
 5. 리필 신호 조건:
-    1. 현재 Redis 잔량(`remaining_*_amount`)이 `redis threshold` 미만이면 `refill_gate.lua`로 리필 시도를 진행한다.
+    1. 현재 Redis 잔량(`remaining_*_amount`)이 `redis threshold` 미만이고, `is_empty != 1`이면 `refill_gate.lua`로 리필 시도를 진행한다.
 6. 버킷 스코프:
     1. 개인풀은 lineId 기준 버킷 집합으로 계산한다.
     2. 공유풀은 familyId 기준 버킷 집합으로 계산한다.
@@ -295,8 +298,9 @@ API 서버:
 
 1. 진입 조건:
     1. 현재 tick 결과가 `NO_BALANCE`
-    2. `refill_gate.lua` 결과가 `OK`
-    3. lock 소유권(heartbeat)이 유효함
+    2. Redis 잔량 키의 `is_empty != 1`
+    3. `refill_gate.lua` 결과가 `OK`
+    4. lock 소유권(heartbeat)이 유효함
 2. DB 차감 트랜잭션:
     1. 대상 풀 레코드를 `SELECT ... FOR UPDATE`로 조회한다.
     2. `actual refill amount = min(refill unit, db remaining)`를 계산한다.
@@ -305,8 +309,9 @@ API 서버:
 3. Redis 반영:
     1. DB 차감 성공 후 Redis 잔량 키를 `actual refill amount`만큼 증가시킨다.
     2. Redis 충전량은 반드시 DB 차감량과 동일해야 한다.
+    3. `is_empty`는 DB claim 결과(`dbRemainingAfter`)로만 확정한다(`<=0`이면 `1`, `>0`이면 `0`).
 4. tick 재시도:
-    1. Redis 반영이 성공한 경우에만 같은 tick에서 차감 Lua를 1회 재호출한다.
+    1. Redis 반영이 성공한 경우에만 같은 tick에서 차감 Lua를 **residual 기준으로 1회 재호출**한다.
 
 ### **12.2) DB/Redis 불일치 방지 규칙 (추가 확정)**
 
@@ -386,10 +391,10 @@ API 서버:
 3. api_remaining_data = api_total_data 초기화.
 4. 개인풀 Lua 실행.
 5. HYDRATE면 hydrate + 개인풀 재시도 1회.
-6. NO_BALANCE면 refill gate 실행.
-7. OK로 lock 획득 시 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount=min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 개인풀 재시도 1회.
+6. NO_BALANCE이고 `is_empty != 1`이면 refill gate 실행.
+7. OK로 lock 획득 시 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount=min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 개인풀을 **residual 기준으로 재시도 1회**한다.
 8. 개인풀 처리 후 residual_data > 0이고 status가 NO_BALANCE면 공유풀 Lua 실행.
-9. 공유풀에서도 HYDRATE/refill 동일 처리.
+9. 공유풀에서도 HYDRATE/NO_BALANCE(`is_empty != 1` 조건)/refill 동일 처리.
 10. 이벤트 단일 사이클 종료 후 결과 상태 계산:
     - api_remaining_data == 0 -> SUCCESS
     - api_remaining_data > 0 -> PARTIAL_SUCCESS
@@ -406,11 +411,11 @@ API 서버:
 4. `deduct_indiv_tick.lua`를 호출한다.
 5. Lua는 원자적으로 검증 -> answer 계산 -> 차감/집계 -> JSON(`{"answer":...,"status":"..."}`) 반환을 수행한다.
 6. 개인풀 결과가 HYDRATE면 DB hydrate 후 같은 이벤트 처리 사이클에서 `deduct_indiv_tick.lua`를 1회 재호출한다.
-7. 개인풀 결과가 NO_BALANCE면 `refill_gate.lua`를 호출한다.
-8. refill 결과가 OK면 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount=min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 같은 이벤트 처리 사이클에서 `deduct_indiv_tick.lua`를 1회 재호출한다.
+7. 개인풀 결과가 NO_BALANCE이고 `is_empty != 1`이면 `refill_gate.lua`를 호출한다.
+8. refill 결과가 OK면 DB row lock(`SELECT ... FOR UPDATE`)으로 `actual refill amount=min(refill unit, db remaining)`를 계산/차감하고, 같은 양으로 Redis를 충전한 뒤 같은 이벤트 처리 사이클에서 `deduct_indiv_tick.lua`를 **residual 기준으로 1회 재호출**한다.
 9. 개인풀 처리 후 `residual_data = max(apiTotalData - indiv_answer_total, 0)`를 계산한다.
 10. residual_data > 0이고 개인풀 최종 status가 NO_BALANCE인 경우에만 `deduct_shared_tick.lua`를 호출한다.
-11. 공유풀도 동일하게 HYDRATE -> hydrate 1회 재호출, NO_BALANCE -> refill_gate -> 필요 시 재호출 규칙을 적용한다.
+11. 공유풀도 동일하게 HYDRATE -> hydrate 1회 재호출, NO_BALANCE(`is_empty != 1`) -> refill_gate -> 필요 시 **residual 기준 재호출** 규칙을 적용한다.
 12. 이벤트 단일 처리 종료 후 api_remaining_data == 0이면 SUCCESS, 아니면 PARTIAL_SUCCESS, 시스템 예외면 FAILED를 결정한다.
 13. 최종 결과를 영속 저장소에 저장한다(DONE).
 14. DONE 저장 성공 후 XACK한다.

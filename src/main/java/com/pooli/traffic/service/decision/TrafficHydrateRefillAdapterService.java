@@ -212,7 +212,7 @@ public class TrafficHydrateRefillAdapterService {
      * 3) refill_gate.lua로 리필 진입 가능 여부 확인(OK만 진행)
      * 4) lock heartbeat로 소유권 확인(소유자만 진행)
      * 5) DB에서 actualRefillAmount 확보(min(requested, dbRemaining))
-     * 6) actualRefillAmount > 0 이면 Redis 충전 후 같은 tick 재차감 1회
+     * 6) actualRefillAmount > 0 이면 Redis 충전 후 "남은 tick 목표량(residual)" 재차감 1회
      * 7) finally에서 lock 해제 보장
      *
      * @param poolType 처리 대상 풀 유형
@@ -236,6 +236,9 @@ public class TrafficHydrateRefillAdapterService {
         }
 
         String lockKey = resolveLockKey(poolType, payload);
+        long normalizedCurrentTickTargetData = Math.max(0L, currentTickTargetData);
+        long firstDeductedAmount = normalizeNonNegative(currentResult.getAnswer());
+        long retryTargetData = clampRemaining(normalizedCurrentTickTargetData - firstDeductedAmount);
 
         TrafficLuaExecutionResult retriedResult = currentResult;
         for (int retry = 0; retry < REFILL_RETRY_MAX; retry++) {
@@ -263,6 +266,7 @@ public class TrafficHydrateRefillAdapterService {
 
             TrafficRefillGateStatus gateStatus = trafficLuaScriptInfraService.executeRefillGate(
                     lockKey,
+                    balanceKey,
                     payload.getTraceId(),
                     TrafficRedisRuntimePolicy.LOCK_TTL_MS,
                     currentAmount,
@@ -307,6 +311,7 @@ public class TrafficHydrateRefillAdapterService {
                 long dbRemainingBefore = normalizeNonNegative(claimResult == null ? null : claimResult.getDbRemainingBefore());
                 long actualRefillAmount = normalizeNonNegative(claimResult == null ? null : claimResult.getActualRefillAmount());
                 long dbRemainingAfter = normalizeNonNegative(claimResult == null ? null : claimResult.getDbRemainingAfter());
+                trafficQuotaCacheService.writeDbEmptyFlag(balanceKey, dbRemainingAfter <= 0);
                 if (actualRefillAmount <= 0) {
                     // DB에서 실제 차감된 양이 없으면 Redis 충전 없이 현재 결과를 유지한다.
                     log.debug(
@@ -349,8 +354,18 @@ public class TrafficHydrateRefillAdapterService {
                 );
                 trafficRefillMetrics.increment(poolType.name(), "refill_applied");
 
-                // 리필 후 동일 tick 차감을 1회 재시도한다.
-                retriedResult = executeDeduct(poolType, payload, balanceKey, currentTickTargetData);
+                // 리필 후에는 "남은 목표량(residual)"만 1회 재차감해 과차감을 방지한다.
+                TrafficLuaExecutionResult refillRetryResult = executeDeduct(
+                        poolType,
+                        payload,
+                        balanceKey,
+                        retryTargetData
+                );
+                retriedResult = mergeRefillRetryResult(
+                        normalizedCurrentTickTargetData,
+                        firstDeductedAmount,
+                        refillRetryResult
+                );
                 return retriedResult;
             } finally {
                 // 성공/실패와 무관하게 lock은 반드시 소유자 기준으로 해제한다.
@@ -359,6 +374,26 @@ public class TrafficHydrateRefillAdapterService {
         }
 
         return retriedResult;
+    }
+
+    /**
+     * NO_BALANCE 1차 차감량과 리필 후 재차감량을 합산해 같은 tick 최종 차감량으로 정규화합니다.
+     */
+    private TrafficLuaExecutionResult mergeRefillRetryResult(
+            long currentTickTargetData,
+            long firstDeductedAmount,
+            TrafficLuaExecutionResult refillRetryResult
+    ) {
+        long retriedDeductedAmount = normalizeNonNegative(refillRetryResult == null ? null : refillRetryResult.getAnswer());
+        long mergedDeductedAmount = clampToMax(currentTickTargetData, safeAdd(firstDeductedAmount, retriedDeductedAmount));
+        TrafficLuaStatus mergedStatus = refillRetryResult == null
+                ? TrafficLuaStatus.ERROR
+                : refillRetryResult.getStatus();
+
+        return TrafficLuaExecutionResult.builder()
+                .answer(mergedDeductedAmount)
+                .status(mergedStatus)
+                .build();
     }
 
     /**
@@ -594,5 +629,42 @@ public class TrafficHydrateRefillAdapterService {
             return 0;
         }
         return value;
+    }
+
+    /**
+     * 음수 결과가 나올 수 있는 뺄셈 연산 결과를 0 이상으로 보정합니다.
+     */
+    private long clampRemaining(long value) {
+        if (value <= 0) {
+            return 0L;
+        }
+        return value;
+    }
+
+    /**
+     * 누적 차감량이 tick 목표량을 넘지 않도록 상한을 적용합니다.
+     */
+    private long clampToMax(long maxValue, long value) {
+        long normalizedMaxValue = Math.max(0L, maxValue);
+        if (value <= 0) {
+            return 0L;
+        }
+        return Math.min(normalizedMaxValue, value);
+    }
+
+    /**
+     * long 덧셈 오버플로우를 방어하며 누적 값을 계산합니다.
+     */
+    private long safeAdd(long left, long right) {
+        if (left <= 0) {
+            return Math.max(0L, right);
+        }
+        if (right <= 0) {
+            return left;
+        }
+        if (left > Long.MAX_VALUE - right) {
+            return Long.MAX_VALUE;
+        }
+        return left + right;
     }
 }
