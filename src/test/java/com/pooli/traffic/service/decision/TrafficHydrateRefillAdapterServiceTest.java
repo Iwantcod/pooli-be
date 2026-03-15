@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -102,7 +103,7 @@ class TrafficHydrateRefillAdapterServiceTest {
         Mockito.lenient().when(trafficRefillOutboxSupportService.resolveIdempotencyKey(anyString()))
                 .thenAnswer(invocation -> "pooli:refill:idempotency:" + invocation.getArgument(0, String.class));
         Mockito.lenient().when(trafficRefillOutboxSupportService.refillIdempotencyTtlSeconds()).thenReturn(600L);
-        Mockito.lenient().when(trafficQuotaCacheService.applyRefillWithIdempotency(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyLong()))
+        Mockito.lenient().when(trafficQuotaCacheService.applyRefillWithIdempotency(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyLong(), anyBoolean()))
                 .thenReturn(true);
         Mockito.lenient().when(trafficRefillOutboxSupportService.unwrapRuntimeException(any(RuntimeException.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -225,14 +226,16 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
                     () -> assertEquals(60L, result.getAnswer())
             );
-            verify(trafficQuotaCacheService).writeDbEmptyFlag("pooli:remaining_indiv_amount:11:202603", false);
+            // writeDbEmptyFlag는 더 이상 별도 호출되지 않는다 — Lua 내부에서 원자적으로 처리된다.
+            verify(trafficQuotaCacheService, never()).writeDbEmptyFlag(anyString(), anyBoolean());
             verify(trafficQuotaCacheService).applyRefillWithIdempotency(
                     eq("pooli:remaining_indiv_amount:11:202603"),
                     eq("pooli:refill:idempotency:refill-uuid-100-100"),
                     eq("refill-uuid-100-100"),
                     eq(100L),
                     eq(1_770_000_000L),
-                    eq(600L)
+                    eq(600L),
+                    eq(false) // dbRemainingAfter=900 > 0
             );
             verify(trafficLuaScriptInfraService).executeLockRelease("pooli:indiv_refill_lock:11", payload.getTraceId());
         }
@@ -356,8 +359,11 @@ class TrafficHydrateRefillAdapterServiceTest {
 
             // then
             assertEquals(TrafficLuaStatus.NO_BALANCE, result.getStatus());
-            verify(trafficQuotaCacheService).writeDbEmptyFlag("pooli:remaining_indiv_amount:11:202603", true);
-            verify(trafficQuotaCacheService, never()).refillBalance(anyString(), anyLong(), anyLong());
+            // actualRefillAmount=0 → db_noop 경로로 return, applyRefillWithIdempotency 미호출
+            // writeDbEmptyFlag도 별도 호출되지 않음 (Lua 통합)
+            verify(trafficQuotaCacheService, never()).writeDbEmptyFlag(anyString(), anyBoolean());
+            verify(trafficQuotaCacheService, never()).applyRefillWithIdempotency(
+                    anyString(), anyString(), anyString(), anyLong(), anyLong(), anyLong(), anyBoolean());
             verify(trafficLuaScriptInfraService).executeLockRelease("pooli:indiv_refill_lock:11", payload.getTraceId());
         }
 
@@ -702,14 +708,16 @@ class TrafficHydrateRefillAdapterServiceTest {
                 () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
                 () -> assertEquals(50L, result.getAnswer())
         );
-        verify(trafficQuotaCacheService).writeDbEmptyFlag("pooli:remaining_shared_amount:22:202603", true);
+        // writeDbEmptyFlag는 더 이상 별도 호출되지 않는다 — Lua 내부에서 원자적으로 처리된다.
+        verify(trafficQuotaCacheService, never()).writeDbEmptyFlag(anyString(), anyBoolean());
         verify(trafficQuotaCacheService).applyRefillWithIdempotency(
                 eq("pooli:remaining_shared_amount:22:202603"),
                 eq("pooli:refill:idempotency:refill-uuid-50-50"),
                 eq("refill-uuid-50-50"),
                 eq(50L),
                 eq(1_770_000_000L),
-                eq(600L)
+                eq(600L),
+                eq(true) // dbRemainingAfter=0 → is_empty=true
         );
         verify(trafficLuaScriptInfraService).executeLockRelease("pooli:shared_refill_lock:22", payload.getTraceId());
 

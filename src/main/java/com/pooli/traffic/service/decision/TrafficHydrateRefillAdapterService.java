@@ -291,7 +291,8 @@ public class TrafficHydrateRefillAdapterService {
                 long dbRemainingAfter = normalizeNonNegative(claimResult == null ? null : claimResult.getDbRemainingAfter());
                 Long outboxRecordId = claimResult == null ? null : claimResult.getOutboxRecordId();
                 String outboxRefillUuid = claimResult == null ? null : claimResult.getRefillUuid();
-                trafficQuotaCacheService.writeDbEmptyFlag(balanceKey, dbRemainingAfter <= 0);
+                // is_empty 플래그 갱신은 applyRefillWithIdempotency Lua 스크립트 내부에서
+                // amount 증가와 원자적으로 처리된다. 여기서는 별도로 기록하지 않는다.
                 if (actualRefillAmount <= 0) {
                     markOutboxSuccessIfPresent(outboxRecordId);
                     log.debug(
@@ -341,7 +342,9 @@ public class TrafficHydrateRefillAdapterService {
                             outboxRefillUuid,
                             actualRefillAmount,
                             monthlyExpireAt,
-                            trafficRefillOutboxSupportService.refillIdempotencyTtlSeconds()
+                            trafficRefillOutboxSupportService.refillIdempotencyTtlSeconds(),
+                            // DB 잔량 소진 여부를 Lua 내부에서 amount 증가와 함께 원자적으로 기록한다.
+                            dbRemainingAfter <= 0
                     );
                     if (!applied) {
                         log.info(
