@@ -251,7 +251,7 @@ public class TrafficStreamConsumerRunnerTest {
         }
 
         @Test
-        @DisplayName("does not ack or release when done log save fails")
+        @DisplayName("does not ack but releases claim when done log save fails")
         void doesNotAckWhenDoneLogSaveFails() {
             String payloadJson = "{\"traceId\":\"trace-fail\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("4-0", payloadJson);
@@ -274,7 +274,25 @@ public class TrafficStreamConsumerRunnerTest {
             invokeHandleRecord(record);
 
             verify(trafficStreamInfraService, never()).acknowledge(record.getId());
-            verify(trafficInFlightDedupeService, never()).release("trace-fail");
+            verify(trafficInFlightDedupeService).release("trace-fail");
+        }
+
+        @Test
+        @DisplayName("does not ack but releases claim when orchestration fails")
+        void doesNotAckWhenOrchestrationFails() {
+            String payloadJson = "{\"traceId\":\"trace-orchestrate-fail\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("4-1", payloadJson);
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-orchestrate-fail")).thenReturn(false);
+            when(trafficInFlightDedupeService.tryClaim("trace-orchestrate-fail")).thenReturn(true);
+            when(trafficDeductOrchestratorService.orchestrate(any()))
+                    .thenThrow(new RuntimeException("redis timeout"));
+
+            invokeHandleRecord(record);
+
+            verify(trafficStreamInfraService, never()).acknowledge(record.getId());
+            verify(trafficInFlightDedupeService).release("trace-orchestrate-fail");
         }
 
         @Test

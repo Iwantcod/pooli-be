@@ -207,17 +207,19 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 return;
             }
 
-            MDC.put(TRACE_ID_MDC_KEY, payload.getTraceId());
+            String traceId = payload.getTraceId();
+            MDC.put(TRACE_ID_MDC_KEY, traceId);
+            boolean claimAcquired = false;
             try {
-                if (trafficDeductDoneLogService.existsByTraceId(payload.getTraceId())) {
+                if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
                     log.info("traffic_stream_record_already_done recordId={}", recordId);
                     trafficStreamInfraService.acknowledge(record.getId());
                     return;
                 }
 
-                boolean claimed = trafficInFlightDedupeService.tryClaim(payload.getTraceId());
-                if (!claimed) {
-                    if (trafficDeductDoneLogService.existsByTraceId(payload.getTraceId())) {
+                claimAcquired = trafficInFlightDedupeService.tryClaim(traceId);
+                if (!claimAcquired) {
+                    if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
                         trafficStreamInfraService.acknowledge(record.getId());
                     }
                     log.info("traffic_stream_record_deduped recordId={}", recordId);
@@ -228,7 +230,6 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload, result, recordId);
 
                 trafficStreamInfraService.acknowledge(record.getId());
-                trafficInFlightDedupeService.release(payload.getTraceId());
 
                 LocalDateTime loggedAt = LocalDateTime.now();
                 String logEventName = saved ? "traffic_stream_record_done" : "traffic_stream_record_done_duplicate";
@@ -237,7 +238,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                                 + "trace_id={} record_id={} line_id={} family_id={} app_id={} "
                                 + "api_total_data={} deducted_total_bytes={} api_remaining_data={} "
                                 + "final_status={} last_lua_status={} created_at={} finished_at={} logged_at={}",
-                        payload.getTraceId(),
+                        traceId,
                         recordId,
                         payload.getLineId(),
                         payload.getFamilyId(),
@@ -254,6 +255,10 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             } catch (Exception e) {
                 log.error("traffic_stream_record_handle_failed recordId={}", recordId, e);
             } finally {
+                if (claimAcquired) {
+                    // Failed records stay pending, so release the in-flight marker to let reclaim retry them.
+                    trafficInFlightDedupeService.release(traceId);
+                }
                 MDC.remove(TRACE_ID_MDC_KEY);
             }
         } catch (JsonProcessingException e) {
