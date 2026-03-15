@@ -430,8 +430,8 @@ class TrafficPolicyWriteThroughServiceTest {
         }
 
         @Test
-        @DisplayName("connection failure는 성공 동등 처리로 markSuccess")
-        void treatsConnectionFailureAsSuccessEquivalent() {
+        @DisplayName("connection failure는 실패로 처리해 markFail")
+        void treatsConnectionFailureAsFail() {
             // given
             when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), isNull())).thenReturn(20L);
             when(trafficRedisKeyFactory.policyKey(2002L)).thenReturn("pooli:policy:2002");
@@ -454,8 +454,8 @@ class TrafficPolicyWriteThroughServiceTest {
                     }),
                     isNull()
             );
-            verify(redisOutboxRecordService).markSuccess(20L);
-            verify(redisOutboxRecordService, never()).markFail(anyLong());
+            verify(redisOutboxRecordService).markFail(20L);
+            verify(redisOutboxRecordService, never()).markSuccess(anyLong());
         }
     }
 }

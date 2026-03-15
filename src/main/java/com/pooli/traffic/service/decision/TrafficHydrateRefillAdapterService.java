@@ -177,7 +177,7 @@ public class TrafficHydrateRefillAdapterService {
                 payload.getTraceId(),
                 balanceKey
         );
-        return errorResult();
+        return retriedResult;
     }
 
     /**
@@ -324,61 +324,64 @@ public class TrafficHydrateRefillAdapterService {
                             lockKey
                     );
                     markOutboxFailIfPresent(outboxRecordId);
+                    trafficRefillOutboxSupportService.compensateRefillOnce(
+                            outboxRecordId,
+                            poolType,
+                            payload,
+                            actualRefillAmount
+                    );
                     trafficRefillMetrics.increment(poolType.name(), "lock_lost");
                     return retriedResult;
                 }
 
-                boolean shouldApplyRedis = tryRegisterRefillIdempotency(
-                        poolType,
-                        payload,
-                        outboxRecordId,
-                        outboxRefillUuid,
-                        actualRefillAmount
-                );
-                if (!shouldApplyRedis) {
-                    log.info(
-                            "traffic_refill_idempotent_skip poolType={} balanceKey={} outboxId={} uuid={}",
-                            poolType,
-                            balanceKey,
-                            outboxRecordId,
-                            outboxRefillUuid
-                    );
-                    trafficRefillMetrics.increment(poolType.name(), "idempotent_skip");
-                    TrafficLuaExecutionResult refillRetryResult = executeDeduct(
-                            poolType,
-                            payload,
-                            balanceKey,
-                            retryTargetData
-                    );
-                    retriedResult = mergeRefillRetryResult(
-                            normalizedRequestedDataBytes,
-                            firstDeductedAmount,
-                            refillRetryResult
-                    );
-                    return retriedResult;
-                }
-
                 try {
-                    trafficQuotaCacheService.refillBalance(balanceKey, actualRefillAmount, monthlyExpireAt);
-                } catch (RuntimeException redisApplyException) {
-                    RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(redisApplyException);
-                    if (trafficRefillOutboxSupportService.isConnectionFailure(unwrapped)) {
-                        trafficRefillOutboxSupportService.restoreClaimedAmount(poolType, payload, actualRefillAmount);
+                    boolean applied = trafficQuotaCacheService.applyRefillWithIdempotency(
+                            balanceKey,
+                            trafficRefillOutboxSupportService.resolveIdempotencyKey(outboxRefillUuid),
+                            outboxRefillUuid,
+                            actualRefillAmount,
+                            monthlyExpireAt,
+                            trafficRefillOutboxSupportService.refillIdempotencyTtlSeconds()
+                    );
+                    if (!applied) {
+                        log.info(
+                                "traffic_refill_idempotent_skip poolType={} balanceKey={} outboxId={} uuid={}",
+                                poolType,
+                                balanceKey,
+                                outboxRecordId,
+                                outboxRefillUuid
+                        );
                         markOutboxSuccessIfPresent(outboxRecordId);
-                        trafficRefillMetrics.increment(poolType.name(), "redis_connection_refund");
+                        trafficRefillOutboxSupportService.clearIdempotency(outboxRefillUuid);
+                        trafficRefillMetrics.increment(poolType.name(), "idempotent_skip");
+                        TrafficLuaExecutionResult refillRetryResult = executeDeduct(
+                                poolType,
+                                payload,
+                                balanceKey,
+                                retryTargetData
+                        );
+                        retriedResult = mergeRefillRetryResult(
+                                normalizedRequestedDataBytes,
+                                firstDeductedAmount,
+                                refillRetryResult
+                        );
                         return retriedResult;
                     }
 
+                    // refill + idempotency key 등록을 단일 Lua로 수행했으므로
+                    // 여기서는 성공 상태 전이만 마무리한다.
+                    markOutboxSuccessIfPresent(outboxRecordId);
+                    trafficRefillOutboxSupportService.clearIdempotency(outboxRefillUuid);
+                } catch (RuntimeException redisApplyException) {
                     markOutboxFailIfPresent(outboxRecordId);
-                    if (trafficRefillOutboxSupportService.isTimeoutFailure(unwrapped)) {
-                        trafficRefillMetrics.increment(poolType.name(), "redis_timeout");
-                    } else {
-                        trafficRefillMetrics.increment(poolType.name(), "redis_error");
-                    }
+                    RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(redisApplyException);
+                    trafficRefillMetrics.increment(
+                            poolType.name(),
+                            trafficRefillOutboxSupportService.isTimeoutFailure(unwrapped) ? "redis_timeout" : "redis_error"
+                    );
                     return retriedResult;
                 }
 
-                markOutboxSuccessIfPresent(outboxRecordId);
                 log.info(
                         "traffic_refill_applied poolType={} balanceKey={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
                         poolType,
@@ -713,43 +716,6 @@ public class TrafficHydrateRefillAdapterService {
             return Long.MAX_VALUE;
         }
         return left + right;
-    }
-
-    /**
-     * 리필 UUID 멱등키를 등록하고, 중복/연결실패 상황을 정책에 맞게 처리합니다.
-     *
-     * @return true면 Redis refill 적용을 계속 진행, false면 추가 적용 없이 종료
-     */
-    private boolean tryRegisterRefillIdempotency(
-            TrafficPoolType poolType,
-            TrafficPayloadReqDto payload,
-            Long outboxRecordId,
-            String refillUuid,
-            long actualRefillAmount
-    ) {
-        if (refillUuid == null || refillUuid.isBlank()) {
-            markOutboxFailIfPresent(outboxRecordId);
-            return false;
-        }
-
-        try {
-            boolean registered = trafficRefillOutboxSupportService.tryRegisterIdempotency(refillUuid);
-            if (!registered) {
-                markOutboxSuccessIfPresent(outboxRecordId);
-                return false;
-            }
-            return true;
-        } catch (RuntimeException registrationException) {
-            RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(registrationException);
-            if (trafficRefillOutboxSupportService.isConnectionFailure(unwrapped)) {
-                trafficRefillOutboxSupportService.restoreClaimedAmount(poolType, payload, actualRefillAmount);
-                markOutboxSuccessIfPresent(outboxRecordId);
-                return false;
-            }
-
-            markOutboxFailIfPresent(outboxRecordId);
-            return false;
-        }
     }
 
     /**

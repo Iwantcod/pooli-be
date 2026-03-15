@@ -41,6 +41,7 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.pooli.monitoring.metrics.TrafficHydrateMetrics;
 import com.pooli.monitoring.metrics.TrafficRefillMetrics;
@@ -96,7 +97,13 @@ class TrafficHydrateRefillAdapterServiceTest {
 
     @BeforeEach
     void setUp() {
-        Mockito.lenient().when(trafficRefillOutboxSupportService.tryRegisterIdempotency(anyString())).thenReturn(true);
+        ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "hydrateLockEnabled", true);
+        ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "hydrateLockWaitMs", 0L);
+        Mockito.lenient().when(trafficRefillOutboxSupportService.resolveIdempotencyKey(anyString()))
+                .thenAnswer(invocation -> "pooli:refill:idempotency:" + invocation.getArgument(0, String.class));
+        Mockito.lenient().when(trafficRefillOutboxSupportService.refillIdempotencyTtlSeconds()).thenReturn(600L);
+        Mockito.lenient().when(trafficQuotaCacheService.applyRefillWithIdempotency(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyLong()))
+                .thenReturn(true);
         Mockito.lenient().when(trafficRefillOutboxSupportService.unwrapRuntimeException(any(RuntimeException.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         Mockito.lenient().when(trafficRefillOutboxSupportService.isConnectionFailure(any())).thenReturn(false);
@@ -219,7 +226,14 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(60L, result.getAnswer())
             );
             verify(trafficQuotaCacheService).writeDbEmptyFlag("pooli:remaining_indiv_amount:11:202603", false);
-            verify(trafficQuotaCacheService).refillBalance("pooli:remaining_indiv_amount:11:202603", 100L, 1_770_000_000L);
+            verify(trafficQuotaCacheService).applyRefillWithIdempotency(
+                    eq("pooli:remaining_indiv_amount:11:202603"),
+                    eq("pooli:refill:idempotency:refill-uuid-100-100"),
+                    eq("refill-uuid-100-100"),
+                    eq(100L),
+                    eq(1_770_000_000L),
+                    eq(600L)
+            );
             verify(trafficLuaScriptInfraService).executeLockRelease("pooli:indiv_refill_lock:11", payload.getTraceId());
         }
 
@@ -602,10 +616,11 @@ class TrafficHydrateRefillAdapterServiceTest {
 
             // then
             assertAll(
-                    () -> assertEquals(TrafficLuaStatus.ERROR, result.getStatus()),
-                    () -> assertEquals(-1L, result.getAnswer())
+                    () -> assertEquals(TrafficLuaStatus.HYDRATE, result.getStatus()),
+                    () -> assertEquals(0L, result.getAnswer())
             );
-            verify(trafficQuotaCacheService).hydrateBalance("pooli:remaining_indiv_amount:11:202603", 1_770_000_000L);
+            verify(trafficQuotaCacheService, times(10))
+                    .hydrateBalance("pooli:remaining_indiv_amount:11:202603", 1_770_000_000L);
             verify(trafficLuaScriptInfraService, never())
                     .executeRefillGate(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyLong());
         }
@@ -688,7 +703,14 @@ class TrafficHydrateRefillAdapterServiceTest {
                 () -> assertEquals(50L, result.getAnswer())
         );
         verify(trafficQuotaCacheService).writeDbEmptyFlag("pooli:remaining_shared_amount:22:202603", true);
-        verify(trafficQuotaCacheService).refillBalance("pooli:remaining_shared_amount:22:202603", 50L, 1_770_000_000L);
+        verify(trafficQuotaCacheService).applyRefillWithIdempotency(
+                eq("pooli:remaining_shared_amount:22:202603"),
+                eq("pooli:refill:idempotency:refill-uuid-50-50"),
+                eq("refill-uuid-50-50"),
+                eq(50L),
+                eq(1_770_000_000L),
+                eq(600L)
+        );
         verify(trafficLuaScriptInfraService).executeLockRelease("pooli:shared_refill_lock:22", payload.getTraceId());
 
         @SuppressWarnings("unchecked")

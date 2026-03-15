@@ -71,7 +71,7 @@ class TrafficQuotaCacheServiceTest {
                     1_775_833_199L
             );
 
-            verify(hashOperations).putIfAbsent("pooli:remaining_indiv_amount:11:202603", "amount", "200");
+            verify(hashOperations).putIfAbsent("pooli:remaining_indiv_amount:11:202603", "amount", "0");
             verify(hashOperations).putIfAbsent("pooli:remaining_indiv_amount:11:202603", "is_empty", "0");
             verify(cacheStringRedisTemplate).expireAt(
                     "pooli:remaining_indiv_amount:11:202603",

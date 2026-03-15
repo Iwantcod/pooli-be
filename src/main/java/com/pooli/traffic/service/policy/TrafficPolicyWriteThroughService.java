@@ -401,6 +401,7 @@ public class TrafficPolicyWriteThroughService {
      * Redis write-through를 재시도 정책과 함께 실행합니다.
      */
     private PolicySyncResult executeWithRetry(String operationName, Supplier<PolicySyncResult> redisWriteOperation) {
+        PolicySyncResult lastFailure = PolicySyncResult.RETRYABLE_FAILURE;
         for (int attempt = 1; attempt <= WRITE_THROUGH_RETRY_MAX; attempt++) {
             PolicySyncResult syncResult;
             try {
@@ -410,9 +411,11 @@ public class TrafficPolicyWriteThroughService {
                 log.warn("traffic_policy_write_through_exception operation={} attempt={}/{}", operationName, attempt, WRITE_THROUGH_RETRY_MAX, e);
             }
 
-            if (syncResult != PolicySyncResult.RETRYABLE_FAILURE) {
+            if (syncResult != PolicySyncResult.RETRYABLE_FAILURE
+                    && syncResult != PolicySyncResult.CONNECTION_FAILURE) {
                 return syncResult;
             }
+            lastFailure = syncResult;
 
             if (attempt < WRITE_THROUGH_RETRY_MAX) {
                 log.warn(
@@ -430,7 +433,7 @@ public class TrafficPolicyWriteThroughService {
                 operationName,
                 WRITE_THROUGH_RETRY_MAX
         );
-        return PolicySyncResult.RETRYABLE_FAILURE;
+        return lastFailure;
     }
 
     /**
@@ -536,8 +539,7 @@ public class TrafficPolicyWriteThroughService {
      */
     private boolean isSuccessEquivalent(PolicySyncResult syncResult) {
         return syncResult == PolicySyncResult.SUCCESS
-                || syncResult == PolicySyncResult.STALE_REJECTED
-                || syncResult == PolicySyncResult.CONNECTION_FAILURE;
+                || syncResult == PolicySyncResult.STALE_REJECTED;
     }
 
     /**

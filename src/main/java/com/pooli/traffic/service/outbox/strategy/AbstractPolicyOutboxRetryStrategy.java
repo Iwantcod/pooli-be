@@ -10,8 +10,7 @@ abstract class AbstractPolicyOutboxRetryStrategy implements OutboxEventRetryStra
 
     protected OutboxRetryResult mapPolicySyncResult(PolicySyncResult syncResult) {
         if (syncResult == PolicySyncResult.SUCCESS
-                || syncResult == PolicySyncResult.STALE_REJECTED
-                || syncResult == PolicySyncResult.CONNECTION_FAILURE) {
+                || syncResult == PolicySyncResult.STALE_REJECTED) {
             return OutboxRetryResult.SUCCESS;
         }
         return OutboxRetryResult.FAIL;

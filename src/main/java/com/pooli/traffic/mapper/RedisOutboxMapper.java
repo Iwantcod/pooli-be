@@ -54,4 +54,10 @@ public interface RedisOutboxMapper {
             @Param("id") Long id,
             @Param("retryCount") int retryCount
     );
+
+    /**
+     * REFILL 레코드를 REVERT로 CAS 전이합니다.
+     * 이미 터미널 상태(SUCCESS/REVERT)면 0을 반환합니다.
+     */
+    int markRevertIfCompensable(@Param("id") Long id);
 }

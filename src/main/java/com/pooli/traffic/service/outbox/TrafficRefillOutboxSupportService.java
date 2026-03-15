@@ -10,6 +10,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
@@ -30,13 +31,14 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class TrafficRefillOutboxSupportService {
 
-    private static final long REFILL_IDEMPOTENCY_TTL_SECONDS = 60L;
+    private static final long REFILL_IDEMPOTENCY_TTL_SECONDS = 600L;
 
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficRefillSourceMapper trafficRefillSourceMapper;
+    private final RedisOutboxRecordService redisOutboxRecordService;
 
     /**
      * 리필 UUID 멱등키를 NX 조건으로 등록합니다.
@@ -44,13 +46,38 @@ public class TrafficRefillOutboxSupportService {
      * @return true면 신규 등록 성공, false면 이미 존재(중복 처리)
      */
     public boolean tryRegisterIdempotency(String uuid) {
-        String idempotencyKey = trafficRedisKeyFactory.refillIdempotencyKey(uuid);
+        String idempotencyKey = resolveIdempotencyKey(uuid);
         Boolean created = cacheStringRedisTemplate.opsForValue().setIfAbsent(
                 idempotencyKey,
                 "1",
                 Duration.ofSeconds(REFILL_IDEMPOTENCY_TTL_SECONDS)
         );
         return Boolean.TRUE.equals(created);
+    }
+
+    /**
+     * UUID로 REFILL 멱등키를 계산합니다.
+     */
+    public String resolveIdempotencyKey(String uuid) {
+        return trafficRedisKeyFactory.refillIdempotencyKey(uuid);
+    }
+
+    /**
+     * REFILL 멱등 TTL(seconds)을 노출합니다.
+     */
+    public long refillIdempotencyTtlSeconds() {
+        return REFILL_IDEMPOTENCY_TTL_SECONDS;
+    }
+
+    /**
+     * 성공 처리 이후 REFILL 멱등키를 즉시 제거합니다.
+     */
+    public void clearIdempotency(String uuid) {
+        if (uuid == null || uuid.isBlank()) {
+            return;
+        }
+        String idempotencyKey = resolveIdempotencyKey(uuid);
+        cacheStringRedisTemplate.delete(idempotencyKey);
     }
 
     /**
@@ -96,6 +123,41 @@ public class TrafficRefillOutboxSupportService {
                 }
             }
         }
+    }
+
+    /**
+     * REFILL Outbox 보상을 CAS 기반으로 1회만 수행합니다.
+     */
+    @Transactional
+    public void compensateRefillOnce(Long outboxId, RefillOutboxPayload payload) {
+        if (outboxId == null || outboxId <= 0) {
+            return;
+        }
+        int updated = redisOutboxRecordService.markRevertIfCompensable(outboxId);
+        if (updated == 0) {
+            return;
+        }
+        restoreClaimedAmount(payload);
+    }
+
+    /**
+     * 실시간 REFILL 경로에서 claim 결과를 CAS 기반으로 1회만 반납합니다.
+     */
+    @Transactional
+    public void compensateRefillOnce(
+            Long outboxId,
+            TrafficPoolType poolType,
+            TrafficPayloadReqDto payload,
+            long restoreAmount
+    ) {
+        if (outboxId == null || outboxId <= 0) {
+            return;
+        }
+        int updated = redisOutboxRecordService.markRevertIfCompensable(outboxId);
+        if (updated == 0) {
+            return;
+        }
+        restoreClaimedAmount(poolType, payload, restoreAmount);
     }
 
     /**

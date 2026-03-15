@@ -7,5 +7,6 @@ public enum OutboxStatus {
     PENDING,
     PROCESSING,
     SUCCESS,
-    FAIL
+    FAIL,
+    REVERT
 }

@@ -62,6 +62,7 @@
         SET status = 'PROCESSING',
             status_updated_at = NOW(6)
         WHERE id = #{id}
+          AND status &lt;&gt; 'REVERT'
     </update>
 
     <update id="markSuccess">
@@ -69,6 +70,7 @@
         SET status = 'SUCCESS',
             status_updated_at = NOW(6)
         WHERE id = #{id}
+          AND status &lt;&gt; 'REVERT'
     </update>
 
     <update id="markFail">
@@ -76,6 +78,7 @@
         SET status = 'FAIL',
             status_updated_at = NOW(6)
         WHERE id = #{id}
+          AND status &lt;&gt; 'REVERT'
     </update>
 
     <update id="markFailWithRetryIncrement">
@@ -84,6 +87,7 @@
             retry_count = retry_count + 1,
             status_updated_at = NOW(6)
         WHERE id = #{id}
+          AND status &lt;&gt; 'REVERT'
     </update>
 
     <update id="markFailWithRetryCount">
@@ -92,6 +96,16 @@
             retry_count = #{retryCount},
             status_updated_at = NOW(6)
         WHERE id = #{id}
+          AND status &lt;&gt; 'REVERT'
+    </update>
+
+    <update id="markRevertIfCompensable">
+        UPDATE TRAFFIC_REDIS_OUTBOX
+        SET status = 'REVERT',
+            status_updated_at = NOW(6)
+        WHERE id = #{id}
+          AND event_type = 'REFILL'
+          AND status IN ('FAIL', 'PENDING', 'PROCESSING')
     </update>
 
 </mapper>

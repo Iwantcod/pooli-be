@@ -104,6 +104,15 @@ public class RedisOutboxRecordService {
     }
 
     /**
+     * REFILL 레코드를 REVERT로 CAS 전이합니다.
+     *
+     * @return 1: 이번 호출에서 REVERT 전이 성공, 0: 이미 보상 처리됐거나 보상 불가 상태
+     */
+    public int markRevertIfCompensable(long id) {
+        return redisOutboxMapper.markRevertIfCompensable(id);
+    }
+
+    /**
      * Outbox payload JSON을 타입에 맞게 역직렬화합니다.
      */
     public <T> T readPayload(RedisOutboxRecord record, Class<T> payloadType) {

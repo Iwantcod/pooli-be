@@ -34,10 +34,10 @@ public class RedisOutboxRetryScheduler {
     @Value("${app.traffic.outbox.retry.pending-delay-seconds:60}")
     private int pendingDelaySeconds;
 
-    @Value("${app.traffic.outbox.retry.processing-stuck-seconds:300}")
+    @Value("${app.traffic.outbox.retry.processing-stuck-seconds:150}")
     private int processingStuckSeconds;
 
-    @Value("${app.traffic.outbox.retry.max-retry-count:20}")
+    @Value("${app.traffic.outbox.retry.max-retry-count:10}")
     private int maxRetryCount;
 
     private final RedisOutboxRecordService redisOutboxRecordService;
@@ -77,7 +77,7 @@ public class RedisOutboxRetryScheduler {
 
     private void processOne(RedisOutboxRecord record) {
         int retryCount = record.getRetryCount() == null ? 0 : record.getRetryCount();
-        if (retryCount > maxRetryCount) {
+        if (retryCount >= maxRetryCount) {
             handleRetryCapExceeded(record, retryCount);
             return;
         }
@@ -86,6 +86,10 @@ public class RedisOutboxRetryScheduler {
         OutboxRetryResult retryResult = strategy.execute(record);
         if (retryResult == OutboxRetryResult.SUCCESS) {
             redisOutboxRecordService.markSuccess(record.getId());
+            if (record.getEventType() == OutboxEventType.REFILL) {
+                RefillOutboxPayload payload = redisOutboxRecordService.readPayload(record, RefillOutboxPayload.class);
+                trafficRefillOutboxSupportService.clearIdempotency(payload.getUuid());
+            }
             return;
         }
 
@@ -95,8 +99,8 @@ public class RedisOutboxRetryScheduler {
     /**
      * retry_count 상한 초과 레코드를 처리합니다.
      * - 재시도는 수행하지 않습니다.
-     * - REFILL은 DB 반납을 1회 수행합니다.
-     * - 동일 레코드의 중복 반납/중복 로그를 막기 위해 retry_count를 터미널 마커(22)로 고정합니다.
+     * - REFILL은 DB 반납을 1회 수행하고 REVERT 터미널 상태로 종료합니다.
+     * - 비-REFILL은 기존처럼 retry_count를 터미널 마커(22)로 고정합니다.
      */
     private void handleRetryCapExceeded(RedisOutboxRecord record, int retryCount) {
         if (retryCount >= TERMINAL_RETRY_MARKER) {
@@ -114,7 +118,8 @@ public class RedisOutboxRetryScheduler {
 
         if (record.getEventType() == OutboxEventType.REFILL) {
             RefillOutboxPayload payload = redisOutboxRecordService.readPayload(record, RefillOutboxPayload.class);
-            trafficRefillOutboxSupportService.restoreClaimedAmount(payload);
+            trafficRefillOutboxSupportService.compensateRefillOnce(record.getId(), payload);
+            return;
         }
 
         redisOutboxRecordService.markFailWithRetryCount(record.getId(), TERMINAL_RETRY_MARKER);

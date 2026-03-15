@@ -40,20 +40,6 @@ public class RefillOutboxStrategy implements OutboxEventRetryStrategy {
             return OutboxRetryResult.FAIL;
         }
 
-        try {
-            boolean idempotencyRegistered = trafficRefillOutboxSupportService.tryRegisterIdempotency(payload.getUuid());
-            if (!idempotencyRegistered) {
-                return OutboxRetryResult.SUCCESS;
-            }
-        } catch (RuntimeException e) {
-            RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
-            if (trafficRefillOutboxSupportService.isConnectionFailure(unwrapped)) {
-                trafficRefillOutboxSupportService.restoreClaimedAmount(payload);
-                return OutboxRetryResult.SUCCESS;
-            }
-            return OutboxRetryResult.FAIL;
-        }
-
         long refillAmount = payload.getActualRefillAmount() == null ? 0L : payload.getActualRefillAmount();
         if (refillAmount <= 0) {
             return OutboxRetryResult.SUCCESS;
@@ -61,15 +47,18 @@ public class RefillOutboxStrategy implements OutboxEventRetryStrategy {
 
         try {
             String balanceKey = trafficRefillOutboxSupportService.resolveBalanceKey(payload);
+            String idempotencyKey = trafficRefillOutboxSupportService.resolveIdempotencyKey(payload.getUuid());
             long expireAtEpochSeconds = trafficRefillOutboxSupportService.resolveMonthlyExpireAt(payload);
-            trafficQuotaCacheService.refillBalance(balanceKey, refillAmount, expireAtEpochSeconds);
+            trafficQuotaCacheService.applyRefillWithIdempotency(
+                    balanceKey,
+                    idempotencyKey,
+                    payload.getUuid(),
+                    refillAmount,
+                    expireAtEpochSeconds,
+                    trafficRefillOutboxSupportService.refillIdempotencyTtlSeconds()
+            );
             return OutboxRetryResult.SUCCESS;
         } catch (RuntimeException e) {
-            RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
-            if (trafficRefillOutboxSupportService.isConnectionFailure(unwrapped)) {
-                trafficRefillOutboxSupportService.restoreClaimedAmount(payload);
-                return OutboxRetryResult.SUCCESS;
-            }
             return OutboxRetryResult.FAIL;
         }
     }
