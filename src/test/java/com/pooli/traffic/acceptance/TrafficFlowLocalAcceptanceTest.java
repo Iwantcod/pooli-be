@@ -226,7 +226,8 @@ class TrafficFlowLocalAcceptanceTest {
     @Test
     @DisplayName("일일 한도 정책 활성 시 한도까지만 차감되고 정책 비활성 시 전체 차감된다")
     void shouldRespectDailyLimitOnlyWhenPolicyIsActive() throws Exception {
-        // line 1에 일일 한도 정책(30)을 실제로 생성한다.
+        // [단계 1] 특정 회선(LINE_1)에 대해 '일일 사용 한도'를 30으로 설정합니다.
+        // 이 시점에서는 'is_daily_limit_active'가 1이므로 한도 제한이 적용되어야 합니다.
         jdbcTemplate.update(
                 """
                 INSERT INTO LINE_LIMIT (
@@ -240,31 +241,40 @@ class TrafficFlowLocalAcceptanceTest {
                 """,
                 LINE_ID
         );
+
+        // 변경된 DB 정책 설정을 Redis 스냅샷에 반영합니다.
         trafficPolicyBootstrapService.reconcilePolicyActivationSnapshot();
 
+        // 검증을 위해 현재 시점의 Redis 키 이름을 생성합니다.
         YearMonth currentMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
         LocalDate currentDate = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
         String indivBalanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(LINE_ID, currentMonth);
         String dailyUsageKey = trafficRedisKeyFactory.dailyTotalUsageKey(LINE_ID, currentDate);
 
+        // [단계 2] 한도(30)보다 큰 50만큼의 트래픽 차감을 요청합니다.
         String firstTraceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
         TrafficDeductDoneLog firstDoneLog = awaitDoneLog(firstTraceId);
 
+        // 일일 한도 정책이 활성화되어 있으므로, 요청한 50이 아닌 한도인 '30'만 차감되어야 합니다.
         await("daily usage reflects active daily limit(30)", () -> readStringValue(dailyUsageKey).equals("30"));
-        assertThat(readHashField(indivBalanceKey, "amount")).isEqualTo("20");
+        assertThat(readHashField(indivBalanceKey, "amount")).isEqualTo("20"); // 원래 50 요청 중 30만 차감되었으므로 (나머지 20은 차감되지 않음)
         assertThat(firstDoneLog.getDeductedTotalBytes()).isEqualTo(30L);
         assertThat(firstDoneLog.getApiRemainingData()).isEqualTo(20L);
         assertThat(firstDoneLog.getLastLuaStatus()).isEqualTo("HIT_DAILY_LIMIT");
 
-        // 정책 4(일일 총량 제한)를 끄고 같은 요청을 다시 보내면 이번에는 50 전체가 차감되어야 한다.
+        // [단계 3] 이제 전역 '일일 총량 제한' 정책(policy_id = 4) 자체를 비활성화해봅니다.
+        // 회선별 한도 설정이 남아있더라도, 전역 마스터 스위치가 꺼지면 한도 제한이 무시되어야 합니다.
         jdbcTemplate.update(
                 "UPDATE POLICY SET is_active = 0, updated_at = NOW(6) WHERE policy_id = 4 AND deleted_at IS NULL"
         );
         trafficPolicyBootstrapService.reconcilePolicyActivationSnapshot();
 
+        // [단계 4] 다시 동일하게 50만큼의 트래픽 차감을 요청합니다.
         String secondTraceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
         TrafficDeductDoneLog secondDoneLog = awaitDoneLog(secondTraceId);
 
+        // 이번에는 전역 정책이 꺼져 있으므로, 한도에 걸리지 않고 요청한 '50'이 모두 정상적으로 차감되어야 합니다.
+        // 결과적으로 누적 사용량은 30(이전) + 50(현재) = 80이 됩니다.
         await("daily usage adds full request when daily policy disabled", () -> readStringValue(dailyUsageKey).equals("80"));
         assertThat(secondDoneLog.getDeductedTotalBytes()).isEqualTo(50L);
         assertThat(secondDoneLog.getApiRemainingData()).isEqualTo(0L);
