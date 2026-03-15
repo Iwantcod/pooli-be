@@ -189,9 +189,8 @@ public class TrafficHydrateRefillAdapterService {
             YearMonth targetMonth,
             String balanceKey
     ) {
-        long initialAmount = trafficQuotaSourcePort.loadInitialAmount(poolType, payload, targetMonth);
         long monthlyExpireAt = trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth);
-        trafficQuotaCacheService.hydrateBalance(balanceKey, initialAmount, monthlyExpireAt);
+        trafficQuotaCacheService.hydrateBalance(balanceKey, monthlyExpireAt);
         if (poolType == TrafficPoolType.INDIVIDUAL) {
             long qosSpeedLimit = trafficQuotaSourcePort.loadIndividualQosSpeedLimit(payload);
             trafficQuotaCacheService.putQos(balanceKey, qosSpeedLimit);

@@ -68,7 +68,6 @@ class TrafficQuotaCacheServiceTest {
 
             trafficQuotaCacheService.hydrateBalance(
                     "pooli:remaining_indiv_amount:11:202603",
-                    200L,
                     1_775_833_199L
             );
 
@@ -86,7 +85,6 @@ class TrafficQuotaCacheServiceTest {
 
             trafficQuotaCacheService.hydrateBalance(
                     "pooli:remaining_indiv_amount:11:202603",
-                    -50L,
                     1_775_833_199L
             );
 

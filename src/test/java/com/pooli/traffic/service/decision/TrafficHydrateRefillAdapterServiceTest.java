@@ -124,8 +124,6 @@ class TrafficHydrateRefillAdapterServiceTest {
             when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
                     .thenReturn(luaResult(0L, TrafficLuaStatus.HYDRATE))
                     .thenReturn(luaResult(80L, TrafficLuaStatus.OK));
-            when(trafficQuotaSourcePort.loadInitialAmount(TrafficPoolType.INDIVIDUAL, payload, java.time.YearMonth.of(2026, 3)))
-                    .thenReturn(300L);
             when(trafficQuotaSourcePort.loadIndividualQosSpeedLimit(payload)).thenReturn(2_500L);
 
             // when
@@ -137,11 +135,9 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
                     () -> assertEquals(80L, result.getAnswer())
             );
-            verify(trafficQuotaCacheService).hydrateBalance("pooli:remaining_indiv_amount:11:202603", 300L, 1_770_000_000L);
+            verify(trafficQuotaCacheService).hydrateBalance("pooli:remaining_indiv_amount:11:202603", 1_770_000_000L);
             verify(trafficQuotaCacheService).putQos("pooli:remaining_indiv_amount:11:202603", 2_500L);
             verify(trafficLuaScriptInfraService).executeLockRelease("pooli:indiv_hydrate_lock:11", payload.getTraceId());
-            verify(trafficQuotaSourcePort)
-                    .loadInitialAmount(eq(TrafficPoolType.INDIVIDUAL), eq(payload), any());
         }
 
         @Test
@@ -171,7 +167,7 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
                     () -> assertEquals(40L, result.getAnswer())
             );
-            verify(trafficQuotaCacheService, never()).hydrateBalance(anyString(), anyLong(), anyLong());
+            verify(trafficQuotaCacheService, never()).hydrateBalance(anyString(), anyLong());
             verify(trafficLuaScriptInfraService, never()).executeLockRelease("pooli:indiv_hydrate_lock:11", payload.getTraceId());
             verify(trafficLuaScriptInfraService, times(2)).executeDeductIndividual(anyList(), anyList());
         }
@@ -596,8 +592,6 @@ class TrafficHydrateRefillAdapterServiceTest {
                     payload.getTraceId(),
                     java.time.Duration.ofMillis(TrafficRedisRuntimePolicy.LOCK_TTL_MS)
             )).thenReturn(true);
-            when(trafficQuotaSourcePort.loadInitialAmount(TrafficPoolType.INDIVIDUAL, payload, java.time.YearMonth.of(2026, 3)))
-                    .thenReturn(200L);
             when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
                     .thenReturn(luaResult(0L, TrafficLuaStatus.HYDRATE))
                     .thenReturn(luaResult(0L, TrafficLuaStatus.HYDRATE));
@@ -611,7 +605,7 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(TrafficLuaStatus.ERROR, result.getStatus()),
                     () -> assertEquals(-1L, result.getAnswer())
             );
-            verify(trafficQuotaCacheService).hydrateBalance("pooli:remaining_indiv_amount:11:202603", 200L, 1_770_000_000L);
+            verify(trafficQuotaCacheService).hydrateBalance("pooli:remaining_indiv_amount:11:202603", 1_770_000_000L);
             verify(trafficLuaScriptInfraService, never())
                     .executeRefillGate(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyLong());
         }

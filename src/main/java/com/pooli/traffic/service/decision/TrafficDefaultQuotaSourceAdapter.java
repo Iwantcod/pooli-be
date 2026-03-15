@@ -35,25 +35,6 @@ public class TrafficDefaultQuotaSourceAdapter implements TrafficQuotaSourcePort 
     private final RedisOutboxRecordService redisOutboxRecordService;
 
     /**
-     * HYDRATE 단계에서 Redis 잔량 키를 복구할 때 사용할 "초기 잔량"을 DB에서 조회합니다.
-     *
-     * <p>동작 원칙:
-     * 1) poolType(개인/공유)에 따라 조회 대상 테이블이 달라집니다.
-     * 2) payload 식별자(lineId/familyId)가 없으면 0으로 보정됩니다.
-     * 3) 음수/NULL 값은 비정상 데이터로 간주하고 0으로 정규화합니다.
-     *
-     * @param poolType    조회할 풀 유형(INDIVIDUAL, SHARED)
-     * @param payload     요청 컨텍스트(traceId/lineId/familyId 포함)
-     * @param targetMonth 월 기준 파라미터(현재 구현에서는 payload 식별자 기반 조회에 사용)
-     * @return Redis hydrate에 사용할 초기 잔량(Byte, 0 이상)
-     */
-    @Override
-    public long loadInitialAmount(TrafficPoolType poolType, TrafficPayloadReqDto payload, YearMonth targetMonth) {
-        // hydrate 시점의 원천 잔량을 DB에서 읽어 Redis 초기값으로 사용한다.
-        return readRemainingAmount(poolType, payload);
-    }
-
-    /**
      * 개인풀 잔량 해시에 저장할 QoS 값을 조회합니다.
      * LINE -> PLAN 조인으로 qos_speed_limit 원천값을 읽고, Redis 저장 규격에 맞게 125배로 변환합니다.
      */

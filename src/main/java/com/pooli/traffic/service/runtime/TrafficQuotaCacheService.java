@@ -56,8 +56,8 @@ public class TrafficQuotaCacheService {
     /**
       * `hydrateBalance` 처리 목적에 맞는 핵심 로직을 수행합니다.
      */
-    public void hydrateBalance(String balanceKey, long initialAmount, long expireAtEpochSeconds) {
-        long normalizedAmount = Math.max(0L, initialAmount);
+    public void hydrateBalance(String balanceKey, long expireAtEpochSeconds) {
+        long normalizedAmount = 0L;
 
         // HYDRATE 단계는 키가 없던 상태를 복구하는 목적이므로 putIfAbsent를 사용한다.
         cacheStringRedisTemplate.opsForHash().putIfAbsent(balanceKey, "amount", String.valueOf(normalizedAmount));
