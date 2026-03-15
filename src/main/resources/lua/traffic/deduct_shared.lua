@@ -148,9 +148,14 @@ if not whitelist_bypass then
     if daily_limit >= 0 then
       local daily_used = tonumber(redis.call("GET", daily_total_usage_key) or "0")
       local daily_remaining = math.max(0, daily_limit - daily_used)
+      local before_daily_cap = answer
       answer = math.min(answer, daily_remaining)
       if answer <= 0 then
         return as_json(0, "HIT_DAILY_LIMIT")
+      end
+      -- 정책에 의해 부분 제한이 발생하면 OK를 유지하지 않고 제한 상태를 기록한다.
+      if answer < before_daily_cap then
+        final_status = "HIT_DAILY_LIMIT"
       end
     end
   end
@@ -160,9 +165,13 @@ if not whitelist_bypass then
     if monthly_limit >= 0 then
       local monthly_used = tonumber(redis.call("GET", monthly_shared_usage_key) or "0")
       local monthly_remaining = math.max(0, monthly_limit - monthly_used)
+      local before_monthly_cap = answer
       answer = math.min(answer, monthly_remaining)
       if answer <= 0 then
         return as_json(0, "HIT_MONTHLY_SHARED_LIMIT")
+      end
+      if answer < before_monthly_cap then
+        final_status = "HIT_MONTHLY_SHARED_LIMIT"
       end
     end
   end
@@ -172,9 +181,13 @@ if not whitelist_bypass then
     if app_daily_limit >= 0 then
       local app_daily_used = tonumber(redis.call("HGET", daily_app_usage_key, app_usage_field) or "0")
       local app_daily_remaining = math.max(0, app_daily_limit - app_daily_used)
+      local before_app_daily_cap = answer
       answer = math.min(answer, app_daily_remaining)
       if answer <= 0 then
         return as_json(0, "HIT_APP_DAILY_LIMIT")
+      end
+      if answer < before_app_daily_cap then
+        final_status = "HIT_APP_DAILY_LIMIT"
       end
     end
   end
@@ -184,9 +197,13 @@ if not whitelist_bypass then
     if app_speed_limit >= 0 then
       local speed_used = tonumber(redis.call("GET", speed_bucket_key) or "0")
       local speed_remaining = math.max(0, app_speed_limit - speed_used)
+      local before_speed_cap = answer
       answer = math.min(answer, speed_remaining)
       if answer <= 0 then
         return as_json(0, "HIT_APP_SPEED")
+      end
+      if answer < before_speed_cap then
+        final_status = "HIT_APP_SPEED"
       end
     end
   end
