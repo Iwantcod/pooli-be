@@ -43,7 +43,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficHydrateRefillAdapterService {
 
-    private static final int HYDRATE_RETRY_MAX = 1;
+    private static final int HYDRATE_RETRY_MAX = 10;
     private static final int REFILL_RETRY_MAX = 1;
     private static final int DB_RETRY_MAX = 2;
     private static final long DB_RETRY_BACKOFF_MS = 50L;
@@ -56,10 +56,10 @@ public class TrafficHydrateRefillAdapterService {
     private static final long POLICY_APP_WHITELIST_ID = 7L;
 
     @Value("${app.traffic.hydrate-lock.enabled:true}")
-    private boolean hydrateLockEnabled = true;
+    private boolean hydrateLockEnabled;
 
-    @Value("${app.traffic.hydrate-lock.wait-ms:30}")
-    private long hydrateLockWaitMs = 30L;
+    @Value("${app.traffic.hydrate-lock.wait-ms:100}")
+    private long hydrateLockWaitMs;
 
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
