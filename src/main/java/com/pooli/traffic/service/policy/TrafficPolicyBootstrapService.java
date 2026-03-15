@@ -78,10 +78,10 @@ public class TrafficPolicyBootstrapService {
         synchronizePolicyActivationSnapshot("startup", true);
     }
 
-    @Scheduled(
-            fixedDelayString = "${app.policy.bootstrap.reconcile-interval-ms:300000}",
-            initialDelayString = "${app.policy.bootstrap.reconcile-initial-delay-ms:60000}"
-    )
+//    @Scheduled(
+//            fixedDelayString = "${app.policy.bootstrap.reconcile-interval-ms:300000}",
+//            initialDelayString = "${app.policy.bootstrap.reconcile-initial-delay-ms:60000}"
+//    )
     /**
       * 주기적으로 정책 활성화 키를 재동기화해 DB/Redis 불일치를 보정합니다.
      */
@@ -92,6 +92,14 @@ public class TrafficPolicyBootstrapService {
             // reconciliation 실패가 런타임 스레드를 죽이지 않도록 로그만 남기고 다음 주기를 기다린다.
             log.error("traffic_policy_bootstrap_reconcile_failed", e);
         }
+    }
+
+    /**
+     * 워커가 전역 정책 키 누락을 감지했을 때 전체 정책 스냅샷 hydrate를 트리거합니다.
+     * 기존 bootstrap/reconciliation과 동일한 lock 키, TTL, 획득 규칙을 그대로 재사용합니다.
+     */
+    public void hydrateOnDemand() {
+        synchronizePolicyActivationSnapshot("on_demand", false);
     }
 
     /**

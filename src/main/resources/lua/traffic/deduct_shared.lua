@@ -12,6 +12,22 @@ local function is_policy_enabled(policy_key)
   return tonumber(redis.call("HGET", policy_key, "value") or "0") == 1
 end
 
+local function has_missing_global_policy_key(...)
+  local policy_keys = { ... }
+  local idx = 1
+  while idx <= #policy_keys do
+    local policy_key = policy_keys[idx]
+    if not policy_key or policy_key == "" then
+      return true
+    end
+    if redis.call("EXISTS", policy_key) == 0 then
+      return true
+    end
+    idx = idx + 1
+  end
+  return false
+end
+
 local function is_in_repeat_block(repeat_block_key, day_num, sec_of_day)
   if not repeat_block_key or repeat_block_key == "" then
     return false
@@ -97,6 +113,19 @@ if not daily_expire_at or daily_expire_at <= 0 then
 end
 if not monthly_expire_at or monthly_expire_at <= 0 then
   return as_json(-1, "ERROR")
+end
+
+-- 전역 정책 키 중 하나라도 누락되면 워커가 전체 정책 hydrate를 먼저 수행한다.
+if has_missing_global_policy_key(
+  policy_repeat_key,
+  policy_immediate_key,
+  policy_shared_key,
+  policy_daily_key,
+  policy_app_data_key,
+  policy_app_speed_key,
+  policy_whitelist_key
+) then
+  return as_json(0, "GLOBAL_POLICY_HYDRATE")
 end
 
 local current_amount = tonumber(redis.call("HGET", remaining_key, "amount") or "-1")

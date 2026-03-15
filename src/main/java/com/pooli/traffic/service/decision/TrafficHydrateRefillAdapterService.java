@@ -11,6 +11,7 @@ import java.util.UUID;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
+import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
@@ -69,6 +70,7 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficQuotaSourcePort trafficQuotaSourcePort;
     private final TrafficQuotaCacheService trafficQuotaCacheService;
     private final TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
+    private final TrafficPolicyBootstrapService trafficPolicyBootstrapService;
     private final TrafficHydrateMetrics trafficHydrateMetrics;
     private final TrafficRefillMetrics trafficRefillMetrics;
     private final RedisOutboxRecordService redisOutboxRecordService;
@@ -116,13 +118,21 @@ public class TrafficHydrateRefillAdapterService {
 
         TrafficLuaExecutionResult initialResult = executeDeduct(poolType, payload, balanceKey, requestedDataBytes);
 
+        TrafficLuaExecutionResult afterGlobalPolicyHydrateResult = handleGlobalPolicyHydrateIfNeeded(
+                poolType,
+                payload,
+                balanceKey,
+                requestedDataBytes,
+                initialResult
+        );
+
         TrafficLuaExecutionResult afterHydrateResult = handleHydrateIfNeeded(
                 poolType,
                 payload,
                 targetMonth,
                 balanceKey,
                 requestedDataBytes,
-                initialResult
+                afterGlobalPolicyHydrateResult
         );
 
         return handleRefillIfNeeded(
@@ -133,6 +143,51 @@ public class TrafficHydrateRefillAdapterService {
                 requestedDataBytes,
                 afterHydrateResult
         );
+    }
+
+    /**
+     * GLOBAL_POLICY_HYDRATE 상태일 때 전역 정책 스냅샷을 다시 적재한 뒤 동일 Lua를 재시도합니다.
+     */
+    private TrafficLuaExecutionResult handleGlobalPolicyHydrateIfNeeded(
+            TrafficPoolType poolType,
+            TrafficPayloadReqDto payload,
+            String balanceKey,
+            long requestedDataBytes,
+            TrafficLuaExecutionResult currentResult
+    ) {
+        if (currentResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
+            return currentResult;
+        }
+
+        TrafficLuaExecutionResult retriedResult = currentResult;
+        for (int retry = 0; retry < HYDRATE_RETRY_MAX; retry++) {
+            try {
+                // 기존 bootstrap lock 규칙을 재사용해 전역 정책 전체 스냅샷을 보정한다.
+                trafficPolicyBootstrapService.hydrateOnDemand();
+            } catch (RuntimeException e) {
+                log.error(
+                        "traffic_global_policy_hydrate_failed poolType={} traceId={} retry={}",
+                        poolType,
+                        payload.getTraceId(),
+                        retry + 1,
+                        e
+                );
+            }
+
+            retriedResult = executeDeduct(poolType, payload, balanceKey, requestedDataBytes);
+            if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
+                return retriedResult;
+            }
+            sleepHydrateLockWait();
+        }
+
+        log.error(
+                "traffic_global_policy_hydrate_retry_exhausted poolType={} traceId={} balanceKey={}",
+                poolType,
+                payload.getTraceId(),
+                balanceKey
+        );
+        return retriedResult;
     }
 
     /**
