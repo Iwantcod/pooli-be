@@ -55,7 +55,11 @@ public class RefillOutboxStrategy implements OutboxEventRetryStrategy {
                     payload.getUuid(),
                     refillAmount,
                     expireAtEpochSeconds,
-                    trafficRefillOutboxSupportService.refillIdempotencyTtlSeconds()
+                    trafficRefillOutboxSupportService.refillIdempotencyTtlSeconds(),
+                    // [Option A] Outbox 재처리 시점에는 DB 잔량 상태를 정확히 알 수 없으므로
+                    // is_empty를 false로 전달한다. 잔량 복구가 목적이며,
+                    // is_empty 상태는 다음 정상 리필 사이클에서 재기록된다.
+                    false
             );
             return OutboxRetryResult.SUCCESS;
         } catch (RuntimeException e) {

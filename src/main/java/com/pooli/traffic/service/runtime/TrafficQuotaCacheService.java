@@ -111,8 +111,12 @@ public class TrafficQuotaCacheService {
     }
 
     /**
-     * amount 증가와 멱등키 등록을 단일 Lua로 원자 처리합니다.
+     * amount 증가, is_empty 플래그 갱신, 멱등키 등록을 단일 Lua로 원자 처리합니다.
      *
+     * <p>is_empty는 Java에서 별도로 HSET하면 락 상실 보상 흐름 등에서 부정합이 발생할 수 있으므로
+     * 반드시 이 메서드를 통해 amount 증가와 함께 원자적으로 기록해야 합니다.
+     *
+     * @param isDbEmpty DB 원천 잔량이 0 이하인지 여부 (Lua 내부에서 is_empty 필드에 기록됨)
      * @return true면 이번 호출에서 amount가 실제 증가됨, false면 이미 처리된 uuid
      */
     public boolean applyRefillWithIdempotency(
@@ -121,7 +125,8 @@ public class TrafficQuotaCacheService {
             String refillUuid,
             long refillAmount,
             long expireAtEpochSeconds,
-            long idempotencyTtlSeconds
+            long idempotencyTtlSeconds,
+            boolean isDbEmpty
     ) {
         long normalizedRefillAmount = Math.max(0L, refillAmount);
         if (normalizedRefillAmount <= 0) {
@@ -134,11 +139,14 @@ public class TrafficQuotaCacheService {
                 String.valueOf(normalizedRefillAmount),
                 String.valueOf(expireAtEpochSeconds),
                 refillUuid == null ? "1" : refillUuid,
-                String.valueOf(Math.max(1L, idempotencyTtlSeconds))
+                String.valueOf(Math.max(1L, idempotencyTtlSeconds)),
+                // is_empty 플래그: DB 잔량 소진 여부를 Lua 내부에서 amount와 함께 원자적으로 기록한다.
+                isDbEmpty ? "1" : "0"
         );
 
         return rawResult != null && rawResult == 1L;
     }
+
 
     private String loadScriptText(String resourcePath) {
         ClassPathResource resource = new ClassPathResource(resourcePath);
