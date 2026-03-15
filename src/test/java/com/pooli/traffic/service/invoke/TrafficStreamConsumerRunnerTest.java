@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -15,11 +16,6 @@ import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
-import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
-import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -27,6 +23,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.MDC;
@@ -40,9 +37,17 @@ import com.pooli.traffic.domain.TrafficStreamFields;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
 import com.pooli.traffic.domain.enums.TrafficFinalStatus;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
+import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
+import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
+
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 
 @ExtendWith(MockitoExtension.class)
-class TrafficStreamConsumerRunnerTest {
+public class TrafficStreamConsumerRunnerTest {
 
     @Mock
     private TrafficStreamInfraService trafficStreamInfraService;
@@ -61,14 +66,19 @@ class TrafficStreamConsumerRunnerTest {
 
     private TrafficStreamConsumerRunner trafficStreamConsumerRunner;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     @BeforeEach
     void setUp() {
         AppStreamsProperties appStreamsProperties = new AppStreamsProperties();
+        TrafficPayloadValidationService trafficPayloadValidationService =
+                new TrafficPayloadValidationService(validator);
+
         trafficStreamConsumerRunner = new TrafficStreamConsumerRunner(
                 trafficStreamInfraService,
                 appStreamsProperties,
                 objectMapper,
+                trafficPayloadValidationService,
                 trafficDeductOrchestratorService,
                 trafficInFlightDedupeService,
                 trafficDeductDoneLogService,
@@ -83,13 +93,12 @@ class TrafficStreamConsumerRunnerTest {
     }
 
     @Nested
-    @DisplayName("handleRecord 테스트")
+    @DisplayName("handleRecord")
     class HandleRecordTest {
 
         @Test
-        @DisplayName("payload traceId로 MDC를 초기화하고 처리 후 제거한다")
+        @DisplayName("uses payload traceId for MDC and clears it after success")
         void initializeAndClearMdcWithPayloadTraceId() {
-            // given
             String payloadJson = "{\"traceId\":\"trace-001\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("1-0", payloadJson);
             AtomicReference<String> mdcTraceIdAtOrchestrator = new AtomicReference<>();
@@ -112,10 +121,8 @@ class TrafficStreamConsumerRunnerTest {
             });
             when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("1-0"))).thenReturn(true);
 
-            // when
             invokeHandleRecord(record);
 
-            // then
             assertEquals("trace-001", mdcTraceIdAtOrchestrator.get());
             assertNull(MDC.get("traceId"));
             verify(trafficStreamInfraService).acknowledge(record.getId());
@@ -128,33 +135,53 @@ class TrafficStreamConsumerRunnerTest {
             assertTrue(doneLog.contains("logged_at="));
             assertFalse(doneLog.contains("body="));
 
-            Logger logger = (Logger) LoggerFactory.getLogger(TrafficStreamConsumerRunner.class);
-            logger.detachAppender(listAppender);
+            detachAppender(listAppender);
         }
 
         @Test
-        @DisplayName("traceId가 없는 payload면 DLQ 처리 후 MDC traceId를 남기지 않는다")
-        void doesNotLeaveMdcWhenTraceIdIsBlank() {
-            // given
+        @DisplayName("routes blank traceId payload to DLQ before dedupe")
+        void routeBlankTraceIdPayloadToDlq() {
             String payloadJson = "{\"traceId\":\"\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("2-0", payloadJson);
+            ArgumentCaptor<String> reasonCaptor = ArgumentCaptor.forClass(String.class);
             MDC.put("traceId", "stale-trace-id");
+
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
 
-            // when
             invokeHandleRecord(record);
 
-            // then
             assertNull(MDC.get("traceId"));
-            verify(trafficStreamInfraService).writeDlq(payloadJson, "traceId가 비어 있습니다.", "2-0");
+            verify(trafficStreamInfraService).writeDlq(eq(payloadJson), reasonCaptor.capture(), eq("2-0"));
             verify(trafficStreamInfraService).acknowledge(record.getId());
+            assertTrue(reasonCaptor.getValue().startsWith("payload validation failed:"));
+            assertTrue(reasonCaptor.getValue().contains("traceId"));
             verifyNoInteractions(trafficDeductOrchestratorService);
+            verifyNoInteractions(trafficInFlightDedupeService);
+            verifyNoInteractions(trafficDeductDoneLogService);
         }
 
         @Test
-        @DisplayName("완료 로그 저장 결과가 중복(false)이어도 ACK 후 release 한다")
+        @DisplayName("routes non-trace required-field violations to DLQ before processing")
+        void routeMissingRequiredFieldPayloadToDlq() {
+            String payloadJson = "{\"traceId\":\"trace-invalid\",\"lineId\":0,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("2-1", payloadJson);
+            ArgumentCaptor<String> reasonCaptor = ArgumentCaptor.forClass(String.class);
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+
+            invokeHandleRecord(record);
+
+            verify(trafficStreamInfraService).writeDlq(eq(payloadJson), reasonCaptor.capture(), eq("2-1"));
+            verify(trafficStreamInfraService).acknowledge(record.getId());
+            assertTrue(reasonCaptor.getValue().contains("lineId"));
+            verifyNoInteractions(trafficDeductOrchestratorService);
+            verifyNoInteractions(trafficInFlightDedupeService);
+            verifyNoInteractions(trafficDeductDoneLogService);
+        }
+
+        @Test
+        @DisplayName("acks and releases when done log insert is duplicate")
         void acknowledgeWhenDoneLogIsDuplicate() {
-            // given
             String payloadJson = "{\"traceId\":\"trace-dup\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("3-0", payloadJson);
             TrafficDeductResultResDto orchestratorResult = TrafficDeductResultResDto.builder()
@@ -173,10 +200,8 @@ class TrafficStreamConsumerRunnerTest {
             when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
             when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("3-0"))).thenReturn(false);
 
-            // when
             invokeHandleRecord(record);
 
-            // then
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verify(trafficInFlightDedupeService).release("trace-dup");
 
@@ -184,14 +209,12 @@ class TrafficStreamConsumerRunnerTest {
             assertTrue(doneLog.startsWith("traffic_stream_record_done_duplicate"));
             assertFalse(doneLog.contains("body="));
 
-            Logger logger = (Logger) LoggerFactory.getLogger(TrafficStreamConsumerRunner.class);
-            logger.detachAppender(listAppender);
+            detachAppender(listAppender);
         }
 
         @Test
-        @DisplayName("정책 차단 결과도 DONE 저장 후 ACK/release를 수행한다")
+        @DisplayName("saves blocked result then acks and releases")
         void acknowledgeWhenPolicyBlockedResultIsSaved() {
-            // given
             String payloadJson = "{\"traceId\":\"trace-blocked\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("6-0", payloadJson);
             TrafficDeductResultResDto orchestratorResult = TrafficDeductResultResDto.builder()
@@ -210,10 +233,8 @@ class TrafficStreamConsumerRunnerTest {
             when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
             when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("6-0"))).thenReturn(true);
 
-            // when
             invokeHandleRecord(record);
 
-            // then
             ArgumentCaptor<TrafficDeductResultResDto> resultCaptor =
                     ArgumentCaptor.forClass(TrafficDeductResultResDto.class);
             verify(trafficDeductDoneLogService).saveIfAbsent(any(), resultCaptor.capture(), eq("6-0"));
@@ -226,14 +247,12 @@ class TrafficStreamConsumerRunnerTest {
             assertTrue(doneLog.contains("final_status=PARTIAL_SUCCESS"));
             assertTrue(doneLog.contains("last_lua_status=BLOCKED_IMMEDIATE"));
 
-            Logger logger = (Logger) LoggerFactory.getLogger(TrafficStreamConsumerRunner.class);
-            logger.detachAppender(listAppender);
+            detachAppender(listAppender);
         }
 
         @Test
-        @DisplayName("완료 로그 저장 실패 예외가 발생하면 ACK/release 하지 않는다")
+        @DisplayName("does not ack or release when done log save fails")
         void doesNotAckWhenDoneLogSaveFails() {
-            // given
             String payloadJson = "{\"traceId\":\"trace-fail\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("4-0", payloadJson);
             TrafficDeductResultResDto orchestratorResult = TrafficDeductResultResDto.builder()
@@ -252,32 +271,78 @@ class TrafficStreamConsumerRunnerTest {
             when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("4-0")))
                     .thenThrow(new RuntimeException("mongo down"));
 
-            // when
             invokeHandleRecord(record);
 
-            // then
             verify(trafficStreamInfraService, never()).acknowledge(record.getId());
             verify(trafficInFlightDedupeService, never()).release("trace-fail");
         }
 
         @Test
-        @DisplayName("claim 실패 후 이미 완료 로그가 있으면 ACK로 정리한다")
+        @DisplayName("acks when claim fails but done log already exists")
         void acknowledgeWhenClaimFailedButAlreadyLogged() {
-            // given
             String payloadJson = "{\"traceId\":\"trace-claimed\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("5-0", payloadJson);
+
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficDeductDoneLogService.existsByTraceId("trace-claimed"))
                     .thenReturn(false)
                     .thenReturn(true);
             when(trafficInFlightDedupeService.tryClaim("trace-claimed")).thenReturn(false);
 
-            // when
             invokeHandleRecord(record);
 
-            // then
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verifyNoInteractions(trafficDeductOrchestratorService);
+        }
+
+        @Test
+        @DisplayName("leaves record pending when claim fails and no done log exists")
+        void leaveRecordPendingWhenClaimFailedAndNotLogged() {
+            String payloadJson = "{\"traceId\":\"trace-pending\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("5-1", payloadJson);
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-pending"))
+                    .thenReturn(false)
+                    .thenReturn(false);
+            when(trafficInFlightDedupeService.tryClaim("trace-pending")).thenReturn(false);
+
+            invokeHandleRecord(record);
+
+            verify(trafficStreamInfraService, never()).acknowledge(record.getId());
+            verifyNoInteractions(trafficDeductOrchestratorService);
+        }
+
+        @Test
+        @DisplayName("persists done log before ack and releases after ack")
+        void acknowledgeOnlyAfterDoneLogSaved() {
+            String payloadJson = "{\"traceId\":\"trace-order\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("7-0", payloadJson);
+            TrafficDeductResultResDto orchestratorResult = TrafficDeductResultResDto.builder()
+                    .traceId("trace-order")
+                    .apiTotalData(100L)
+                    .finalStatus(TrafficFinalStatus.SUCCESS)
+                    .deductedTotalBytes(100L)
+                    .apiRemainingData(0L)
+                    .lastLuaStatus(TrafficLuaStatus.OK)
+                    .build();
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-order")).thenReturn(false);
+            when(trafficInFlightDedupeService.tryClaim("trace-order")).thenReturn(true);
+            when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("7-0"))).thenReturn(true);
+
+            invokeHandleRecord(record);
+
+            InOrder inOrder = inOrder(
+                    trafficDeductDoneLogService,
+                    trafficStreamInfraService,
+                    trafficInFlightDedupeService
+            );
+            inOrder.verify(trafficDeductDoneLogService).saveIfAbsent(any(), eq(orchestratorResult), eq("7-0"));
+            inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
+            inOrder.verify(trafficInFlightDedupeService).release("trace-order");
         }
     }
 
@@ -307,6 +372,11 @@ class TrafficStreamConsumerRunnerTest {
         listAppender.start();
         logger.addAppender(listAppender);
         return listAppender;
+    }
+
+    private void detachAppender(ListAppender<ILoggingEvent> listAppender) {
+        Logger logger = (Logger) LoggerFactory.getLogger(TrafficStreamConsumerRunner.class);
+        logger.detachAppender(listAppender);
     }
 
     private String findDoneLog(ListAppender<ILoggingEvent> listAppender) {

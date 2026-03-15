@@ -19,7 +19,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 @ExtendWith(MockitoExtension.class)
-class TrafficInFlightDedupeServiceTest {
+public class TrafficInFlightDedupeServiceTest {
 
     @Mock
     private StringRedisTemplate cacheStringRedisTemplate;
