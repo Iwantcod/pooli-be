@@ -6,10 +6,14 @@ import static org.mockito.Mockito.mock;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
 import com.pooli.monitoring.metrics.TrafficRequestMetrics;
+import com.pooli.traffic.config.TrafficSchedulingConfig;
 import com.pooli.traffic.controller.TrafficController;
 import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
 import com.pooli.traffic.service.invoke.*;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
+import com.pooli.traffic.service.outbox.RedisOutboxRetryScheduler;
+import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
+import com.pooli.traffic.service.outbox.strategy.OutboxRetryStrategyRegistry;
 import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
 import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
@@ -38,7 +42,9 @@ class TrafficProfileBootTest {
                     TrafficRequestEnqueueService.class,
                     TrafficStreamConsumerRunner.class,
                     TrafficStreamReclaimService.class,
+                    RedisOutboxRetryScheduler.class,
                     TrafficPolicyWriteThroughService.class,
+                    TrafficSchedulingConfig.class,
                     TrafficProfileBootTest.TestBeans.class
             )
             .withBean(AppStreamsProperties.class, AppStreamsProperties::new)
@@ -46,13 +52,16 @@ class TrafficProfileBootTest {
             .withBean("streamsStringRedisTemplate", StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
             .withBean("cacheStringRedisTemplate", StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
             .withBean(TrafficStreamInfraService.class, () -> mock(TrafficStreamInfraService.class))
+            .withBean(TrafficPayloadValidationService.class, () -> mock(TrafficPayloadValidationService.class))
             .withBean(TrafficDeductOrchestratorService.class, () -> mock(TrafficDeductOrchestratorService.class))
             .withBean(TrafficInFlightDedupeService.class, () -> mock(TrafficInFlightDedupeService.class))
             .withBean(TrafficDeductDoneLogService.class, () -> mock(TrafficDeductDoneLogService.class))
             .withBean(TrafficRedisKeyFactory.class, () -> mock(TrafficRedisKeyFactory.class))
             .withBean(TrafficRequestMetrics.class, () -> mock(TrafficRequestMetrics.class))
             .withBean(TrafficPolicyVersionedRedisService.class, () -> mock(TrafficPolicyVersionedRedisService.class))
-            .withBean(RedisOutboxRecordService.class, () -> mock(RedisOutboxRecordService.class));
+            .withBean(RedisOutboxRecordService.class, () -> mock(RedisOutboxRecordService.class))
+            .withBean(OutboxRetryStrategyRegistry.class, () -> mock(OutboxRetryStrategyRegistry.class))
+            .withBean(TrafficRefillOutboxSupportService.class, () -> mock(TrafficRefillOutboxSupportService.class));
 
     @Nested
     @DisplayName("프로파일별 빈 활성화 검증")
@@ -70,6 +79,8 @@ class TrafficProfileBootTest {
 
                         assertThat(context).doesNotHaveBean(TrafficStreamConsumerRunner.class);
                         assertThat(context).doesNotHaveBean(TrafficStreamReclaimService.class);
+                        assertThat(context).doesNotHaveBean(RedisOutboxRetryScheduler.class);
+                        assertThat(context).doesNotHaveBean(TrafficSchedulingConfig.class);
                     });
         }
 
@@ -84,7 +95,9 @@ class TrafficProfileBootTest {
 
                         assertThat(context).hasSingleBean(TrafficStreamConsumerRunner.class);
                         assertThat(context).hasSingleBean(TrafficStreamReclaimService.class);
+                        assertThat(context).hasSingleBean(RedisOutboxRetryScheduler.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
+                        assertThat(context).hasSingleBean(TrafficSchedulingConfig.class);
                     });
         }
 
@@ -98,7 +111,9 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficRequestEnqueueService.class);
                         assertThat(context).hasSingleBean(TrafficStreamConsumerRunner.class);
                         assertThat(context).hasSingleBean(TrafficStreamReclaimService.class);
+                        assertThat(context).hasSingleBean(RedisOutboxRetryScheduler.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
+                        assertThat(context).hasSingleBean(TrafficSchedulingConfig.class);
                     });
         }
     }

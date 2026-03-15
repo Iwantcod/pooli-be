@@ -22,7 +22,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Component
-@Profile({"local", "api", "traffic"})
+@Profile({"local", "traffic"})
 @RequiredArgsConstructor
 public class RedisOutboxRetryScheduler {
 
