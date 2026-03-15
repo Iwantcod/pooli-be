@@ -85,6 +85,7 @@ public class TrafficPolicyBootstrapService {
     /**
       * 주기적으로 정책 활성화 키를 재동기화해 DB/Redis 불일치를 보정합니다.
      */
+    @Deprecated
     public void reconcilePolicyActivationSnapshot() {
         try {
             synchronizePolicyActivationSnapshot("reconcile", false);

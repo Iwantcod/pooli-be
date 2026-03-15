@@ -148,6 +148,9 @@ class TrafficFlowLocalAcceptanceTest {
         jdbcTemplate.update("DELETE FROM APP_POLICY WHERE line_id IN (" + TARGET_LINE_IDS + ")");
         jdbcTemplate.update("DELETE FROM LINE_LIMIT WHERE line_id IN (" + TARGET_LINE_IDS + ")");
 
+        // 전역 정책 레코드는 soft-delete 흔적을 제거하고 기본 활성 상태로 맞춘다.
+        jdbcTemplate.update("UPDATE POLICY SET deleted_at = NULL, is_active = true, updated_at = NOW(6)");
+
         // 전역 정책 1~7은 기본 활성 상태로 복구한다.
         setAllGlobalPolicies(true);
         syncPolicySnapshot();
