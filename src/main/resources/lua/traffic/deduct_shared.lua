@@ -9,7 +9,7 @@ local function is_policy_enabled(policy_key)
   if not policy_key or policy_key == "" then
     return false
   end
-  return redis.call("EXISTS", policy_key) == 1
+  return tonumber(redis.call("HGET", policy_key, "value") or "0") == 1
 end
 
 local function is_in_repeat_block(repeat_block_key, day_num, sec_of_day)
@@ -119,7 +119,7 @@ end
 
 if not whitelist_bypass then
   if is_policy_enabled(policy_immediate_key) then
-    local block_end_at = tonumber(redis.call("GET", immediately_block_end_key) or "0")
+    local block_end_at = tonumber(redis.call("HGET", immediately_block_end_key, "value") or "0")
     if block_end_at > 0 and now_epoch_second <= block_end_at then
       return as_json(0, "BLOCKED_IMMEDIATE")
     end
@@ -144,7 +144,7 @@ end
 
 if not whitelist_bypass then
   if is_policy_enabled(policy_daily_key) then
-    local daily_limit = tonumber(redis.call("GET", daily_total_limit_key) or "-1")
+    local daily_limit = tonumber(redis.call("HGET", daily_total_limit_key, "value") or "-1")
     if daily_limit >= 0 then
       local daily_used = tonumber(redis.call("GET", daily_total_usage_key) or "0")
       local daily_remaining = math.max(0, daily_limit - daily_used)
@@ -156,7 +156,7 @@ if not whitelist_bypass then
   end
 
   if is_policy_enabled(policy_shared_key) then
-    local monthly_limit = tonumber(redis.call("GET", monthly_shared_limit_key) or "-1")
+    local monthly_limit = tonumber(redis.call("HGET", monthly_shared_limit_key, "value") or "-1")
     if monthly_limit >= 0 then
       local monthly_used = tonumber(redis.call("GET", monthly_shared_usage_key) or "0")
       local monthly_remaining = math.max(0, monthly_limit - monthly_used)
@@ -202,4 +202,3 @@ redis.call("HINCRBY", daily_app_usage_key, app_usage_field, answer)
 redis.call("EXPIREAT", daily_app_usage_key, daily_expire_at)
 
 return as_json(answer, final_status)
-

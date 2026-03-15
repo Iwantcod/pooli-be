@@ -6,7 +6,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.UUID;
 
+import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
+import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
@@ -68,6 +71,8 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
     private final TrafficHydrateMetrics trafficHydrateMetrics;
     private final TrafficRefillMetrics trafficRefillMetrics;
+    private final RedisOutboxRecordService redisOutboxRecordService;
+    private final TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
 
     /**
      * 개인풀 차감과 복구 흐름을 실행합니다.
@@ -274,17 +279,22 @@ public class TrafficHydrateRefillAdapterService {
             }
 
             try {
+                String refillUuid = UUID.randomUUID().toString();
                 TrafficDbRefillClaimResult claimResult = claimRefillAmountFromDbWithRetry(
                         poolType,
                         payload,
                         targetMonth,
-                        requestedRefillUnit
+                        requestedRefillUnit,
+                        refillUuid
                 );
                 long dbRemainingBefore = normalizeNonNegative(claimResult == null ? null : claimResult.getDbRemainingBefore());
                 long actualRefillAmount = normalizeNonNegative(claimResult == null ? null : claimResult.getActualRefillAmount());
                 long dbRemainingAfter = normalizeNonNegative(claimResult == null ? null : claimResult.getDbRemainingAfter());
+                Long outboxRecordId = claimResult == null ? null : claimResult.getOutboxRecordId();
+                String outboxRefillUuid = claimResult == null ? null : claimResult.getRefillUuid();
                 trafficQuotaCacheService.writeDbEmptyFlag(balanceKey, dbRemainingAfter <= 0);
                 if (actualRefillAmount <= 0) {
+                    markOutboxSuccessIfPresent(outboxRecordId);
                     log.debug(
                             "traffic_refill_db_noop poolType={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
                             poolType,
@@ -314,10 +324,62 @@ public class TrafficHydrateRefillAdapterService {
                             poolType,
                             lockKey
                     );
+                    markOutboxFailIfPresent(outboxRecordId);
                     trafficRefillMetrics.increment(poolType.name(), "lock_lost");
                     return retriedResult;
                 }
-                trafficQuotaCacheService.refillBalance(balanceKey, actualRefillAmount, monthlyExpireAt);
+
+                boolean shouldApplyRedis = tryRegisterRefillIdempotency(
+                        poolType,
+                        payload,
+                        outboxRecordId,
+                        outboxRefillUuid,
+                        actualRefillAmount
+                );
+                if (!shouldApplyRedis) {
+                    log.info(
+                            "traffic_refill_idempotent_skip poolType={} balanceKey={} outboxId={} uuid={}",
+                            poolType,
+                            balanceKey,
+                            outboxRecordId,
+                            outboxRefillUuid
+                    );
+                    trafficRefillMetrics.increment(poolType.name(), "idempotent_skip");
+                    TrafficLuaExecutionResult refillRetryResult = executeDeduct(
+                            poolType,
+                            payload,
+                            balanceKey,
+                            retryTargetData
+                    );
+                    retriedResult = mergeRefillRetryResult(
+                            normalizedRequestedDataBytes,
+                            firstDeductedAmount,
+                            refillRetryResult
+                    );
+                    return retriedResult;
+                }
+
+                try {
+                    trafficQuotaCacheService.refillBalance(balanceKey, actualRefillAmount, monthlyExpireAt);
+                } catch (RuntimeException redisApplyException) {
+                    RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(redisApplyException);
+                    if (trafficRefillOutboxSupportService.isConnectionFailure(unwrapped)) {
+                        trafficRefillOutboxSupportService.restoreClaimedAmount(poolType, payload, actualRefillAmount);
+                        markOutboxSuccessIfPresent(outboxRecordId);
+                        trafficRefillMetrics.increment(poolType.name(), "redis_connection_refund");
+                        return retriedResult;
+                    }
+
+                    markOutboxFailIfPresent(outboxRecordId);
+                    if (trafficRefillOutboxSupportService.isTimeoutFailure(unwrapped)) {
+                        trafficRefillMetrics.increment(poolType.name(), "redis_timeout");
+                    } else {
+                        trafficRefillMetrics.increment(poolType.name(), "redis_error");
+                    }
+                    return retriedResult;
+                }
+
+                markOutboxSuccessIfPresent(outboxRecordId);
                 log.info(
                         "traffic_refill_applied poolType={} balanceKey={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
                         poolType,
@@ -655,13 +717,71 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * 리필 UUID 멱등키를 등록하고, 중복/연결실패 상황을 정책에 맞게 처리합니다.
+     *
+     * @return true면 Redis refill 적용을 계속 진행, false면 추가 적용 없이 종료
+     */
+    private boolean tryRegisterRefillIdempotency(
+            TrafficPoolType poolType,
+            TrafficPayloadReqDto payload,
+            Long outboxRecordId,
+            String refillUuid,
+            long actualRefillAmount
+    ) {
+        if (refillUuid == null || refillUuid.isBlank()) {
+            markOutboxFailIfPresent(outboxRecordId);
+            return false;
+        }
+
+        try {
+            boolean registered = trafficRefillOutboxSupportService.tryRegisterIdempotency(refillUuid);
+            if (!registered) {
+                markOutboxSuccessIfPresent(outboxRecordId);
+                return false;
+            }
+            return true;
+        } catch (RuntimeException registrationException) {
+            RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(registrationException);
+            if (trafficRefillOutboxSupportService.isConnectionFailure(unwrapped)) {
+                trafficRefillOutboxSupportService.restoreClaimedAmount(poolType, payload, actualRefillAmount);
+                markOutboxSuccessIfPresent(outboxRecordId);
+                return false;
+            }
+
+            markOutboxFailIfPresent(outboxRecordId);
+            return false;
+        }
+    }
+
+    /**
+     * outbox 레코드가 존재할 때 SUCCESS로 전이합니다.
+     */
+    private void markOutboxSuccessIfPresent(Long outboxRecordId) {
+        if (outboxRecordId == null || outboxRecordId <= 0) {
+            return;
+        }
+        redisOutboxRecordService.markSuccess(outboxRecordId);
+    }
+
+    /**
+     * outbox 레코드가 존재할 때 FAIL로 전이합니다.
+     */
+    private void markOutboxFailIfPresent(Long outboxRecordId) {
+        if (outboxRecordId == null || outboxRecordId <= 0) {
+            return;
+        }
+        redisOutboxRecordService.markFail(outboxRecordId);
+    }
+
+    /**
      * DB 리필 차감을 재시도 정책과 함께 수행합니다.
      */
     private TrafficDbRefillClaimResult claimRefillAmountFromDbWithRetry(
             TrafficPoolType poolType,
             TrafficPayloadReqDto payload,
             YearMonth targetMonth,
-            long requestedRefillAmount
+            long requestedRefillAmount,
+            String refillUuid
     ) {
         RuntimeException lastException = null;
         for (int retryCount = 0; retryCount <= DB_RETRY_MAX; retryCount++) {
@@ -670,7 +790,8 @@ public class TrafficHydrateRefillAdapterService {
                         poolType,
                         payload,
                         targetMonth,
-                        requestedRefillAmount
+                        requestedRefillAmount,
+                        refillUuid
                 );
             } catch (RuntimeException e) {
                 lastException = e;

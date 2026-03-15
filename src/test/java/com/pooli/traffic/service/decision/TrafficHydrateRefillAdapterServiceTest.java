@@ -22,10 +22,13 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
+import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
+import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -34,6 +37,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -81,8 +85,23 @@ class TrafficHydrateRefillAdapterServiceTest {
     @Mock
     private TrafficRefillMetrics trafficRefillMetrics;
 
+    @Mock
+    private RedisOutboxRecordService redisOutboxRecordService;
+
+    @Mock
+    private TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
+
     @InjectMocks
     private TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
+
+    @BeforeEach
+    void setUp() {
+        Mockito.lenient().when(trafficRefillOutboxSupportService.tryRegisterIdempotency(anyString())).thenReturn(true);
+        Mockito.lenient().when(trafficRefillOutboxSupportService.unwrapRuntimeException(any(RuntimeException.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        Mockito.lenient().when(trafficRefillOutboxSupportService.isConnectionFailure(any())).thenReturn(false);
+        Mockito.lenient().when(trafficRefillOutboxSupportService.isTimeoutFailure(any())).thenReturn(false);
+    }
 
     @Nested
     class ExecuteIndividualWithRecoveryTest {
@@ -187,10 +206,11 @@ class TrafficHydrateRefillAdapterServiceTest {
                     TrafficRedisRuntimePolicy.LOCK_TTL_MS
             )).thenReturn(true, true);
             when(trafficQuotaSourcePort.claimRefillAmountFromDb(
-                    TrafficPoolType.INDIVIDUAL,
-                    payload,
-                    java.time.YearMonth.of(2026, 3),
-                    100L
+                    eq(TrafficPoolType.INDIVIDUAL),
+                    eq(payload),
+                    eq(java.time.YearMonth.of(2026, 3)),
+                    eq(100L),
+                    anyString()
             )).thenReturn(claimResult(100L, 1_000L, 100L, 900L));
 
             // when
@@ -282,7 +302,7 @@ class TrafficHydrateRefillAdapterServiceTest {
                     0L,
                     30L
             );
-            verify(trafficQuotaSourcePort, never()).claimRefillAmountFromDb(any(), any(), any(), anyLong());
+            verify(trafficQuotaSourcePort, never()).claimRefillAmountFromDb(any(), any(), any(), anyLong(), anyString());
             verify(trafficQuotaCacheService, never()).refillBalance(anyString(), anyLong(), anyLong());
         }
 
@@ -313,10 +333,11 @@ class TrafficHydrateRefillAdapterServiceTest {
                     TrafficRedisRuntimePolicy.LOCK_TTL_MS
             )).thenReturn(true);
             when(trafficQuotaSourcePort.claimRefillAmountFromDb(
-                    TrafficPoolType.INDIVIDUAL,
-                    payload,
-                    java.time.YearMonth.of(2026, 3),
-                    100L
+                    eq(TrafficPoolType.INDIVIDUAL),
+                    eq(payload),
+                    eq(java.time.YearMonth.of(2026, 3)),
+                    eq(100L),
+                    anyString()
             )).thenReturn(claimResult(100L, 0L, 0L, 0L));
 
             // when
@@ -459,7 +480,7 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(TrafficLuaStatus.NO_BALANCE, result.getStatus()),
                     () -> assertEquals(0L, result.getAnswer())
             );
-            verify(trafficQuotaSourcePort, never()).claimRefillAmountFromDb(any(), any(), any(), anyLong());
+            verify(trafficQuotaSourcePort, never()).claimRefillAmountFromDb(any(), any(), any(), anyLong(), anyString());
             verify(trafficQuotaCacheService, never()).refillBalance(anyString(), anyLong(), anyLong());
             verify(trafficLuaScriptInfraService, never()).executeLockRelease(anyString(), anyString());
             verify(trafficRefillMetrics).increment("INDIVIDUAL", "lock_not_owned");
@@ -492,10 +513,11 @@ class TrafficHydrateRefillAdapterServiceTest {
                     TrafficRedisRuntimePolicy.LOCK_TTL_MS
             )).thenReturn(true);
             when(trafficQuotaSourcePort.claimRefillAmountFromDb(
-                    TrafficPoolType.INDIVIDUAL,
-                    payload,
-                    java.time.YearMonth.of(2026, 3),
-                    100L
+                    eq(TrafficPoolType.INDIVIDUAL),
+                    eq(payload),
+                    eq(java.time.YearMonth.of(2026, 3)),
+                    eq(100L),
+                    anyString()
             )).thenReturn(claimResult(100L, 0L, 0L, 0L));
 
             // when
@@ -539,10 +561,11 @@ class TrafficHydrateRefillAdapterServiceTest {
                     TrafficRedisRuntimePolicy.LOCK_TTL_MS
             )).thenReturn(true);
             when(trafficQuotaSourcePort.claimRefillAmountFromDb(
-                    TrafficPoolType.INDIVIDUAL,
-                    payload,
-                    java.time.YearMonth.of(2026, 3),
-                    100L
+                    eq(TrafficPoolType.INDIVIDUAL),
+                    eq(payload),
+                    eq(java.time.YearMonth.of(2026, 3)),
+                    eq(100L),
+                    anyString()
             )).thenThrow(new IllegalStateException("db unavailable"));
 
             // when
@@ -655,10 +678,11 @@ class TrafficHydrateRefillAdapterServiceTest {
                 TrafficRedisRuntimePolicy.LOCK_TTL_MS
         )).thenReturn(true, true);
         when(trafficQuotaSourcePort.claimRefillAmountFromDb(
-                TrafficPoolType.SHARED,
-                payload,
-                java.time.YearMonth.of(2026, 3),
-                50L
+                eq(TrafficPoolType.SHARED),
+                eq(payload),
+                eq(java.time.YearMonth.of(2026, 3)),
+                eq(50L),
+                anyString()
         )).thenReturn(claimResult(50L, 50L, 50L, 0L));
 
         // when
@@ -746,11 +770,14 @@ class TrafficHydrateRefillAdapterServiceTest {
             long actualRefillAmount,
             long dbRemainingAfter
     ) {
+        String refillUuid = "refill-uuid-" + requestedRefillAmount + "-" + actualRefillAmount;
         return TrafficDbRefillClaimResult.builder()
                 .requestedRefillAmount(requestedRefillAmount)
                 .dbRemainingBefore(dbRemainingBefore)
                 .actualRefillAmount(actualRefillAmount)
                 .dbRemainingAfter(dbRemainingAfter)
+                .refillUuid(refillUuid)
+                .outboxRecordId(701L)
                 .build();
     }
 

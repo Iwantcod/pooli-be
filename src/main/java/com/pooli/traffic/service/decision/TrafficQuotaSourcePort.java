@@ -101,10 +101,20 @@ public interface TrafficQuotaSourcePort {
      * @param requestedRefillAmount 요청 리필량(Byte)
      * @return DB 차감 전/후 잔량과 실제 차감량을 담은 결과 객체
      */
-    TrafficDbRefillClaimResult claimRefillAmountFromDb(
+    default TrafficDbRefillClaimResult claimRefillAmountFromDb(
             TrafficPoolType poolType,
             TrafficPayloadReqDto payload,
             YearMonth targetMonth,
             long requestedRefillAmount
+    ) {
+        return claimRefillAmountFromDb(poolType, payload, targetMonth, requestedRefillAmount, null);
+    }
+
+    TrafficDbRefillClaimResult claimRefillAmountFromDb(
+            TrafficPoolType poolType,
+            TrafficPayloadReqDto payload,
+            YearMonth targetMonth,
+            long requestedRefillAmount,
+            String refillUuid
     );
 }
