@@ -65,7 +65,7 @@ public class TrafficPayloadValidationServiceTest {
                 .lineId(11L)
                 .familyId(22L)
                 .appId(33)
-                .apiTotalData(100L)
+                .apiTotalData(0L)
                 .enqueuedAt(1700000000000L)
                 .build();
 

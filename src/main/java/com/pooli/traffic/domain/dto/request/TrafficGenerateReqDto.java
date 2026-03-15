@@ -3,6 +3,7 @@ package com.pooli.traffic.domain.dto.request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -37,6 +38,6 @@ public class TrafficGenerateReqDto {
 
     @Schema(description = "요청 이벤트 데이터량(Byte)", example = "1048576")
     @NotNull(message = "apiTotalData는 필수입니다.")
-    @Positive(message = "apiTotalData는 1 이상이어야 합니다.")
+    @PositiveOrZero(message = "apiTotalData는 0 이상이어야 합니다.")
     private Long apiTotalData;
 }

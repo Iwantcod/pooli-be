@@ -3,6 +3,7 @@ package com.pooli.traffic.domain.dto.request;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -36,7 +37,7 @@ public class TrafficPayloadReqDto {
     private Integer appId;
 
     @NotNull(message = "apiTotalData는 필수입니다.")
-    @Positive(message = "apiTotalData는 1 이상이어야 합니다.")
+    @PositiveOrZero(message = "apiTotalData는 0 이상이어야 합니다.")
     private Long apiTotalData;
 
     @NotNull(message = "enqueuedAt는 필수입니다.")

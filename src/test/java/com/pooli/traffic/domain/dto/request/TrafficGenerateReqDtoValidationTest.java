@@ -16,7 +16,7 @@ public class TrafficGenerateReqDtoValidationTest {
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     @Test
-    @DisplayName("requires all request fields and positive values")
+    @DisplayName("requires all request fields and validates positive ids with non-negative apiTotalData")
     void validateRequiredFieldsAndPositiveValues() {
         TrafficGenerateReqDto request = TrafficGenerateReqDto.builder()
                 .lineId(0L)
@@ -30,7 +30,7 @@ public class TrafficGenerateReqDtoValidationTest {
                 .sorted()
                 .toList();
 
-        assertEquals(List.of("apiTotalData", "appId", "familyId", "lineId"), invalidFields);
+        assertEquals(List.of("appId", "familyId", "lineId"), invalidFields);
         assertTrue(validator.validate(request).stream()
                 .anyMatch(violation -> "lineId".equals(violation.getPropertyPath().toString())
                         && "lineId는 1 이상이어야 합니다.".equals(violation.getMessage())));
@@ -40,8 +40,18 @@ public class TrafficGenerateReqDtoValidationTest {
         assertTrue(validator.validate(request).stream()
                 .anyMatch(violation -> "appId".equals(violation.getPropertyPath().toString())
                         && "appId는 1 이상이어야 합니다.".equals(violation.getMessage())));
-        assertTrue(validator.validate(request).stream()
-                .anyMatch(violation -> "apiTotalData".equals(violation.getPropertyPath().toString())
-                        && "apiTotalData는 1 이상이어야 합니다.".equals(violation.getMessage())));
+    }
+
+    @Test
+    @DisplayName("accepts zero apiTotalData as a no-op request")
+    void acceptsZeroApiTotalData() {
+        TrafficGenerateReqDto request = TrafficGenerateReqDto.builder()
+                .lineId(1L)
+                .familyId(1L)
+                .appId(1)
+                .apiTotalData(0L)
+                .build();
+
+        assertTrue(validator.validate(request).isEmpty());
     }
 }
