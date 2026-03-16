@@ -58,6 +58,9 @@ dependencies {
 }
 
 tasks.named('test') {
+
+    outputs.upToDateWhen { false }
+
     useJUnitPlatform {
         excludeTags 'local-only'
     }
