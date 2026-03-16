@@ -12,6 +12,7 @@ import org.slf4j.MDC;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.util.ContentCachingRequestWrapper;
 
 import java.io.IOException;
@@ -77,8 +78,12 @@ public class LoggingFilter extends OncePerRequestFilter {
             // GlobalExceptionHandler에서 재사용할 수 있도록 캐시
             wrappedRequest.setAttribute(CACHED_BODY_ATTR, maskedBody);
 
+            // 정규화된 endpoint 패턴 사용 (예: /api/users/{id})
+            // path variable이 없으면 raw URI와 동일
+            String endpoint = resolveEndpoint(wrappedRequest, uri);
+
             // MDC에 구조화 필드 추가 → LogstashEncoder가 JSON 최상위 필드로 출력
-            MDC.put("apiUri", uri);
+            MDC.put("apiUri", endpoint);
             MDC.put("method", method);
             MDC.put("status", String.valueOf(status));
             MDC.put("latency", String.valueOf(latency));
@@ -108,6 +113,15 @@ public class LoggingFilter extends OncePerRequestFilter {
         String masked = SENSITIVE_PATTERN.matcher(rawBody)
                 .replaceAll(SENSITIVE_REPLACEMENT);
         return truncate(masked, MAX_BODY_LENGTH);
+    }
+
+    /**
+     * Spring MVC가 매핑한 패턴(예: /api/users/{id})을 반환한다.
+     * 매핑 정보가 없으면(404, static resource 등) raw URI를 그대로 사용한다.
+     */
+    private String resolveEndpoint(HttpServletRequest request, String rawUri) {
+        Object pattern = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        return pattern != null ? pattern.toString() : rawUri;
     }
 
     private String truncate(String str, int maxLength) {
