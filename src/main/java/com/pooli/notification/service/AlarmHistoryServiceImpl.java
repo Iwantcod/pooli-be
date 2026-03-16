@@ -111,21 +111,27 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
             }
 
             case ALL -> {
-                targetLineIds = notificationLineMapper.findAllLineIds();
-
-
-
+                alarmHistoryMapper.insertNotificationAll(
+                        AlarmCode.OTHERS.name(),
+                        jsonValue
+                );
+                return;
             }
 
             case OWNER -> {
-                targetLineIds = notificationLineMapper.findLineIdsByRole("OWNER");
-
-
+                alarmHistoryMapper.insertNotificationOwner(
+                        AlarmCode.OTHERS.name(),
+                        jsonValue
+                );
+                return;
             }
 
             case MEMBER -> {
-                targetLineIds = notificationLineMapper.findLineIdsByRole("MEMBER");
-
+                alarmHistoryMapper.insertNotificationMember(
+                        AlarmCode.OTHERS.name(),
+                        jsonValue
+                );
+                return;
             }
 
             default -> throw new ApplicationException(
