@@ -1,11 +1,13 @@
 package com.pooli.data.service.impl;
 
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
 
 import com.pooli.auth.service.AuthUserDetails;
@@ -119,7 +121,7 @@ public class DataServiceImpl implements DataService {
 	public DataUsageResDto getDataUsage(Long lineId, Integer yearMonth) {
 		validateMonth(yearMonth);
 
-	      boolean isCurrentMonth = YearMonth.now().equals(
+	      boolean isCurrentMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId()).equals(
 	              YearMonth.of(yearMonth / 100, yearMonth % 100)
 	      );
 
@@ -128,15 +130,39 @@ public class DataServiceImpl implements DataService {
 	          throw new ApplicationException(DataErrorCode.DATA_NOT_FOUND);
 	      }
 
-	      Long personalTotalAmount = isCurrentMonth ? row.getPersonalTotalAmount() : null;
-	      Long sharedPoolTotalAmount = isCurrentMonth ? row.getSharedPoolTotalAmount() : null;
+          long personalUsedAmount = normalizeNonNegative(row.getPersonalUsedAmount());
+          long sharedPoolUsedAmount = normalizeNonNegative(row.getSharedPoolUsedAmount());
+          long personalTotalAmount = isCurrentMonth ? normalizeNonNegative(row.getPersonalTotalAmount()) : 0L;
+          long sharedPoolTotalAmount = isCurrentMonth ? normalizeNonNegative(row.getSharedPoolTotalAmount()) : 0L;
+
+          if (isCurrentMonth) {
+              LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
+              YearMonth targetMonth = YearMonth.from(today);
+
+              long dbTotalUsage = safeAdd(personalUsedAmount, sharedPoolUsedAmount);
+              long dbTodayTotalUsage = normalizeNonNegative(
+                      dataMapper.findDailyTotalUsageByLineIdAndDate(lineId, today)
+              );
+              long redisTodayTotalUsage = readDailyTotalUsageFromRedis(lineId, today);
+              long redisMonthlySharedUsage = readMonthlySharedUsageFromRedis(lineId, targetMonth);
+
+              long adjustedTotalUsage = safeAdd(
+                      clampNonNegative(dbTotalUsage - dbTodayTotalUsage),
+                      Math.max(dbTodayTotalUsage, redisTodayTotalUsage)
+              );
+              long adjustedSharedUsage = Math.max(sharedPoolUsedAmount, redisMonthlySharedUsage);
+              adjustedTotalUsage = Math.max(adjustedTotalUsage, adjustedSharedUsage);
+
+              sharedPoolUsedAmount = adjustedSharedUsage;
+              personalUsedAmount = clampNonNegative(adjustedTotalUsage - adjustedSharedUsage);
+          }
 
 	      return DataUsageResDto.builder()
 	              .isCurrentMonth(isCurrentMonth)
-	              .personalUsedAmount(row.getPersonalUsedAmount())
-	              .sharedPoolUsedAmount(row.getSharedPoolUsedAmount())
-	              .personalTotalAmount(personalTotalAmount)
-	              .sharedPoolTotalAmount(sharedPoolTotalAmount)
+	              .personalUsedAmount(personalUsedAmount)
+	              .sharedPoolUsedAmount(sharedPoolUsedAmount)
+	              .personalTotalAmount(isCurrentMonth ? personalTotalAmount : null)
+	              .sharedPoolTotalAmount(isCurrentMonth ? sharedPoolTotalAmount : null)
 	              .build();
 	}
 	
@@ -208,5 +234,41 @@ public class DataServiceImpl implements DataService {
             return Long.MAX_VALUE;
         }
         return normalizedBaseValue + normalizedAdditionalValue;
+    }
+
+    private long readDailyTotalUsageFromRedis(long lineId, LocalDate usageDate) {
+        String key = trafficRedisKeyFactory.dailyTotalUsageKey(lineId, usageDate);
+        return readValueLong(key);
+    }
+
+    private long readMonthlySharedUsageFromRedis(long lineId, YearMonth targetMonth) {
+        String key = trafficRedisKeyFactory.monthlySharedUsageKey(lineId, targetMonth);
+        return readValueLong(key);
+    }
+
+    private long readValueLong(String key) {
+        try {
+            ValueOperations<String, String> valueOperations = cacheStringRedisTemplate.opsForValue();
+            String rawValue = valueOperations.get(key);
+            if (rawValue == null) {
+                return 0L;
+            }
+
+            long parsed = Long.parseLong(rawValue);
+            return Math.max(0L, parsed);
+        } catch (RuntimeException e) {
+            return 0L;
+        }
+    }
+
+    private long normalizeNonNegative(Long value) {
+        if (value == null || value <= 0L) {
+            return 0L;
+        }
+        return value;
+    }
+
+    private long clampNonNegative(long value) {
+        return Math.max(0L, value);
     }
 }

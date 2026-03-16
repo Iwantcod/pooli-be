@@ -1,5 +1,6 @@
 package com.pooli.data.mapper;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import org.apache.ibatis.annotations.Mapper;
@@ -31,5 +32,10 @@ public interface DataMapper {
     DataUsageResDto findDataUsageAggregateByLineIdAndMonth(
             @Param("lineId") Long lineId,
             @Param("yearMonth") Integer yearMonth
+    );
+
+    Long findDailyTotalUsageByLineIdAndDate(
+            @Param("lineId") Long lineId,
+            @Param("usageDate") LocalDate usageDate
     );
 }
