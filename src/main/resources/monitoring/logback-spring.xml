@@ -20,10 +20,12 @@
     </springProfile>
 
 
-    <!-- local 이외 -->
+    <!-- local 이외 (Docker stdout → Promtail → Loki) -->
     <springProfile name="!local">
 
-        <root level="INFO"/>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
 
     </springProfile>
 
