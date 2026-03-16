@@ -70,18 +70,23 @@ public class LoggingFilter extends OncePerRequestFilter {
         } finally {
             long latency = System.currentTimeMillis() - start;
             int status = response.getStatus();
+            String method = request.getMethod();
 
             String maskedBody = processBody(wrappedRequest, uri);
 
             // GlobalExceptionHandler에서 재사용할 수 있도록 캐시
             wrappedRequest.setAttribute(CACHED_BODY_ATTR, maskedBody);
 
+            // MDC에 구조화 필드 추가 → LogstashEncoder가 JSON 최상위 필드로 출력
+            MDC.put("apiUri", uri);
+            MDC.put("method", method);
+            MDC.put("status", String.valueOf(status));
+            MDC.put("latency", String.valueOf(latency));
+
             if (status >= 400) {
-                log.info("apiUri={} method={} status={} latency={}ms body={}",
-                        uri, request.getMethod(), status, latency, maskedBody);
+                log.info("request_log body={}", maskedBody);
             } else {
-                log.info("apiUri={} method={} status={} latency={}ms",
-                        uri, request.getMethod(), status, latency);
+                log.info("request_log");
             }
 
             MDC.clear();
