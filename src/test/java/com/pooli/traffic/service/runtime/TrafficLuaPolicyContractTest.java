@@ -48,10 +48,10 @@ class TrafficLuaPolicyContractTest {
                 "if not whitelist_bypass then",
                 "if is_policy_enabled(policy_immediate_key)",
                 "if is_policy_enabled(policy_repeat_key)",
-                "if is_policy_enabled(policy_daily_key)",
-                "if is_policy_enabled(policy_shared_key)",
-                "if is_policy_enabled(policy_app_data_key)",
-                "if is_policy_enabled(policy_app_speed_key)"
+                "if answer > 0 and is_policy_enabled(policy_daily_key)",
+                "if answer > 0 and is_policy_enabled(policy_shared_key)",
+                "if answer > 0 and is_policy_enabled(policy_app_data_key)",
+                "if answer > 0 and is_policy_enabled(policy_app_speed_key)"
         );
     }
 
@@ -76,8 +76,8 @@ class TrafficLuaPolicyContractTest {
 
         int bypassGuardIndex = script.indexOf("if not whitelist_bypass then");
         int immediateIndex = script.indexOf("if is_policy_enabled(policy_immediate_key)");
-        int monthlySharedIndex = script.indexOf("if is_policy_enabled(policy_shared_key)");
-        int speedIndex = script.indexOf("if is_policy_enabled(policy_app_speed_key)");
+        int monthlySharedIndex = script.indexOf("if answer > 0 and is_policy_enabled(policy_shared_key)");
+        int speedIndex = script.indexOf("if answer > 0 and is_policy_enabled(policy_app_speed_key)");
         int writeIndex = script.indexOf("redis.call(\"HINCRBY\", remaining_key, \"amount\", -answer)");
 
         assertTrue(bypassGuardIndex >= 0, "Whitelist bypass guard must exist.");
@@ -154,6 +154,36 @@ class TrafficLuaPolicyContractTest {
                 script,
                 "if is_empty == 1 then",
                 "if current_amount >= threshold then"
+        );
+    }
+
+    @Test
+    @DisplayName("공유풀 Lua는 QoS 보정 키를 추가로 받고 QOS 상태를 반환할 수 있다")
+    void sharedScriptAcceptsQosKeyAndStatus() throws IOException {
+        String script = Files.readString(SHARED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(
+                script.contains("local individual_remaining_key = KEYS[20]"),
+                "Shared script must accept individual remaining key for qos lookup."
+        );
+        assertTrue(
+                script.contains("\"QOS\""),
+                "Shared script must include QOS status."
+        );
+    }
+
+    @Test
+    @DisplayName("QoS 보정이 적용된 경우 공유풀 잔량/월 사용량 차감은 건너뛴다")
+    void sharedScriptSkipsSharedDeductWhenQosFallbackApplies() throws IOException {
+        String script = Files.readString(SHARED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                script,
+                "if answer <= 0 then",
+                "local qos_answer, qos_status = resolve_qos_fallback(",
+                "used_qos_fallback = true",
+                "if not used_qos_fallback then",
+                "redis.call(\"HINCRBY\", remaining_key, \"amount\", -answer)"
         );
     }
 

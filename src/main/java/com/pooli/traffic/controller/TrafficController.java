@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -41,7 +42,7 @@ public class TrafficController {
             @ApiResponse(responseCode = "500", description = "Streams 적재 실패")
     })
     @PostMapping("/requests")
-    public ResponseEntity<TrafficGenerateResDto> enqueueTraffic(@RequestBody TrafficGenerateReqDto request) {
+    public ResponseEntity<TrafficGenerateResDto> enqueueTraffic(@Valid @RequestBody TrafficGenerateReqDto request) {
         return ResponseEntity.ok(trafficRequestEnqueueService.enqueue(request));
     }
 }

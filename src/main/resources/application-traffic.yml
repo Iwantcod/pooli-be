@@ -14,13 +14,24 @@ spring:
     web-application-type: servlet
   session:
     store-type: none
+  task:
+    scheduling:
+      enabled: true
 
 management:
   endpoint:
     sessions:
       enabled: false
 
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 app:
+  streams:
+    consumer-enabled: true
   traffic:
     deduct:
       redis-retry:

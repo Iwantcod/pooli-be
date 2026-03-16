@@ -36,7 +36,7 @@ import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.repository.TrafficDeductDoneLogRepository;
 
 @ExtendWith(MockitoExtension.class)
-class TrafficDeductDoneLogServiceTest {
+public class TrafficDeductDoneLogServiceTest {
 
     @Mock
     private TrafficDeductDoneLogRepository trafficDeductDoneLogRepository;

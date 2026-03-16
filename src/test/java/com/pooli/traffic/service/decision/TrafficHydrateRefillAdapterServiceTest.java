@@ -839,7 +839,8 @@ class TrafficHydrateRefillAdapterServiceTest {
                 () -> assertTrue(keys.contains("pooli:policy:6")),
                 () -> assertTrue(keys.contains("pooli:policy:7")),
                 () -> assertTrue(keys.contains("pooli:monthly_shared_limit:11")),
-                () -> assertTrue(keys.contains("pooli:monthly_shared_usage:11:202603"))
+                () -> assertTrue(keys.contains("pooli:monthly_shared_usage:11:202603")),
+                () -> assertTrue(keys.contains("pooli:remaining_indiv_amount:11:202603"))
         );
     }
 
@@ -946,6 +947,7 @@ class TrafficHydrateRefillAdapterServiceTest {
         for (long policyId = 1; policyId <= 7; policyId++) {
             when(trafficRedisKeyFactory.policyKey(policyId)).thenReturn("pooli:policy:" + policyId);
         }
+        when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
         when(trafficRedisKeyFactory.appWhitelistKey(11L)).thenReturn("pooli:app_whitelist:11");
         when(trafficRedisKeyFactory.immediatelyBlockEndKey(11L)).thenReturn("pooli:immediately_block_end:11");
         when(trafficRedisKeyFactory.repeatBlockKey(11L)).thenReturn("pooli:repeat_block:11");
