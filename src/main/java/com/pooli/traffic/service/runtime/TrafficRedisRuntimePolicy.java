@@ -22,7 +22,7 @@ public class TrafficRedisRuntimePolicy {
 
     public static final long LOCK_TTL_MS = 3000L;
     public static final long LOCK_HEARTBEAT_MS = 1000L;
-    public static final long INFLIGHT_TTL_SEC = 60L;
+    public static final long INFLIGHT_TTL_SEC = 180L;
     public static final long APP_SPEED_USED_TTL_SEC = 3L;
 
     private static final ZoneId ASIA_SEOUL_ZONE_ID = ZoneId.of("Asia/Seoul");

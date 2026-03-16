@@ -88,7 +88,7 @@ public class RedisOutboxRetryScheduler {
             redisOutboxRecordService.markSuccess(record.getId());
             if (record.getEventType() == OutboxEventType.REFILL) {
                 RefillOutboxPayload payload = redisOutboxRecordService.readPayload(record, RefillOutboxPayload.class);
-                trafficRefillOutboxSupportService.clearIdempotency(payload.getUuid());
+                clearIdempotencyBestEffort(record.getId(), payload);
             }
             return;
         }
@@ -123,5 +123,25 @@ public class RedisOutboxRetryScheduler {
         }
 
         redisOutboxRecordService.markFailWithRetryCount(record.getId(), TERMINAL_RETRY_MARKER);
+    }
+
+    /**
+     * REFILL 성공 이후 멱등키 정리는 best-effort로 수행합니다.
+     * 정리 실패는 후처리 오류이므로 Outbox 성공 상태를 되돌리지 않습니다.
+     */
+    private void clearIdempotencyBestEffort(Long outboxId, RefillOutboxPayload payload) {
+        if (payload == null || payload.getUuid() == null || payload.getUuid().isBlank()) {
+            return;
+        }
+        try {
+            trafficRefillOutboxSupportService.clearIdempotency(payload.getUuid());
+        } catch (RuntimeException e) {
+            log.warn(
+                    "traffic_outbox_refill_idempotency_clear_failed_but_success_preserved outboxId={} uuid={}",
+                    outboxId,
+                    payload.getUuid(),
+                    e
+            );
+        }
     }
 }

@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import com.pooli.traffic.domain.enums.TrafficInFlightState;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -36,7 +38,7 @@ public class TrafficInFlightDedupeService {
         // 2) INFLIGHT_TTL_SEC 이후 자동 만료
         Boolean claimed = cacheStringRedisTemplate.opsForValue().setIfAbsent(
                 dedupeKey,
-                traceId,
+                TrafficInFlightState.CLAIMED.name(),
                 Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
         );
 
@@ -51,11 +53,41 @@ public class TrafficInFlightDedupeService {
       * `release` 처리 목적에 맞는 핵심 로직을 수행합니다.
      */
     public void release(String traceId) {
-        // DONE 저장/ACK 완료 후에는 in-flight 키를 정리해 불필요한 키 잔존을 줄인다.
+        // DONE 상태를 잠시 유지해 후속 재전달에서 현재 처리 결과를 추적할 수 있게 한다.
         if (traceId == null || traceId.isBlank()) {
             return;
         }
         String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
-        cacheStringRedisTemplate.delete(dedupeKey);
+        cacheStringRedisTemplate.opsForValue().set(
+                dedupeKey,
+                TrafficInFlightState.DONE.name(),
+                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
+        );
+    }
+
+    /**
+     * Redis 재시도 진행 상태를 로그로만 남깁니다.
+     * Redis 장애 상황에서도 본 복구 흐름(retry/backoff/fallback)을 절대 방해하지 않기 위함입니다.
+     */
+    public void markRedisRetry(String traceId, int retryAttempt) {
+        if (traceId == null || traceId.isBlank()) {
+            return;
+        }
+        TrafficInFlightState state = TrafficInFlightState.fromRetryAttempt(retryAttempt);
+        if (state == null) {
+            return;
+        }
+        log.info("traffic_dedupe_state_log_only traceId={} state={}", traceId, state.name());
+    }
+
+    /**
+     * 요청 단위 DB fallback 전환 상태를 로그로만 남깁니다.
+     * Redis 상태 저장 실패가 DB fallback 자체를 끊지 않도록 Redis 쓰기를 하지 않습니다.
+     */
+    public void markDbFallback(String traceId) {
+        if (traceId == null || traceId.isBlank()) {
+            return;
+        }
+        log.info("traffic_dedupe_state_log_only traceId={} state={}", traceId, TrafficInFlightState.DB_FALLBACK.name());
     }
 }

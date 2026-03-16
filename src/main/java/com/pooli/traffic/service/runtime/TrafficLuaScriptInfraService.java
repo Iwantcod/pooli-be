@@ -160,7 +160,7 @@ public class TrafficLuaScriptInfraService {
             return result;
         } catch (DataAccessException e) {
             log.error("traffic_lua_execute_failed script={}", scriptType.getScriptName(), e);
-            throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, "Lua execution failed.");
+            throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);
         }
     }
 
@@ -179,7 +179,7 @@ public class TrafficLuaScriptInfraService {
             return result;
         } catch (DataAccessException e) {
             log.error("traffic_lua_execute_failed script={}", scriptType.getScriptName(), e);
-            throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, "Lua execution failed.");
+            throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);
         }
     }
 

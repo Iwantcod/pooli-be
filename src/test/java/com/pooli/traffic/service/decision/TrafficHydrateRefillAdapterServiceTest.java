@@ -23,6 +23,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
+import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
+import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
@@ -45,8 +47,10 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.pooli.monitoring.metrics.TrafficHydrateMetrics;
+import com.pooli.monitoring.metrics.TrafficDeductFallbackMetrics;
 import com.pooli.monitoring.metrics.TrafficRefillMetrics;
 import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
+import com.pooli.traffic.domain.TrafficDeductExecutionContext;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.TrafficRefillPlan;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
@@ -82,16 +86,28 @@ class TrafficHydrateRefillAdapterServiceTest {
     private TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
 
     @Mock
+    private TrafficPolicyBootstrapService trafficPolicyBootstrapService;
+
+    @Mock
     private TrafficHydrateMetrics trafficHydrateMetrics;
 
     @Mock
     private TrafficRefillMetrics trafficRefillMetrics;
 
     @Mock
+    private TrafficDeductFallbackMetrics trafficDeductFallbackMetrics;
+
+    @Mock
     private RedisOutboxRecordService redisOutboxRecordService;
 
     @Mock
     private TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
+
+    @Mock
+    private TrafficDbDeductFallbackService trafficDbDeductFallbackService;
+
+    @Mock
+    private TrafficInFlightDedupeService trafficInFlightDedupeService;
 
     @InjectMocks
     private TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
@@ -100,6 +116,8 @@ class TrafficHydrateRefillAdapterServiceTest {
     void setUp() {
         ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "hydrateLockEnabled", true);
         ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "hydrateLockWaitMs", 0L);
+        ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "redisRetryMaxAttempts", 3);
+        ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "redisRetryBackoffMs", 0L);
         Mockito.lenient().when(trafficRefillOutboxSupportService.resolveIdempotencyKey(anyString()))
                 .thenAnswer(invocation -> "pooli:refill:idempotency:" + invocation.getArgument(0, String.class));
         Mockito.lenient().when(trafficRefillOutboxSupportService.refillIdempotencyTtlSeconds()).thenReturn(600L);
@@ -109,10 +127,60 @@ class TrafficHydrateRefillAdapterServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
         Mockito.lenient().when(trafficRefillOutboxSupportService.isConnectionFailure(any())).thenReturn(false);
         Mockito.lenient().when(trafficRefillOutboxSupportService.isTimeoutFailure(any())).thenReturn(false);
+        Mockito.lenient().when(trafficDbDeductFallbackService.deduct(any(), any(), anyLong(), any()))
+                .thenReturn(luaResult(0L, TrafficLuaStatus.NO_BALANCE));
     }
 
     @Nested
     class ExecuteIndividualWithRecoveryTest {
+
+        @Test
+        void globalPolicyHydrateThenRetrySameLuaSuccess() {
+            // given
+            TrafficPayloadReqDto payload = createPayload();
+            stubIndividualDeductKeys();
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+            when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
+                    .thenReturn(luaResult(0L, TrafficLuaStatus.GLOBAL_POLICY_HYDRATE))
+                    .thenReturn(luaResult(80L, TrafficLuaStatus.OK));
+
+            // when
+            TrafficLuaExecutionResult result =
+                    trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L);
+
+            // then
+            assertAll(
+                    () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
+                    () -> assertEquals(80L, result.getAnswer())
+            );
+            verify(trafficPolicyBootstrapService, times(1)).hydrateOnDemand();
+            verify(trafficLuaScriptInfraService, times(2)).executeDeductIndividual(anyList(), anyList());
+            verify(trafficQuotaCacheService, never()).hydrateBalance(anyString(), anyLong());
+        }
+
+        @Test
+        void keepsGlobalPolicyHydrateWhenRetryExhausted() {
+            // given
+            TrafficPayloadReqDto payload = createPayload();
+            stubIndividualDeductKeys();
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+            when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
+                    .thenReturn(luaResult(0L, TrafficLuaStatus.GLOBAL_POLICY_HYDRATE));
+
+            // when
+            TrafficLuaExecutionResult result =
+                    trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L);
+
+            // then
+            assertAll(
+                    () -> assertEquals(TrafficLuaStatus.GLOBAL_POLICY_HYDRATE, result.getStatus()),
+                    () -> assertEquals(0L, result.getAnswer())
+            );
+            verify(trafficPolicyBootstrapService, times(10)).hydrateOnDemand();
+            verify(trafficLuaScriptInfraService, times(11)).executeDeductIndividual(anyList(), anyList());
+        }
 
         @Test
         void hydrateThenRetrySuccess() {
@@ -238,6 +306,58 @@ class TrafficHydrateRefillAdapterServiceTest {
                     eq(false) // dbRemainingAfter=900 > 0
             );
             verify(trafficLuaScriptInfraService).executeLockRelease("pooli:indiv_refill_lock:11", payload.getTraceId());
+        }
+
+        @Test
+        void skipsDbFallbackWhenRedisRetryExhaustedAfterRefillApplied() {
+            // given
+            TrafficPayloadReqDto payload = createPayload();
+            stubIndividualDeductKeys();
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+            when(trafficRedisKeyFactory.indivRefillLockKey(11L)).thenReturn("pooli:indiv_refill_lock:11");
+            when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(any())).thenReturn(1_770_000_000L);
+            when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
+                    .thenReturn(luaResult(0L, TrafficLuaStatus.NO_BALANCE))
+                    .thenThrow(new RuntimeException("redis timeout"))
+                    .thenThrow(new RuntimeException("redis timeout"))
+                    .thenThrow(new RuntimeException("redis timeout"));
+            when(trafficRefillOutboxSupportService.isTimeoutFailure(any())).thenReturn(true);
+            when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_indiv_amount:11:202603", 0L)).thenReturn(0L);
+            when(trafficQuotaSourcePort.resolveRefillPlan(TrafficPoolType.INDIVIDUAL, payload))
+                    .thenReturn(refillPlan(10L, 2, 20L, 100L, 30L, "RECENT_10S"));
+            when(trafficLuaScriptInfraService.executeRefillGate(
+                    "pooli:indiv_refill_lock:11",
+                    "pooli:remaining_indiv_amount:11:202603",
+                    payload.getTraceId(),
+                    TrafficRedisRuntimePolicy.LOCK_TTL_MS,
+                    0L,
+                    30L
+            )).thenReturn(TrafficRefillGateStatus.OK);
+            when(trafficLuaScriptInfraService.executeLockHeartbeat(
+                    "pooli:indiv_refill_lock:11",
+                    payload.getTraceId(),
+                    TrafficRedisRuntimePolicy.LOCK_TTL_MS
+            )).thenReturn(true);
+            when(trafficQuotaSourcePort.claimRefillAmountFromDb(
+                    eq(TrafficPoolType.INDIVIDUAL),
+                    eq(payload),
+                    eq(java.time.YearMonth.of(2026, 3)),
+                    eq(100L),
+                    anyString()
+            )).thenReturn(claimResult(100L, 1_000L, 100L, 900L));
+
+            // when
+            TrafficLuaExecutionResult result = trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L);
+
+            // then
+            assertAll(
+                    () -> assertEquals(TrafficLuaStatus.NO_BALANCE, result.getStatus()),
+                    () -> assertEquals(0L, result.getAnswer())
+            );
+            verify(trafficDbDeductFallbackService, never()).deduct(any(), any(), anyLong(), any());
+            verify(trafficInFlightDedupeService, never()).markDbFallback(anyString());
+            verify(redisOutboxRecordService).markSuccess(701L);
         }
 
         @Test
@@ -630,6 +750,66 @@ class TrafficHydrateRefillAdapterServiceTest {
             verify(trafficLuaScriptInfraService, never())
                     .executeRefillGate(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyLong());
         }
+
+        @Test
+        void switchesToDbFallbackAfterRedisRetryExhausted() {
+            // given
+            TrafficPayloadReqDto payload = createPayload();
+            stubIndividualDeductKeys();
+            TrafficDeductExecutionContext context = TrafficDeductExecutionContext.of(payload.getTraceId());
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+            when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
+                    .thenThrow(new RuntimeException("redis timeout"));
+            when(trafficRefillOutboxSupportService.unwrapRuntimeException(any(RuntimeException.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+            when(trafficRefillOutboxSupportService.isTimeoutFailure(any())).thenReturn(true);
+            when(trafficDbDeductFallbackService.deduct(
+                    eq(TrafficPoolType.INDIVIDUAL),
+                    eq(payload),
+                    eq(100L),
+                    eq(context)
+            )).thenReturn(luaResult(40L, TrafficLuaStatus.HIT_DAILY_LIMIT));
+
+            // when
+            TrafficLuaExecutionResult result = trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L, context);
+
+            // then
+            assertAll(
+                    () -> assertEquals(TrafficLuaStatus.HIT_DAILY_LIMIT, result.getStatus()),
+                    () -> assertEquals(40L, result.getAnswer()),
+                    () -> assertTrue(context.isRedisFallbackActivated())
+            );
+            verify(trafficLuaScriptInfraService, times(3)).executeDeductIndividual(anyList(), anyList());
+            verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 1);
+            verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 2);
+            verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 3);
+            verify(trafficInFlightDedupeService).markDbFallback(payload.getTraceId());
+            verify(trafficDbDeductFallbackService).deduct(TrafficPoolType.INDIVIDUAL, payload, 100L, context);
+        }
+    }
+
+    @Test
+    void globalPolicyHydrateThenRetrySameSharedLuaSuccess() {
+        // given
+        TrafficPayloadReqDto payload = createPayload();
+        stubSharedDeductKeys();
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+        when(trafficRedisKeyFactory.remainingSharedAmountKey(eq(22L), any())).thenReturn("pooli:remaining_shared_amount:22:202603");
+        when(trafficLuaScriptInfraService.executeDeductShared(anyList(), anyList()))
+                .thenReturn(luaResult(0L, TrafficLuaStatus.GLOBAL_POLICY_HYDRATE))
+                .thenReturn(luaResult(30L, TrafficLuaStatus.HIT_MONTHLY_SHARED_LIMIT));
+
+        // when
+        TrafficLuaExecutionResult result = trafficHydrateRefillAdapterService.executeSharedWithRecovery(payload, 100L);
+
+        // then
+        assertAll(
+                () -> assertEquals(TrafficLuaStatus.HIT_MONTHLY_SHARED_LIMIT, result.getStatus()),
+                () -> assertEquals(30L, result.getAnswer())
+        );
+        verify(trafficPolicyBootstrapService, times(1)).hydrateOnDemand();
+        verify(trafficLuaScriptInfraService, times(2)).executeDeductShared(anyList(), anyList());
     }
 
     @Test

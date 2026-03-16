@@ -4,10 +4,27 @@
         <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
     </appender>
 
-    <logger name="com.pooli" level="DEBUG"/>
+    <!--    <logger name="com.pooli" level="DEBUG"/>-->
 
-    <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-    </root>
+    <!-- local profile -->
+    <springProfile name="local">
+
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+
+    </springProfile>
+
+
+    <!-- local 이외 -->
+    <springProfile name="!local">
+
+        <root level="INFO"/>
+
+    </springProfile>
 
 </configuration>
