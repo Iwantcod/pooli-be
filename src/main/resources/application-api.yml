@@ -9,4 +9,8 @@ spring:
 app:
   streams:
     consumer-enabled: false
-
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "6"
