@@ -1,8 +1,13 @@
 package com.pooli.family.service.impl;
 
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +21,8 @@ import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 import com.pooli.family.exception.FamilyErrorCode;
 import com.pooli.family.mapper.FamilyMapper;
 import com.pooli.family.service.FamilyService;
+import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +33,10 @@ import lombok.extern.slf4j.Slf4j;
 public class FamilyServiceImpl implements FamilyService {
 	
 	private final FamilyMapper familyMapper;
+    @Qualifier("cacheStringRedisTemplate")
+    private final StringRedisTemplate cacheStringRedisTemplate;
+    private final TrafficRedisKeyFactory trafficRedisKeyFactory;
+    private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
 	@Override
 	@Transactional(readOnly = true)
@@ -38,12 +49,17 @@ public class FamilyServiceImpl implements FamilyService {
 		
 		List<FamilyMembersResDto.FamilyMemberDto> members =
 		    familyMapper.selectFamilyMembers(header.getFamilyId(),principal.getLineId());
+
+        List<FamilyMembersResDto.FamilyMemberDto> enrichedMembers = applyTrafficCachedBalances(
+                header.getFamilyId(),
+                members
+        );
 		
 		return FamilyMembersResDto.builder()
 		      .isEnable(header.getIsEnable())
 		      .familyId(header.getFamilyId())
 		      .sharedPoolTotalData(header.getSharedPoolTotalData())
-		      .members(members)
+		      .members(enrichedMembers)
 		      .build();
 	}
 
@@ -108,5 +124,85 @@ public class FamilyServiceImpl implements FamilyService {
 	          .members(members)
 	          .build();
 	  }
+
+    private List<FamilyMembersResDto.FamilyMemberDto> applyTrafficCachedBalances(
+            Integer familyId,
+            List<FamilyMembersResDto.FamilyMemberDto> members
+    ) {
+        if (familyId == null || familyId <= 0 || members == null || members.isEmpty()) {
+            return members;
+        }
+
+        YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+        long sharedBufferedAmount = readSharedBufferedAmount(familyId.longValue(), targetMonth);
+
+        return members.stream()
+                .map(member -> enrichMemberWithCachedBalances(member, targetMonth, sharedBufferedAmount))
+                .collect(Collectors.toList());
+    }
+
+    private FamilyMembersResDto.FamilyMemberDto enrichMemberWithCachedBalances(
+            FamilyMembersResDto.FamilyMemberDto member,
+            YearMonth targetMonth,
+            long sharedBufferedAmount
+    ) {
+        if (member == null) {
+            return null;
+        }
+
+        long individualBufferedAmount = member.getLineId() == null
+                ? 0L
+                : readIndividualBufferedAmount(member.getLineId().longValue(), targetMonth);
+
+        return FamilyMembersResDto.FamilyMemberDto.builder()
+                .isMe(member.getIsMe())
+                .userId(member.getUserId())
+                .lineId(member.getLineId())
+                .planId(member.getPlanId())
+                .userName(member.getUserName())
+                .phone(member.getPhone())
+                .planName(member.getPlanName())
+                .remainingData(safeAdd(member.getRemainingData(), individualBufferedAmount))
+                .basicDataAmount(member.getBasicDataAmount())
+                .role(member.getRole())
+                .sharedPoolTotalAmount(member.getSharedPoolTotalAmount())
+                .sharedPoolRemainingAmount(safeAdd(member.getSharedPoolRemainingAmount(), sharedBufferedAmount))
+                .build();
+    }
+
+    private long readIndividualBufferedAmount(long lineId, YearMonth targetMonth) {
+        String key = trafficRedisKeyFactory.remainingIndivAmountKey(lineId, targetMonth);
+        return readHashLong(key, "amount");
+    }
+
+    private long readSharedBufferedAmount(long familyId, YearMonth targetMonth) {
+        String key = trafficRedisKeyFactory.remainingSharedAmountKey(familyId, targetMonth);
+        return readHashLong(key, "amount");
+    }
+
+    private long readHashLong(String key, String field) {
+        try {
+            HashOperations<String, Object, Object> hashOperations = cacheStringRedisTemplate.opsForHash();
+            Object rawValue = hashOperations.get(key, field);
+            if (rawValue == null) {
+                return 0L;
+            }
+
+            long parsed = Long.parseLong(String.valueOf(rawValue));
+            return Math.max(0L, parsed);
+        } catch (RuntimeException e) {
+            log.warn("family_cached_balance_read_failed key={} field={}", key, field, e);
+            return 0L;
+        }
+    }
+
+    private long safeAdd(Long baseValue, long additionalValue) {
+        long normalizedBaseValue = baseValue == null ? 0L : Math.max(0L, baseValue);
+        long normalizedAdditionalValue = Math.max(0L, additionalValue);
+        if (normalizedBaseValue > Long.MAX_VALUE - normalizedAdditionalValue) {
+            return Long.MAX_VALUE;
+        }
+        return normalizedBaseValue + normalizedAdditionalValue;
+    }
 
 }
