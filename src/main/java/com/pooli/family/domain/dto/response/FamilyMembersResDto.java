@@ -1,10 +1,16 @@
 package com.pooli.family.domain.dto.response;
 
-import com.pooli.family.domain.enums.FamilyRole;
-import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.*;
-
 import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.pooli.family.domain.enums.FamilyRole;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 @Getter
 @Builder
@@ -22,9 +28,12 @@ public class FamilyMembersResDto {
     @Schema(description = "가족 공유풀 총량", example = "10000000")
     private Long sharedPoolTotalData;
 
+    @JsonIgnore
+    @Schema(hidden = true)
+    private Long sharedPoolRemainingData;
+
     @Schema(description = "가족 구성원 목록")
     private List<FamilyMemberDto> members;
-
 
     @Getter
     @Builder
@@ -35,7 +44,7 @@ public class FamilyMembersResDto {
 
         @Schema(description = "본인(회선) 여부 식별자", example = "true")
         private Boolean isMe;
-        
+
         @Schema(description = "회원 식별자", example = "100")
         private Integer userId;
 
@@ -69,5 +78,8 @@ public class FamilyMembersResDto {
         @Schema(description = "사용 가능한 공유풀 데이터 잔량(byte)", example = "12000")
         private Long sharedPoolRemainingAmount;
 
+        @JsonIgnore
+        @Schema(hidden = true)
+        private Boolean sharedLimitActive;
     }
 }

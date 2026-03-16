@@ -41,3 +41,8 @@ app:
       fixed-delay-ms: ${TRAFFIC_REDIS_USAGE_REPLAY_FIXED_DELAY_MS:5000}
       batch-size: ${TRAFFIC_REDIS_USAGE_REPLAY_BATCH_SIZE:200}
       max-retry-count: ${TRAFFIC_REDIS_USAGE_REPLAY_MAX_RETRY_COUNT:20}
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "6"
