@@ -411,6 +411,45 @@ class TrafficFlowLocalAcceptanceTest {
         await("family remaining deducted by 50", () -> readFamilyRemaining(FAMILY_ID) == familyBefore - 50L);
     }
 
+    @Test
+    @DisplayName("[QOS-01] 공유풀 잔량 0일 때 QoS 보정이 적용되면 QOS 상태로 종료되고 공유풀 잔량/월 사용량은 차감되지 않는다")
+    void shouldApplyQosFallbackWhenSharedPoolIsEmpty() throws Exception {
+        long targetLineId = LINE_ID_4;
+        int originalQosSpeedLimit = readLinePlanQosSpeedLimit(targetLineId);
+        try {
+            // qos_speed_limit 원천값을 명시적으로 올려 QoS 보정 경로를 안정적으로 재현한다.
+            updateLinePlanQosSpeedLimit(targetLineId, 8);
+
+            setLineRemaining(targetLineId, 0L);
+            setFamilyRemaining(FAMILY_ID, 0L);
+            upsertAppPolicy(targetLineId, APP_ID, -1L, 100, true, false);
+            syncPolicySnapshot();
+
+            LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
+            YearMonth currentMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+            String dailyUsageKey = trafficRedisKeyFactory.dailyTotalUsageKey(targetLineId, today);
+            String monthlySharedUsageKey = trafficRedisKeyFactory.monthlySharedUsageKey(targetLineId, currentMonth);
+            String sharedBalanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(FAMILY_ID, currentMonth);
+            String individualBalanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(targetLineId, currentMonth);
+
+            long lineBefore = readLineRemaining(targetLineId);
+            long familyBefore = readFamilyRemaining(FAMILY_ID);
+
+            String traceId = enqueueTrafficRequest(targetLineId, FAMILY_ID, APP_ID, 50L);
+            assertDoneLog(traceId, 50L, 0L, "SUCCESS", "QOS");
+
+            await("daily usage should be increased by qos fallback", () -> readLongValue(dailyUsageKey) == 50L);
+            await("monthly shared usage should not increase on qos fallback", () -> readLongValue(monthlySharedUsageKey) == 0L);
+
+            assertThat(readLineRemaining(targetLineId)).isEqualTo(lineBefore);
+            assertThat(readFamilyRemaining(FAMILY_ID)).isEqualTo(familyBefore);
+            assertThat(readHashAmount(sharedBalanceKey)).isEqualTo(0L);
+            assertThat(readHashField(individualBalanceKey, "qos")).isNotBlank();
+        } finally {
+            updateLinePlanQosSpeedLimit(targetLineId, originalQosSpeedLimit);
+        }
+    }
+
     // ---------------------------------------------------------------------
     // B. 복합 정책 검증 (10~14)
     // ---------------------------------------------------------------------
@@ -867,6 +906,40 @@ class TrafficFlowLocalAcceptanceTest {
                 amount,
                 familyId
         );
+    }
+
+    private int readLinePlanQosSpeedLimit(long lineId) {
+        Integer qosSpeedLimit = jdbcTemplate.queryForObject(
+                """
+                SELECT p.qos_speed_limit
+                FROM LINE l
+                JOIN PLAN p ON p.plan_id = l.plan_id
+                WHERE l.line_id = ?
+                  AND l.deleted_at IS NULL
+                  AND p.deleted_at IS NULL
+                """,
+                Integer.class,
+                lineId
+        );
+        assertThat(qosSpeedLimit).isNotNull();
+        return qosSpeedLimit;
+    }
+
+    private void updateLinePlanQosSpeedLimit(long lineId, int qosSpeedLimit) {
+        int updatedRows = jdbcTemplate.update(
+                """
+                UPDATE PLAN p
+                JOIN LINE l ON l.plan_id = p.plan_id
+                SET p.qos_speed_limit = ?,
+                    p.updated_at = NOW(6)
+                WHERE l.line_id = ?
+                  AND l.deleted_at IS NULL
+                  AND p.deleted_at IS NULL
+                """,
+                qosSpeedLimit,
+                lineId
+        );
+        assertThat(updatedRows).isEqualTo(1);
     }
 
     private void primeSpeedBucket(long lineId, long usedBytes) {
