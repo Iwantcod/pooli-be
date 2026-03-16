@@ -349,7 +349,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                         logEventName + " "
                                 + "trace_id={} record_id={} line_id={} family_id={} app_id={} "
                                 + "api_total_data={} deducted_total_bytes={} api_remaining_data={} "
-                                + "final_status={} last_lua_status={} created_at={} finished_at={} logged_at={}",
+                                + "final_status={} last_lua_status={} created_at={} finished_at={} logged_at={} latency={}",
                         payload.getTraceId(),
                         recordId,
                         payload.getLineId(),
