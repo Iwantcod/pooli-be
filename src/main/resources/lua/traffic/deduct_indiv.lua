@@ -1,6 +1,4 @@
--- deduct_indiv_tick.lua
--- 반환 형식: {"answer":number,"status":"..."} JSON 문자열
--- 정책 적용 순서(개인풀):
+-- deduct_indiv.lua
 -- whitelist -> immediate -> repeat -> daily -> app_daily -> app_speed
 
 local function as_json(answer, status)
@@ -11,7 +9,23 @@ local function is_policy_enabled(policy_key)
   if not policy_key or policy_key == "" then
     return false
   end
-  return redis.call("EXISTS", policy_key) == 1
+  return tonumber(redis.call("HGET", policy_key, "value") or "0") == 1
+end
+
+local function has_missing_global_policy_key(...)
+  local policy_keys = { ... }
+  local idx = 1
+  while idx <= #policy_keys do
+    local policy_key = policy_keys[idx]
+    if not policy_key or policy_key == "" then
+      return true
+    end
+    if redis.call("EXISTS", policy_key) == 0 then
+      return true
+    end
+    idx = idx + 1
+  end
+  return false
 end
 
 local function is_in_repeat_block(repeat_block_key, day_num, sec_of_day)
@@ -94,6 +108,18 @@ if not daily_expire_at or daily_expire_at <= 0 then
   return as_json(-1, "ERROR")
 end
 
+-- 전역 정책 키 중 하나라도 누락되면 워커가 전체 정책 hydrate를 먼저 수행한다.
+if has_missing_global_policy_key(
+  policy_repeat_key,
+  policy_immediate_key,
+  policy_daily_key,
+  policy_app_data_key,
+  policy_app_speed_key,
+  policy_whitelist_key
+) then
+  return as_json(0, "GLOBAL_POLICY_HYDRATE")
+end
+
 local current_amount = tonumber(redis.call("HGET", remaining_key, "amount") or "-1")
 if current_amount < 0 then
   return as_json(0, "HYDRATE")
@@ -113,15 +139,13 @@ if is_policy_enabled(policy_whitelist_key) and app_whitelist_key and app_whiteli
 end
 
 if not whitelist_bypass then
-  -- 1) 즉시 차단
   if is_policy_enabled(policy_immediate_key) then
-    local block_end_at = tonumber(redis.call("GET", immediately_block_end_key) or "0")
+    local block_end_at = tonumber(redis.call("HGET", immediately_block_end_key, "value") or "0")
     if block_end_at > 0 and now_epoch_second <= block_end_at then
       return as_json(0, "BLOCKED_IMMEDIATE")
     end
   end
 
-  -- 2) 반복 차단
   if is_policy_enabled(policy_repeat_key) then
     if is_in_repeat_block(repeat_block_key, day_num, sec_of_day) then
       return as_json(0, "BLOCKED_REPEAT")
@@ -129,7 +153,6 @@ if not whitelist_bypass then
   end
 end
 
--- 차단 정책 판정 이후에 현재 잔량을 평가한다.
 answer = math.min(current_amount, target_data)
 
 if current_amount < target_data then
@@ -141,47 +164,56 @@ if answer <= 0 then
 end
 
 if not whitelist_bypass then
-  -- 3) 일 총량 제한
   if is_policy_enabled(policy_daily_key) then
-    local daily_limit = tonumber(redis.call("GET", daily_total_limit_key) or "-1")
+    local daily_limit = tonumber(redis.call("HGET", daily_total_limit_key, "value") or "-1")
     if daily_limit >= 0 then
       local daily_used = tonumber(redis.call("GET", daily_total_usage_key) or "0")
       local daily_remaining = math.max(0, daily_limit - daily_used)
+      local before_daily_cap = answer
       answer = math.min(answer, daily_remaining)
       if answer <= 0 then
         return as_json(0, "HIT_DAILY_LIMIT")
       end
+      -- 정책에 의해 부분 제한이 발생하면 OK를 유지하지 않고 제한 상태를 기록한다.
+      if answer < before_daily_cap then
+        final_status = "HIT_DAILY_LIMIT"
+      end
     end
   end
 
-  -- 4) 앱 일 총량 제한
   if is_policy_enabled(policy_app_data_key) then
     local app_daily_limit = tonumber(redis.call("HGET", app_data_daily_limit_key, app_limit_field) or "-1")
     if app_daily_limit >= 0 then
       local app_daily_used = tonumber(redis.call("HGET", daily_app_usage_key, app_usage_field) or "0")
       local app_daily_remaining = math.max(0, app_daily_limit - app_daily_used)
+      local before_app_daily_cap = answer
       answer = math.min(answer, app_daily_remaining)
       if answer <= 0 then
         return as_json(0, "HIT_APP_DAILY_LIMIT")
       end
+      if answer < before_app_daily_cap then
+        final_status = "HIT_APP_DAILY_LIMIT"
+      end
     end
   end
 
-  -- 5) 앱 속도 제한(초당)
   if is_policy_enabled(policy_app_speed_key) then
     local app_speed_limit = tonumber(redis.call("HGET", app_speed_limit_key, app_speed_field) or "-1")
     if app_speed_limit >= 0 then
       local speed_used = tonumber(redis.call("GET", speed_bucket_key) or "0")
       local speed_remaining = math.max(0, app_speed_limit - speed_used)
+      local before_speed_cap = answer
       answer = math.min(answer, speed_remaining)
       if answer <= 0 then
         return as_json(0, "HIT_APP_SPEED")
+      end
+      if answer < before_speed_cap then
+        final_status = "HIT_APP_SPEED"
       end
     end
   end
 end
 
--- 실제 차감/사용량 반영
 redis.call("HINCRBY", remaining_key, "amount", -answer)
 
 redis.call("INCRBY", daily_total_usage_key, answer)

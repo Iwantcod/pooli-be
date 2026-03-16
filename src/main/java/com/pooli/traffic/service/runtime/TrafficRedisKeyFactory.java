@@ -230,6 +230,34 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * 리필 요청 멱등키를 생성합니다.
+     */
+    public String refillIdempotencyKey(String uuid) {
+        String normalizedUuid = Objects.requireNonNull(uuid, "uuid must not be null").trim();
+        if (normalizedUuid.isEmpty()) {
+            throw new IllegalArgumentException("uuid must not be blank");
+        }
+        return namespaced("refill:idempotency:" + normalizedUuid);
+    }
+
+    /**
+     * usage delta replay 멱등 적용 여부를 기록하는 키를 생성합니다.
+     */
+    public String usageDeltaReplayIdempotencyKey(String traceId, String poolType) {
+        String normalizedTraceId = Objects.requireNonNull(traceId, "traceId must not be null").trim();
+        if (normalizedTraceId.isEmpty()) {
+            throw new IllegalArgumentException("traceId must not be blank");
+        }
+
+        String normalizedPoolType = Objects.requireNonNull(poolType, "poolType must not be null").trim();
+        if (normalizedPoolType.isEmpty()) {
+            throw new IllegalArgumentException("poolType must not be blank");
+        }
+
+        return namespaced("usage_delta:replay:idempotency:" + normalizedTraceId + ":" + normalizedPoolType);
+    }
+
+    /**
       * `namespaced` 처리 목적에 맞는 핵심 로직을 수행합니다.
      */
     private String namespaced(String keyBody) {

@@ -10,8 +10,8 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum TrafficLuaScriptType {
-    DEDUCT_INDIV_TICK("deduct_indiv_tick", "lua/traffic/deduct_indiv_tick.lua"),
-    DEDUCT_SHARED_TICK("deduct_shared_tick", "lua/traffic/deduct_shared_tick.lua"),
+    DEDUCT_INDIVIDUAL("deduct_indiv", "lua/traffic/deduct_indiv.lua"),
+    DEDUCT_SHARED("deduct_shared", "lua/traffic/deduct_shared.lua"),
     REFILL_GATE("refill_gate", "lua/traffic/refill_gate.lua"),
     LOCK_HEARTBEAT("lock_heartbeat", "lua/traffic/lock_heartbeat.lua"),
     LOCK_RELEASE("lock_release", "lua/traffic/lock_release.lua");

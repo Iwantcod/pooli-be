@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -20,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
+import com.pooli.traffic.domain.TrafficDeductExecutionContext;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
 import com.pooli.traffic.domain.enums.TrafficFinalStatus;
@@ -38,24 +40,23 @@ class TrafficDeductOrchestratorServiceTest {
     private TrafficDeductOrchestratorService trafficDeductOrchestratorService;
 
     @Nested
-    @DisplayName("orchestrate 테스트")
     class OrchestrateTest {
 
         @Test
-        @DisplayName("개인풀이 요청량을 전량 처리하면 SUCCESS를 반환한다")
         void successWhenIndividualHandlesAll() {
             // given
             TrafficPayloadReqDto payload = payload(103L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 103L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(103L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(103L, TrafficLuaStatus.OK));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 103L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(103L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
-            verify(trafficRecentUsageBucketService).recordTickUsage(
+            verify(trafficRecentUsageBucketService).recordUsage(
                     com.pooli.traffic.domain.enums.TrafficPoolType.INDIVIDUAL,
                     payload,
                     103L
@@ -69,27 +70,28 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
-        @DisplayName("개인풀 NO_BALANCE + residual 발생 시 공유풀 보완 차감")
         void individualNoBalanceThenSharedCompensation() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(4L, TrafficLuaStatus.NO_BALANCE));
-            when(trafficHydrateRefillAdapterService.executeSharedWithRecovery(payload, 96L))
+            when(trafficHydrateRefillAdapterService.executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(96L, TrafficLuaStatus.OK));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
-            verify(trafficHydrateRefillAdapterService).executeSharedWithRecovery(payload, 96L);
-            verify(trafficRecentUsageBucketService).recordTickUsage(
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
+            verify(trafficHydrateRefillAdapterService)
+                    .executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class));
+            verify(trafficRecentUsageBucketService).recordUsage(
                     com.pooli.traffic.domain.enums.TrafficPoolType.INDIVIDUAL,
                     payload,
                     4L
             );
-            verify(trafficRecentUsageBucketService).recordTickUsage(
+            verify(trafficRecentUsageBucketService).recordUsage(
                     com.pooli.traffic.domain.enums.TrafficPoolType.SHARED,
                     payload,
                     96L
@@ -104,18 +106,18 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
-        @DisplayName("개인풀이 NO_BALANCE여도 residual이 0이면 공유풀을 호출하지 않는다")
         void noSharedWhenResidualIsZeroEvenNoBalance() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(100L, TrafficLuaStatus.NO_BALANCE));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
@@ -126,18 +128,18 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
-        @DisplayName("개인풀 상태가 NO_BALANCE가 아니면 residual이 남아도 공유풀을 호출하지 않는다")
         void noSharedWhenIndividualStatusIsNotNoBalance() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(30L, TrafficLuaStatus.HIT_DAILY_LIMIT));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, result.getFinalStatus()),
@@ -148,18 +150,18 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
-        @DisplayName("개인풀이 BLOCKED 상태이면 공유풀 보완 없이 PARTIAL_SUCCESS를 반환한다")
         void partialSuccessWhenIndividualBlocked() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(0L, TrafficLuaStatus.BLOCKED_IMMEDIATE));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
 
             assertAll(
@@ -171,18 +173,18 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
-        @DisplayName("ERROR 상태면 즉시 종료하고 FAILED")
         void failedOnErrorStatus() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(-1L, TrafficLuaStatus.ERROR));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
@@ -193,7 +195,6 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
-        @DisplayName("요청량이 0이면 차감 호출 없이 SUCCESS를 반환한다")
         void successWhenApiTotalDataIsZero() {
             // given
             TrafficPayloadReqDto payload = payload(0L);
@@ -213,7 +214,6 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
-        @DisplayName("요청량이 음수여도 0으로 보정해 차감 호출 없이 SUCCESS를 반환한다")
         void successWhenApiTotalDataIsNegative() {
             // given
             TrafficPayloadReqDto payload = payload(-10L);
@@ -233,18 +233,18 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
-        @DisplayName("차감 어댑터 예외 발생 시 FAILED로 종료하고 lastLuaStatus는 ERROR로 설정한다")
         void failedWhenAdapterThrowsException() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenThrow(new RuntimeException("adapter failed"));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
             verifyNoInteractions(trafficRecentUsageBucketService);
             assertAll(

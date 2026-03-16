@@ -4,16 +4,14 @@
 -- KEYS[2]: 잔량 hash 키(remaining_*_amount)
 -- ARGV[1]: traceId
 -- ARGV[2]: lock TTL(ms)
--- ARGV[3]: 현재 잔량
--- ARGV[4]: 임계치
+-- ARGV[3]: 임계치
 
 -- 단계 1) 입력값을 읽습니다.
 local lock_key = KEYS[1]
 local balance_key = KEYS[2]
 local trace_id = ARGV[1]
 local lock_ttl_ms = tonumber(ARGV[2])
-local current_amount = tonumber(ARGV[3])
-local threshold = tonumber(ARGV[4])
+local threshold = tonumber(ARGV[3])
 
 -- 단계 2) 필수 인자를 검증합니다.
 -- 인자가 잘못되면 리필 진입/락 소유권을 안전하게 판정할 수 없습니다.
@@ -33,12 +31,17 @@ if not lock_ttl_ms or lock_ttl_ms <= 0 then
   return "FAIL"
 end
 
-if not current_amount or not threshold then
+if not threshold then
   return "FAIL"
 end
 
 local is_empty = tonumber(redis.call("HGET", balance_key, "is_empty") or "0")
 if is_empty == nil then
+  return "FAIL"
+end
+
+local current_amount = tonumber(redis.call("HGET", balance_key, "amount") or "0")
+if current_amount == nil then
   return "FAIL"
 end
 
@@ -49,8 +52,8 @@ if is_empty == 1 then
 end
 
 -- 단계 4) 빠른 스킵 분기입니다.
--- 현재 잔량이 임계치보다 크면 지금은 리필할 필요가 없습니다.
-if current_amount > threshold then
+-- 현재 잔량이 임계치 이상이면 지금은 리필할 필요가 없습니다.
+if current_amount >= threshold then
   return "SKIP"
 end
 
