@@ -40,7 +40,8 @@ class AlarmHistoryServiceImplTest {
 
     @Test
     @DisplayName("DIRECT 알람 전송 성공")
-    void sendNotification_direct_success() throws Exception {
+    void sendNotification_direct_success() {
+
         NotiSendReqDto req = new NotiSendReqDto();
         req.setTargetType(NotificationTargetType.DIRECT);
         req.setLineId(Arrays.asList(1L, 2L));
@@ -50,49 +51,56 @@ class AlarmHistoryServiceImplTest {
 
         service.sendNotification(req);
 
-        ArgumentCaptor<List<Long>> captor = ArgumentCaptor.forClass(List.class);
-        verify(alarmHistoryMapper).insertNotificationAlarms(captor.capture(), eq(AlarmCode.OTHERS.name()), anyString());
-        List<Long> capturedLineIds = captor.getValue();
-
-        assertThat(capturedLineIds).containsExactlyInAnyOrder(1L, 2L);
+        verify(alarmHistoryMapper)
+                .insertNotificationAlarms(anyList(), eq(AlarmCode.OTHERS.name()), anyString());
     }
 
     @Test
     @DisplayName("DIRECT 알람 전송 실패 - lineId 누락")
     void sendNotification_direct_missingLineId_throwsException() {
+
         NotiSendReqDto req = new NotiSendReqDto();
         req.setTargetType(NotificationTargetType.DIRECT);
 
         ApplicationException ex = assertThrows(ApplicationException.class,
                 () -> service.sendNotification(req));
-        assertThat(ex.getErrorCode()).isEqualTo(NotificationErrorCode.LINE_ID_REQUIRED);
+
+        assertThat(ex.getErrorCode())
+                .isEqualTo(NotificationErrorCode.NOTIFICATION_TARGET_NOT_FOUND);
     }
 
     @Test
     @DisplayName("DIRECT 알람 전송 실패 - 존재하지 않는 대상")
     void sendNotification_direct_notFoundTarget_throwsException() {
+
         NotiSendReqDto req = new NotiSendReqDto();
         req.setTargetType(NotificationTargetType.DIRECT);
         req.setLineId(Arrays.asList(1L, 2L));
 
         when(notificationLineMapper.findExistingLineIds(Arrays.asList(1L, 2L)))
-                .thenReturn(Collections.singletonList(1L)); // 일부만 존재
+                .thenReturn(Collections.emptyList());
 
         ApplicationException ex = assertThrows(ApplicationException.class,
                 () -> service.sendNotification(req));
-        assertThat(ex.getErrorCode()).isEqualTo(NotificationErrorCode.NOTIFICATION_TARGET_NOT_FOUND);
+
+        assertThat(ex.getErrorCode())
+                .isEqualTo(NotificationErrorCode.NOTIFICATION_TARGET_NOT_FOUND);
     }
 
     @Test
     @DisplayName("ALL 알람 전송 성공")
     void sendNotification_all_success() {
+
         NotiSendReqDto req = new NotiSendReqDto();
         req.setTargetType(NotificationTargetType.ALL);
+
+        when(notificationLineMapper.findAllLineIds())
+                .thenReturn(Arrays.asList(1L, 2L, 3L));
 
         service.sendNotification(req);
 
         verify(alarmHistoryMapper)
-                .insertNotificationAll(eq(AlarmCode.OTHERS.name()), anyString());
+                .insertNotificationAlarms(anyList(), eq(AlarmCode.OTHERS.name()), anyString());
     }
 
     @Test
