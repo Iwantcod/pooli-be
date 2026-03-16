@@ -4,7 +4,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -19,6 +22,7 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
+import com.pooli.common.config.AppStreamsProperties.WorkerRejectionPolicy;
 import com.pooli.common.dto.Violation;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
@@ -46,9 +50,10 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final TrafficStreamReclaimService trafficStreamReclaimService;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicBoolean workerPressureActive = new AtomicBoolean(false);
 
     private ExecutorService pollerExecutor;
-    private ExecutorService workerExecutor;
+    private ThreadPoolExecutor workerExecutor;
     private ScheduledExecutorService reclaimExecutor;
 
     @Override
@@ -61,6 +66,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         trafficStreamInfraService.ensureConsumerGroup();
 
         int workerThreadCount = resolveWorkerThreadCount();
+        int workerQueueCapacity = appStreamsProperties.requireWorkerQueueCapacity();
+        WorkerRejectionPolicy rejectionPolicy = appStreamsProperties.requireWorkerRejectionPolicy();
 
         pollerExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread thread = new Thread(r, "traffic-stream-poller");
@@ -68,20 +75,30 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             return thread;
         });
 
-        workerExecutor = Executors.newFixedThreadPool(workerThreadCount, r -> {
-            Thread thread = new Thread(r, "traffic-stream-worker");
-            thread.setDaemon(false);
-            return thread;
-        });
+        workerExecutor = new ThreadPoolExecutor(
+                workerThreadCount,
+                workerThreadCount,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(workerQueueCapacity),
+                r -> {
+                    Thread thread = new Thread(r, "traffic-stream-worker");
+                    thread.setDaemon(false);
+                    return thread;
+                },
+                buildRejectedExecutionHandler(rejectionPolicy)
+        );
 
         running.set(true);
         pollerExecutor.submit(this::consumeLoop);
         startReclaimLoop();
         log.info(
-                "traffic_stream_consumer_started group={} consumer={} workerThreads={}",
+                "traffic_stream_consumer_started group={} consumer={} workerThreads={} workerQueueCapacity={} rejectionPolicy={}",
                 appStreamsProperties.getGroupTraffic(),
                 appStreamsProperties.getConsumerName(),
-                workerThreadCount
+                workerThreadCount,
+                workerQueueCapacity,
+                rejectionPolicy
         );
     }
 
@@ -122,16 +139,29 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private void consumeLoop() {
         while (running.get()) {
             try {
-                List<MapRecord<String, String, String>> records = trafficStreamInfraService.readBlocking();
-                for (MapRecord<String, String, String> record : records) {
-                    dispatchRecord(record);
-                }
+                consumeNextBatch();
             } catch (Exception e) {
                 if (!running.get()) {
                     break;
                 }
                 log.error("traffic_stream_consume_loop_failed", e);
             }
+        }
+    }
+
+    private void consumeNextBatch() {
+        int nextReadCount = resolveNextReadCount();
+        if (nextReadCount <= 0) {
+            signalWorkerPressure();
+            pauseForWorkerCapacity();
+            return;
+        }
+
+        clearWorkerPressureSignal();
+
+        List<MapRecord<String, String, String>> records = trafficStreamInfraService.readBlocking(nextReadCount);
+        for (MapRecord<String, String, String> record : records) {
+            dispatchRecord(record);
         }
     }
 
@@ -142,12 +172,17 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         }
 
         try {
-            workerExecutor.submit(() -> handleRecord(record));
+            workerExecutor.execute(() -> handleRecord(record));
         } catch (RejectedExecutionException e) {
+            signalWorkerPressure();
             log.warn(
-                    "traffic_stream_record_dispatch_rejected recordId={} running={}",
+                    "traffic_stream_record_dispatch_rejected recordId={} running={} activeWorkers={} queueSize={} queueCapacity={} rejectionPolicy={}",
                     record.getId().getValue(),
-                    running.get()
+                    running.get(),
+                    workerExecutor.getActiveCount(),
+                    workerExecutor.getQueue().size(),
+                    workerExecutor.getQueue().remainingCapacity() + workerExecutor.getQueue().size(),
+                    appStreamsProperties.requireWorkerRejectionPolicy()
             );
         }
     }
@@ -279,5 +314,75 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             return configuredCount;
         }
         return 1;
+    }
+
+    private int resolveNextReadCount() {
+        if (workerExecutor == null) {
+            return 0;
+        }
+
+        int configuredReadCount = Math.max(1, appStreamsProperties.getReadCount());
+        int availableWorkerSlots = Math.max(0, workerExecutor.getMaximumPoolSize() - workerExecutor.getActiveCount());
+        int queueRemainingCapacity = workerExecutor.getQueue().remainingCapacity();
+        int dispatchCapacity = availableWorkerSlots + queueRemainingCapacity;
+
+        if (dispatchCapacity <= 0) {
+            return 0;
+        }
+
+        return Math.min(configuredReadCount, dispatchCapacity);
+    }
+
+    private void signalWorkerPressure() {
+        if (workerExecutor == null) {
+            return;
+        }
+
+        if (workerPressureActive.compareAndSet(false, true)) {
+            log.warn(
+                    "traffic_stream_worker_pressure_on activeWorkers={} workerThreads={} queueSize={} queueCapacity={} rejectionPolicy={}",
+                    workerExecutor.getActiveCount(),
+                    workerExecutor.getMaximumPoolSize(),
+                    workerExecutor.getQueue().size(),
+                    workerExecutor.getQueue().remainingCapacity() + workerExecutor.getQueue().size(),
+                    appStreamsProperties.requireWorkerRejectionPolicy()
+            );
+        }
+    }
+
+    private void clearWorkerPressureSignal() {
+        if (workerExecutor == null) {
+            return;
+        }
+
+        if (workerPressureActive.compareAndSet(true, false)) {
+            log.info(
+                    "traffic_stream_worker_pressure_off activeWorkers={} workerThreads={} queueSize={} queueCapacity={}",
+                    workerExecutor.getActiveCount(),
+                    workerExecutor.getMaximumPoolSize(),
+                    workerExecutor.getQueue().size(),
+                    workerExecutor.getQueue().remainingCapacity() + workerExecutor.getQueue().size()
+            );
+        }
+    }
+
+    private void pauseForWorkerCapacity() {
+        try {
+            Thread.sleep(resolvePressurePauseMs());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private long resolvePressurePauseMs() {
+        long configuredBlockMs = Math.max(1L, appStreamsProperties.getBlockMs());
+        return Math.min(250L, Math.max(25L, configuredBlockMs / 4L));
+    }
+
+    private RejectedExecutionHandler buildRejectedExecutionHandler(WorkerRejectionPolicy rejectionPolicy) {
+        if (rejectionPolicy == WorkerRejectionPolicy.CALLER_RUNS) {
+            return new ThreadPoolExecutor.CallerRunsPolicy();
+        }
+        return new ThreadPoolExecutor.AbortPolicy();
     }
 }

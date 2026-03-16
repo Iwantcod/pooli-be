@@ -1,24 +1,13 @@
 package com.pooli.traffic.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pooli.common.config.AppStreamsProperties;
-import com.pooli.monitoring.metrics.TrafficRequestMetrics;
-import com.pooli.traffic.config.TrafficSchedulingConfig;
-import com.pooli.traffic.controller.TrafficController;
-import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
-import com.pooli.traffic.service.invoke.*;
-import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
-import com.pooli.traffic.service.outbox.RedisOutboxRetryScheduler;
-import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
-import com.pooli.traffic.service.outbox.strategy.OutboxRetryStrategyRegistry;
-import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
-import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
-import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
-import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
-import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
+import java.util.List;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -27,50 +16,38 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-/**
- * 트래픽 관련 핵심 빈의 프로파일 부팅 규칙(local/api/traffic)을 검증하는 테스트입니다.
- * 전체 애플리케이션 부팅 대신, 필요한 빈만 구성해 빠르게 프로파일 활성/비활성 매트릭스를 확인합니다.
- */
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pooli.common.config.AppStreamsProperties;
+import com.pooli.monitoring.metrics.TrafficRequestMetrics;
+import com.pooli.traffic.config.TrafficSchedulingConfig;
+import com.pooli.traffic.controller.TrafficController;
+import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
+import com.pooli.traffic.service.invoke.TrafficDeductDoneLogService;
+import com.pooli.traffic.service.invoke.TrafficPayloadValidationService;
+import com.pooli.traffic.service.invoke.TrafficRequestEnqueueService;
+import com.pooli.traffic.service.invoke.TrafficStreamConsumerRunner;
+import com.pooli.traffic.service.invoke.TrafficStreamInfraService;
+import com.pooli.traffic.service.invoke.TrafficStreamReclaimService;
+import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
+import com.pooli.traffic.service.outbox.RedisOutboxRetryScheduler;
+import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
+import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
+import com.pooli.traffic.service.outbox.strategy.OutboxRetryStrategyRegistry;
+import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
+import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
+import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
+
 class TrafficProfileBootTest {
 
-    // 공통 테스트 컨텍스트:
-    // - 프로파일 대상 빈(Controller/Enqueue/Consumer/Reclaim/WriteThrough)을 모두 등록
-    // - 의존성은 최소 mock/기본 객체로 채워 프로파일 조건 자체만 검증
-    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withUserConfiguration(
-                    TrafficController.class,
-                    TrafficRequestEnqueueService.class,
-                    TrafficStreamConsumerRunner.class,
-                    TrafficStreamReclaimService.class,
-                    RedisOutboxRetryScheduler.class,
-                    TrafficPolicyWriteThroughService.class,
-                    TrafficSchedulingConfig.class,
-                    TrafficProfileBootTest.TestBeans.class
-            )
-            .withBean(AppStreamsProperties.class, AppStreamsProperties::new)
-            .withBean(ObjectMapper.class, ObjectMapper::new)
-            .withBean("streamsStringRedisTemplate", StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
-            .withBean("cacheStringRedisTemplate", StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
-            .withBean(TrafficStreamInfraService.class, () -> mock(TrafficStreamInfraService.class))
-            .withBean(TrafficPayloadValidationService.class, () -> mock(TrafficPayloadValidationService.class))
-            .withBean(TrafficDeductOrchestratorService.class, () -> mock(TrafficDeductOrchestratorService.class))
-            .withBean(TrafficInFlightDedupeService.class, () -> mock(TrafficInFlightDedupeService.class))
-            .withBean(TrafficDeductDoneLogService.class, () -> mock(TrafficDeductDoneLogService.class))
-            .withBean(TrafficRedisKeyFactory.class, () -> mock(TrafficRedisKeyFactory.class))
-            .withBean(TrafficRequestMetrics.class, () -> mock(TrafficRequestMetrics.class))
-            .withBean(TrafficPolicyVersionedRedisService.class, () -> mock(TrafficPolicyVersionedRedisService.class))
-            .withBean(RedisOutboxRecordService.class, () -> mock(RedisOutboxRecordService.class))
-            .withBean(OutboxRetryStrategyRegistry.class, () -> mock(OutboxRetryStrategyRegistry.class))
-            .withBean(TrafficRefillOutboxSupportService.class, () -> mock(TrafficRefillOutboxSupportService.class));
-
     @Nested
-    @DisplayName("프로파일별 빈 활성화 검증")
+    @DisplayName("profile activation")
     class ProfileActivationTest {
 
         @Test
-        @DisplayName("api 프로파일에서는 producer/controller/write-through가 활성화")
+        @DisplayName("api profile activates producer beans only")
         void apiProfileActivatesProducerOnly() {
-            contextRunner
+            contextRunnerWith(disabledConsumerStreamsProperties())
                     .withPropertyValues("spring.profiles.active=api")
                     .run(context -> {
                         assertThat(context).hasSingleBean(TrafficController.class);
@@ -85,9 +62,9 @@ class TrafficProfileBootTest {
         }
 
         @Test
-        @DisplayName("traffic 프로파일에서는 consumer/reclaim/write-through만 활성화")
+        @DisplayName("traffic profile activates consumer beans")
         void trafficProfileActivatesConsumerOnly() {
-            contextRunner
+            contextRunnerWith(disabledConsumerStreamsProperties())
                     .withPropertyValues("spring.profiles.active=traffic")
                     .run(context -> {
                         assertThat(context).doesNotHaveBean(TrafficController.class);
@@ -102,9 +79,9 @@ class TrafficProfileBootTest {
         }
 
         @Test
-        @DisplayName("local 프로파일에서는 producer/consumer 관련 빈이 모두 활성화")
+        @DisplayName("local profile activates all traffic beans")
         void localProfileActivatesAllTrafficBeans() {
-            contextRunner
+            contextRunnerWith(disabledConsumerStreamsProperties())
                     .withPropertyValues("spring.profiles.active=local")
                     .run(context -> {
                         assertThat(context).hasSingleBean(TrafficController.class);
@@ -116,6 +93,89 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficSchedulingConfig.class);
                     });
         }
+
+        @Test
+        @DisplayName("traffic profile boots with explicit consumer bootstrap properties")
+        void trafficProfileBootsWithConsumerBootstrapProperties() {
+            contextRunnerWith(enabledConsumerStreamsProperties())
+                    .withPropertyValues("spring.profiles.active=traffic")
+                    .run(context -> {
+                        assertThat(context).hasNotFailed();
+                        assertThat(context).hasSingleBean(TrafficStreamConsumerRunner.class);
+                        assertThat(context).hasSingleBean(TrafficStreamReclaimService.class);
+                        assertThat(context.getBean(TrafficStreamConsumerRunner.class).isRunning()).isTrue();
+                    });
+        }
+    }
+
+    private ApplicationContextRunner contextRunnerWith(AppStreamsProperties appStreamsProperties) {
+        return new ApplicationContextRunner()
+                .withUserConfiguration(
+                        TrafficController.class,
+                        TrafficRequestEnqueueService.class,
+                        TrafficStreamConsumerRunner.class,
+                        TrafficStreamReclaimService.class,
+                        RedisOutboxRetryScheduler.class,
+                        TrafficPolicyWriteThroughService.class,
+                        TrafficSchedulingConfig.class,
+                        TestBeans.class
+                )
+                .withBean(AppStreamsProperties.class, () -> appStreamsProperties)
+                .withBean(ObjectMapper.class, ObjectMapper::new)
+                .withBean("streamsStringRedisTemplate", StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
+                .withBean("cacheStringRedisTemplate", StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
+                .withBean(TrafficStreamInfraService.class, TrafficProfileBootTest::mockTrafficStreamInfraService)
+                .withBean(TrafficPayloadValidationService.class, () -> mock(TrafficPayloadValidationService.class))
+                .withBean(TrafficDeductOrchestratorService.class, () -> mock(TrafficDeductOrchestratorService.class))
+                .withBean(TrafficInFlightDedupeService.class, () -> mock(TrafficInFlightDedupeService.class))
+                .withBean(TrafficDeductDoneLogService.class, () -> mock(TrafficDeductDoneLogService.class))
+                .withBean(TrafficRedisKeyFactory.class, () -> mock(TrafficRedisKeyFactory.class))
+                .withBean(TrafficRequestMetrics.class, () -> mock(TrafficRequestMetrics.class))
+                .withBean(TrafficPolicyVersionedRedisService.class, () -> mock(TrafficPolicyVersionedRedisService.class))
+                .withBean(RedisOutboxRecordService.class, () -> mock(RedisOutboxRecordService.class))
+                .withBean(OutboxRetryStrategyRegistry.class, () -> mock(OutboxRetryStrategyRegistry.class))
+                .withBean(TrafficRefillOutboxSupportService.class, () -> mock(TrafficRefillOutboxSupportService.class));
+    }
+
+    private static AppStreamsProperties disabledConsumerStreamsProperties() {
+        AppStreamsProperties properties = new AppStreamsProperties();
+        properties.setConsumerEnabled(false);
+        properties.setKeyTrafficRequest("traffic:deduct:request");
+        properties.setGroupTraffic("traffic-deduct-cg");
+        properties.setConsumerName("traffic-node-disabled");
+        return properties;
+    }
+
+    private static AppStreamsProperties enabledConsumerStreamsProperties() {
+        AppStreamsProperties properties = new AppStreamsProperties();
+        properties.setConsumerEnabled(true);
+        properties.setKeyTrafficRequest("traffic:deduct:request");
+        properties.setGroupTraffic("traffic-deduct-cg");
+        properties.setConsumerName("traffic-node-a");
+        properties.setWorkerThreadCount(1);
+        properties.setWorkerQueueCapacity(4);
+        properties.setWorkerRejectionPolicy("abort");
+        properties.setReadCount(1);
+        properties.setBlockMs(1000L);
+        properties.setReclaimIntervalMs(1000L);
+        properties.setReclaimMinIdleMs(70_000L);
+        properties.setMaxRetry(3);
+        return properties;
+    }
+
+    private static TrafficStreamInfraService mockTrafficStreamInfraService() {
+        TrafficStreamInfraService infraService = mock(TrafficStreamInfraService.class);
+        when(infraService.readBlocking()).thenAnswer(invocation -> {
+            try {
+                Thread.sleep(25L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return List.of();
+        });
+        when(infraService.readPendingMessages(anyLong())).thenReturn(List.of());
+        when(infraService.claimPending(anyList(), anyLong())).thenReturn(List.of());
+        return infraService;
     }
 
     @TestConfiguration(proxyBeanMethods = false)
@@ -123,7 +183,6 @@ class TrafficProfileBootTest {
 
         @Bean
         TrafficRedisRuntimePolicy trafficRedisRuntimePolicy() {
-            // write-through 서비스가 어떤 프로파일에서도 안정적으로 주입되도록 테스트 전용 빈을 둔다.
             return mock(TrafficRedisRuntimePolicy.class);
         }
     }

@@ -84,9 +84,11 @@ app:
   streams:
     key-traffic-request: ${STREAMS_KEY_TRAFFIC_REQUEST}
     group-traffic: ${STREAMS_GROUP_TRAFFIC}
-    consumer-name: ${STREAMS_CONSUMER_NAME}
+    consumer-name: ${STREAMS_CONSUMER_NAME:${HOSTNAME:${COMPUTERNAME:__unset_streams_consumer_name__}}-${SERVER_PORT:8080}}
     consumer-enabled: ${STREAMS_CONSUMER_ENABLED:true}
     worker-thread-count: ${STREAMS_WORKER_THREAD_COUNT:8}
+    worker-queue-capacity: ${STREAMS_WORKER_QUEUE_CAPACITY:32}
+    worker-rejection-policy: ${STREAMS_WORKER_REJECTION_POLICY:abort}
     read-count: ${STREAMS_READ_COUNT:20}
     # 레디스 pending에 몇개 있는지 조회 / 상한값을 둬서 조회 부담 내리기
     metrics-pending-scan-count: ${STREAMS_METRICS_PENDING_SCAN_COUNT:100}

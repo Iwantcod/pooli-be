@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -12,8 +13,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
@@ -65,12 +72,18 @@ public class TrafficStreamConsumerRunnerTest {
     private TrafficStreamReclaimService trafficStreamReclaimService;
 
     private TrafficStreamConsumerRunner trafficStreamConsumerRunner;
+    private AppStreamsProperties appStreamsProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     @BeforeEach
     void setUp() {
-        AppStreamsProperties appStreamsProperties = new AppStreamsProperties();
+        appStreamsProperties = new AppStreamsProperties();
+        appStreamsProperties.setReadCount(20);
+        appStreamsProperties.setBlockMs(100L);
+        appStreamsProperties.setWorkerThreadCount(2);
+        appStreamsProperties.setWorkerQueueCapacity(2);
+        appStreamsProperties.setWorkerRejectionPolicy("abort");
         TrafficPayloadValidationService trafficPayloadValidationService =
                 new TrafficPayloadValidationService(validator);
 
@@ -89,6 +102,10 @@ public class TrafficStreamConsumerRunnerTest {
 
     @AfterEach
     void tearDown() {
+        ThreadPoolExecutor workerExecutor = getPrivateField("workerExecutor", ThreadPoolExecutor.class);
+        if (workerExecutor != null) {
+            workerExecutor.shutdownNow();
+        }
         MDC.clear();
     }
 
@@ -364,6 +381,109 @@ public class TrafficStreamConsumerRunnerTest {
         }
     }
 
+    @Nested
+    @DisplayName("pressure boundary")
+    class PressureBoundaryTest {
+
+        @Test
+        @DisplayName("leaves record pending when dispatch is rejected by full worker queue")
+        void leaveRecordPendingWhenDispatchRejected() throws Exception {
+            MapRecord<String, String, String> record = createRecord("9-0", "{\"traceId\":\"trace-rejected\"}");
+            CountDownLatch activeTaskStarted = new CountDownLatch(1);
+            CountDownLatch releaseTasks = new CountDownLatch(1);
+            ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                    1,
+                    1,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(1),
+                    new ThreadPoolExecutor.AbortPolicy()
+            );
+            ListAppender<ILoggingEvent> listAppender = attachAppender();
+
+            executor.execute(() -> awaitLatch(activeTaskStarted, releaseTasks));
+            assertTrue(activeTaskStarted.await(1, TimeUnit.SECONDS));
+            executor.execute(() -> awaitLatch(null, releaseTasks));
+            setPrivateField("workerExecutor", executor);
+            getPrivateField("running", java.util.concurrent.atomic.AtomicBoolean.class).set(true);
+
+            invokeDispatchRecord(record);
+
+            verify(trafficStreamInfraService, never()).acknowledge(record.getId());
+            verifyNoInteractions(trafficDeductOrchestratorService);
+            assertTrue(
+                    listAppender.list.stream()
+                            .map(ILoggingEvent::getFormattedMessage)
+                            .anyMatch(message -> message.startsWith("traffic_stream_record_dispatch_rejected"))
+            );
+
+            releaseTasks.countDown();
+            detachAppender(listAppender);
+        }
+
+        @Test
+        @DisplayName("does not poll new records while worker capacity is exhausted")
+        void doesNotPollWhenWorkerCapacityIsExhausted() throws Exception {
+            CountDownLatch activeTaskStarted = new CountDownLatch(1);
+            CountDownLatch releaseTasks = new CountDownLatch(1);
+            ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                    1,
+                    1,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(1),
+                    new ThreadPoolExecutor.AbortPolicy()
+            );
+            ListAppender<ILoggingEvent> listAppender = attachAppender();
+
+            executor.execute(() -> awaitLatch(activeTaskStarted, releaseTasks));
+            assertTrue(activeTaskStarted.await(1, TimeUnit.SECONDS));
+            executor.execute(() -> awaitLatch(null, releaseTasks));
+            setPrivateField("workerExecutor", executor);
+
+            invokeConsumeNextBatch();
+
+            verify(trafficStreamInfraService, never()).readBlocking(anyInt());
+            assertTrue(
+                    listAppender.list.stream()
+                            .map(ILoggingEvent::getFormattedMessage)
+                            .anyMatch(message -> message.startsWith("traffic_stream_worker_pressure_on"))
+            );
+
+            releaseTasks.countDown();
+            detachAppender(listAppender);
+        }
+
+        @Test
+        @DisplayName("polls only up to remaining worker capacity")
+        void pollOnlyRemainingWorkerCapacity() throws Exception {
+            CountDownLatch activeTaskStarted = new CountDownLatch(1);
+            CountDownLatch releaseTasks = new CountDownLatch(1);
+            ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                    2,
+                    2,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(3),
+                    new ThreadPoolExecutor.AbortPolicy()
+            );
+
+            appStreamsProperties.setReadCount(20);
+            executor.execute(() -> awaitLatch(activeTaskStarted, releaseTasks));
+            assertTrue(activeTaskStarted.await(1, TimeUnit.SECONDS));
+            executor.execute(() -> awaitLatch(null, releaseTasks));
+            executor.execute(() -> awaitLatch(null, releaseTasks));
+            setPrivateField("workerExecutor", executor);
+            when(trafficStreamInfraService.readBlocking(2)).thenReturn(List.of());
+
+            invokeConsumeNextBatch();
+
+            verify(trafficStreamInfraService).readBlocking(2);
+
+            releaseTasks.countDown();
+        }
+    }
+
     private MapRecord<String, String, String> createRecord(String recordId, String payloadJson) {
         return MapRecord
                 .<String, String, String>create(
@@ -379,6 +499,28 @@ public class TrafficStreamConsumerRunnerTest {
                     .getDeclaredMethod("handleRecord", MapRecord.class);
             handleRecordMethod.setAccessible(true);
             handleRecordMethod.invoke(trafficStreamConsumerRunner, record);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void invokeDispatchRecord(MapRecord<String, String, String> record) {
+        try {
+            Method dispatchRecordMethod = TrafficStreamConsumerRunner.class
+                    .getDeclaredMethod("dispatchRecord", MapRecord.class);
+            dispatchRecordMethod.setAccessible(true);
+            dispatchRecordMethod.invoke(trafficStreamConsumerRunner, record);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void invokeConsumeNextBatch() {
+        try {
+            Method consumeNextBatchMethod = TrafficStreamConsumerRunner.class
+                    .getDeclaredMethod("consumeNextBatch");
+            consumeNextBatchMethod.setAccessible(true);
+            consumeNextBatchMethod.invoke(trafficStreamConsumerRunner);
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);
         }
@@ -403,5 +545,41 @@ public class TrafficStreamConsumerRunnerTest {
                 .filter(message -> message.startsWith("traffic_stream_record_done"))
                 .findFirst()
                 .orElse("");
+    }
+
+    private void setPrivateField(String fieldName, Object value) {
+        try {
+            Field field = TrafficStreamConsumerRunner.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            field.set(trafficStreamConsumerRunner, value);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private <T> T getPrivateField(String fieldName, Class<T> fieldType) {
+        try {
+            Field field = TrafficStreamConsumerRunner.class.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            Object value = field.get(trafficStreamConsumerRunner);
+            if (value == null) {
+                return null;
+            }
+            return fieldType.cast(value);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void awaitLatch(CountDownLatch startedLatch, CountDownLatch releaseLatch) {
+        if (startedLatch != null) {
+            startedLatch.countDown();
+        }
+
+        try {
+            releaseLatch.await(1, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }
