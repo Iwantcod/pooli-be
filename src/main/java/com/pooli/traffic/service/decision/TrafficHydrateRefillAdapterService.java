@@ -610,21 +610,20 @@ public class TrafficHydrateRefillAdapterService {
             }
         }
 
-        if (context != null) {
-            context.activateRedisFallback();
-        }
-        trafficInFlightDedupeService.markDbFallback(resolveTraceId(context, payload));
+        TrafficDeductExecutionContext fallbackContext =
+                prepareDbFallbackContext(context, payload, poolType);
+        trafficInFlightDedupeService.markDbFallback(resolveTraceId(fallbackContext, payload));
         trafficDeductFallbackMetrics.incrementDbFallback(poolType.name(), "redis_retry_exhausted");
         if (lastException != null) {
             log.warn(
                     "traffic_deduct_redis_retry_exhausted traceId={} poolType={} requestedData={} fallback=db",
-                    resolveTraceId(context, payload),
+                    resolveTraceId(fallbackContext, payload),
                     poolType,
                     requestedDataBytes,
                     lastException
             );
         }
-        return trafficDbDeductFallbackService.deduct(poolType, payload, requestedDataBytes, context);
+        return trafficDbDeductFallbackService.deduct(poolType, payload, requestedDataBytes, fallbackContext);
     }
 
     /**
@@ -756,6 +755,26 @@ public class TrafficHydrateRefillAdapterService {
 
     private boolean isFallbackActivated(TrafficDeductExecutionContext context) {
         return context != null && context.isRedisFallbackActivated();
+    }
+
+    /**
+     * DB fallback 직전 컨텍스트를 정규화합니다.
+     * context가 비어 있으면 traceId 기준 최소 컨텍스트를 만들어 fallback 전환 상태를 남깁니다.
+     */
+    private TrafficDeductExecutionContext prepareDbFallbackContext(
+            TrafficDeductExecutionContext context,
+            TrafficPayloadReqDto payload,
+            TrafficPoolType poolType
+    ) {
+        String traceId = resolveTraceId(context, payload);
+        if (context == null) {
+            log.warn("traffic_deduct_fallback_context_missing traceId={} poolType={}", traceId, poolType);
+            TrafficDeductExecutionContext createdContext = TrafficDeductExecutionContext.of(traceId);
+            createdContext.activateRedisFallback();
+            return createdContext;
+        }
+        context.activateRedisFallback();
+        return context;
     }
 
     private String resolveTraceId(TrafficDeductExecutionContext context, TrafficPayloadReqDto payload) {
