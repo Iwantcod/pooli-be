@@ -58,17 +58,32 @@ dependencies {
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'local-only'
+    }
+    finalizedBy tasks.jacocoTestReport
+}
+
+
+/**
+ * SpringBootTest 등 통합 테스트 실행용 task
+ */
+tasks.register('local-only', Test) {
+
+    description = "Runs integration tests."
+    group = "verification"
+
+    useJUnitPlatform {
+        includeTags 'local-only'
+    }
+
+    shouldRunAfter test
 }
 
 tasks.named('bootJar') {
     archiveFileName = 'pooli.jar'
 }
 
-tasks.test {
-    useJUnitPlatform()
-    finalizedBy tasks.jacocoTestReport
-}
 
 tasks.jacocoTestReport {
     dependsOn tasks.test
