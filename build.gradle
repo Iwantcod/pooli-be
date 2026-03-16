@@ -73,6 +73,12 @@ tasks.register('local-only', Test) {
     description = "Runs integration tests."
     group = "verification"
 
+    outputs.upToDateWhen { false }
+
+    // Gradle 9 대응: 커스텀 Test 태스크의 테스트 출력/클래스패스를 명시적으로 지정합니다.
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+
     useJUnitPlatform {
         includeTags 'local-only'
     }
