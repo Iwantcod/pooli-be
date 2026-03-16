@@ -309,6 +309,58 @@ class TrafficHydrateRefillAdapterServiceTest {
         }
 
         @Test
+        void skipsDbFallbackWhenRedisRetryExhaustedAfterRefillApplied() {
+            // given
+            TrafficPayloadReqDto payload = createPayload();
+            stubIndividualDeductKeys();
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+            when(trafficRedisKeyFactory.indivRefillLockKey(11L)).thenReturn("pooli:indiv_refill_lock:11");
+            when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(any())).thenReturn(1_770_000_000L);
+            when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
+                    .thenReturn(luaResult(0L, TrafficLuaStatus.NO_BALANCE))
+                    .thenThrow(new RuntimeException("redis timeout"))
+                    .thenThrow(new RuntimeException("redis timeout"))
+                    .thenThrow(new RuntimeException("redis timeout"));
+            when(trafficRefillOutboxSupportService.isTimeoutFailure(any())).thenReturn(true);
+            when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_indiv_amount:11:202603", 0L)).thenReturn(0L);
+            when(trafficQuotaSourcePort.resolveRefillPlan(TrafficPoolType.INDIVIDUAL, payload))
+                    .thenReturn(refillPlan(10L, 2, 20L, 100L, 30L, "RECENT_10S"));
+            when(trafficLuaScriptInfraService.executeRefillGate(
+                    "pooli:indiv_refill_lock:11",
+                    "pooli:remaining_indiv_amount:11:202603",
+                    payload.getTraceId(),
+                    TrafficRedisRuntimePolicy.LOCK_TTL_MS,
+                    0L,
+                    30L
+            )).thenReturn(TrafficRefillGateStatus.OK);
+            when(trafficLuaScriptInfraService.executeLockHeartbeat(
+                    "pooli:indiv_refill_lock:11",
+                    payload.getTraceId(),
+                    TrafficRedisRuntimePolicy.LOCK_TTL_MS
+            )).thenReturn(true);
+            when(trafficQuotaSourcePort.claimRefillAmountFromDb(
+                    eq(TrafficPoolType.INDIVIDUAL),
+                    eq(payload),
+                    eq(java.time.YearMonth.of(2026, 3)),
+                    eq(100L),
+                    anyString()
+            )).thenReturn(claimResult(100L, 1_000L, 100L, 900L));
+
+            // when
+            TrafficLuaExecutionResult result = trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L);
+
+            // then
+            assertAll(
+                    () -> assertEquals(TrafficLuaStatus.NO_BALANCE, result.getStatus()),
+                    () -> assertEquals(0L, result.getAnswer())
+            );
+            verify(trafficDbDeductFallbackService, never()).deduct(any(), any(), anyLong(), any());
+            verify(trafficInFlightDedupeService, never()).markDbFallback(anyString());
+            verify(redisOutboxRecordService).markSuccess(701L);
+        }
+
+        @Test
         void refillGateWaitKeepsNoBalance() {
             // given
             TrafficPayloadReqDto payload = createPayload();

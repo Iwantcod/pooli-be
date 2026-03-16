@@ -180,7 +180,14 @@ public class TrafficHydrateRefillAdapterService {
         String balanceKey = resolveBalanceKey(poolType, payload, targetMonth);
 
         // 3. 1차 차감을 실행합니다. Redis 연결 문제 시 설정된 횟수만큼 재시도하거나 DB 폴백으로 전환됩니다.
-        TrafficLuaExecutionResult initialResult = executeDeduct(poolType, payload, balanceKey, requestedDataBytes, context);
+        TrafficLuaExecutionResult initialResult = executeDeduct(
+                poolType,
+                payload,
+                balanceKey,
+                requestedDataBytes,
+                context,
+                true
+        );
         if (isFallbackActivated(context)) {
             return initialResult; // 이미 DB 폴백이 활성화된 경우 추가 복구 로직 없이 반환합니다.
         }
@@ -265,7 +272,14 @@ public class TrafficHydrateRefillAdapterService {
             }
 
             // 정책 보정 후 차감을 다시 시도하여 상태를 업데이트합니다.
-            retriedResult = executeDeduct(poolType, payload, balanceKey, requestedDataBytes, context);
+            retriedResult = executeDeduct(
+                    poolType,
+                    payload,
+                    balanceKey,
+                    requestedDataBytes,
+                    context,
+                    true
+            );
             if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
                 return retriedResult; // 성공(OK)하거나 다른 상태(HYDRATE 등)로 전이된 경우 즉시 반환합니다.
             }
@@ -323,7 +337,14 @@ public class TrafficHydrateRefillAdapterService {
             }
 
             // 동기화 시도 후 다시 차감을 통해 성공 여부나 다음 상태를 체크합니다.
-            retriedResult = executeDeduct(poolType, payload, balanceKey, requestedDataBytes, context);
+            retriedResult = executeDeduct(
+                    poolType,
+                    payload,
+                    balanceKey,
+                    requestedDataBytes,
+                    context,
+                    true
+            );
             if (retriedResult.getStatus() != TrafficLuaStatus.HYDRATE) {
                 return retriedResult; // 데이터가 채워져 성공하거나 다른 단계로 넘어간 경우 반환합니다.
             }
@@ -549,7 +570,8 @@ public class TrafficHydrateRefillAdapterService {
                                 payload,
                                 balanceKey,
                                 retryTargetData,
-                                context
+                                context,
+                                false
                         );
                         retriedResult = mergeRefillRetryResult(
                                 normalizedRequestedDataBytes,
@@ -594,7 +616,8 @@ public class TrafficHydrateRefillAdapterService {
                         payload,
                         balanceKey,
                         retryTargetData,
-                        context
+                        context,
+                        false
                 );
                 // 1차에서 부분 성공한 양과 리필 후 추가 성공한 양을 합산하여 최종 결과를 도출합니다.
                 retriedResult = mergeRefillRetryResult(
@@ -661,7 +684,8 @@ public class TrafficHydrateRefillAdapterService {
             TrafficPayloadReqDto payload,
             String balanceKey,
             long requestedDataBytes,
-            TrafficDeductExecutionContext context
+            TrafficDeductExecutionContext context,
+            boolean allowDbFallback
     ) {
         // 이미 DB 폴백이 활성화된 경우 Redis를 거치지 않고 바로 DB 서비스를 호출합니다.
         if (isFallbackActivated(context)) {
@@ -699,6 +723,22 @@ public class TrafficHydrateRefillAdapterService {
                     sleepRedisRetryBackoff(attempt);
                 }
             }
+        }
+
+        if (!allowDbFallback) {
+            // 리필 적용 직후에는 DB claim이 이미 반영되었을 수 있으므로
+            // Redis 재시도 소진 시 DB fallback 차감을 열지 않아 이중 차감을 방지합니다.
+            log.warn(
+                    "traffic_deduct_redis_retry_exhausted_after_refill traceId={} poolType={} requestedData={} fallback=skipped",
+                    resolveTraceId(context, payload),
+                    poolType,
+                    requestedDataBytes,
+                    lastException
+            );
+            return TrafficLuaExecutionResult.builder()
+                    .answer(0L)
+                    .status(TrafficLuaStatus.NO_BALANCE)
+                    .build();
         }
 
         // Redis 재시도 횟수를 모두 소진한 경우 DB 폴백 모드로 전환합니다.
