@@ -5,6 +5,9 @@
 set -euo pipefail
 
 DG_NAME="${DEPLOYMENT_GROUP_NAME:-}"
+VALIDATE_SLEEP_SECONDS="${VALIDATE_SLEEP_SECONDS:-2}"
+RELEASE_MAX_ATTEMPTS="${VALIDATE_RELEASE_MAX_ATTEMPTS:-120}"
+TRAFFIC_MAX_ATTEMPTS="${VALIDATE_TRAFFIC_MAX_ATTEMPTS:-120}"
 
 log_common_diagnostics() {
   echo "[validate] diag timestamp=$(date -Iseconds)"
@@ -16,6 +19,8 @@ log_common_diagnostics() {
   docker inspect pooli --format 'status={{.State.Status}} running={{.State.Running}} exitCode={{.State.ExitCode}} startedAt={{.State.StartedAt}} finishedAt={{.State.FinishedAt}} restartCount={{.RestartCount}}' 2>/dev/null || true
   echo "[validate] diag SPRING_PROFILES_ACTIVE:"
   docker inspect pooli --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^SPRING_PROFILES_ACTIVE=' || true
+  echo "[validate] diag SERVER_PORT:"
+  docker inspect pooli --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^SERVER_PORT=' || true
   echo "[validate] diag listen :8080"
   (ss -lntp 2>/dev/null || netstat -lntp 2>/dev/null || true) | grep ':8080' || true
 }
@@ -104,11 +109,13 @@ check_traffic_runtime() {
 
 case "$DG_NAME" in
   pooli-release-group)
-    for i in {1..30}; do
+    # 릴리즈 컨테이너는 DB/Flyway 초기화로 부팅이 길어질 수 있어 기본 대기 구간을 넉넉히 둔다.
+    echo "[validate] release window attempts=${RELEASE_MAX_ATTEMPTS} sleep=${VALIDATE_SLEEP_SECONDS}s"
+    for i in $(seq 1 "${RELEASE_MAX_ATTEMPTS}"); do
       if check_release_health "$i"; then
         exit 0
       fi
-      sleep 2
+      sleep "${VALIDATE_SLEEP_SECONDS}"
     done
 
     echo "[validate] FAILED: api health endpoint not ready"
@@ -120,11 +127,13 @@ case "$DG_NAME" in
     ;;
 
   pooli-traffic-group)
-    for i in {1..30}; do
+    # 트래픽 런타임 검증도 동일하게 가변 대기 시간을 사용한다.
+    echo "[validate] traffic window attempts=${TRAFFIC_MAX_ATTEMPTS} sleep=${VALIDATE_SLEEP_SECONDS}s"
+    for i in $(seq 1 "${TRAFFIC_MAX_ATTEMPTS}"); do
       if check_traffic_runtime "$i"; then
         exit 0
       fi
-      sleep 2
+      sleep "${VALIDATE_SLEEP_SECONDS}"
     done
 
     echo "[validate] FAILED: traffic runtime not ready"

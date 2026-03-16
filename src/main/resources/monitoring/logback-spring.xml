@@ -8,11 +8,6 @@
 
     <!-- local profile -->
     <springProfile name="local">
-
-        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-            <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
-        </appender>
-
         <root level="INFO">
             <appender-ref ref="CONSOLE"/>
         </root>
@@ -23,7 +18,10 @@
     <!-- local 이외 -->
     <springProfile name="!local">
 
-        <root level="INFO"/>
+        <!-- 배포 환경에서도 시작/실패 원인을 바로 볼 수 있도록 콘솔 출력은 유지한다. -->
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
 
     </springProfile>
 
