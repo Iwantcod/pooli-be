@@ -254,6 +254,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
       * 입력 상태를 해석해 분기별 처리 로직을 수행합니다.
      */
     private void handleRecord(MapRecord<String, String, String> record) {
+        long consumeStartTimeMs = System.currentTimeMillis();
         // worker 스레드는 재사용되므로 이전 레코드의 MDC가 남지 않게 먼저 비운다.
         MDC.remove(TRACE_ID_MDC_KEY);
 
@@ -321,11 +322,13 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
                 LocalDateTime loggedAt = LocalDateTime.now();
                 String logEventName = saved ? "traffic_stream_record_done" : "traffic_stream_record_done_duplicate";
+
+                long latency = System.currentTimeMillis() - consumeStartTimeMs;
                 log.info(
                         logEventName + " "
                                 + "trace_id={} record_id={} line_id={} family_id={} app_id={} "
                                 + "api_total_data={} deducted_total_bytes={} api_remaining_data={} "
-                                + "final_status={} last_lua_status={} created_at={} finished_at={} logged_at={}",
+                                + "final_status={} last_lua_status={} created_at={} finished_at={} logged_at={} latency={}",
                         payload.getTraceId(),
                         recordId,
                         payload.getLineId(),
@@ -338,15 +341,19 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                         result.getLastLuaStatus(),
                         result.getCreatedAt(),
                         result.getFinishedAt(),
-                        loggedAt
+                        loggedAt,
+                        latency
                 );
             } catch (Exception e) {
+                long latency = System.currentTimeMillis() - consumeStartTimeMs;
                 // 처리 중 시스템 예외는 ACK하지 않고 남겨 재전달/reclaim 경로에서 복구한다.
-                log.error("traffic_stream_record_handle_failed recordId={}", recordId, e);
+                log.error("traffic_stream_record_handle_failed recordId={} latency={}", recordId, e, latency);
             } finally {
                 MDC.remove(TRACE_ID_MDC_KEY);
             }
         } catch (JsonProcessingException e) {
+            long latency = System.currentTimeMillis() - consumeStartTimeMs;
+            log.error("MQ message schema invalid recordId={} latency={}", recordId, e, latency);
             // 스키마 불일치/JSON 파손은 재처리해도 복구가 어려우므로 DLQ로 분기한다.
             trafficStreamInfraService.writeDlq(payloadJson, "payload 역직렬화 실패", recordId);
             trafficStreamInfraService.acknowledge(record.getId());
