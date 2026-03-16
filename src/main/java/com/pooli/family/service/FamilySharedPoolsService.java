@@ -1,29 +1,5 @@
 package com.pooli.family.service;
 
-import com.pooli.auth.service.AuthUserDetails;
-import com.pooli.common.exception.ApplicationException;
-import com.pooli.common.exception.CommonErrorCode;
-import com.pooli.family.domain.dto.mongo.SharedPoolTransferLog;
-import com.pooli.family.exception.SharedPoolErrorCode;
-
-import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
-import com.pooli.family.domain.dto.response.*;
-import com.pooli.family.domain.entity.SharedPoolDomain;
-import com.pooli.family.mapper.FamilyMapper;
-import com.pooli.family.mapper.FamilySharedPoolMapper;
-import com.pooli.family.repository.mongo.SharedPoolTransferLogRepository;
-import com.pooli.notification.domain.enums.AlarmCode;
-import com.pooli.notification.domain.enums.AlarmType;
-import com.pooli.notification.service.AlarmHistoryService;
-import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
-
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.data.domain.Sort;
-
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -37,21 +13,55 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.common.exception.ApplicationException;
+import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.family.domain.dto.mongo.SharedPoolTransferLog;
+import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
+import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
+import com.pooli.family.domain.dto.response.FamilySharedPoolResDto;
+import com.pooli.family.domain.dto.response.SharedDataThresholdResDto;
+import com.pooli.family.domain.dto.response.SharedPoolDetailResDto;
+import com.pooli.family.domain.dto.response.SharedPoolHistoryItemResDto;
+import com.pooli.family.domain.dto.response.SharedPoolMainResDto;
+import com.pooli.family.domain.dto.response.SharedPoolMonthlyUsageResDto;
+import com.pooli.family.domain.dto.response.SharedPoolMyStatusResDto;
+import com.pooli.family.domain.entity.SharedPoolDomain;
+import com.pooli.family.exception.SharedPoolErrorCode;
+import com.pooli.family.mapper.FamilyMapper;
+import com.pooli.family.mapper.FamilySharedPoolMapper;
+import com.pooli.family.repository.mongo.SharedPoolTransferLogRepository;
+import com.pooli.notification.domain.enums.AlarmCode;
+import com.pooli.notification.domain.enums.AlarmType;
+import com.pooli.notification.service.AlarmHistoryService;
+import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
+import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class FamilySharedPoolsService {
 
-    private static final DateTimeFormatter HISTORY_EVENT_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
-    private static final DateTimeFormatter YEAR_MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
+    private static final DateTimeFormatter HISTORY_EVENT_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+    private static final DateTimeFormatter YEAR_MONTH_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyyMM");
 
     private final FamilySharedPoolMapper sharedPoolMapper;
     private final FamilyMapper familyMapper;
     private final AlarmHistoryService alarmHistoryService;
     private final SharedPoolTransferLogRepository transferLogRepository;
     private final ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
+    private final TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
 
-    // 세션의 lineId로 familyId를 DB에서 조회하는 헬퍼 메서드
     public Long getFamilyIdByLineId(Long lineId) {
         Long familyId = sharedPoolMapper.selectFamilyIdByLineId(lineId);
         if (familyId == null) {
@@ -62,55 +72,57 @@ public class FamilySharedPoolsService {
 
     public SharedPoolMyStatusResDto getMySharedPoolStatus(Long lineId) {
         SharedPoolDomain domain = sharedPoolMapper.selectMySharedPoolStatus(lineId);
-        
         if (domain == null) {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
+        Long actualRemainingData = trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(
+                lineId,
+                domain.getRemainingData()
+        );
+
         return SharedPoolMyStatusResDto.builder()
-                .remainingData(domain.getRemainingData())
+                .remainingData(actualRemainingData)
                 .contributionAmount(domain.getPersonalContribution())
                 .build();
     }
 
     public FamilySharedPoolResDto getFamilySharedPool(Long familyId) {
         SharedPoolDomain domain = sharedPoolMapper.selectFamilySharedPool(familyId);
-
         if (domain == null) {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
+        Long actualPoolRemainingData = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
+                familyId,
+                domain.getPoolRemainingData()
+        );
+
         return FamilySharedPoolResDto.builder()
                 .poolTotalData(domain.getPoolTotalData())
-                .poolRemainingData(domain.getPoolRemainingData())
+                .poolRemainingData(actualPoolRemainingData)
                 .poolBaseData(domain.getPoolBaseData())
                 .monthlyUsageAmount(domain.getMonthlyUsageAmount())
                 .monthlyContributionAmount(domain.getMonthlyContributionAmount())
                 .build();
     }
 
-    // 트랜잭션 필수: 여러 DB UPDATE 작업을 묶음
     @Transactional
     public void contributeToSharedPool(Long lineId, Long familyId, Long amount) {
-
-        // 검증: 잔여 데이터가 충전량보다 충분한지 확인
         Long remainingData = sharedPoolMapper.selectRemainingData(lineId);
         boolean isUnlimited = remainingData != null && remainingData == -1L;
 
-        // 공유풀 최대 용량 검증
         Long currentMonthContribution = sharedPoolMapper.selectMonthlyContributionByFamilyId(
                 lineId,
                 LocalDate.now().withDayOfMonth(1),
-                LocalDate.now().plusDays(1) // 포함 안함
+                LocalDate.now().plusDays(1)
         );
 
-        long maxSharedPool = 60L * 1024 * 1024 * 1024; // 60GB
-
+        long maxSharedPool = 60L * 1024 * 1024 * 1024;
         if (currentMonthContribution + amount > maxSharedPool) {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_LIMIT_EXCEEDED);
         }
 
-        // 1. 개인 데이터 잔여량 차감 (무제한 아닐 경우만)
         if (!isUnlimited) {
             if (remainingData == null) {
                 throw new ApplicationException(SharedPoolErrorCode.LINE_NOT_FOUND);
@@ -121,40 +133,32 @@ public class FamilySharedPoolsService {
             sharedPoolMapper.updateLineRemainingData(lineId, amount);
         }
 
-        // 2. 가족 공유풀 총량 및 잔여량 증가
         sharedPoolMapper.updateFamilyPoolData(familyId, amount);
         syncSharedPoolDbEmptyFlagAfterContribution(familyId);
-
-        // 3. 충전 이력 기록 (당월 데이터 통합을 위해 DUPLICATE 처리됨)
         sharedPoolMapper.insertContribution(familyId, lineId, amount);
 
-        // Mongo 로그 저장
         try {
-            // Mongo 로그 저장
             SharedPoolTransferLog logEntry = SharedPoolTransferLog.builder()
                     .familyId(familyId)
                     .lineId(lineId)
                     .amount(amount)
                     .createdAt(Instant.now())
                     .build();
-
             transferLogRepository.save(logEntry);
-
-            log.info("MongoDB에 공유풀 충전 로그 저장 완료: lineId={}, familyId={}, amount={}", lineId, familyId, amount);
-
+            log.info("shared pool contribution log saved lineId={} familyId={} amount={}", lineId, familyId, amount);
         } catch (Exception e) {
-            // MongoDB 저장 실패 시 처리
-            log.error("MongoDB 로그 저장 실패: lineId={}, familyId={}, amount={}, error={}",
-                    lineId, familyId, amount, e.getMessage(), e);
+            log.error(
+                    "shared pool contribution log save failed lineId={} familyId={} amount={}",
+                    lineId,
+                    familyId,
+                    amount,
+                    e
+            );
         }
 
-        // 4. 알람: 가족 전체 (본인 제외)에게 데이터 담기 알림
         sendAlarmToFamily(familyId, lineId, AlarmType.SHARED_POOL_CONTRIBUTION);
     }
 
-    /**
-     * 공유풀 충전이 성공한 경우, 해당 월 공유풀 잔량 키의 DB 고갈 플래그를 0으로 동기화합니다.
-     */
     private void syncSharedPoolDbEmptyFlagAfterContribution(Long familyId) {
         if (familyId == null || familyId <= 0) {
             return;
@@ -163,7 +167,6 @@ public class FamilySharedPoolsService {
         TrafficBalanceStateWriteThroughService writeThroughService =
                 trafficBalanceStateWriteThroughServiceProvider.getIfAvailable();
         if (writeThroughService == null) {
-            // traffic 프로파일 미사용 환경에서는 write-through를 건너뛴다.
             log.debug("traffic_balance_state_write_through_unavailable familyId={}", familyId);
             return;
         }
@@ -173,41 +176,43 @@ public class FamilySharedPoolsService {
 
     public SharedPoolDetailResDto getSharedPoolDetail(Long familyId, Long lineId) {
         SharedPoolDomain domain = sharedPoolMapper.selectSharedPoolDetail(familyId, lineId);
-
         if (domain == null) {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
-        // 정책으로 제한된 공유풀 데이터 한도 조회 (SHARED_LIMIT 테이블)
         Long sharedDataLimit = sharedPoolMapper.selectSharedDataLimit(lineId);
-
-        // 사용 가능한 공유풀 데이터 총량 = min(전체 공유풀 총량, 정책 제한 한도)
-        Long poolTotal = domain.getPoolTotalData();
-        Long effectiveTotal = (sharedDataLimit != null) ? Math.min(poolTotal, sharedDataLimit) : poolTotal;
-
-        // 사용 가능한 공유풀 데이터 잔량 = min(개인 제한량 잔여, 전체 공유풀 잔여)
-        Long poolRemaining = domain.getPoolRemainingData();
-        Long effectiveRemaining = (sharedDataLimit != null) ? Math.min(poolRemaining, sharedDataLimit) : poolRemaining;
+        Long actualRemainingData = trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(
+                lineId,
+                domain.getRemainingData()
+        );
+        Long actualPoolRemainingData = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
+                familyId,
+                domain.getPoolRemainingData()
+        );
 
         return SharedPoolDetailResDto.builder()
                 .basicDataAmount(domain.getBasicDataAmount())
-                .remainingDataAmount(domain.getRemainingData())
-                .sharedPoolTotalAmount(effectiveTotal)
-                .sharedPoolRemainingAmount(effectiveRemaining)
+                .remainingDataAmount(actualRemainingData)
+                .sharedPoolTotalAmount(applySharedLimit(domain.getPoolTotalData(), sharedDataLimit))
+                .sharedPoolRemainingAmount(applySharedLimit(actualPoolRemainingData, sharedDataLimit))
                 .build();
     }
 
     public SharedPoolMainResDto getSharedPoolMain(Long familyId) {
         SharedPoolDomain domain = sharedPoolMapper.selectSharedPoolMain(familyId);
-
         if (domain == null) {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
+        Long actualPoolRemainingData = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
+                familyId,
+                domain.getPoolRemainingData()
+        );
+
         return SharedPoolMainResDto.builder()
                 .sharedPoolBaseData(domain.getPoolBaseData())
-                .sharedPoolAdditionalData(domain.getMonthlyContributionAmount()) // 당월 충전량이 추가 분을 의미함
-                .sharedPoolRemainingData(domain.getPoolRemainingData())
+                .sharedPoolAdditionalData(domain.getMonthlyContributionAmount())
+                .sharedPoolRemainingData(actualPoolRemainingData)
                 .sharedPoolTotalData(domain.getPoolTotalData())
                 .build();
     }
@@ -248,15 +253,17 @@ public class FamilySharedPoolsService {
 
     public SharedDataThresholdResDto getSharedDataThreshold(Long familyId) {
         SharedPoolDomain domain = sharedPoolMapper.selectSharedDataThreshold(familyId);
-
         if (domain == null) {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
-        // 슬라이더 범위 계산
-        Long poolTotal = domain.getPoolTotalData() != null ? domain.getPoolTotalData() : 0L;
-        Long poolRemaining = domain.getPoolRemainingData() != null ? domain.getPoolRemainingData() : 0L;
-        Long usedData = poolTotal - poolRemaining; // 사용한 공유 데이터양
+        long poolTotal = domain.getPoolTotalData() != null ? domain.getPoolTotalData() : 0L;
+        Long actualPoolRemainingData = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
+                familyId,
+                domain.getPoolRemainingData()
+        );
+        long poolRemaining = actualPoolRemainingData != null ? Math.max(0L, actualPoolRemainingData) : 0L;
+        long usedData = Math.max(0L, poolTotal - poolRemaining);
 
         return SharedDataThresholdResDto.builder()
                 .isThresholdActive(domain.getIsThresholdActive())
@@ -268,20 +275,17 @@ public class FamilySharedPoolsService {
 
     public void updateSharedDataThreshold(Long familyId, UpdateSharedDataThresholdReqDto request) {
         sharedPoolMapper.updateSharedDataThreshold(familyId, request.getNewFamilyThreshold());
-
-        // 알람: 가족 전체에게 임계치 변경 알림
         sendAlarmToFamily(familyId, null, AlarmType.SHARED_POOL_THRESHOLD_CHANGE);
     }
-    
+
     public SharedPoolMonthlyUsageResDto getFamilyMonthlySharedUsageTotal(AuthUserDetails principal) {
-    	
-    	Long familyId = getFamilyIdByLineId(principal.getLineId());
-    	
-    	Long sharedPoolTotalData = sharedPoolMapper.selectFamilyPoolTotalData(familyId);
+        Long familyId = getFamilyIdByLineId(principal.getLineId());
+
+        Long sharedPoolTotalData = sharedPoolMapper.selectFamilyPoolTotalData(familyId);
         if (sharedPoolTotalData == null) {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
-        
+
         List<SharedPoolMonthlyUsageResDto.MemberUsageDto> membersUsageList =
                 sharedPoolMapper.selectFamilyMonthlySharedUsageByLine(familyId);
 
@@ -291,23 +295,42 @@ public class FamilySharedPoolsService {
                 .build();
     }
 
-    /**
-     * 가족 구성원 전체에게 알람을 전송하는 헬퍼 메서드
-     */
+    private Long applySharedLimit(Long actualAmount, Long sharedDataLimit) {
+        if (actualAmount == null) {
+            return null;
+        }
+        if (sharedDataLimit == null || sharedDataLimit == -1L) {
+            return actualAmount;
+        }
+        if (actualAmount == -1L) {
+            return sharedDataLimit;
+        }
+        return Math.min(Math.max(0L, actualAmount), Math.max(0L, sharedDataLimit));
+    }
+
     private YearMonth parseYearMonth(Integer yearMonth) {
         if (yearMonth == null) {
-            throw new ApplicationException(CommonErrorCode.INVALID_REQUEST_PARAM, "yearMonth는 yyyyMM 형식이어야 합니다.");
+            throw new ApplicationException(
+                    CommonErrorCode.INVALID_REQUEST_PARAM,
+                    "yearMonth\uB294 yyyyMM \uD615\uC2DD\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4"
+            );
         }
 
         String value = String.valueOf(yearMonth);
         if (value.length() != 6) {
-            throw new ApplicationException(CommonErrorCode.INVALID_REQUEST_PARAM, "yearMonth는 yyyyMM 형식이어야 합니다.");
+            throw new ApplicationException(
+                    CommonErrorCode.INVALID_REQUEST_PARAM,
+                    "yearMonth\uB294 yyyyMM \uD615\uC2DD\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4"
+            );
         }
 
         try {
             return YearMonth.parse(value, YEAR_MONTH_FORMATTER);
         } catch (DateTimeParseException exception) {
-            throw new ApplicationException(CommonErrorCode.INVALID_REQUEST_PARAM, "yearMonth는 yyyyMM 형식이어야 합니다.");
+            throw new ApplicationException(
+                    CommonErrorCode.INVALID_REQUEST_PARAM,
+                    "yearMonth\uB294 yyyyMM \uD615\uC2DD\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4"
+            );
         }
     }
 
@@ -318,8 +341,8 @@ public class FamilySharedPoolsService {
     ) {
         return SharedPoolHistoryItemResDto.builder()
                 .eventType("CONTRIBUTION")
-                .title("데이터 보태기")
-                .userName(userNameByLineId.getOrDefault(log.getLineId(), "알 수 없음"))
+                .title("\uB370\uC774\uD130 \uBCF4\uD0DC\uAE30")
+                .userName(userNameByLineId.getOrDefault(log.getLineId(), "\uC54C \uC218 \uC5C6\uC74C"))
                 .occurredAt(log.getCreatedAt().atZone(zoneId).toLocalDateTime().format(HISTORY_EVENT_FORMATTER))
                 .amount(log.getAmount())
                 .precision("EVENT")
@@ -334,10 +357,6 @@ public class FamilySharedPoolsService {
         return LocalDateTime.parse(item.getOccurredAt(), HISTORY_EVENT_FORMATTER);
     }
 
-    /**
-     * 가족 구성원 전체에게 알람을 전송하는 헬퍼 메서드
-     * @param excludeLineId 본인 제외 (null이면 전체에게 보냄)
-     */
     private void sendAlarmToFamily(Long familyId, Long excludeLineId, AlarmType alarmType) {
         List<Long> familyLineIds = sharedPoolMapper.selectLineIdsByFamilyId(familyId);
         for (Long targetLineId : familyLineIds) {

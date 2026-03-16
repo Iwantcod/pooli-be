@@ -21,8 +21,10 @@ import com.pooli.family.domain.dto.request.UpdateVisibilityReqDto;
 import com.pooli.family.domain.dto.response.FamilyMemberSummaryResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
+import com.pooli.family.domain.enums.FamilyRole;
 import com.pooli.family.exception.FamilyErrorCode;
 import com.pooli.family.mapper.FamilyMapper;
+import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
 
 @ExtendWith(MockitoExtension.class)
 class FamilyServiceImplTest {
@@ -30,71 +32,119 @@ class FamilyServiceImplTest {
     @Mock
     private FamilyMapper familyMapper;
 
+    @Mock
+    private TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
+
     @InjectMocks
     private FamilyServiceImpl familyService;
 
     @Test
-    @DisplayName("가족 구성원 조회: 헤더 없음이면 FAM_NOT_FOUND")
+    @DisplayName("getFamilyMembers throws when header is missing")
     void getFamilyMembers_headerNotFound_throws() {
         AuthUserDetails principal = principalWithLineId(10L);
         when(familyMapper.selectFamilyMembersHeader(10L)).thenReturn(null);
 
         assertThatThrownBy(() -> familyService.getFamilyMembers(principal))
-            .isInstanceOf(ApplicationException.class)
-            .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
-                .isEqualTo(FamilyErrorCode.FAM_NOT_FOUND));
+                .isInstanceOf(ApplicationException.class)
+                .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
+                        .isEqualTo(FamilyErrorCode.FAM_NOT_FOUND));
     }
 
     @Test
-    @DisplayName("가족 구성원 조회: 헤더와 멤버를 조합해 반환")
+    @DisplayName("getFamilyMembers composes actual remaining values")
     void getFamilyMembers_success_returnsComposedDto() {
         AuthUserDetails principal = principalWithLineId(10L);
         FamilyMembersResDto header = FamilyMembersResDto.builder()
-            .isEnable(true)
-            .familyId(1)
-            .sharedPoolTotalData(1000L)
-            .build();
+                .isEnable(true)
+                .familyId(1)
+                .sharedPoolTotalData(1_000L)
+                .sharedPoolRemainingData(300L)
+                .build();
         List<FamilyMembersResDto.FamilyMemberDto> members = List.of(
-            FamilyMembersResDto.FamilyMemberDto.builder()
-                .isMe(true)
-                .userName("user")
-                .build()
+                FamilyMembersResDto.FamilyMemberDto.builder()
+                        .isMe(true)
+                        .userId(1)
+                        .lineId(10)
+                        .planId(3)
+                        .userName("user")
+                        .phone("01012345678")
+                        .planName("plan")
+                        .remainingData(500L)
+                        .basicDataAmount(1_000L)
+                        .role(FamilyRole.OWNER)
+                        .sharedPoolTotalAmount(1_000L)
+                        .sharedPoolRemainingAmount(200L)
+                        .sharedLimitActive(true)
+                        .build()
         );
 
         when(familyMapper.selectFamilyMembersHeader(10L)).thenReturn(header);
         when(familyMapper.selectFamilyMembers(1, 10L)).thenReturn(members);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 300L)).thenReturn(700L);
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L, 500L)).thenReturn(650L);
 
         FamilyMembersResDto result = familyService.getFamilyMembers(principal);
 
         assertThat(result.getIsEnable()).isTrue();
         assertThat(result.getFamilyId()).isEqualTo(1);
-        assertThat(result.getSharedPoolTotalData()).isEqualTo(1000L);
-        assertThat(result.getMembers()).isEqualTo(members);
+        assertThat(result.getSharedPoolTotalData()).isEqualTo(1_000L);
+        assertThat(result.getMembers()).hasSize(1);
+        assertThat(result.getMembers().get(0).getRemainingData()).isEqualTo(650L);
+        assertThat(result.getMembers().get(0).getSharedPoolRemainingAmount()).isEqualTo(200L);
     }
 
     @Test
-    @DisplayName("가족 구성원 간단 조회: 결과 비어있으면 FAM_NOT_FOUND")
+    @DisplayName("getFamilyMembers uses actual shared remaining when shared limit is inactive")
+    void getFamilyMembers_withoutSharedLimit_usesActualSharedRemaining() {
+        AuthUserDetails principal = principalWithLineId(10L);
+        FamilyMembersResDto header = FamilyMembersResDto.builder()
+                .isEnable(true)
+                .familyId(1)
+                .sharedPoolTotalData(1_000L)
+                .sharedPoolRemainingData(300L)
+                .build();
+        List<FamilyMembersResDto.FamilyMemberDto> members = List.of(
+                FamilyMembersResDto.FamilyMemberDto.builder()
+                        .lineId(10)
+                        .remainingData(500L)
+                        .sharedPoolRemainingAmount(300L)
+                        .sharedLimitActive(false)
+                        .build()
+        );
+
+        when(familyMapper.selectFamilyMembersHeader(10L)).thenReturn(header);
+        when(familyMapper.selectFamilyMembers(1, 10L)).thenReturn(members);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 300L)).thenReturn(700L);
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L, 500L)).thenReturn(650L);
+
+        FamilyMembersResDto result = familyService.getFamilyMembers(principal);
+
+        assertThat(result.getMembers().get(0).getSharedPoolRemainingAmount()).isEqualTo(700L);
+    }
+
+    @Test
+    @DisplayName("getFamilyMembersSimple throws when result is empty")
     void getFamilyMembersSimple_empty_throws() {
         AuthUserDetails principal = principalWithLineId(10L);
         when(familyMapper.selectFamilyMembersSimpleByLineId(10L)).thenReturn(List.of());
 
         assertThatThrownBy(() -> familyService.getFamilyMembersSimple(principal))
-            .isInstanceOf(ApplicationException.class)
-            .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
-                .isEqualTo(FamilyErrorCode.FAM_NOT_FOUND));
+                .isInstanceOf(ApplicationException.class)
+                .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
+                        .isEqualTo(FamilyErrorCode.FAM_NOT_FOUND));
     }
 
     @Test
-    @DisplayName("가족 구성원 간단 조회: 목록 반환")
+    @DisplayName("getFamilyMembersSimple returns members")
     void getFamilyMembersSimple_success_returnsList() {
         AuthUserDetails principal = principalWithLineId(10L);
         List<FamilyMembersSimpleResDto> list = List.of(
-            FamilyMembersSimpleResDto.builder()
-                .lineId(10L)
-                .userId(1L)
-                .userName("user")
-                .phone("01012345678")
-                .build()
+                FamilyMembersSimpleResDto.builder()
+                        .lineId(10L)
+                        .userId(1L)
+                        .userName("user")
+                        .phone("01012345678")
+                        .build()
         );
         when(familyMapper.selectFamilyMembersSimpleByLineId(10L)).thenReturn(list);
 
@@ -104,7 +154,7 @@ class FamilyServiceImplTest {
     }
 
     @Test
-    @DisplayName("가족 공개 설정 변경: 요청 lineId 불일치면 LINE_OWNERSHIP_FORBIDDEN")
+    @DisplayName("updateVisibility throws on line mismatch")
     void updateVisibility_lineIdMismatch_throws() {
         AuthUserDetails principal = principalWithLineId(10L);
         UpdateVisibilityReqDto request = new UpdateVisibilityReqDto();
@@ -112,13 +162,13 @@ class FamilyServiceImplTest {
         request.setIsPublic(true);
 
         assertThatThrownBy(() -> familyService.updateVisibility(request, principal))
-            .isInstanceOf(ApplicationException.class)
-            .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
-                .isEqualTo(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN));
+                .isInstanceOf(ApplicationException.class)
+                .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
+                        .isEqualTo(CommonErrorCode.LINE_OWNERSHIP_FORBIDDEN));
     }
 
     @Test
-    @DisplayName("가족 공개 설정 변경: 권한 비활성이면 FAM_NOT_FOUND")
+    @DisplayName("updateVisibility throws when permission is disabled")
     void updateVisibility_permissionDisabled_throws() {
         AuthUserDetails principal = principalWithLineId(10L);
         UpdateVisibilityReqDto request = new UpdateVisibilityReqDto();
@@ -128,13 +178,13 @@ class FamilyServiceImplTest {
         when(familyMapper.isPermissionEnabledByTitle(10L)).thenReturn(false);
 
         assertThatThrownBy(() -> familyService.updateVisibility(request, principal))
-            .isInstanceOf(ApplicationException.class)
-            .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
-                .isEqualTo(FamilyErrorCode.FAM_NOT_FOUND));
+                .isInstanceOf(ApplicationException.class)
+                .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
+                        .isEqualTo(FamilyErrorCode.FAM_NOT_FOUND));
     }
 
     @Test
-    @DisplayName("가족 공개 설정 변경: 업데이트 0건이면 FAM_CONFLICT")
+    @DisplayName("updateVisibility throws when update count is zero")
     void updateVisibility_updateConflict_throws() {
         AuthUserDetails principal = principalWithLineId(10L);
         UpdateVisibilityReqDto request = new UpdateVisibilityReqDto();
@@ -145,13 +195,13 @@ class FamilyServiceImplTest {
         when(familyMapper.updateFamilyLineVisibility(10L, false)).thenReturn(0);
 
         assertThatThrownBy(() -> familyService.updateVisibility(request, principal))
-            .isInstanceOf(ApplicationException.class)
-            .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
-                .isEqualTo(FamilyErrorCode.FAM_CONFLICT));
+                .isInstanceOf(ApplicationException.class)
+                .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
+                        .isEqualTo(FamilyErrorCode.FAM_CONFLICT));
     }
 
     @Test
-    @DisplayName("가족 공개 설정 변경: 정상 처리 시 null 반환")
+    @DisplayName("updateVisibility returns null on success")
     void updateVisibility_success_returnsNull() {
         AuthUserDetails principal = principalWithLineId(10L);
         UpdateVisibilityReqDto request = new UpdateVisibilityReqDto();
@@ -168,44 +218,42 @@ class FamilyServiceImplTest {
     }
 
     @Test
-    @DisplayName("가족 구성원 요약 조회: 가족 ID 없으면 FAM_NOT_FOUND")
+    @DisplayName("getFamilyMembersByLineId throws when family id is missing")
     void getFamilyMembersByLineId_familyIdNotFound_throws() {
         when(familyMapper.selectFamilyIdByLineId(10L)).thenReturn(null);
 
         assertThatThrownBy(() -> familyService.getFamilyMembersByLineId(10L))
-            .isInstanceOf(ApplicationException.class)
-            .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
-                .isEqualTo(FamilyErrorCode.FAM_NOT_FOUND));
+                .isInstanceOf(ApplicationException.class)
+                .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
+                        .isEqualTo(FamilyErrorCode.FAM_NOT_FOUND));
     }
 
     @Test
-    @DisplayName("가족 구성원 요약 조회: 멤버 비어있으면 FAM_NOT_FOUND")
+    @DisplayName("getFamilyMembersByLineId throws when members are empty")
     void getFamilyMembersByLineId_membersEmpty_throws() {
         when(familyMapper.selectFamilyIdByLineId(10L)).thenReturn(1);
-        when(familyMapper.selectFamilyMemberSummaryByFamilyIdAndLineId(1, 10L))
-            .thenReturn(List.of());
+        when(familyMapper.selectFamilyMemberSummaryByFamilyIdAndLineId(1, 10L)).thenReturn(List.of());
 
         assertThatThrownBy(() -> familyService.getFamilyMembersByLineId(10L))
-            .isInstanceOf(ApplicationException.class)
-            .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
-                .isEqualTo(FamilyErrorCode.FAM_NOT_FOUND));
+                .isInstanceOf(ApplicationException.class)
+                .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
+                        .isEqualTo(FamilyErrorCode.FAM_NOT_FOUND));
     }
 
     @Test
-    @DisplayName("가족 구성원 요약 조회: 가족 ID와 멤버 목록 반환")
+    @DisplayName("getFamilyMembersByLineId returns summary")
     void getFamilyMembersByLineId_success_returnsSummary() {
         List<FamilyMemberSummaryResDto.FamilyMemberSummaryDto> members = List.of(
-            FamilyMemberSummaryResDto.FamilyMemberSummaryDto.builder()
-                .lineId(10L)
-                .userId(1L)
-                .userName("user")
-                .phone("01012345678")
-                .role("OWNER")
-                .build()
+                FamilyMemberSummaryResDto.FamilyMemberSummaryDto.builder()
+                        .lineId(10L)
+                        .userId(1L)
+                        .userName("user")
+                        .phone("01012345678")
+                        .role("OWNER")
+                        .build()
         );
         when(familyMapper.selectFamilyIdByLineId(10L)).thenReturn(1);
-        when(familyMapper.selectFamilyMemberSummaryByFamilyIdAndLineId(1, 10L))
-            .thenReturn(members);
+        when(familyMapper.selectFamilyMemberSummaryByFamilyIdAndLineId(1, 10L)).thenReturn(members);
 
         FamilyMemberSummaryResDto result = familyService.getFamilyMembersByLineId(10L);
 
@@ -215,12 +263,12 @@ class FamilyServiceImplTest {
 
     private AuthUserDetails principalWithLineId(Long lineId) {
         return AuthUserDetails.builder()
-            .userId(1L)
-            .userName("user")
-            .email("user@example.com")
-            .password("pw")
-            .lineId(lineId)
-            .authorities(List.of())
-            .build();
+                .userId(1L)
+                .userName("user")
+                .email("user@example.com")
+                .password("pw")
+                .lineId(lineId)
+                .authorities(List.of())
+                .build();
     }
 }
