@@ -3,6 +3,11 @@ package com.pooli.traffic.acceptance;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.reset;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.Time;
@@ -12,7 +17,9 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -32,13 +39,16 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.traffic.domain.dto.response.TrafficGenerateResDto;
 import com.pooli.traffic.domain.entity.TrafficDeductDoneLog;
+import com.pooli.traffic.service.outbox.RedisOutboxRetryScheduler;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
+import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
@@ -52,7 +62,10 @@ import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
  * - 테스트 데이터 식별자는 family_id=1, line_id=1~4만 사용합니다.
  */
 @Tag("local-only")
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.MOCK,
+        properties = "app.traffic.outbox.retry.fixed-delay-ms=600000"
+)
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 @DisabledIfEnvironmentVariable(named = "CI", matches = "(?i)true")
@@ -103,6 +116,12 @@ class TrafficFlowLocalAcceptanceTest {
 
     @Autowired
     private TrafficPolicyBootstrapService trafficPolicyBootstrapService;
+
+    @Autowired
+    private RedisOutboxRetryScheduler redisOutboxRetryScheduler;
+
+    @MockitoSpyBean
+    private TrafficQuotaCacheService trafficQuotaCacheService;
 
     @BeforeEach
     void setUp() {
@@ -224,6 +243,57 @@ class TrafficFlowLocalAcceptanceTest {
         String secondTraceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
         assertDoneLog(secondTraceId, 50L, 0L, "SUCCESS", "OK");
         await("daily usage adds full request when daily policy disabled", () -> readLongValue(dailyUsageKey) == 80L);
+    }
+
+    @Test
+    @DisplayName("[OUTBOX-01] 첫 Redis 리필 반영 실패 후 Outbox 재시도 스케줄러 수동 호출로 복구된다")
+    void shouldRecoverRefillUsingOutboxRetrySchedulerAfterFirstRedisApplyFailure() throws Exception {
+        // 기존 잔여 outbox를 제거해 이번 시나리오의 상태 전이를 명확하게 검증한다.
+        jdbcTemplate.update("DELETE FROM TRAFFIC_REDIS_OUTBOX WHERE event_type = 'REFILL'");
+
+        YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+        String balanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(LINE_ID, targetMonth);
+        cacheStringRedisTemplate.delete(balanceKey);
+
+        // 첫 번째 Redis 반영 시도만 강제로 실패시켜 outbox FAIL 경로를 재현한다.
+        AtomicBoolean firstAttempt = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            if (firstAttempt.compareAndSet(true, false)) {
+                throw new IllegalStateException("forced_timeout_on_first_refill_apply");
+            }
+            return invocation.callRealMethod();
+        }).when(trafficQuotaCacheService).applyRefillWithIdempotency(
+                anyString(),
+                anyString(),
+                anyString(),
+                anyLong(),
+                anyLong(),
+                anyLong(),
+                anyBoolean()
+        );
+
+        try {
+            String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
+            assertDoneLog(traceId, 0L, 50L, "PARTIAL_SUCCESS", "NO_BALANCE");
+
+            Long outboxId = awaitRefillOutboxIdByTraceId(traceId);
+            assertThat(outboxId).isNotNull();
+            assertThat(readOutboxStatus(outboxId)).isEqualTo("FAIL");
+            assertThat(readOutboxRetryCount(outboxId)).isEqualTo(0);
+
+            // 사용자 요청대로 재시도 스케줄러 메서드를 수동 호출해 실제 재처리를 검증한다.
+            redisOutboxRetryScheduler.runRetryCycle();
+
+            await("outbox status should become SUCCESS after manual retry cycle", () ->
+                    "SUCCESS".equals(readOutboxStatus(outboxId))
+            );
+            await("redis balance should be refilled after outbox retry", () ->
+                    readHashAmount(balanceKey) > 0L
+            );
+        } finally {
+            // Spy 설정이 다른 시나리오에 영향을 주지 않도록 테스트 종료 시 초기화한다.
+            reset(trafficQuotaCacheService);
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -894,6 +964,61 @@ class TrafficFlowLocalAcceptanceTest {
             return 0L;
         }
         return Long.parseLong(value);
+    }
+
+    private long readHashAmount(String key) {
+        String amount = readHashField(key, "amount");
+        if (amount.isBlank()) {
+            return 0L;
+        }
+        return Long.parseLong(amount);
+    }
+
+    private Long awaitRefillOutboxIdByTraceId(String traceId) throws Exception {
+        long startedAt = System.currentTimeMillis();
+        long timeoutMs = 5_000L;
+        while (System.currentTimeMillis() - startedAt < timeoutMs) {
+            Long outboxId = findLatestRefillOutboxIdByTraceId(traceId);
+            if (outboxId != null) {
+                return outboxId;
+            }
+            TimeUnit.MILLISECONDS.sleep(100);
+        }
+        throw new AssertionError("Timeout while waiting refill outbox: traceId=" + traceId);
+    }
+
+    private Long findLatestRefillOutboxIdByTraceId(String traceId) {
+        List<Long> ids = jdbcTemplate.queryForList(
+                """
+                SELECT id
+                FROM TRAFFIC_REDIS_OUTBOX
+                WHERE event_type = 'REFILL'
+                  AND payload LIKE ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                Long.class,
+                "%\\\"traceId\\\":\\\"" + traceId + "\\\"%"
+        );
+        return ids.isEmpty() ? null : ids.getFirst();
+    }
+
+    private String readOutboxStatus(long outboxId) {
+        List<String> statuses = jdbcTemplate.queryForList(
+                "SELECT status FROM TRAFFIC_REDIS_OUTBOX WHERE id = ?",
+                String.class,
+                outboxId
+        );
+        return statuses.isEmpty() ? "" : statuses.getFirst();
+    }
+
+    private int readOutboxRetryCount(long outboxId) {
+        List<Integer> counts = jdbcTemplate.queryForList(
+                "SELECT retry_count FROM TRAFFIC_REDIS_OUTBOX WHERE id = ?",
+                Integer.class,
+                outboxId
+        );
+        return counts.isEmpty() ? -1 : counts.getFirst();
     }
 
     private TrafficDeductDoneLog findDoneLog(String traceId) {

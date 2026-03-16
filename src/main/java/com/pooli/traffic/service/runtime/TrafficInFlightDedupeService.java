@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import com.pooli.traffic.domain.enums.TrafficInFlightState;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -36,7 +38,7 @@ public class TrafficInFlightDedupeService {
         // 2) INFLIGHT_TTL_SEC 이후 자동 만료
         Boolean claimed = cacheStringRedisTemplate.opsForValue().setIfAbsent(
                 dedupeKey,
-                traceId,
+                TrafficInFlightState.CLAIMED.name(),
                 Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
         );
 
@@ -51,11 +53,45 @@ public class TrafficInFlightDedupeService {
       * `release` 처리 목적에 맞는 핵심 로직을 수행합니다.
      */
     public void release(String traceId) {
-        // DONE 저장/ACK 완료 후에는 in-flight 키를 정리해 불필요한 키 잔존을 줄인다.
+        // DONE 상태를 잠시 유지해 후속 재전달에서 현재 처리 결과를 추적할 수 있게 한다.
         if (traceId == null || traceId.isBlank()) {
             return;
         }
         String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
-        cacheStringRedisTemplate.delete(dedupeKey);
+        cacheStringRedisTemplate.opsForValue().set(
+                dedupeKey,
+                TrafficInFlightState.DONE.name(),
+                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
+        );
+    }
+
+    /**
+     * Redis 재시도 진행 상태를 in-flight 키에 기록합니다.
+     */
+    public void markRedisRetry(String traceId, int retryAttempt) {
+        writeState(traceId, TrafficInFlightState.fromRetryAttempt(retryAttempt));
+    }
+
+    /**
+     * 요청 단위 DB fallback 전환 상태를 in-flight 키에 기록합니다.
+     */
+    public void markDbFallback(String traceId) {
+        writeState(traceId, TrafficInFlightState.DB_FALLBACK);
+    }
+
+    /**
+     * traceId 상태를 TTL과 함께 기록합니다.
+     */
+    private void writeState(String traceId, TrafficInFlightState state) {
+        if (traceId == null || traceId.isBlank() || state == null) {
+            return;
+        }
+
+        String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
+        cacheStringRedisTemplate.opsForValue().set(
+                dedupeKey,
+                state.name(),
+                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
+        );
     }
 }

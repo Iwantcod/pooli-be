@@ -8,10 +8,12 @@ import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
 
+import com.pooli.monitoring.metrics.TrafficDeductFallbackMetrics;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
+import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
@@ -24,6 +26,7 @@ import org.springframework.stereotype.Service;
 
 import com.pooli.monitoring.metrics.TrafficHydrateMetrics;
 import com.pooli.monitoring.metrics.TrafficRefillMetrics;
+import com.pooli.traffic.domain.TrafficDeductExecutionContext;
 import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.TrafficRefillPlan;
@@ -62,6 +65,12 @@ public class TrafficHydrateRefillAdapterService {
     @Value("${app.traffic.hydrate-lock.wait-ms:100}")
     private long hydrateLockWaitMs;
 
+    @Value("${app.traffic.deduct.redis-retry.max-attempts:3}")
+    private int redisRetryMaxAttempts;
+
+    @Value("${app.traffic.deduct.redis-retry.backoff-ms:50}")
+    private long redisRetryBackoffMs;
+
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
     private final TrafficLuaScriptInfraService trafficLuaScriptInfraService;
@@ -73,21 +82,56 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficPolicyBootstrapService trafficPolicyBootstrapService;
     private final TrafficHydrateMetrics trafficHydrateMetrics;
     private final TrafficRefillMetrics trafficRefillMetrics;
+    private final TrafficDeductFallbackMetrics trafficDeductFallbackMetrics;
     private final RedisOutboxRecordService redisOutboxRecordService;
     private final TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
+    private final TrafficDbDeductFallbackService trafficDbDeductFallbackService;
+    private final TrafficInFlightDedupeService trafficInFlightDedupeService;
 
     /**
      * 개인풀 차감과 복구 흐름을 실행합니다.
      */
     public TrafficLuaExecutionResult executeIndividualWithRecovery(TrafficPayloadReqDto payload, long requestedDataBytes) {
-        return executeWithRecovery(TrafficPoolType.INDIVIDUAL, payload, requestedDataBytes);
+        return executeIndividualWithRecovery(
+                payload,
+                requestedDataBytes,
+                TrafficDeductExecutionContext.of(payload == null ? null : payload.getTraceId())
+        );
+    }
+
+    /**
+     * 개인풀 차감과 복구 흐름을 실행합니다.
+     * 같은 traceId 처리 내 재시도/DB fallback 전환 상태를 context로 공유합니다.
+     */
+    public TrafficLuaExecutionResult executeIndividualWithRecovery(
+            TrafficPayloadReqDto payload,
+            long requestedDataBytes,
+            TrafficDeductExecutionContext context
+    ) {
+        return executeWithRecovery(TrafficPoolType.INDIVIDUAL, payload, requestedDataBytes, context);
     }
 
     /**
      * 공유풀 차감과 복구 흐름을 실행합니다.
      */
     public TrafficLuaExecutionResult executeSharedWithRecovery(TrafficPayloadReqDto payload, long requestedDataBytes) {
-        return executeWithRecovery(TrafficPoolType.SHARED, payload, requestedDataBytes);
+        return executeSharedWithRecovery(
+                payload,
+                requestedDataBytes,
+                TrafficDeductExecutionContext.of(payload == null ? null : payload.getTraceId())
+        );
+    }
+
+    /**
+     * 공유풀 차감과 복구 흐름을 실행합니다.
+     * 같은 traceId 처리 내 재시도/DB fallback 전환 상태를 context로 공유합니다.
+     */
+    public TrafficLuaExecutionResult executeSharedWithRecovery(
+            TrafficPayloadReqDto payload,
+            long requestedDataBytes,
+            TrafficDeductExecutionContext context
+    ) {
+        return executeWithRecovery(TrafficPoolType.SHARED, payload, requestedDataBytes, context);
     }
 
     /**
@@ -96,7 +140,8 @@ public class TrafficHydrateRefillAdapterService {
     private TrafficLuaExecutionResult executeWithRecovery(
             TrafficPoolType poolType,
             TrafficPayloadReqDto payload,
-            long requestedDataBytes
+            long requestedDataBytes,
+            TrafficDeductExecutionContext context
     ) {
         if (!isPayloadValidForPool(poolType, payload)) {
             return errorResult();
@@ -116,15 +161,22 @@ public class TrafficHydrateRefillAdapterService {
         YearMonth targetMonth = resolveTargetMonth(payload);
         String balanceKey = resolveBalanceKey(poolType, payload, targetMonth);
 
-        TrafficLuaExecutionResult initialResult = executeDeduct(poolType, payload, balanceKey, requestedDataBytes);
+        TrafficLuaExecutionResult initialResult = executeDeduct(poolType, payload, balanceKey, requestedDataBytes, context);
+        if (isFallbackActivated(context)) {
+            return initialResult;
+        }
 
         TrafficLuaExecutionResult afterGlobalPolicyHydrateResult = handleGlobalPolicyHydrateIfNeeded(
                 poolType,
                 payload,
                 balanceKey,
                 requestedDataBytes,
-                initialResult
+                initialResult,
+                context
         );
+        if (isFallbackActivated(context)) {
+            return afterGlobalPolicyHydrateResult;
+        }
 
         TrafficLuaExecutionResult afterHydrateResult = handleHydrateIfNeeded(
                 poolType,
@@ -132,8 +184,12 @@ public class TrafficHydrateRefillAdapterService {
                 targetMonth,
                 balanceKey,
                 requestedDataBytes,
-                afterGlobalPolicyHydrateResult
+                afterGlobalPolicyHydrateResult,
+                context
         );
+        if (isFallbackActivated(context)) {
+            return afterHydrateResult;
+        }
 
         return handleRefillIfNeeded(
                 poolType,
@@ -141,7 +197,8 @@ public class TrafficHydrateRefillAdapterService {
                 targetMonth,
                 balanceKey,
                 requestedDataBytes,
-                afterHydrateResult
+                afterHydrateResult,
+                context
         );
     }
 
@@ -153,7 +210,8 @@ public class TrafficHydrateRefillAdapterService {
             TrafficPayloadReqDto payload,
             String balanceKey,
             long requestedDataBytes,
-            TrafficLuaExecutionResult currentResult
+            TrafficLuaExecutionResult currentResult,
+            TrafficDeductExecutionContext context
     ) {
         if (currentResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
             return currentResult;
@@ -174,7 +232,7 @@ public class TrafficHydrateRefillAdapterService {
                 );
             }
 
-            retriedResult = executeDeduct(poolType, payload, balanceKey, requestedDataBytes);
+            retriedResult = executeDeduct(poolType, payload, balanceKey, requestedDataBytes, context);
             if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
                 return retriedResult;
             }
@@ -199,7 +257,8 @@ public class TrafficHydrateRefillAdapterService {
             YearMonth targetMonth,
             String balanceKey,
             long requestedDataBytes,
-            TrafficLuaExecutionResult currentResult
+            TrafficLuaExecutionResult currentResult,
+            TrafficDeductExecutionContext context
     ) {
         if (currentResult.getStatus() != TrafficLuaStatus.HYDRATE) {
             return currentResult;
@@ -220,7 +279,7 @@ public class TrafficHydrateRefillAdapterService {
                 sleepHydrateLockWait();
             }
 
-            retriedResult = executeDeduct(poolType, payload, balanceKey, requestedDataBytes);
+            retriedResult = executeDeduct(poolType, payload, balanceKey, requestedDataBytes, context);
             if (retriedResult.getStatus() != TrafficLuaStatus.HYDRATE) {
                 return retriedResult;
             }
@@ -262,7 +321,8 @@ public class TrafficHydrateRefillAdapterService {
             YearMonth targetMonth,
             String balanceKey,
             long requestedDataBytes,
-            TrafficLuaExecutionResult currentResult
+            TrafficLuaExecutionResult currentResult,
+            TrafficDeductExecutionContext context
     ) {
         if (currentResult.getStatus() != TrafficLuaStatus.NO_BALANCE) {
             return currentResult;
@@ -416,7 +476,8 @@ public class TrafficHydrateRefillAdapterService {
                                 poolType,
                                 payload,
                                 balanceKey,
-                                retryTargetData
+                                retryTargetData,
+                                context
                         );
                         retriedResult = mergeRefillRetryResult(
                                 normalizedRequestedDataBytes,
@@ -459,7 +520,8 @@ public class TrafficHydrateRefillAdapterService {
                         poolType,
                         payload,
                         balanceKey,
-                        retryTargetData
+                        retryTargetData,
+                        context
                 );
                 retriedResult = mergeRefillRetryResult(
                         normalizedRequestedDataBytes,
@@ -509,6 +571,66 @@ public class TrafficHydrateRefillAdapterService {
      * 풀 유형에 맞는 Lua 차감 스크립트를 실행합니다.
      */
     private TrafficLuaExecutionResult executeDeduct(
+            TrafficPoolType poolType,
+            TrafficPayloadReqDto payload,
+            String balanceKey,
+            long requestedDataBytes,
+            TrafficDeductExecutionContext context
+    ) {
+        if (isFallbackActivated(context)) {
+            trafficDeductFallbackMetrics.incrementDbFallback(poolType.name(), "request_scoped");
+            return trafficDbDeductFallbackService.deduct(poolType, payload, requestedDataBytes, context);
+        }
+
+        int maxAttempts = Math.max(1, redisRetryMaxAttempts);
+        RuntimeException lastException = null;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return executeDeductLua(poolType, payload, balanceKey, requestedDataBytes);
+            } catch (RuntimeException redisException) {
+                RuntimeException unwrappedException = trafficRefillOutboxSupportService.unwrapRuntimeException(redisException);
+                boolean retryable = trafficRefillOutboxSupportService.isConnectionFailure(unwrappedException)
+                        || trafficRefillOutboxSupportService.isTimeoutFailure(unwrappedException);
+                if (!retryable) {
+                    throw redisException;
+                }
+
+                lastException = unwrappedException;
+                trafficInFlightDedupeService.markRedisRetry(resolveTraceId(context, payload), attempt);
+                trafficDeductFallbackMetrics.incrementRedisRetry(
+                        poolType.name(),
+                        attempt,
+                        trafficRefillOutboxSupportService.isTimeoutFailure(unwrappedException) ? "timeout" : "connection"
+                );
+
+                if (attempt < maxAttempts) {
+                    sleepRedisRetryBackoff(attempt);
+                }
+            }
+        }
+
+        if (context != null) {
+            context.activateRedisFallback();
+        }
+        trafficInFlightDedupeService.markDbFallback(resolveTraceId(context, payload));
+        trafficDeductFallbackMetrics.incrementDbFallback(poolType.name(), "redis_retry_exhausted");
+        if (lastException != null) {
+            log.warn(
+                    "traffic_deduct_redis_retry_exhausted traceId={} poolType={} requestedData={} fallback=db",
+                    resolveTraceId(context, payload),
+                    poolType,
+                    requestedDataBytes,
+                    lastException
+            );
+        }
+        return trafficDbDeductFallbackService.deduct(poolType, payload, requestedDataBytes, context);
+    }
+
+    /**
+     * 기존 Lua 차감 실행 로직을 단일 호출로 수행합니다.
+     */
+    private TrafficLuaExecutionResult executeDeductLua(
             TrafficPoolType poolType,
             TrafficPayloadReqDto payload,
             String balanceKey,
@@ -608,6 +730,39 @@ public class TrafficHydrateRefillAdapterService {
                 yield trafficLuaScriptInfraService.executeDeductShared(keys, args);
             }
         };
+    }
+
+    /**
+     * 지수 backoff(50/100/200ms)로 Redis 재시도 간격을 제어합니다.
+     */
+    private void sleepRedisRetryBackoff(int retryAttempt) {
+        long baseBackoffMs = Math.max(0L, redisRetryBackoffMs);
+        if (baseBackoffMs <= 0) {
+            return;
+        }
+
+        long shift = Math.max(0, retryAttempt - 1);
+        long delayMs = baseBackoffMs;
+        if (shift > 0) {
+            delayMs = Math.min(Long.MAX_VALUE, baseBackoffMs << shift);
+        }
+
+        try {
+            Thread.sleep(delayMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private boolean isFallbackActivated(TrafficDeductExecutionContext context) {
+        return context != null && context.isRedisFallbackActivated();
+    }
+
+    private String resolveTraceId(TrafficDeductExecutionContext context, TrafficPayloadReqDto payload) {
+        if (context != null && context.getTraceId() != null && !context.getTraceId().isBlank()) {
+            return context.getTraceId();
+        }
+        return payload == null ? null : payload.getTraceId();
     }
 
     /**

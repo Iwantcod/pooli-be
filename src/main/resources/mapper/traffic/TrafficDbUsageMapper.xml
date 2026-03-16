@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.traffic.mapper.TrafficDbUsageMapper">
+
+    <select id="selectDailyTotalUsage" resultType="java.lang.Long">
+        SELECT total_usage_data
+        FROM DAILY_TOTAL_DATA
+        WHERE line_id = #{lineId}
+          AND usage_date = #{usageDate}
+          AND deleted_at IS NULL
+    </select>
+
+    <select id="selectDailyAppUsage" resultType="java.lang.Long">
+        SELECT total_usage_data
+        FROM DAILY_APP_TOTAL_DATA
+        WHERE line_id = #{lineId}
+          AND application_id = #{appId}
+          AND usage_date = #{usageDate}
+          AND deleted_at IS NULL
+    </select>
+
+    <select id="selectMonthlySharedUsageByLine" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(usage_amount), 0)
+        FROM FAMILY_SHARED_USAGE_DAILY
+        WHERE line_id = #{lineId}
+          AND usage_date &gt;= #{monthStart}
+          AND usage_date &lt; #{nextMonthStart}
+          AND deleted_at IS NULL
+    </select>
+
+    <insert id="upsertDailyTotalUsage">
+        INSERT INTO DAILY_TOTAL_DATA (
+            usage_date,
+            line_id,
+            total_usage_data,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{usageDate},
+            #{lineId},
+            #{usedBytes},
+            NOW(6),
+            NOW(6)
+        )
+        ON DUPLICATE KEY UPDATE
+            total_usage_data = total_usage_data + VALUES(total_usage_data),
+            deleted_at = NULL,
+            updated_at = NOW(6)
+    </insert>
+
+    <insert id="upsertDailyAppUsage">
+        INSERT INTO DAILY_APP_TOTAL_DATA (
+            usage_date,
+            line_id,
+            application_id,
+            total_usage_data,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{usageDate},
+            #{lineId},
+            #{appId},
+            #{usedBytes},
+            NOW(6),
+            NOW(6)
+        )
+        ON DUPLICATE KEY UPDATE
+            total_usage_data = total_usage_data + VALUES(total_usage_data),
+            deleted_at = NULL,
+            updated_at = NOW(6)
+    </insert>
+
+    <insert id="upsertFamilySharedUsageDaily">
+        INSERT INTO FAMILY_SHARED_USAGE_DAILY (
+            usage_date,
+            family_id,
+            line_id,
+            usage_amount,
+            contribution_amount,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{usageDate},
+            #{familyId},
+            #{lineId},
+            #{usedBytes},
+            0,
+            NOW(6),
+            NOW(6)
+        )
+        ON DUPLICATE KEY UPDATE
+            usage_amount = usage_amount + VALUES(usage_amount),
+            deleted_at = NULL,
+            updated_at = NOW(6)
+    </insert>
+
+</mapper>

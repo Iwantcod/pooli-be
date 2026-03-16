@@ -18,6 +18,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import com.pooli.traffic.domain.enums.TrafficInFlightState;
+
 @ExtendWith(MockitoExtension.class)
 class TrafficInFlightDedupeServiceTest {
 
@@ -47,7 +49,7 @@ class TrafficInFlightDedupeServiceTest {
             when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.setIfAbsent(
                     eq(dedupeKey),
-                    eq(traceId),
+                    eq(TrafficInFlightState.CLAIMED.name()),
                     eq(Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC))
             )).thenReturn(true);
 
@@ -58,7 +60,7 @@ class TrafficInFlightDedupeServiceTest {
             assertTrue(claimed);
             verify(valueOperations).setIfAbsent(
                     dedupeKey,
-                    traceId,
+                    TrafficInFlightState.CLAIMED.name(),
                     Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
             );
         }
@@ -73,7 +75,7 @@ class TrafficInFlightDedupeServiceTest {
             when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.setIfAbsent(
                     eq(dedupeKey),
-                    eq(traceId),
+                    eq(TrafficInFlightState.CLAIMED.name()),
                     eq(Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC))
             )).thenReturn(false);
 
@@ -83,5 +85,63 @@ class TrafficInFlightDedupeServiceTest {
             // then
             assertFalse(claimed);
         }
+    }
+
+    @Test
+    @DisplayName("release 호출 시 DONE 상태를 TTL과 함께 기록한다")
+    void releaseWritesDoneState() {
+        // given
+        String traceId = "trace-001";
+        String dedupeKey = "pooli:dedupe:run:trace-001";
+        when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
+        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        // when
+        trafficInFlightDedupeService.release(traceId);
+
+        // then
+        verify(valueOperations).set(
+                dedupeKey,
+                TrafficInFlightState.DONE.name(),
+                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
+        );
+    }
+
+    @Test
+    @DisplayName("Redis 재시도와 DB fallback 상태를 기록한다")
+    void writesRetryAndFallbackStates() {
+        // given
+        String traceId = "trace-001";
+        String dedupeKey = "pooli:dedupe:run:trace-001";
+        when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
+        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        // when
+        trafficInFlightDedupeService.markRedisRetry(traceId, 1);
+        trafficInFlightDedupeService.markRedisRetry(traceId, 2);
+        trafficInFlightDedupeService.markRedisRetry(traceId, 3);
+        trafficInFlightDedupeService.markDbFallback(traceId);
+
+        // then
+        verify(valueOperations).set(
+                dedupeKey,
+                TrafficInFlightState.REDIS_RETRY_1.name(),
+                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
+        );
+        verify(valueOperations).set(
+                dedupeKey,
+                TrafficInFlightState.REDIS_RETRY_2.name(),
+                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
+        );
+        verify(valueOperations).set(
+                dedupeKey,
+                TrafficInFlightState.REDIS_RETRY_3.name(),
+                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
+        );
+        verify(valueOperations).set(
+                dedupeKey,
+                TrafficInFlightState.DB_FALLBACK.name(),
+                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
+        );
     }
 }

@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.traffic.mapper.TrafficRedisUsageDeltaMapper">
+
+    <insert id="insertIgnoreDuplicate"
+            parameterType="com.pooli.traffic.domain.entity.TrafficRedisUsageDeltaRecord"
+            useGeneratedKeys="true"
+            keyProperty="id"
+            keyColumn="id">
+        INSERT INTO TRAFFIC_REDIS_USAGE_DELTA (
+            trace_id,
+            pool_type,
+            line_id,
+            family_id,
+            app_id,
+            used_bytes,
+            usage_date,
+            target_month,
+            status,
+            retry_count,
+            created_at,
+            status_updated_at
+        ) VALUES (
+            #{traceId},
+            #{poolType},
+            #{lineId},
+            #{familyId},
+            #{appId},
+            #{usedBytes},
+            #{usageDate},
+            #{targetMonth},
+            #{status},
+            #{retryCount},
+            NOW(6),
+            NOW(6)
+        )
+        ON DUPLICATE KEY UPDATE
+            id = id
+    </insert>
+
+    <select id="selectReplayCandidatesForUpdate"
+            resultType="com.pooli.traffic.domain.entity.TrafficRedisUsageDeltaRecord">
+        SELECT
+            id,
+            trace_id,
+            pool_type,
+            line_id,
+            family_id,
+            app_id,
+            used_bytes,
+            usage_date,
+            target_month,
+            status,
+            retry_count,
+            last_error_message,
+            created_at,
+            status_updated_at
+        FROM TRAFFIC_REDIS_USAGE_DELTA
+        WHERE (
+            status = 'PENDING'
+            OR status = 'FAIL'
+            OR (
+                status = 'PROCESSING'
+                AND status_updated_at &lt; DATE_SUB(NOW(6), INTERVAL #{processingStuckSeconds} SECOND)
+            )
+        )
+        ORDER BY id ASC
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <update id="markProcessing">
+        UPDATE TRAFFIC_REDIS_USAGE_DELTA
+        SET status = 'PROCESSING',
+            status_updated_at = NOW(6)
+        WHERE id = #{id}
+          AND status &lt;&gt; 'SUCCESS'
+    </update>
+
+    <update id="markSuccess">
+        UPDATE TRAFFIC_REDIS_USAGE_DELTA
+        SET status = 'SUCCESS',
+            status_updated_at = NOW(6),
+            last_error_message = NULL
+        WHERE id = #{id}
+    </update>
+
+    <update id="markFailWithRetryIncrement">
+        UPDATE TRAFFIC_REDIS_USAGE_DELTA
+        SET status = 'FAIL',
+            retry_count = retry_count + 1,
+            last_error_message = #{lastErrorMessage},
+            status_updated_at = NOW(6)
+        WHERE id = #{id}
+          AND status &lt;&gt; 'SUCCESS'
+    </update>
+
+    <update id="markFailWithRetryCount">
+        UPDATE TRAFFIC_REDIS_USAGE_DELTA
+        SET status = 'FAIL',
+            retry_count = #{retryCount},
+            last_error_message = #{lastErrorMessage},
+            status_updated_at = NOW(6)
+        WHERE id = #{id}
+          AND status &lt;&gt; 'SUCCESS'
+    </update>
+
+    <select id="countBacklog" resultType="long">
+        SELECT COUNT(*)
+        FROM TRAFFIC_REDIS_USAGE_DELTA
+        WHERE status IN ('PENDING', 'FAIL', 'PROCESSING')
+    </select>
+
+</mapper>
