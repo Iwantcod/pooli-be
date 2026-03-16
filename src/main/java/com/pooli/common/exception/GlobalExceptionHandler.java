@@ -33,20 +33,18 @@ import lombok.extern.slf4j.Slf4j;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final String TRACE_ID_KEY = "traceId";
-    private static final int MAX_LOG_BODY_LENGTH = 1000;
+
 
     @ExceptionHandler(ApplicationException.class)
     public ResponseEntity<ErrorResDto> handleApplicationException(ApplicationException ex, HttpServletRequest request) {
         ErrorCode errorCode = ex.getErrorCode();
-        String body = truncate((String) request.getAttribute("cachedRequestBody"), MAX_LOG_BODY_LENGTH);
 
         log.error(
                 "application_error traceId={} uri={} errorCode={} message={}",
                 MDC.get(TRACE_ID_KEY),
                 request.getRequestURI(),
                 errorCode.getCode(),
-                ex.getMessage(),
-                body
+                ex.getMessage()
         );
 
 
@@ -333,9 +331,4 @@ public class GlobalExceptionHandler {
                 .build();
     }
 
-    private String truncate(String str, int maxLength) {
-        if (str == null) return null;
-        if (str.length() <= maxLength) return str;
-        return str.substring(0, maxLength) + "...(truncated)";
-    }
 }
