@@ -44,104 +44,117 @@ class TrafficStreamReclaimServiceTest {
     private TrafficStreamReclaimService trafficStreamReclaimService;
 
     @Nested
-    @DisplayName("reclaimAndRouteExceededRetries 테스트")
+    @DisplayName("reclaimAndRouteExceededRetries")
     class ReclaimAndRouteExceededRetriesTest {
 
         @Test
-        @DisplayName("pending이 없으면 빈 목록 반환")
+        @DisplayName("returns empty when there is no pending message")
         void returnsEmptyWhenNoPendingMessages() {
-            // given
-            when(appStreamsProperties.getReadCount()).thenReturn(20);
-            when(trafficStreamInfraService.readPendingMessages(20L)).thenReturn(List.of());
+            when(appStreamsProperties.requireReclaimPendingScanCount()).thenReturn(100);
+            when(appStreamsProperties.requireReadCount()).thenReturn(20);
+            when(trafficStreamInfraService.readPendingMessages(100L)).thenReturn(List.of());
 
-            // when
             List<MapRecord<String, String, String>> reclaimed =
                     trafficStreamReclaimService.reclaimAndRouteExceededRetries();
 
-            // then
             assertTrue(reclaimed.isEmpty());
             verify(trafficStreamInfraService, never()).claimPending(anyList(), anyLong());
         }
 
         @Test
-        @DisplayName("retry 초과 메시지는 DLQ+ACK 처리")
+        @DisplayName("routes exceeded retry pending message to DLQ and ACK")
         void routesExceededRetryMessageToDlq() {
-            // given
-            mockProperties(20, 70_000L, 3);
-            PendingMessage exceeded = pendingMessage("1-0", 4L, 80_000L);
+            mockProperties(100, 15_000L, 5);
+            PendingMessage exceeded = pendingMessage("1-0", 6L, 20_000L);
             MapRecord<String, String, String> sourceRecord = MapRecord
                     .<String, String, String>create("traffic:deduct:request", Map.of(TrafficStreamFields.PAYLOAD, "{\"traceId\":\"t-1\"}"))
                     .withId(RecordId.of("1-0"));
 
-            when(trafficStreamInfraService.readPendingMessages(20L)).thenReturn(List.of(exceeded));
+            when(trafficStreamInfraService.readPendingMessages(100L)).thenReturn(List.of(exceeded));
             when(trafficStreamInfraService.readRecordById(any(RecordId.class))).thenReturn(sourceRecord);
             when(trafficStreamInfraService.extractPayload(sourceRecord)).thenReturn("{\"traceId\":\"t-1\"}");
 
-            // when
             List<MapRecord<String, String, String>> reclaimed =
-                    trafficStreamReclaimService.reclaimAndRouteExceededRetries();
+                    trafficStreamReclaimService.reclaimAndRouteExceededRetries(3);
 
-            // then
             assertTrue(reclaimed.isEmpty());
             verify(trafficStreamInfraService).writeDlq(
                     eq("{\"traceId\":\"t-1\"}"),
-                    eq("max retry 초과: deliveryCount=4, maxRetry=3"),
+                    eq("max retry exceeded: deliveryCount=6, maxRetry=5"),
                     eq("1-0")
             );
             verify(trafficStreamInfraService).acknowledge(
                     argThat(recordId -> recordId != null && "1-0".equals(recordId.getValue()))
             );
-            verify(trafficStreamInfraService, never()).claimPending(anyList(), eq(70_000L));
+            verify(trafficStreamInfraService, never()).claimPending(anyList(), eq(15_000L));
         }
 
         @Test
-        @DisplayName("retry 한도 이내 메시지는 reclaim 대상으로 claim")
-        void claimsEligiblePendingMessages() {
-            // given
-            mockProperties(20, 70_000L, 3);
-            PendingMessage candidate = pendingMessage("2-0", 2L, 75_000L);
+        @DisplayName("claims only up to remaining reclaim dispatch limit")
+        void claimsOnlyUpToDispatchLimit() {
+            mockProperties(100, 15_000L, 5);
+            PendingMessage first = pendingMessage("2-0", 2L, 18_000L);
+            PendingMessage second = pendingMessage("2-1", 3L, 19_000L);
+            PendingMessage third = pendingMessage("2-2", 1L, 20_000L);
             MapRecord<String, String, String> claimedRecord = MapRecord
                     .<String, String, String>create("traffic:deduct:request", Map.of(TrafficStreamFields.PAYLOAD, "{\"traceId\":\"t-2\"}"))
                     .withId(RecordId.of("2-0"));
 
-            when(trafficStreamInfraService.readPendingMessages(20L)).thenReturn(List.of(candidate));
-            when(trafficStreamInfraService.claimPending(List.of(RecordId.of("2-0")), 70_000L))
+            when(trafficStreamInfraService.readPendingMessages(100L)).thenReturn(List.of(first, second, third));
+            when(trafficStreamInfraService.claimPending(List.of(RecordId.of("2-0"), RecordId.of("2-1")), 15_000L))
                     .thenReturn(List.of(claimedRecord));
 
-            // when
             List<MapRecord<String, String, String>> reclaimed =
-                    trafficStreamReclaimService.reclaimAndRouteExceededRetries();
+                    trafficStreamReclaimService.reclaimAndRouteExceededRetries(2);
 
-            // then
             assertEquals(1, reclaimed.size());
             assertEquals("2-0", reclaimed.get(0).getId().getValue());
-            verify(trafficStreamInfraService).claimPending(List.of(RecordId.of("2-0")), 70_000L);
+            verify(trafficStreamInfraService).claimPending(List.of(RecordId.of("2-0"), RecordId.of("2-1")), 15_000L);
             verify(trafficStreamInfraService, never()).writeDlq(any(), anyString(), anyString());
         }
 
         @Test
-        @DisplayName("min-idle 미만 pending은 reclaim에서 제외")
+        @DisplayName("uses dedicated reclaim scan count instead of read count")
+        void usesDedicatedReclaimScanCount() {
+            when(appStreamsProperties.requireReclaimPendingScanCount()).thenReturn(250);
+            when(appStreamsProperties.requireReadCount()).thenReturn(20);
+            when(trafficStreamInfraService.readPendingMessages(250L)).thenReturn(List.of());
+
+            trafficStreamReclaimService.reclaimAndRouteExceededRetries();
+
+            verify(trafficStreamInfraService).readPendingMessages(250L);
+        }
+
+        @Test
+        @DisplayName("skips pending message when min idle is not reached")
         void skipsPendingMessageWhenIdleNotEnough() {
-            // given
-            mockProperties(20, 70_000L, 3);
+            mockProperties(100, 15_000L, 5);
             PendingMessage tooFresh = pendingMessage("3-0", 1L, 5_000L);
 
-            when(trafficStreamInfraService.readPendingMessages(20L)).thenReturn(List.of(tooFresh));
+            when(trafficStreamInfraService.readPendingMessages(100L)).thenReturn(List.of(tooFresh));
 
-            // when
             List<MapRecord<String, String, String>> reclaimed =
-                    trafficStreamReclaimService.reclaimAndRouteExceededRetries();
+                    trafficStreamReclaimService.reclaimAndRouteExceededRetries(3);
 
-            // then
             assertTrue(reclaimed.isEmpty());
             verify(trafficStreamInfraService, never()).claimPending(anyList(), anyLong());
             verify(trafficStreamInfraService, never()).writeDlq(any(), anyString(), anyString());
         }
 
-        private void mockProperties(int readCount, long reclaimMinIdleMs, int maxRetry) {
-            when(appStreamsProperties.getReadCount()).thenReturn(readCount);
-            when(appStreamsProperties.getReclaimMinIdleMs()).thenReturn(reclaimMinIdleMs);
-            when(appStreamsProperties.getMaxRetry()).thenReturn(maxRetry);
+        @Test
+        @DisplayName("returns empty when reclaim dispatch limit is zero")
+        void returnsEmptyWhenClaimLimitIsZero() {
+            List<MapRecord<String, String, String>> reclaimed =
+                    trafficStreamReclaimService.reclaimAndRouteExceededRetries(0);
+
+            assertTrue(reclaimed.isEmpty());
+            verify(trafficStreamInfraService, never()).readPendingMessages(anyLong());
+        }
+
+        private void mockProperties(int reclaimPendingScanCount, long reclaimMinIdleMs, int maxRetry) {
+            when(appStreamsProperties.requireReclaimPendingScanCount()).thenReturn(reclaimPendingScanCount);
+            when(appStreamsProperties.requireReclaimMinIdleMs()).thenReturn(reclaimMinIdleMs);
+            when(appStreamsProperties.requireMaxRetry()).thenReturn(maxRetry);
         }
 
         private PendingMessage pendingMessage(String recordId, long deliveryCount, long elapsedMs) {

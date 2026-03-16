@@ -2,4 +2,11 @@ spring:
   config:
     activate:
       on-profile: api
+  task:
+    scheduling:
+      enabled: false
+
+app:
+  streams:
+    consumer-enabled: false
 

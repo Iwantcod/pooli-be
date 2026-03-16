@@ -1,9 +1,12 @@
 package com.pooli.family.controller;
 
 import com.pooli.auth.service.AuthUserDetails;
+import com.pooli.common.dto.ErrorResDto;
 import com.pooli.family.domain.dto.request.CreateSharedPoolContributionReqDto;
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
 import com.pooli.family.domain.dto.response.*;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import com.pooli.family.service.FamilySharedPoolsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -182,10 +185,22 @@ public class FamilySharedPoolsController {
             description = "로그인 회선 기준 가족 공유풀 사용량 조회"
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "임계치 수정 성공"),
-        @ApiResponse(responseCode = "401", description = "인증 실패"),
-        @ApiResponse(responseCode = "404", description = "공유풀 정보를 찾을 수 없음"),
-        @ApiResponse(responseCode = "500", description = "서버 오류")
+        @ApiResponse(responseCode = "200", description = "가족 공유풀 사용량 조회 성공"),
+        @ApiResponse(
+                responseCode = "401",
+                description = "인증 실패",
+                content = @Content(schema = @Schema(implementation = ErrorResDto.class))
+        ),
+        @ApiResponse(
+                responseCode = "404",
+                description = "공유풀 정보를 찾을 수 없음",
+                content = @Content(schema = @Schema(implementation = ErrorResDto.class))
+        ),
+        @ApiResponse(
+                responseCode = "500",
+                description = "서버 오류",
+                content = @Content(schema = @Schema(implementation = ErrorResDto.class))
+        )
     })
     @GetMapping("/usage/monthly-total")
     public ResponseEntity<SharedPoolMonthlyUsageResDto> getFamilyMonthlySharedUsageTotal(

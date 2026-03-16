@@ -23,7 +23,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import com.pooli.traffic.domain.enums.TrafficInFlightState;
 
 @ExtendWith(MockitoExtension.class)
-class TrafficInFlightDedupeServiceTest {
+public class TrafficInFlightDedupeServiceTest {
 
     @Mock
     private StringRedisTemplate cacheStringRedisTemplate;
