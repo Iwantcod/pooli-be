@@ -48,6 +48,67 @@
         </foreach>
     </insert>
 
+    <!-- ALL 대상 알림 -->
+    <insert id="insertNotificationAll">
+        INSERT INTO ALARM_HISTORY (
+        line_id,
+        alarm_code,
+        value,
+        created_at,
+        deleted_at,
+        read_at
+        )
+        SELECT
+        line_id,
+        #{alarmCode},
+        #{value},
+        NOW(6),
+        NULL,
+        NULL
+        FROM LINE
+    </insert>
+
+    <!-- OWNER 대상 알림 -->
+    <insert id="insertNotificationOwner">
+        INSERT INTO ALARM_HISTORY (
+        line_id,
+        alarm_code,
+        value,
+        created_at,
+        deleted_at,
+        read_at
+        )
+        SELECT
+        fl.line_id,
+        #{alarmCode},
+        #{value},
+        NOW(6),
+        NULL,
+        NULL
+        FROM family_line fl
+        WHERE fl.role = 'OWNER'
+    </insert>
+
+    <!-- MEMBER 대상 알림 -->
+    <insert id="insertNotificationMember">
+        INSERT INTO ALARM_HISTORY (
+        line_id,
+        alarm_code,
+        value,
+        created_at,
+        deleted_at,
+        read_at
+        )
+        SELECT
+        fl.line_id,
+        #{alarmCode},
+        #{value},
+        NOW(6),
+        NULL,
+        NULL
+        FROM family_line fl
+        WHERE fl.role = 'MEMBER'
+    </insert>
 
     <select id="countAlarmHistory" resultType="long">
 
@@ -108,23 +169,23 @@
 
         <!-- 알람 세팅 기준으로 조회 -->
         AND (
-            ah.alarm_code = 'OTHERS'
-            OR
-            s.user_id IS NULL
-            OR
-            (
-                (ah.alarm_code = 'FAMILY' AND s.family_alarm = TRUE)
-                OR
-                (ah.alarm_code = 'USER' AND s.user_alarm = TRUE)
-                OR
-                (ah.alarm_code = 'POLICY_CHANGE' AND s.policy_change_alarm = TRUE)
-                OR
-                (ah.alarm_code = 'POLICY_LIMIT' AND s.policy_limit_alarm = TRUE)
-                OR
-                (ah.alarm_code = 'PERMISSION' AND s.permission_alarm = TRUE)
-                OR
-                (ah.alarm_code = 'QUESTION' AND s.question_alarm = TRUE)
-            )
+        ah.alarm_code = 'OTHERS'
+        OR
+        s.user_id IS NULL
+        OR
+        (
+        (ah.alarm_code = 'FAMILY' AND s.family_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'USER' AND s.user_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'POLICY_CHANGE' AND s.policy_change_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'POLICY_LIMIT' AND s.policy_limit_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'PERMISSION' AND s.permission_alarm = TRUE)
+        OR
+        (ah.alarm_code = 'QUESTION' AND s.question_alarm = TRUE)
+        )
         )
 
         <if test="isRead != null">
@@ -206,15 +267,15 @@
     <select id="findOneByAlarmHistoryIdAndLineId"
             resultType="com.pooli.notification.domain.dto.response.NotiSendResDto">
         SELECT
-            alarm_history_id AS alarmHistoryId,
-            line_id          AS lineId,
-            alarm_code       AS alarmCode,
-            value,
-            CASE
-                WHEN read_at IS NULL THEN FALSE
-                ELSE TRUE
-            END              AS isRead,
-            created_at       AS createdAt
+        alarm_history_id AS alarmHistoryId,
+        line_id          AS lineId,
+        alarm_code       AS alarmCode,
+        value,
+        CASE
+        WHEN read_at IS NULL THEN FALSE
+        ELSE TRUE
+        END              AS isRead,
+        created_at       AS createdAt
         FROM ALARM_HISTORY
         WHERE alarm_history_id = #{alarmHistoryId}
         AND line_id = #{lineId}
