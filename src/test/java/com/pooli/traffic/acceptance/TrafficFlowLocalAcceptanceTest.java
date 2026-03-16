@@ -274,18 +274,25 @@ class TrafficFlowLocalAcceptanceTest {
 
         try {
             String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
-            assertDoneLog(traceId, 0L, 50L, "PARTIAL_SUCCESS", "NO_BALANCE");
+            // 개인풀 리필 Redis 반영 실패가 발생해도, 현재 오케스트레이터는 공유풀 보완 차감을 이어서 수행한다.
+            assertDoneLog(traceId, 50L, 0L, "SUCCESS", "OK");
 
-            Long outboxId = awaitRefillOutboxIdByTraceId(traceId);
-            assertThat(outboxId).isNotNull();
-            assertThat(readOutboxStatus(outboxId)).isEqualTo("FAIL");
-            assertThat(readOutboxRetryCount(outboxId)).isEqualTo(0);
+            Long individualOutboxId = awaitRefillOutboxIdByTraceIdAndPoolType(traceId, "INDIVIDUAL");
+            Long sharedOutboxId = awaitRefillOutboxIdByTraceIdAndPoolType(traceId, "SHARED");
+            assertThat(individualOutboxId).isNotNull();
+            assertThat(sharedOutboxId).isNotNull();
+
+            // 강제 실패 대상인 개인풀 outbox는 FAIL 상태로 남아야 한다.
+            assertThat(readOutboxStatus(individualOutboxId)).isEqualTo("FAIL");
+            assertThat(readOutboxRetryCount(individualOutboxId)).isEqualTo(0);
+            // 공유풀 outbox는 정상 반영되어 즉시 SUCCESS가 되어야 한다.
+            assertThat(readOutboxStatus(sharedOutboxId)).isEqualTo("SUCCESS");
 
             // 사용자 요청대로 재시도 스케줄러 메서드를 수동 호출해 실제 재처리를 검증한다.
             redisOutboxRetryScheduler.runRetryCycle();
 
             await("outbox status should become SUCCESS after manual retry cycle", () ->
-                    "SUCCESS".equals(readOutboxStatus(outboxId))
+                    "SUCCESS".equals(readOutboxStatus(individualOutboxId))
             );
             await("redis balance should be refilled after outbox retry", () ->
                     readHashAmount(balanceKey) > 0L
@@ -974,31 +981,33 @@ class TrafficFlowLocalAcceptanceTest {
         return Long.parseLong(amount);
     }
 
-    private Long awaitRefillOutboxIdByTraceId(String traceId) throws Exception {
+    private Long awaitRefillOutboxIdByTraceIdAndPoolType(String traceId, String poolType) throws Exception {
         long startedAt = System.currentTimeMillis();
         long timeoutMs = 5_000L;
         while (System.currentTimeMillis() - startedAt < timeoutMs) {
-            Long outboxId = findLatestRefillOutboxIdByTraceId(traceId);
+            Long outboxId = findLatestRefillOutboxIdByTraceIdAndPoolType(traceId, poolType);
             if (outboxId != null) {
                 return outboxId;
             }
             TimeUnit.MILLISECONDS.sleep(100);
         }
-        throw new AssertionError("Timeout while waiting refill outbox: traceId=" + traceId);
+        throw new AssertionError("Timeout while waiting refill outbox: traceId=" + traceId + ", poolType=" + poolType);
     }
 
-    private Long findLatestRefillOutboxIdByTraceId(String traceId) {
+    private Long findLatestRefillOutboxIdByTraceIdAndPoolType(String traceId, String poolType) {
         List<Long> ids = jdbcTemplate.queryForList(
                 """
                 SELECT id
                 FROM TRAFFIC_REDIS_OUTBOX
                 WHERE event_type = 'REFILL'
                   AND payload LIKE ?
+                  AND payload LIKE ?
                 ORDER BY id DESC
                 LIMIT 1
                 """,
                 Long.class,
-                "%\\\"traceId\\\":\\\"" + traceId + "\\\"%"
+                "%\\\"traceId\\\":\\\"" + traceId + "\\\"%",
+                "%\\\"poolType\\\":\\\"" + poolType + "\\\"%"
         );
         return ids.isEmpty() ? null : ids.getFirst();
     }
