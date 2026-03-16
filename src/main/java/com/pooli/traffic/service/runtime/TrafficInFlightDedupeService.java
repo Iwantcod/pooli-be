@@ -66,32 +66,28 @@ public class TrafficInFlightDedupeService {
     }
 
     /**
-     * Redis 재시도 진행 상태를 in-flight 키에 기록합니다.
+     * Redis 재시도 진행 상태를 로그로만 남깁니다.
+     * Redis 장애 상황에서도 본 복구 흐름(retry/backoff/fallback)을 절대 방해하지 않기 위함입니다.
      */
     public void markRedisRetry(String traceId, int retryAttempt) {
-        writeState(traceId, TrafficInFlightState.fromRetryAttempt(retryAttempt));
-    }
-
-    /**
-     * 요청 단위 DB fallback 전환 상태를 in-flight 키에 기록합니다.
-     */
-    public void markDbFallback(String traceId) {
-        writeState(traceId, TrafficInFlightState.DB_FALLBACK);
-    }
-
-    /**
-     * traceId 상태를 TTL과 함께 기록합니다.
-     */
-    private void writeState(String traceId, TrafficInFlightState state) {
-        if (traceId == null || traceId.isBlank() || state == null) {
+        if (traceId == null || traceId.isBlank()) {
             return;
         }
+        TrafficInFlightState state = TrafficInFlightState.fromRetryAttempt(retryAttempt);
+        if (state == null) {
+            return;
+        }
+        log.info("traffic_dedupe_state_log_only traceId={} state={}", traceId, state.name());
+    }
 
-        String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
-        cacheStringRedisTemplate.opsForValue().set(
-                dedupeKey,
-                state.name(),
-                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
-        );
+    /**
+     * 요청 단위 DB fallback 전환 상태를 로그로만 남깁니다.
+     * Redis 상태 저장 실패가 DB fallback 자체를 끊지 않도록 Redis 쓰기를 하지 않습니다.
+     */
+    public void markDbFallback(String traceId) {
+        if (traceId == null || traceId.isBlank()) {
+            return;
+        }
+        log.info("traffic_dedupe_state_log_only traceId={} state={}", traceId, TrafficInFlightState.DB_FALLBACK.name());
     }
 }

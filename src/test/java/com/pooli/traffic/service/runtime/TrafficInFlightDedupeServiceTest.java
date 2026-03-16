@@ -2,7 +2,9 @@ package com.pooli.traffic.service.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -108,40 +110,18 @@ class TrafficInFlightDedupeServiceTest {
     }
 
     @Test
-    @DisplayName("Redis 재시도와 DB fallback 상태를 기록한다")
-    void writesRetryAndFallbackStates() {
+    @DisplayName("Redis 재시도와 DB fallback 상태는 로그로만 남기고 Redis에는 기록하지 않는다")
+    void marksRetryAndFallbackAsLogOnly() {
         // given
         String traceId = "trace-001";
-        String dedupeKey = "pooli:dedupe:run:trace-001";
-        when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
-        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
 
         // when
-        trafficInFlightDedupeService.markRedisRetry(traceId, 1);
-        trafficInFlightDedupeService.markRedisRetry(traceId, 2);
-        trafficInFlightDedupeService.markRedisRetry(traceId, 3);
-        trafficInFlightDedupeService.markDbFallback(traceId);
+        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 1));
+        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 2));
+        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 3));
+        assertDoesNotThrow(() -> trafficInFlightDedupeService.markDbFallback(traceId));
 
         // then
-        verify(valueOperations).set(
-                dedupeKey,
-                TrafficInFlightState.REDIS_RETRY_1.name(),
-                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
-        );
-        verify(valueOperations).set(
-                dedupeKey,
-                TrafficInFlightState.REDIS_RETRY_2.name(),
-                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
-        );
-        verify(valueOperations).set(
-                dedupeKey,
-                TrafficInFlightState.REDIS_RETRY_3.name(),
-                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
-        );
-        verify(valueOperations).set(
-                dedupeKey,
-                TrafficInFlightState.DB_FALLBACK.name(),
-                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
-        );
+        verify(cacheStringRedisTemplate, never()).opsForValue();
     }
 }
