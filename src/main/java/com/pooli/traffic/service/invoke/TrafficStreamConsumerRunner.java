@@ -4,10 +4,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
@@ -20,8 +24,12 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
+import com.pooli.common.config.AppStreamsProperties.WorkerRejectionPolicy;
+import com.pooli.common.dto.Violation;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
+import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
+import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,7 +53,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final AppStreamsProperties appStreamsProperties;
     // payload JSON 역직렬화 도구
     private final ObjectMapper objectMapper;
-    // 이벤트 단위 차감 오케스트레이션 서비스
+    private final TrafficPayloadValidationService trafficPayloadValidationService;
     private final TrafficDeductOrchestratorService trafficDeductOrchestratorService;
     // in-flight dedupe 선점 서비스(traceId 기준)
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
@@ -56,11 +64,10 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
     // 전역적인 소비 루프 동작 여부 플래그(start/stop 간 공유)
     private final AtomicBoolean running = new AtomicBoolean(false);
-    // BLOCK read 전용 단일 poller 실행기
+    private final AtomicBoolean workerPressureActive = new AtomicBoolean(false);
+
     private ExecutorService pollerExecutor;
-    // 레코드 처리 병렬 수행용 worker 실행기
-    private ExecutorService workerExecutor;
-    // pending reclaim 주기 실행기
+    private ThreadPoolExecutor workerExecutor;
     private ScheduledExecutorService reclaimExecutor;
 
     @Override
@@ -80,6 +87,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         trafficStreamInfraService.ensureConsumerGroup();
 
         int workerThreadCount = resolveWorkerThreadCount();
+        int workerQueueCapacity = appStreamsProperties.requireWorkerQueueCapacity();
+        WorkerRejectionPolicy rejectionPolicy = appStreamsProperties.requireWorkerRejectionPolicy();
 
         // poller는 BLOCK read 전용이므로 단일 스레드면 충분하다.
         pollerExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -90,12 +99,19 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             return thread;
         });
 
-        // 레코드 처리는 worker 풀에서 병렬 수행한다.
-        workerExecutor = Executors.newFixedThreadPool(workerThreadCount, r -> {
-            Thread thread = new Thread(r, "traffic-stream-worker");
-            thread.setDaemon(false);
-            return thread;
-        });
+        workerExecutor = new ThreadPoolExecutor(
+                workerThreadCount,
+                workerThreadCount,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(workerQueueCapacity),
+                r -> {
+                    Thread thread = new Thread(r, "traffic-stream-worker");
+                    thread.setDaemon(false);
+                    return thread;
+                },
+                buildRejectedExecutionHandler(rejectionPolicy)
+        );
 
         // running 플래그를 먼저 켠 뒤 루프를 제출해
         // 제출 직후 루프가 즉시 종료되는 경쟁 상태를 피한다.
@@ -103,10 +119,12 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         pollerExecutor.submit(this::consumeLoop);
         startReclaimLoop();
         log.info(
-                "traffic_stream_consumer_started group={} consumer={} workerThreads={}",
+                "traffic_stream_consumer_started group={} consumer={} workerThreads={} workerQueueCapacity={} rejectionPolicy={}",
                 appStreamsProperties.getGroupTraffic(),
                 appStreamsProperties.getConsumerName(),
-                workerThreadCount
+                workerThreadCount,
+                workerQueueCapacity,
+                rejectionPolicy
         );
     }
 
@@ -118,27 +136,20 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         // 루프가 다음 사이클에서 종료되도록 먼저 상태를 내린다.
         running.set(false);
 
-        // BLOCK read 대기를 빠르게 종료하기 위해 poller를 먼저 interrupt한다.
-        if (pollerExecutor != null) {
-            pollerExecutor.shutdownNow();
-        }
+        shutdownExecutor("traffic-stream-reclaim", reclaimExecutor, 0L);
+        shutdownExecutor("traffic-stream-poller", pollerExecutor, 0L);
+        shutdownExecutor("traffic-stream-worker", workerExecutor, appStreamsProperties.requireShutdownAwaitMs());
 
-        // 진행 중/대기 중인 처리 태스크를 함께 종료시킨다.
-        if (workerExecutor != null) {
-            workerExecutor.shutdownNow();
-        }
-
-        // reclaim 보조 루프도 함께 중단한다.
-        if (reclaimExecutor != null) {
-            reclaimExecutor.shutdownNow();
-        }
         log.info("traffic_stream_consumer_stopped");
     }
 
     @Override
-    /**
-     * 현재 상태를 불리언 값으로 확인해 호출 측의 분기 판단을 돕습니다.
-     */
+    public void stop(Runnable callback) {
+        stop();
+        callback.run();
+    }
+
+    @Override
     public boolean isRunning() {
         return running.get();
     }
@@ -166,42 +177,55 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         // SmartLifecycle stop() 호출 전까지 BLOCK read -> 레코드 처리 과정을 반복한다.
         while (running.get()) {
             try {
-                List<MapRecord<String, String, String>> records = trafficStreamInfraService.readBlocking();
-
-                // BLOCK read 특성상 대부분의 루프는 0건 또는 소수 레코드를 받는다.
-                // 수신된 레코드는 worker 풀로 분배해 병렬 처리한다.
-                for (MapRecord<String, String, String> record : records) {
-                    dispatchRecord(record);
-                }
+                consumeNextBatch();
             } catch (Exception e) {
-                // shutdownNow()로 BLOCK read를 깨운 종료 경로에서는 오류 로그를 남기지 않는다.
                 if (!running.get()) {
                     break;
                 }
-                // 루프를 중단하지 않고 다음 read 사이클로 복구를 시도한다.
                 log.error("traffic_stream_consume_loop_failed", e);
             }
         }
     }
 
-    /**
-      * 수신 레코드를 적절한 처리 경로로 분배합니다.
-     */
+    private void consumeNextBatch() {
+        int nextReadCount = resolveNextReadCount();
+        if (nextReadCount <= 0) {
+            signalWorkerPressure();
+            pauseForWorkerCapacity();
+            return;
+        }
+
+        clearWorkerPressureSignal();
+
+        List<MapRecord<String, String, String>> records = trafficStreamInfraService.readBlocking(nextReadCount);
+        for (MapRecord<String, String, String> record : records) {
+            dispatchRecord(record);
+        }
+    }
+
     private void dispatchRecord(MapRecord<String, String, String> record) {
+        if (!running.get()) {
+            log.info("traffic_stream_record_dispatch_skipped recordId={} reason=stopping", record.getId().getValue());
+            return;
+        }
+
         if (workerExecutor == null) {
             log.warn("traffic_stream_worker_not_ready recordId={}", record.getId().getValue());
             return;
         }
 
         try {
-            // poller는 I/O(read)에 집중하고, 처리 비용이 있는 역직렬화/분기는 worker로 위임한다.
-            workerExecutor.submit(() -> handleRecord(record));
+            workerExecutor.execute(() -> handleRecord(record));
         } catch (RejectedExecutionException e) {
-            // 종료 과정에서 발생 가능한 submit 실패는 로그만 남기고 무해하게 처리한다.
+            signalWorkerPressure();
             log.warn(
-                    "traffic_stream_record_dispatch_rejected recordId={} running={}",
+                    "traffic_stream_record_dispatch_rejected recordId={} running={} activeWorkers={} queueSize={} queueCapacity={} rejectionPolicy={}",
                     record.getId().getValue(),
-                    running.get()
+                    running.get(),
+                    workerExecutor.getActiveCount(),
+                    workerExecutor.getQueue().size(),
+                    workerExecutor.getQueue().remainingCapacity() + workerExecutor.getQueue().size(),
+                    appStreamsProperties.requireWorkerRejectionPolicy()
             );
         }
     }
@@ -210,7 +234,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
       * 컴포넌트 실행을 시작하고 필요한 초기화를 수행합니다.
      */
     private void startReclaimLoop() {
-        long reclaimIntervalMs = Math.max(1L, appStreamsProperties.getReclaimIntervalMs());
+        long reclaimIntervalMs = appStreamsProperties.requireReclaimIntervalMs();
 
         // reclaim은 주기적으로 pending 목록을 점검하는 보조 작업이므로 단일 스레드면 충분하다.
         reclaimExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -236,10 +260,13 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         }
 
         try {
-            // reclaim 서비스가 idle/retry 기준으로 필터링한 레코드를 반환하면
-            // 메인 소비 경로와 동일하게 worker 큐로 분배해 처리한다.
+            int reclaimDispatchLimit = resolveNextReadCount();
+            if (reclaimDispatchLimit <= 0) {
+                return;
+            }
+
             List<MapRecord<String, String, String>> reclaimedRecords =
-                    trafficStreamReclaimService.reclaimAndRouteExceededRetries();
+                    trafficStreamReclaimService.reclaimAndRouteExceededRetries(reclaimDispatchLimit);
 
             for (MapRecord<String, String, String> reclaimedRecord : reclaimedRecords) {
                 dispatchRecord(reclaimedRecord);
@@ -274,32 +301,26 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         try {
             // JSON payload를 DTO로 역직렬화해 이후 오케스트레이터가 바로 사용할 수 있게 한다.
             TrafficPayloadReqDto payload = objectMapper.readValue(payloadJson, TrafficPayloadReqDto.class);
-
-            // traceId가 없으면 dedupe 키를 만들 수 없고 재처리 제어가 불가능하므로
-            // 복구 불가능한 메시지로 판단해 DLQ + ACK 처리한다.
-            if (payload.getTraceId() == null || payload.getTraceId().isBlank()) {
-                trafficStreamInfraService.writeDlq(payloadJson, "traceId가 비어 있습니다.", recordId);
+            List<Violation> violations = trafficPayloadValidationService.validate(payload);
+            if (!violations.isEmpty()) {
+                trafficStreamInfraService.writeDlq(payloadJson, buildValidationFailureReason(violations), recordId);
                 trafficStreamInfraService.acknowledge(record.getId());
                 return;
             }
 
-            MDC.put(TRACE_ID_MDC_KEY, payload.getTraceId());
+            String traceId = payload.getTraceId();
+            MDC.put(TRACE_ID_MDC_KEY, traceId);
+            boolean claimAcquired = false;
             try {
-                // 이미 완료 로그가 저장된 traceId면 재차감 없이 즉시 ACK해 재전달을 종료한다.
-                if (trafficDeductDoneLogService.existsByTraceId(payload.getTraceId())) {
+                if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
                     log.info("traffic_stream_record_already_done recordId={}", recordId);
                     trafficStreamInfraService.acknowledge(record.getId());
                     return;
                 }
 
-                // 동일 traceId에 대한 동시/중복 처리 경쟁을 막기 위해 in-flight 선점을 시도한다.
-                // 선점 실패는 이미 다른 워커(또는 다른 인스턴스)가 처리 중이라는 의미이므로
-                // 현재 레코드는 실행을 생략한다.
-                boolean claimed = trafficInFlightDedupeService.tryClaim(payload.getTraceId());
-                if (!claimed) {
-                    // 선점 실패 직후 완료 로그가 이미 저장됐는지 한 번 더 확인한다.
-                    // 다른 워커가 처리 완료했다면 ACK로 정리하고, 아니면 재전달에 맡긴다.
-                    if (trafficDeductDoneLogService.existsByTraceId(payload.getTraceId())) {
+                claimAcquired = trafficInFlightDedupeService.tryClaim(traceId);
+                if (!claimAcquired) {
+                    if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
                         trafficStreamInfraService.acknowledge(record.getId());
                     }
                     log.info("traffic_stream_record_deduped recordId={}", recordId);
@@ -328,7 +349,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                         logEventName + " "
                                 + "trace_id={} record_id={} line_id={} family_id={} app_id={} "
                                 + "api_total_data={} deducted_total_bytes={} api_remaining_data={} "
-                                + "final_status={} last_lua_status={} created_at={} finished_at={} logged_at={} latency={}",
+                                + "final_status={} last_lua_status={} created_at={} finished_at={} logged_at={}",
                         payload.getTraceId(),
                         recordId,
                         payload.getLineId(),
@@ -349,6 +370,10 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 // 처리 중 시스템 예외는 ACK하지 않고 남겨 재전달/reclaim 경로에서 복구한다.
                 log.error("traffic_stream_record_handle_failed recordId={} latency={}", recordId, e, latency);
             } finally {
+                if (claimAcquired) {
+                    // Failed records stay pending, so release the in-flight marker to let reclaim retry them.
+                    trafficInFlightDedupeService.release(traceId);
+                }
                 MDC.remove(TRACE_ID_MDC_KEY);
             }
         } catch (JsonProcessingException e) {
@@ -360,9 +385,12 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         }
     }
 
-    /**
-     * 입력값과 정책을 바탕으로 최종 사용 값을 계산해 반환합니다.
-     */
+    private String buildValidationFailureReason(List<Violation> violations) {
+        return "payload validation failed: " + violations.stream()
+                .map(violation -> violation.getName() + "=" + violation.getReason())
+                .collect(Collectors.joining(", "));
+    }
+
     private int resolveWorkerThreadCount() {
         int configuredCount = appStreamsProperties.getWorkerThreadCount();
         if (configuredCount > 0) {
@@ -371,5 +399,110 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
         // 잘못된 설정값(0 이하)이 들어오면 최소 1개 스레드로 안전하게 보정한다.
         return 1;
+    }
+
+    private int resolveNextReadCount() {
+        if (workerExecutor == null) {
+            return 0;
+        }
+
+        int configuredReadCount = appStreamsProperties.requireReadCount();
+        int availableWorkerSlots = Math.max(0, workerExecutor.getMaximumPoolSize() - workerExecutor.getActiveCount());
+        int queueRemainingCapacity = workerExecutor.getQueue().remainingCapacity();
+        int dispatchCapacity = availableWorkerSlots + queueRemainingCapacity;
+
+        if (dispatchCapacity <= 0) {
+            return 0;
+        }
+
+        return Math.min(configuredReadCount, dispatchCapacity);
+    }
+
+    private void signalWorkerPressure() {
+        if (workerExecutor == null) {
+            return;
+        }
+
+        if (workerPressureActive.compareAndSet(false, true)) {
+            log.warn(
+                    "traffic_stream_worker_pressure_on activeWorkers={} workerThreads={} queueSize={} queueCapacity={} rejectionPolicy={}",
+                    workerExecutor.getActiveCount(),
+                    workerExecutor.getMaximumPoolSize(),
+                    workerExecutor.getQueue().size(),
+                    workerExecutor.getQueue().remainingCapacity() + workerExecutor.getQueue().size(),
+                    appStreamsProperties.requireWorkerRejectionPolicy()
+            );
+        }
+    }
+
+    private void clearWorkerPressureSignal() {
+        if (workerExecutor == null) {
+            return;
+        }
+
+        if (workerPressureActive.compareAndSet(true, false)) {
+            log.info(
+                    "traffic_stream_worker_pressure_off activeWorkers={} workerThreads={} queueSize={} queueCapacity={}",
+                    workerExecutor.getActiveCount(),
+                    workerExecutor.getMaximumPoolSize(),
+                    workerExecutor.getQueue().size(),
+                    workerExecutor.getQueue().remainingCapacity() + workerExecutor.getQueue().size()
+            );
+        }
+    }
+
+    private void pauseForWorkerCapacity() {
+        try {
+            Thread.sleep(resolvePressurePauseMs());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private long resolvePressurePauseMs() {
+        long configuredBlockMs = appStreamsProperties.requireBlockMs();
+        return Math.min(250L, Math.max(25L, configuredBlockMs / 4L));
+    }
+
+    private void shutdownExecutor(String executorName, ExecutorService executorService, long awaitMs) {
+        if (executorService == null) {
+            return;
+        }
+
+        executorService.shutdown();
+        if (awaitTermination(executorName, executorService, awaitMs)) {
+            return;
+        }
+
+        List<Runnable> droppedTasks = executorService.shutdownNow();
+        awaitTermination(executorName, executorService, 0L);
+        if (!droppedTasks.isEmpty()) {
+            log.warn("traffic_stream_executor_forced_stop executor={} droppedTasks={}", executorName, droppedTasks.size());
+        }
+    }
+
+    private boolean awaitTermination(String executorName, ExecutorService executorService, long awaitMs) {
+        try {
+            if (awaitMs <= 0L) {
+                return executorService.awaitTermination(0L, TimeUnit.MILLISECONDS);
+            }
+
+            boolean terminated = executorService.awaitTermination(awaitMs, TimeUnit.MILLISECONDS);
+            if (!terminated) {
+                log.warn("traffic_stream_executor_shutdown_timeout executor={} awaitMs={}", executorName, awaitMs);
+            }
+            return terminated;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("traffic_stream_executor_shutdown_interrupted executor={}", executorName);
+            return false;
+        }
+    }
+
+    private RejectedExecutionHandler buildRejectedExecutionHandler(WorkerRejectionPolicy rejectionPolicy) {
+        if (rejectionPolicy == WorkerRejectionPolicy.CALLER_RUNS) {
+            return new ThreadPoolExecutor.CallerRunsPolicy();
+        }
+        return new ThreadPoolExecutor.AbortPolicy();
     }
 }

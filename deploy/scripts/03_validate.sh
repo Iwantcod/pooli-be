@@ -54,6 +54,54 @@ check_traffic_container() {
   return 1
 }
 
+check_traffic_runtime() {
+  local attempt="$1"
+  local output http_status body logs
+
+  if ! check_traffic_container "$attempt"; then
+    return 1
+  fi
+
+  output="$(curl -sS -m 3 -w $'\nHTTP_STATUS:%{http_code}\n' "http://127.0.0.1:8080/actuator/health" 2>&1 || true)"
+  http_status="$(printf '%s\n' "$output" | awk -F: '/^HTTP_STATUS:/ {print $2}' | tail -n1 | tr -d '\r')"
+  body="$(printf '%s\n' "$output" | sed '/^HTTP_STATUS:/d')"
+
+  if [ "${http_status}" != "200" ] || ! printf '%s' "$body" | grep -q '"status":"UP"'; then
+    echo "[validate] traffic attempt=${attempt} health not UP http=${http_status:-N/A}"
+    return 1
+  fi
+
+  logs="$(docker logs --tail 400 pooli 2>&1 || true)"
+
+  if printf '%s' "$logs" | grep -q 'traffic_stream_group_create_failed'; then
+    echo "[validate] traffic attempt=${attempt} bootstrap failure log detected"
+    return 1
+  fi
+
+  if ! printf '%s' "$logs" | grep -q 'traffic_stream_consumer_started'; then
+    echo "[validate] traffic attempt=${attempt} consumer start log not found yet"
+    return 1
+  fi
+
+  local failure_patterns=(
+    'traffic_stream_consume_loop_failed'
+    'traffic_stream_reclaim_cycle_failed'
+    'traffic_outbox_retry_cycle_failed'
+    'traffic_usage_delta_replay_failed'
+  )
+
+  local pattern
+  for pattern in "${failure_patterns[@]}"; do
+    if printf '%s' "$logs" | grep -q "${pattern}"; then
+      echo "[validate] traffic attempt=${attempt} runtime failure log detected pattern=${pattern}"
+      return 1
+    fi
+  done
+
+  echo "[validate] traffic runtime ready"
+  return 0
+}
+
 case "$DG_NAME" in
   pooli-release-group)
     for i in {1..30}; do
@@ -73,13 +121,13 @@ case "$DG_NAME" in
 
   pooli-traffic-group)
     for i in {1..30}; do
-      if check_traffic_container "$i"; then
+      if check_traffic_runtime "$i"; then
         exit 0
       fi
       sleep 2
     done
 
-    echo "[validate] FAILED: traffic container/profile not ready"
+    echo "[validate] FAILED: traffic runtime not ready"
     log_common_diagnostics
     docker logs --tail 200 pooli || true
     exit 1

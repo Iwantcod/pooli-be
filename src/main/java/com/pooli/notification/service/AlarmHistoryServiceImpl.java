@@ -16,6 +16,7 @@ import com.pooli.notification.mapper.AlarmHistoryMapper;
 import com.pooli.notification.mapper.NotificationLineMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -63,76 +64,6 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
     @Transactional
     @Override
-    public void createListAlarm(
-            List<Long> lineIds,
-            NotificationTargetType targetType,
-            AlarmCode alarmCode,
-            AlarmType alarmType
-    ) {
-
-        if (targetType != NotificationTargetType.DIRECT
-                && lineIds != null && !lineIds.isEmpty()) {
-            log.warn("DIRECT 타입이 아닐 경우 lineIds는 빈 값이어야 함 - lineIds: {}", lineIds);
-        }
-
-        String jsonValue;
-
-        try {
-            ObjectNode jsonNode = objectMapper.createObjectNode();
-            jsonNode.put("type", alarmType.name());
-            jsonValue = objectMapper.writeValueAsString(jsonNode);
-        } catch (Exception e) {
-            log.error("알람 JSON 생성 실패 - error: {}", e.getMessage());
-            return;
-        }
-
-        switch (targetType) {
-
-            case DIRECT -> {
-
-                if (lineIds == null || lineIds.isEmpty()) {
-                    log.error("알람 대상이 없음 - lineIds: {}", lineIds);
-                    return;
-                }
-
-                Set<Long> uniqueLineIds = new HashSet<>(lineIds);
-
-                List<Long> existingLineIds =
-                        notificationLineMapper.findExistingLineIds(new ArrayList<>(uniqueLineIds));
-
-                if (existingLineIds.size() != uniqueLineIds.size()) {
-                    log.error("알람 대상 중 DB에 존재하지 않는 LineId 발견");
-                    return;
-                }
-
-                alarmHistoryMapper.insertNotificationAlarms(
-                        existingLineIds,
-                        alarmCode.name(),
-                        jsonValue
-                );
-            }
-
-            case ALL -> alarmHistoryMapper.insertNotificationAll(
-                    alarmCode.name(),
-                    jsonValue
-            );
-
-            case OWNER -> alarmHistoryMapper.insertNotificationOwner(
-                    alarmCode.name(),
-                    jsonValue
-            );
-
-            case MEMBER -> alarmHistoryMapper.insertNotificationMember(
-                    alarmCode.name(),
-                    jsonValue
-            );
-
-            default -> log.error("존재하지 않는 NotificationTargetType : {}", targetType);
-        }
-    }
-
-    @Transactional
-    @Override
     public void sendNotification(NotiSendReqDto request) {
 
         List<Long> lineIds = request.getLineId();
@@ -174,22 +105,9 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
             case DIRECT -> {
 
-                if (lineIds == null || lineIds.isEmpty()) {
-                    throw new ApplicationException(NotificationErrorCode.LINE_ID_REQUIRED);
-                }
+                targetLineIds = notificationLineMapper.findExistingLineIds(request.getLineId());
 
-                Set<Long> uniqueLineIds = new HashSet<>(lineIds);
 
-                List<Long> existingLineIds =
-                        notificationLineMapper.findExistingLineIds(new ArrayList<>(uniqueLineIds));
-
-                if (existingLineIds.size() != uniqueLineIds.size()) {
-                    throw new ApplicationException(
-                            NotificationErrorCode.NOTIFICATION_TARGET_NOT_FOUND
-                    );
-                }
-
-                targetLineIds = existingLineIds;
             }
 
             case ALL -> {
@@ -228,11 +146,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
         }
 
 
-        alarmHistoryMapper.insertNotificationAlarms(
-                targetLineIds,
-                AlarmCode.OTHERS.name(),
-                jsonValue
-        );
+        batchInsert(targetLineIds, AlarmCode.OTHERS.name(), jsonValue);
 
     }
 
@@ -351,6 +265,31 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
             return objectMapper.readTree(value);
         } catch (JsonProcessingException e) {
             throw new ApplicationException(NotificationErrorCode.INVALID_NOTIFICATION_JSON);
+        }
+    }
+
+    @Async
+    @Transactional
+    @Override
+    public void sendNotificationAsync(NotiSendReqDto request) {
+        sendNotification(request);
+    }
+
+    private void batchInsert(List<Long> lineIds, String alarmCode, String jsonValue) {
+
+        int batchSize = 5000;
+
+        for (int i = 0; i < lineIds.size(); i += batchSize) {
+
+            int end = Math.min(i + batchSize, lineIds.size());
+
+            List<Long> batch = lineIds.subList(i, end);
+
+            alarmHistoryMapper.insertNotificationAlarms(
+                    batch,
+                    alarmCode,
+                    jsonValue
+            );
         }
     }
 }

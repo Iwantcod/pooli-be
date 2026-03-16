@@ -23,7 +23,10 @@ public class SharedPoolHistoryItemResDto {
     @Schema(description = "사용자 이름", example = "김영희")
     private String userName;
 
-    @Schema(description = "발생 시각 또는 날짜", example = "2026-03-15")
+    @Schema(
+            description = "발생 시각 또는 날짜(precision=DAY면 yyyy-MM-dd, precision=EVENT면 yyyy-MM-dd'T'HH:mm:ss)",
+            example = "2026-03-16T02:59:24"
+    )
     private String occurredAt;
 
     @Schema(description = "데이터 양(Byte)", example = "1200000000")
