@@ -819,12 +819,13 @@ public class TrafficHydrateRefillAdapterService {
                 String monthlySharedLimitKey = trafficRedisKeyFactory.monthlySharedLimitKey(payload.getLineId());
                 String monthlySharedUsageKey = trafficRedisKeyFactory.monthlySharedUsageKey(payload.getLineId(), targetUsageMonth);
                 String speedBucketKey = trafficRedisKeyFactory.speedBucketSharedKey(payload.getFamilyId(), nowEpochSecond);
+                String individualRemainingKey = trafficRedisKeyFactory.remainingIndivAmountKey(payload.getLineId(), targetUsageMonth);
                 List<String> keys = List.of(
                         balanceKey, policyRepeatKey, policyImmediateKey, policyLineLimitSharedKey,
                         policyLineLimitDailyKey, policyAppDataKey, policyAppSpeedKey, policyAppWhitelistKey,
                         appWhitelistKey, immediatelyBlockEndKey, repeatBlockKey, dailyTotalLimitKey,
                         dailyTotalUsageKey, monthlySharedLimitKey, monthlySharedUsageKey,
-                        appDataDailyLimitKey, dailyAppUsageKey, appSpeedLimitKey, speedBucketKey
+                        appDataDailyLimitKey, dailyAppUsageKey, appSpeedLimitKey, speedBucketKey, individualRemainingKey
                 );
                 List<String> args = List.of(
                         String.valueOf(requestedDataBytes), String.valueOf(payload.getAppId()),
