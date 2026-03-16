@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -160,7 +161,8 @@ public class TrafficStreamConsumerRunnerTest {
             assertEquals("trace-001", mdcTraceIdAtOrchestrator.get());
             assertNull(MDC.get("traceId"));
             verify(trafficStreamInfraService).acknowledge(record.getId());
-            verify(trafficInFlightDedupeService).release("trace-001");
+            // 성공 경로에서는 ACK 직후 release + finally 정리 release가 모두 발생한다.
+            verify(trafficInFlightDedupeService, times(2)).release("trace-001");
 
             String doneLog = findDoneLog(listAppender);
             assertTrue(doneLog.contains("trace_id=trace-001"));
@@ -259,7 +261,7 @@ public class TrafficStreamConsumerRunnerTest {
             invokeHandleRecord(record);
 
             verify(trafficStreamInfraService).acknowledge(record.getId());
-            verify(trafficInFlightDedupeService).release("trace-dup");
+            verify(trafficInFlightDedupeService, times(2)).release("trace-dup");
 
             String doneLog = findDoneLog(listAppender);
             assertTrue(doneLog.startsWith("traffic_stream_record_done_duplicate"));
@@ -295,7 +297,7 @@ public class TrafficStreamConsumerRunnerTest {
                     ArgumentCaptor.forClass(TrafficDeductResultResDto.class);
             verify(trafficDeductDoneLogService).saveIfAbsent(any(), resultCaptor.capture(), eq("6-0"));
             verify(trafficStreamInfraService).acknowledge(record.getId());
-            verify(trafficInFlightDedupeService).release("trace-blocked");
+            verify(trafficInFlightDedupeService, times(2)).release("trace-blocked");
             assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, resultCaptor.getValue().getFinalStatus());
             assertEquals(TrafficLuaStatus.BLOCKED_IMMEDIATE, resultCaptor.getValue().getLastLuaStatus());
 
@@ -416,7 +418,7 @@ public class TrafficStreamConsumerRunnerTest {
             );
             inOrder.verify(trafficDeductDoneLogService).saveIfAbsent(any(), eq(orchestratorResult), eq("7-0"));
             inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
-            inOrder.verify(trafficInFlightDedupeService).release("trace-order");
+            inOrder.verify(trafficInFlightDedupeService, times(2)).release("trace-order");
         }
     }
 
