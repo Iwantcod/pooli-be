@@ -214,6 +214,28 @@ public class TrafficStreamConsumerRunnerTest {
         }
 
         @Test
+        @DisplayName("does not ack when DLQ write fails")
+        void doesNotAckWhenDlqWriteFails() {
+            String payloadJson = "";
+            MapRecord<String, String, String> record = createRecord("2-2", payloadJson);
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficStreamInfraService.writeDlq(payloadJson, "payload 필드가 비어 있습니다.", "2-2"))
+                    .thenThrow(new RuntimeException("dlq down"));
+
+            RuntimeException thrown = null;
+            try {
+                invokeHandleRecord(record);
+            } catch (RuntimeException e) {
+                thrown = e;
+            }
+
+            assertTrue(thrown != null && thrown.getCause() != null);
+            verify(trafficStreamInfraService, never()).acknowledge(record.getId());
+            verifyNoInteractions(trafficDeductOrchestratorService);
+        }
+
+        @Test
         @DisplayName("acks and releases when done log insert is duplicate")
         void acknowledgeWhenDoneLogIsDuplicate() {
             String payloadJson = "{\"traceId\":\"trace-dup\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
