@@ -157,9 +157,11 @@ class TrafficProfileBootTest {
         properties.setWorkerRejectionPolicy("abort");
         properties.setReadCount(1);
         properties.setBlockMs(1000L);
+        properties.setReclaimPendingScanCount(10);
         properties.setReclaimIntervalMs(1000L);
-        properties.setReclaimMinIdleMs(70_000L);
-        properties.setMaxRetry(3);
+        properties.setReclaimMinIdleMs(15_000L);
+        properties.setShutdownAwaitMs(1_000L);
+        properties.setMaxRetry(5);
         return properties;
     }
 

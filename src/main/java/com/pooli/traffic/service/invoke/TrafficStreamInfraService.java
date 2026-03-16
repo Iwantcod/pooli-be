@@ -96,7 +96,7 @@ public class TrafficStreamInfraService {
     public List<MapRecord<String, String, String>> readBlocking(int requestedCount) {
         StreamReadOptions options = StreamReadOptions.empty()
                 .count(Math.max(1, requestedCount))
-                .block(Duration.ofMillis(appStreamsProperties.getBlockMs()));
+                .block(Duration.ofMillis(appStreamsProperties.requireBlockMs()));
 
         String group = appStreamsProperties.requireTrafficGroup();
         String consumerName = appStreamsProperties.requireConsumerNameForBootstrap();

@@ -106,19 +106,17 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     public void stop() {
         running.set(false);
 
-        if (pollerExecutor != null) {
-            pollerExecutor.shutdownNow();
-        }
-
-        if (workerExecutor != null) {
-            workerExecutor.shutdownNow();
-        }
-
-        if (reclaimExecutor != null) {
-            reclaimExecutor.shutdownNow();
-        }
+        shutdownExecutor("traffic-stream-reclaim", reclaimExecutor, 0L);
+        shutdownExecutor("traffic-stream-poller", pollerExecutor, 0L);
+        shutdownExecutor("traffic-stream-worker", workerExecutor, appStreamsProperties.requireShutdownAwaitMs());
 
         log.info("traffic_stream_consumer_stopped");
+    }
+
+    @Override
+    public void stop(Runnable callback) {
+        stop();
+        callback.run();
     }
 
     @Override
@@ -166,6 +164,11 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     private void dispatchRecord(MapRecord<String, String, String> record) {
+        if (!running.get()) {
+            log.info("traffic_stream_record_dispatch_skipped recordId={} reason=stopping", record.getId().getValue());
+            return;
+        }
+
         if (workerExecutor == null) {
             log.warn("traffic_stream_worker_not_ready recordId={}", record.getId().getValue());
             return;
@@ -188,7 +191,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     private void startReclaimLoop() {
-        long reclaimIntervalMs = Math.max(1L, appStreamsProperties.getReclaimIntervalMs());
+        long reclaimIntervalMs = appStreamsProperties.requireReclaimIntervalMs();
 
         reclaimExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread thread = new Thread(r, "traffic-stream-reclaim");
@@ -210,8 +213,13 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         }
 
         try {
+            int reclaimDispatchLimit = resolveNextReadCount();
+            if (reclaimDispatchLimit <= 0) {
+                return;
+            }
+
             List<MapRecord<String, String, String>> reclaimedRecords =
-                    trafficStreamReclaimService.reclaimAndRouteExceededRetries();
+                    trafficStreamReclaimService.reclaimAndRouteExceededRetries(reclaimDispatchLimit);
 
             for (MapRecord<String, String, String> reclaimedRecord : reclaimedRecords) {
                 dispatchRecord(reclaimedRecord);
@@ -321,7 +329,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             return 0;
         }
 
-        int configuredReadCount = Math.max(1, appStreamsProperties.getReadCount());
+        int configuredReadCount = appStreamsProperties.requireReadCount();
         int availableWorkerSlots = Math.max(0, workerExecutor.getMaximumPoolSize() - workerExecutor.getActiveCount());
         int queueRemainingCapacity = workerExecutor.getQueue().remainingCapacity();
         int dispatchCapacity = availableWorkerSlots + queueRemainingCapacity;
@@ -375,8 +383,43 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     private long resolvePressurePauseMs() {
-        long configuredBlockMs = Math.max(1L, appStreamsProperties.getBlockMs());
+        long configuredBlockMs = appStreamsProperties.requireBlockMs();
         return Math.min(250L, Math.max(25L, configuredBlockMs / 4L));
+    }
+
+    private void shutdownExecutor(String executorName, ExecutorService executorService, long awaitMs) {
+        if (executorService == null) {
+            return;
+        }
+
+        executorService.shutdown();
+        if (awaitTermination(executorName, executorService, awaitMs)) {
+            return;
+        }
+
+        List<Runnable> droppedTasks = executorService.shutdownNow();
+        awaitTermination(executorName, executorService, 0L);
+        if (!droppedTasks.isEmpty()) {
+            log.warn("traffic_stream_executor_forced_stop executor={} droppedTasks={}", executorName, droppedTasks.size());
+        }
+    }
+
+    private boolean awaitTermination(String executorName, ExecutorService executorService, long awaitMs) {
+        try {
+            if (awaitMs <= 0L) {
+                return executorService.awaitTermination(0L, TimeUnit.MILLISECONDS);
+            }
+
+            boolean terminated = executorService.awaitTermination(awaitMs, TimeUnit.MILLISECONDS);
+            if (!terminated) {
+                log.warn("traffic_stream_executor_shutdown_timeout executor={} awaitMs={}", executorName, awaitMs);
+            }
+            return terminated;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("traffic_stream_executor_shutdown_interrupted executor={}", executorName);
+            return false;
+        }
     }
 
     private RejectedExecutionHandler buildRejectedExecutionHandler(WorkerRejectionPolicy rejectionPolicy) {

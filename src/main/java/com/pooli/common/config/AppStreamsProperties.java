@@ -42,8 +42,10 @@ public class AppStreamsProperties {
     private int readCount;
     private int metricsPendingScanCount;
     private long blockMs;
+    private int reclaimPendingScanCount;
     private long reclaimIntervalMs;
     private long reclaimMinIdleMs;
+    private long shutdownAwaitMs;
     private int maxRetry;
     private String keyTrafficDlq;
 
@@ -142,6 +144,76 @@ public class AppStreamsProperties {
                     "unsupported policy: " + normalizedPolicy + ". Supported values: abort, caller-runs."
             );
         }
+    }
+
+    public int requireReadCount() {
+        if (readCount <= 0) {
+            throw invalidBootstrapConfig(
+                    "app.streams.read-count",
+                    "read count must be greater than 0."
+            );
+        }
+        return readCount;
+    }
+
+    public int requireReclaimPendingScanCount() {
+        if (reclaimPendingScanCount <= 0) {
+            throw invalidBootstrapConfig(
+                    "app.streams.reclaim-pending-scan-count",
+                    "reclaim pending scan count must be greater than 0."
+            );
+        }
+        return reclaimPendingScanCount;
+    }
+
+    public long requireBlockMs() {
+        if (blockMs <= 0L) {
+            throw invalidBootstrapConfig(
+                    "app.streams.block-ms",
+                    "block timeout must be greater than 0."
+            );
+        }
+        return blockMs;
+    }
+
+    public long requireReclaimIntervalMs() {
+        if (reclaimIntervalMs <= 0L) {
+            throw invalidBootstrapConfig(
+                    "app.streams.reclaim-interval-ms",
+                    "reclaim interval must be greater than 0."
+            );
+        }
+        return reclaimIntervalMs;
+    }
+
+    public long requireReclaimMinIdleMs() {
+        if (reclaimMinIdleMs < 0L) {
+            throw invalidBootstrapConfig(
+                    "app.streams.reclaim-min-idle-ms",
+                    "reclaim min idle must be 0 or greater."
+            );
+        }
+        return reclaimMinIdleMs;
+    }
+
+    public long requireShutdownAwaitMs() {
+        if (shutdownAwaitMs < 0L) {
+            throw invalidBootstrapConfig(
+                    "app.streams.shutdown-await-ms",
+                    "shutdown await must be 0 or greater."
+            );
+        }
+        return shutdownAwaitMs;
+    }
+
+    public int requireMaxRetry() {
+        if (maxRetry < 0) {
+            throw invalidBootstrapConfig(
+                    "app.streams.max-retry",
+                    "max retry must be 0 or greater."
+            );
+        }
+        return maxRetry;
     }
 
     private String requireText(String propertyName, String value, String detail) {

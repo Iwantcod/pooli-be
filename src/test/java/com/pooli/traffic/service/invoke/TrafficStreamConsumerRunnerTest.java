@@ -19,8 +19,12 @@ import java.util.Map;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
@@ -84,6 +88,11 @@ public class TrafficStreamConsumerRunnerTest {
         appStreamsProperties.setWorkerThreadCount(2);
         appStreamsProperties.setWorkerQueueCapacity(2);
         appStreamsProperties.setWorkerRejectionPolicy("abort");
+        appStreamsProperties.setReclaimPendingScanCount(10);
+        appStreamsProperties.setReclaimIntervalMs(200L);
+        appStreamsProperties.setReclaimMinIdleMs(15_000L);
+        appStreamsProperties.setShutdownAwaitMs(300L);
+        appStreamsProperties.setMaxRetry(5);
         TrafficPayloadValidationService trafficPayloadValidationService =
                 new TrafficPayloadValidationService(validator);
 
@@ -105,6 +114,14 @@ public class TrafficStreamConsumerRunnerTest {
         ThreadPoolExecutor workerExecutor = getPrivateField("workerExecutor", ThreadPoolExecutor.class);
         if (workerExecutor != null) {
             workerExecutor.shutdownNow();
+        }
+        ExecutorService pollerExecutor = getPrivateField("pollerExecutor", ExecutorService.class);
+        if (pollerExecutor != null) {
+            pollerExecutor.shutdownNow();
+        }
+        ScheduledExecutorService reclaimExecutor = getPrivateField("reclaimExecutor", ScheduledExecutorService.class);
+        if (reclaimExecutor != null) {
+            reclaimExecutor.shutdownNow();
         }
         MDC.clear();
     }
@@ -482,6 +499,102 @@ public class TrafficStreamConsumerRunnerTest {
 
             releaseTasks.countDown();
         }
+
+        @Test
+        @DisplayName("skips dispatch while stopping so reclaim does not enqueue new work")
+        void skipDispatchWhileStopping() {
+            MapRecord<String, String, String> record = createRecord("10-0", "{\"traceId\":\"trace-stop\"}");
+            ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                    1,
+                    1,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(1),
+                    new ThreadPoolExecutor.AbortPolicy()
+            );
+
+            setPrivateField("workerExecutor", executor);
+            getPrivateField("running", AtomicBoolean.class).set(false);
+
+            invokeDispatchRecord(record);
+
+            assertEquals(0, executor.getQueue().size());
+            verifyNoInteractions(trafficStreamInfraService);
+        }
+
+        @Test
+        @DisplayName("reclaim only claims up to remaining worker capacity")
+        void reclaimOnlyClaimsUpToRemainingWorkerCapacity() throws Exception {
+            CountDownLatch activeTaskStarted = new CountDownLatch(1);
+            CountDownLatch releaseTasks = new CountDownLatch(1);
+            ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                    2,
+                    2,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(3),
+                    new ThreadPoolExecutor.AbortPolicy()
+            );
+            MapRecord<String, String, String> reclaimedRecord = createRecord("11-0", "{\"traceId\":\"trace-reclaim\"}");
+
+            executor.execute(() -> awaitLatch(activeTaskStarted, releaseTasks));
+            assertTrue(activeTaskStarted.await(1, TimeUnit.SECONDS));
+            executor.execute(() -> awaitLatch(null, releaseTasks));
+            executor.execute(() -> awaitLatch(null, releaseTasks));
+            setPrivateField("workerExecutor", executor);
+            getPrivateField("running", AtomicBoolean.class).set(true);
+            when(trafficStreamReclaimService.reclaimAndRouteExceededRetries(2)).thenReturn(List.of(reclaimedRecord));
+
+            invokeRunReclaimCycle();
+
+            verify(trafficStreamReclaimService).reclaimAndRouteExceededRetries(2);
+            releaseTasks.countDown();
+        }
+    }
+
+    @Nested
+    @DisplayName("shutdown boundary")
+    class ShutdownBoundaryTest {
+
+        @Test
+        @DisplayName("gracefully waits for worker completion before forcing shutdown")
+        void gracefullyWaitForWorkerCompletion() throws Exception {
+            CountDownLatch taskCompleted = new CountDownLatch(1);
+            AtomicBoolean interrupted = new AtomicBoolean(false);
+            ThreadPoolExecutor worker = new ThreadPoolExecutor(
+                    1,
+                    1,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(1),
+                    new ThreadPoolExecutor.AbortPolicy()
+            );
+            ExecutorService poller = Executors.newSingleThreadExecutor();
+            ScheduledExecutorService reclaim = Executors.newSingleThreadScheduledExecutor();
+
+            worker.execute(() -> {
+                try {
+                    Thread.sleep(120L);
+                } catch (InterruptedException e) {
+                    interrupted.set(true);
+                    Thread.currentThread().interrupt();
+                } finally {
+                    taskCompleted.countDown();
+                }
+            });
+
+            setPrivateField("pollerExecutor", poller);
+            setPrivateField("workerExecutor", worker);
+            setPrivateField("reclaimExecutor", reclaim);
+            getPrivateField("running", AtomicBoolean.class).set(true);
+
+            trafficStreamConsumerRunner.stop();
+
+            assertTrue(taskCompleted.await(1, TimeUnit.SECONDS));
+            assertFalse(interrupted.get());
+            assertTrue(worker.isTerminated());
+            assertFalse(trafficStreamConsumerRunner.isRunning());
+        }
     }
 
     private MapRecord<String, String, String> createRecord(String recordId, String payloadJson) {
@@ -521,6 +634,17 @@ public class TrafficStreamConsumerRunnerTest {
                     .getDeclaredMethod("consumeNextBatch");
             consumeNextBatchMethod.setAccessible(true);
             consumeNextBatchMethod.invoke(trafficStreamConsumerRunner);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void invokeRunReclaimCycle() {
+        try {
+            Method runReclaimCycleMethod = TrafficStreamConsumerRunner.class
+                    .getDeclaredMethod("runReclaimCycle");
+            runReclaimCycleMethod.setAccessible(true);
+            runReclaimCycleMethod.invoke(trafficStreamConsumerRunner);
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);
         }

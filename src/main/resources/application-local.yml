@@ -97,9 +97,11 @@ app:
     read-count: ${STREAMS_READ_COUNT:20}
     metrics-pending-scan-count: ${STREAMS_METRICS_PENDING_SCAN_COUNT:100}
     block-ms: ${STREAMS_BLOCK_MS:2000}
-    reclaim-interval-ms: ${STREAMS_RECLAIM_INTERVAL_MS:5000}
-    reclaim-min-idle-ms: ${STREAMS_RECLAIM_MIN_IDLE_MS:70000}
-    max-retry: ${STREAMS_MAX_RETRY:3}
+    reclaim-pending-scan-count: ${STREAMS_RECLAIM_PENDING_SCAN_COUNT:100}
+    reclaim-interval-ms: ${STREAMS_RECLAIM_INTERVAL_MS:2000}
+    reclaim-min-idle-ms: ${STREAMS_RECLAIM_MIN_IDLE_MS:15000}
+    shutdown-await-ms: ${STREAMS_SHUTDOWN_AWAIT_MS:10000}
+    max-retry: ${STREAMS_MAX_RETRY:5}
     key-traffic-dlq: ${STREAMS_KEY_TRAFFIC_DLQ:traffic:deduct:dlq}
   policy:
     bootstrap:
