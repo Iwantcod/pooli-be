@@ -3,6 +3,9 @@ package com.pooli.data.service.impl;
 import java.time.YearMonth;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import com.pooli.auth.service.AuthUserDetails;
@@ -18,6 +21,8 @@ import com.pooli.data.service.DataService;
 import com.pooli.family.domain.entity.FamilyLine;
 import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.PermissionLineMapper;
+import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 import lombok.RequiredArgsConstructor;
 
@@ -28,6 +33,10 @@ public class DataServiceImpl implements DataService {
 	private final DataMapper dataMapper;
     private final PermissionLineMapper permissionLineMapper;
     private final FamilyLineMapper familyLineMapper;
+    @Qualifier("cacheStringRedisTemplate")
+    private final StringRedisTemplate cacheStringRedisTemplate;
+    private final TrafficRedisKeyFactory trafficRedisKeyFactory;
+    private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
 
 	
@@ -103,7 +112,7 @@ public class DataServiceImpl implements DataService {
 			throw new ApplicationException(DataErrorCode.DATA_NOT_FOUND);
 		}
 		
-		return response;
+		return applyTrafficCachedBalances(response);
 	}
 	
 	@Override
@@ -141,8 +150,63 @@ public class DataServiceImpl implements DataService {
         }
     }
 
+    private DataBalancesResDto applyTrafficCachedBalances(DataBalancesResDto response) {
+        if (response == null || response.getLineId() == null || response.getLineId() <= 0) {
+            return response;
+        }
 
+        YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+        long personalBufferedAmount = readIndividualBufferedAmount(response.getLineId(), targetMonth);
+        long sharedBufferedAmount = readSharedBufferedAmount(response.getLineId(), targetMonth);
 
+        return DataBalancesResDto.builder()
+                .lineId(response.getLineId())
+                .userName(response.getUserName())
+                .role(response.getRole())
+                .sharedDataRemaining(safeAdd(response.getSharedDataRemaining(), sharedBufferedAmount))
+                .personalDataRemaining(safeAdd(response.getPersonalDataRemaining(), personalBufferedAmount))
+                .planName(response.getPlanName())
+                .build();
+    }
 
+    private long readIndividualBufferedAmount(long lineId, YearMonth targetMonth) {
+        String key = trafficRedisKeyFactory.remainingIndivAmountKey(lineId, targetMonth);
+        return readHashLong(key, "amount");
+    }
 
+    private long readSharedBufferedAmount(long lineId, YearMonth targetMonth) {
+        Long familyId = familyLineMapper.findByLineId(lineId)
+                .map(FamilyLine::getFamilyId)
+                .orElse(null);
+        if (familyId == null || familyId <= 0) {
+            return 0L;
+        }
+
+        String key = trafficRedisKeyFactory.remainingSharedAmountKey(familyId, targetMonth);
+        return readHashLong(key, "amount");
+    }
+
+    private long readHashLong(String key, String field) {
+        try {
+            HashOperations<String, Object, Object> hashOperations = cacheStringRedisTemplate.opsForHash();
+            Object rawValue = hashOperations.get(key, field);
+            if (rawValue == null) {
+                return 0L;
+            }
+
+            long parsed = Long.parseLong(String.valueOf(rawValue));
+            return Math.max(0L, parsed);
+        } catch (RuntimeException e) {
+            return 0L;
+        }
+    }
+
+    private long safeAdd(Long baseValue, long additionalValue) {
+        long normalizedBaseValue = baseValue == null ? 0L : Math.max(0L, baseValue);
+        long normalizedAdditionalValue = Math.max(0L, additionalValue);
+        if (normalizedBaseValue > Long.MAX_VALUE - normalizedAdditionalValue) {
+            return Long.MAX_VALUE;
+        }
+        return normalizedBaseValue + normalizedAdditionalValue;
+    }
 }
