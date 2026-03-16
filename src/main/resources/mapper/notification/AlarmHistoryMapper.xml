@@ -85,7 +85,7 @@
         NOW(6),
         NULL,
         NULL
-        FROM family_line fl
+        FROM FAMILY_LINE fl
         WHERE fl.role = 'OWNER'
     </insert>
 
@@ -106,7 +106,7 @@
         NOW(6),
         NULL,
         NULL
-        FROM family_line fl
+        FROM FAMILY_LINE fl
         WHERE fl.role = 'MEMBER'
     </insert>
 
