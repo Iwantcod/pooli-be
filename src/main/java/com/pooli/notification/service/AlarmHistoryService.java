@@ -31,5 +31,5 @@ public interface AlarmHistoryService {
 
     UnreadCountsResDto readAll(Long lineId);
 
-    public void createListAlarm( List<Long> lineIds, NotificationTargetType targetType, AlarmCode alarmCode, AlarmType alarmType);
+    void sendNotificationAsync(NotiSendReqDto request);
 }

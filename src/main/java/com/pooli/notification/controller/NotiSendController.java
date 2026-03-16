@@ -59,7 +59,7 @@ public class NotiSendController {
 	@PostMapping
 	public ResponseEntity<Void> sendAlarm(
 			@Valid  @RequestBody NotiSendReqDto request) {
-		alarmHistoryService.sendNotification(request);
+		alarmHistoryService.sendNotificationAsync(request);
 		return ResponseEntity.status(HttpStatus.CREATED).build();
 	}
 
