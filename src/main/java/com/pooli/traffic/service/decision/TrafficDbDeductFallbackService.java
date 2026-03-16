@@ -167,6 +167,74 @@ public class TrafficDbDeductFallbackService {
                 return buildResult(0L, reloadedStatus);
             }
 
+            // 동시성으로 잔량이 바뀐 재시도 경로에서도 최초 계산과 동일한 정책 제한을 다시 적용해
+            // 제한 우회 없이 `deductRemainingAmount`가 항상 안전한 차감량만 사용하도록 보장합니다.
+            if (!whitelistBypass) {
+                long beforeDailyCap = reloadedAnswer;
+                reloadedAnswer = applyDailyLimitIfEnabled(
+                        policyActivation,
+                        lineLimit,
+                        payload.getLineId(),
+                        usageDate,
+                        reloadedAnswer
+                );
+                if (reloadedAnswer <= 0) {
+                    return buildResult(0L, TrafficLuaStatus.HIT_DAILY_LIMIT);
+                }
+                if (reloadedAnswer < beforeDailyCap) {
+                    reloadedStatus = TrafficLuaStatus.HIT_DAILY_LIMIT;
+                }
+
+                if (poolType == TrafficPoolType.SHARED) {
+                    long beforeSharedCap = reloadedAnswer;
+                    reloadedAnswer = applySharedMonthlyLimitIfEnabled(
+                            policyActivation,
+                            lineLimit,
+                            payload.getLineId(),
+                            targetMonth,
+                            reloadedAnswer
+                    );
+                    if (reloadedAnswer <= 0) {
+                        return buildResult(0L, TrafficLuaStatus.HIT_MONTHLY_SHARED_LIMIT);
+                    }
+                    if (reloadedAnswer < beforeSharedCap) {
+                        reloadedStatus = TrafficLuaStatus.HIT_MONTHLY_SHARED_LIMIT;
+                    }
+                }
+
+                long beforeAppDailyCap = reloadedAnswer;
+                reloadedAnswer = applyAppDailyLimitIfEnabled(
+                        policyActivation,
+                        appPolicy,
+                        payload.getLineId(),
+                        payload.getAppId(),
+                        usageDate,
+                        reloadedAnswer
+                );
+                if (reloadedAnswer <= 0) {
+                    return buildResult(0L, TrafficLuaStatus.HIT_APP_DAILY_LIMIT);
+                }
+                if (reloadedAnswer < beforeAppDailyCap) {
+                    reloadedStatus = TrafficLuaStatus.HIT_APP_DAILY_LIMIT;
+                }
+
+                long beforeAppSpeedCap = reloadedAnswer;
+                reloadedAnswer = applyAppSpeedLimitIfEnabled(
+                        policyActivation,
+                        poolType,
+                        appPolicy,
+                        payload,
+                        nowEpochSecond,
+                        reloadedAnswer
+                );
+                if (reloadedAnswer <= 0) {
+                    return buildResult(0L, TrafficLuaStatus.HIT_APP_SPEED);
+                }
+                if (reloadedAnswer < beforeAppSpeedCap) {
+                    reloadedStatus = TrafficLuaStatus.HIT_APP_SPEED;
+                }
+            }
+
             updatedRows = deductRemainingAmount(poolType, payload, reloadedAnswer);
             if (updatedRows <= 0) {
                 return buildResult(0L, reloadedStatus);
