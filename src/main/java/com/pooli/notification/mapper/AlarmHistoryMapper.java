@@ -55,18 +55,4 @@ public interface AlarmHistoryMapper {
             @Param("lineId") Long lineId
     );
 
-    int insertNotificationAll(
-            @Param("alarmCode") String alarmCode,
-            @Param("value") String value
-    );
-
-    int insertNotificationOwner(
-            @Param("alarmCode") String alarmCode,
-            @Param("value") String value
-    );
-
-    int insertNotificationMember(
-            @Param("alarmCode") String alarmCode,
-            @Param("value") String value
-    );
 }

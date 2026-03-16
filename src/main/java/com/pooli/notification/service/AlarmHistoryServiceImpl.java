@@ -110,29 +110,11 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
             }
 
-            case ALL -> {
-                alarmHistoryMapper.insertNotificationAll(
-                        AlarmCode.OTHERS.name(),
-                        jsonValue
-                );
-                return;
-            }
+            case ALL -> targetLineIds = notificationLineMapper.findAllLineIds();
 
-            case OWNER -> {
-                alarmHistoryMapper.insertNotificationOwner(
-                        AlarmCode.OTHERS.name(),
-                        jsonValue
-                );
-                return;
-            }
+            case OWNER -> targetLineIds = notificationLineMapper.findLineIdsByRole("OWNER");
 
-            case MEMBER -> {
-                alarmHistoryMapper.insertNotificationMember(
-                        AlarmCode.OTHERS.name(),
-                        jsonValue
-                );
-                return;
-            }
+            case MEMBER -> targetLineIds = notificationLineMapper.findLineIdsByRole("MEMBER");
 
             default -> throw new ApplicationException(
                     NotificationErrorCode.INVALID_TARGET_CONDITION
@@ -277,7 +259,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
     private void batchInsert(List<Long> lineIds, String alarmCode, String jsonValue) {
 
-        int batchSize = 5000;
+        int batchSize = 1000;
 
         for (int i = 0; i < lineIds.size(); i += batchSize) {
 

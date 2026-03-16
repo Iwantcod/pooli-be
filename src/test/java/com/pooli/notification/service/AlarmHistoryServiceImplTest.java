@@ -13,11 +13,10 @@ import com.pooli.notification.mapper.NotificationLineMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
+
 
 import static org.assertj.core.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -94,13 +93,14 @@ class AlarmHistoryServiceImplTest {
         NotiSendReqDto req = new NotiSendReqDto();
         req.setTargetType(NotificationTargetType.ALL);
 
+        when(notificationLineMapper.findAllLineIds())
+                .thenReturn(Arrays.asList(1L, 2L, 3L));
+
         service.sendNotification(req);
 
+        verify(notificationLineMapper).findAllLineIds();
         verify(alarmHistoryMapper)
-                .insertNotificationAll(eq(AlarmCode.OTHERS.name()), anyString());
-
-        verify(alarmHistoryMapper, never())
-                .insertNotificationAlarms(anyList(), anyString(), anyString());
+                .insertNotificationAlarms(anyList(), eq(AlarmCode.OTHERS.name()), anyString());
     }
 
     @Test
