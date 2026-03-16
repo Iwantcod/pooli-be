@@ -6,6 +6,7 @@ import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import com.pooli.traffic.domain.TrafficDeductExecutionContext;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
@@ -40,11 +41,18 @@ public class TrafficDeductOrchestratorService {
         long deductedTotalBytes = 0L;
         TrafficLuaStatus lastLuaStatus = null;
         TrafficFinalStatus finalStatus;
+        TrafficDeductExecutionContext deductExecutionContext = TrafficDeductExecutionContext.of(
+                payload == null ? null : payload.getTraceId()
+        );
 
         try {
             if (apiRemainingData > 0) {
                 TrafficLuaExecutionResult individualResult =
-                        trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, apiRemainingData);
+                        trafficHydrateRefillAdapterService.executeIndividualWithRecovery(
+                                payload,
+                                apiRemainingData,
+                                deductExecutionContext
+                        );
                 lastLuaStatus = individualResult.getStatus();
 
                 long indivDeducted = normalizeNonNegative(individualResult.getAnswer());
@@ -56,7 +64,11 @@ public class TrafficDeductOrchestratorService {
                 long residualData = apiRemainingData;
                 if (residualData > 0 && individualResult.getStatus() == TrafficLuaStatus.NO_BALANCE) {
                     TrafficLuaExecutionResult sharedResult =
-                            trafficHydrateRefillAdapterService.executeSharedWithRecovery(payload, residualData);
+                            trafficHydrateRefillAdapterService.executeSharedWithRecovery(
+                                    payload,
+                                    residualData,
+                                    deductExecutionContext
+                            );
                     lastLuaStatus = sharedResult.getStatus();
 
                     long sharedDeducted = normalizeNonNegative(sharedResult.getAnswer());

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -20,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
+import com.pooli.traffic.domain.TrafficDeductExecutionContext;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
 import com.pooli.traffic.domain.enums.TrafficFinalStatus;
@@ -44,14 +46,15 @@ class TrafficDeductOrchestratorServiceTest {
         void successWhenIndividualHandlesAll() {
             // given
             TrafficPayloadReqDto payload = payload(103L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 103L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(103L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(103L, TrafficLuaStatus.OK));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 103L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(103L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
             verify(trafficRecentUsageBucketService).recordUsage(
                     com.pooli.traffic.domain.enums.TrafficPoolType.INDIVIDUAL,
@@ -70,17 +73,19 @@ class TrafficDeductOrchestratorServiceTest {
         void individualNoBalanceThenSharedCompensation() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(4L, TrafficLuaStatus.NO_BALANCE));
-            when(trafficHydrateRefillAdapterService.executeSharedWithRecovery(payload, 96L))
+            when(trafficHydrateRefillAdapterService.executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(96L, TrafficLuaStatus.OK));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
-            verify(trafficHydrateRefillAdapterService).executeSharedWithRecovery(payload, 96L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
+            verify(trafficHydrateRefillAdapterService)
+                    .executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class));
             verify(trafficRecentUsageBucketService).recordUsage(
                     com.pooli.traffic.domain.enums.TrafficPoolType.INDIVIDUAL,
                     payload,
@@ -104,14 +109,15 @@ class TrafficDeductOrchestratorServiceTest {
         void noSharedWhenResidualIsZeroEvenNoBalance() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(100L, TrafficLuaStatus.NO_BALANCE));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
@@ -125,14 +131,15 @@ class TrafficDeductOrchestratorServiceTest {
         void noSharedWhenIndividualStatusIsNotNoBalance() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(30L, TrafficLuaStatus.HIT_DAILY_LIMIT));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, result.getFinalStatus()),
@@ -146,14 +153,15 @@ class TrafficDeductOrchestratorServiceTest {
         void partialSuccessWhenIndividualBlocked() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(0L, TrafficLuaStatus.BLOCKED_IMMEDIATE));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
 
             assertAll(
@@ -168,14 +176,15 @@ class TrafficDeductOrchestratorServiceTest {
         void failedOnErrorStatus() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(-1L, TrafficLuaStatus.ERROR));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
@@ -227,14 +236,15 @@ class TrafficDeductOrchestratorServiceTest {
         void failedWhenAdapterThrowsException() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L))
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenThrow(new RuntimeException("adapter failed"));
 
             // when
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
-            verify(trafficHydrateRefillAdapterService).executeIndividualWithRecovery(payload, 100L);
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
             verifyNoInteractions(trafficRecentUsageBucketService);
             assertAll(

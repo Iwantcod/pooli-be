@@ -76,6 +76,15 @@ springdoc:
 app:
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
+  traffic:
+    deduct:
+      redis-retry:
+        max-attempts: ${TRAFFIC_DEDUCT_REDIS_RETRY_MAX_ATTEMPTS:3}
+        backoff-ms: ${TRAFFIC_DEDUCT_REDIS_RETRY_BACKOFF_MS:50}
+    redis-usage-replay:
+      fixed-delay-ms: ${TRAFFIC_REDIS_USAGE_REPLAY_FIXED_DELAY_MS:5000}
+      batch-size: ${TRAFFIC_REDIS_USAGE_REPLAY_BATCH_SIZE:200}
+      max-retry-count: ${TRAFFIC_REDIS_USAGE_REPLAY_MAX_RETRY_COUNT:20}
   redis:
     namespace: ${REDIS_NAMESPACE:pooli}
     cache:

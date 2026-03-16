@@ -241,6 +241,23 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * usage delta replay 멱등 적용 여부를 기록하는 키를 생성합니다.
+     */
+    public String usageDeltaReplayIdempotencyKey(String traceId, String poolType) {
+        String normalizedTraceId = Objects.requireNonNull(traceId, "traceId must not be null").trim();
+        if (normalizedTraceId.isEmpty()) {
+            throw new IllegalArgumentException("traceId must not be blank");
+        }
+
+        String normalizedPoolType = Objects.requireNonNull(poolType, "poolType must not be null").trim();
+        if (normalizedPoolType.isEmpty()) {
+            throw new IllegalArgumentException("poolType must not be blank");
+        }
+
+        return namespaced("usage_delta:replay:idempotency:" + normalizedTraceId + ":" + normalizedPoolType);
+    }
+
+    /**
       * `namespaced` 처리 목적에 맞는 핵심 로직을 수행합니다.
      */
     private String namespaced(String keyBody) {
