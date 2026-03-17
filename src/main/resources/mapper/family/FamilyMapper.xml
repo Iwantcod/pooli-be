@@ -16,11 +16,12 @@
 	           AND p.permission_id = 1
 	           AND pl.is_enable = TRUE
 	       )
-	       THEN TRUE
+	   THEN TRUE
 	       ELSE FALSE
 	     END AS isEnable,
 	     f.family_id AS familyId,
-	     f.pool_total_data AS sharedPoolTotalData
+	     f.pool_total_data AS sharedPoolTotalData,
+	     f.pool_remaining_data AS sharedPoolRemainingData
 	   FROM FAMILY_LINE fl
 	   JOIN FAMILY f ON f.family_id = fl.family_id
 	   WHERE fl.line_id = #{lineId}
@@ -51,6 +52,7 @@
 	             0
 	           )
 	    END AS sharedPoolRemainingAmount,
+	    COALESCE(ll.is_shared_limit_active, FALSE) AS sharedLimitActive,
 	    CASE WHEN l.line_id = #{lineId} THEN TRUE ELSE FALSE END AS isMe
 	  FROM FAMILY_LINE fl
 	  JOIN LINE  l ON fl.line_id = l.line_id

@@ -109,5 +109,13 @@
       WHERE l.line_id = #{lineId}
         AND l.deleted_at IS NULL
   </select>
+
+  <select id="findDailyTotalUsageByLineIdAndDate" resultType="java.lang.Long">
+      SELECT COALESCE(SUM(total_usage_data), 0)
+      FROM DAILY_TOTAL_DATA
+      WHERE line_id = #{lineId}
+        AND usage_date = #{usageDate}
+        AND deleted_at IS NULL
+  </select>
  
  </mapper>
