@@ -1,11 +1,25 @@
 package com.pooli.policy.service;
 
+import java.util.List;
+
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.dto.PagingResDto;
-import com.pooli.policy.domain.dto.request.*;
-import com.pooli.policy.domain.dto.response.*;
-
-import java.util.List;
+import com.pooli.policy.domain.dto.request.AppDataLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.AppPolicyActiveToggleReqDto;
+import com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto;
+import com.pooli.policy.domain.dto.request.AppSpeedLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.BlockPolicyUpdateReqDto;
+import com.pooli.policy.domain.dto.request.ImmediateBlockReqDto;
+import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
+import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
+import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
+import com.pooli.policy.domain.dto.response.AppPolicyResDto;
+import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
+import com.pooli.policy.domain.dto.response.BlockPolicyResDto;
+import com.pooli.policy.domain.dto.response.BlockStatusResDto;
+import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
+import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
 
 public interface UserPolicyService {
 
@@ -53,7 +67,7 @@ public interface UserPolicyService {
      */
     RepeatBlockPolicyResDto deleteRepeatBlockPolicy(Long repeatBlockId, AuthUserDetails auth);
 
-
+    BlockPolicyResDto toggleRepeatBlockPolicy(Long repeatBlockId, BlockPolicyUpdateReqDto request, AuthUserDetails auth);
     // =========================================================
     // 2) Block Policies - Immediate Block
     // =========================================================

@@ -16,5 +16,5 @@ public class BlockPolicyResDto {
     private Long lineId;
 
     @Schema(description = "정책 활성화 여부", example = "true")
-    private Boolean enabled;
+    private Boolean isActive;
 }
