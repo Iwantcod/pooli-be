@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,6 +18,10 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.util.StringUtils;
 
+/**
+ * traffic 런타임에서 사용하는 cache Redis 연결과 AOF 초기화 빈을 구성합니다.
+ * cache Redis가 정책/사용량/멱등 키의 영속 경계이므로 연결 생성 시점에 AOF 검증도 함께 묶습니다.
+ */
 @Configuration
 @Profile({"local", "api", "traffic"})
 @EnableConfigurationProperties(CacheRedisProperties.class)
@@ -57,6 +62,27 @@ public class CacheRedisConfig {
             @Qualifier("cacheRedisConnectionFactory") RedisConnectionFactory connectionFactory
     ) {
         return new StringRedisTemplate(connectionFactory);
+    }
+
+    /**
+     * cache Redis 전용 AOF 설정기입니다.
+     * streams/session Redis와 분리된 cache Redis만 대상으로 동작하게 별도 빈으로 둡니다.
+     */
+    @Bean
+    public CacheRedisAofBackupService cacheRedisAofBackupService(
+            @Qualifier("cacheStringRedisTemplate") StringRedisTemplate cacheStringRedisTemplate,
+            CacheRedisProperties properties
+    ) {
+        return new CacheRedisAofBackupService(cacheStringRedisTemplate, properties);
+    }
+
+    /**
+     * 애플리케이션 부팅 직후 AOF 상태를 맞추거나 검증합니다.
+     * Redis가 AOF 없이 올라온 상태에서 트래픽 캐시가 쓰이기 시작하는 것을 막기 위한 훅입니다.
+     */
+    @Bean
+    public ApplicationRunner cacheRedisAofInitializer(CacheRedisAofBackupService cacheRedisAofBackupService) {
+        return args -> cacheRedisAofBackupService.ensureAofReady();
     }
 
     private boolean isSentinelConfigured(String sentinelMaster, String sentinelNodes) {
