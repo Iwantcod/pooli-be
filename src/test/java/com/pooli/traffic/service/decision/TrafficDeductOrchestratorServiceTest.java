@@ -36,6 +36,9 @@ class TrafficDeductOrchestratorServiceTest {
     @Mock
     private TrafficRecentUsageBucketService trafficRecentUsageBucketService;
 
+    @Mock
+    private TrafficSharedPoolThresholdAlarmService trafficSharedPoolThresholdAlarmService;
+
     @InjectMocks
     private TrafficDeductOrchestratorService trafficDeductOrchestratorService;
 
@@ -61,6 +64,7 @@ class TrafficDeductOrchestratorServiceTest {
                     payload,
                     103L
             );
+            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
                     () -> assertEquals(103L, result.getDeductedTotalBytes()),
@@ -96,6 +100,7 @@ class TrafficDeductOrchestratorServiceTest {
                     payload,
                     96L
             );
+            verify(trafficSharedPoolThresholdAlarmService).checkAndEnqueueIfReached(22L);
 
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
@@ -119,6 +124,7 @@ class TrafficDeductOrchestratorServiceTest {
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
+            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
                     () -> assertEquals(100L, result.getDeductedTotalBytes()),
@@ -141,6 +147,7 @@ class TrafficDeductOrchestratorServiceTest {
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
+            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, result.getFinalStatus()),
                     () -> assertEquals(30L, result.getDeductedTotalBytes()),
@@ -163,6 +170,7 @@ class TrafficDeductOrchestratorServiceTest {
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
+            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
 
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, result.getFinalStatus()),
@@ -186,6 +194,7 @@ class TrafficDeductOrchestratorServiceTest {
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
+            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
                     () -> assertEquals(0L, result.getDeductedTotalBytes()),
@@ -205,6 +214,7 @@ class TrafficDeductOrchestratorServiceTest {
             // then
             verifyNoInteractions(trafficHydrateRefillAdapterService);
             verifyNoInteractions(trafficRecentUsageBucketService);
+            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
                     () -> assertEquals(0L, result.getDeductedTotalBytes()),
@@ -224,6 +234,7 @@ class TrafficDeductOrchestratorServiceTest {
             // then
             verifyNoInteractions(trafficHydrateRefillAdapterService);
             verifyNoInteractions(trafficRecentUsageBucketService);
+            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
                     () -> assertEquals(0L, result.getDeductedTotalBytes()),
@@ -247,6 +258,7 @@ class TrafficDeductOrchestratorServiceTest {
                     .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
             verifyNoInteractions(trafficRecentUsageBucketService);
+            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
                     () -> assertEquals(0L, result.getDeductedTotalBytes()),

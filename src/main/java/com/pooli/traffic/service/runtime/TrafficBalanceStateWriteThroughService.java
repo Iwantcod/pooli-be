@@ -25,6 +25,7 @@ public class TrafficBalanceStateWriteThroughService {
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficQuotaCacheService trafficQuotaCacheService;
+    private final TrafficFamilyMetaCacheService trafficFamilyMetaCacheService;
 
     /**
      * 공유풀 충전 성공 후 해당 월 잔량 키의 DB 고갈 플래그(is_empty)를 0으로 복구합니다.
@@ -39,6 +40,76 @@ public class TrafficBalanceStateWriteThroughService {
         executeAfterCommit(
                 "shared_balance_db_empty_reset familyId=" + familyId + " key=" + balanceKey,
                 () -> trafficQuotaCacheService.writeDbEmptyFlag(balanceKey, false)
+        );
+    }
+
+    /**
+     * 공유풀 기여 성공 후 family meta 캐시의 총량/DB잔량을 함께 증가시킵니다.
+     */
+    public void markSharedMetaContribution(long familyId, long amount) {
+        if (familyId <= 0 || amount <= 0) {
+            return;
+        }
+
+        executeAfterCommit(
+                "shared_meta_contribution familyId=" + familyId + " amount=" + amount,
+                () -> trafficFamilyMetaCacheService.increaseTotalAndDbRemaining(familyId, amount)
+        );
+    }
+
+    /**
+     * 공유풀 임계치 설정 변경을 family meta 캐시에 반영합니다.
+     */
+    public void markSharedMetaThresholdUpdated(long familyId, long familyThreshold, boolean thresholdActive) {
+        if (familyId <= 0) {
+            return;
+        }
+
+        executeAfterCommit(
+                "shared_meta_threshold familyId=" + familyId + " threshold=" + familyThreshold,
+                () -> trafficFamilyMetaCacheService.updateThreshold(familyId, familyThreshold, thresholdActive)
+        );
+    }
+
+    /**
+     * 공유풀 DB claim 성공 후 family meta 캐시의 DB 잔량을 감소시킵니다.
+     */
+    public void markSharedMetaClaimed(long familyId, long amount) {
+        if (familyId <= 0 || amount <= 0) {
+            return;
+        }
+
+        executeAfterCommit(
+                "shared_meta_claim familyId=" + familyId + " amount=" + amount,
+                () -> trafficFamilyMetaCacheService.decreaseDbRemaining(familyId, amount)
+        );
+    }
+
+    /**
+     * 공유풀 DB restore 성공 후 family meta 캐시의 DB 잔량을 복구합니다.
+     */
+    public void markSharedMetaRestored(long familyId, long amount) {
+        if (familyId <= 0 || amount <= 0) {
+            return;
+        }
+
+        executeAfterCommit(
+                "shared_meta_restore familyId=" + familyId + " amount=" + amount,
+                () -> trafficFamilyMetaCacheService.increaseDbRemaining(familyId, amount)
+        );
+    }
+
+    /**
+     * DB fallback 공유풀 차감 성공 후 family meta 캐시의 DB 잔량을 감소시킵니다.
+     */
+    public void markSharedMetaDbFallbackDeducted(long familyId, long amount) {
+        if (familyId <= 0 || amount <= 0) {
+            return;
+        }
+
+        executeAfterCommit(
+                "shared_meta_db_fallback_deduct familyId=" + familyId + " amount=" + amount,
+                () -> trafficFamilyMetaCacheService.decreaseDbRemaining(familyId, amount)
         );
     }
 

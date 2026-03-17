@@ -29,6 +29,7 @@ public class TrafficDeductOrchestratorService {
 
     private final TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
     private final TrafficRecentUsageBucketService trafficRecentUsageBucketService;
+    private final TrafficSharedPoolThresholdAlarmService trafficSharedPoolThresholdAlarmService;
 
     /**
      * 이벤트 1건의 목표 데이터량(apiTotalData)을 처리하고 최종 상태를 반환합니다.
@@ -75,6 +76,9 @@ public class TrafficDeductOrchestratorService {
                     deductedTotalBytes += sharedDeducted;
                     apiRemainingData = clampRemaining(apiRemainingData - sharedDeducted);
                     trafficRecentUsageBucketService.recordUsage(TrafficPoolType.SHARED, payload, sharedDeducted);
+                    if (sharedDeducted > 0) {
+                        trafficSharedPoolThresholdAlarmService.checkAndEnqueueIfReached(payload.getFamilyId());
+                    }
                 }
             }
 

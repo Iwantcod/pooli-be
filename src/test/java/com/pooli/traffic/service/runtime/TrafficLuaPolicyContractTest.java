@@ -11,156 +11,99 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Lua 정책 스크립트의 실행 순서와 가드 조건을 검증하는 테스트입니다.
+ * Lua 정책 스크립트의 역할 분리(1차 policy-check / 2차 deduct) 계약을 검증합니다.
  */
 class TrafficLuaPolicyContractTest {
 
-    private static final Path INDIVIDUAL_SCRIPT =
+    private static final Path POLICY_CHECK_INDIVIDUAL_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/policy_check_indiv.lua");
+    private static final Path POLICY_CHECK_SHARED_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/policy_check_shared.lua");
+    private static final Path DEDUCT_INDIVIDUAL_SCRIPT =
             Path.of("src/main/resources/lua/traffic/deduct_indiv.lua");
-    private static final Path SHARED_SCRIPT =
+    private static final Path DEDUCT_SHARED_SCRIPT =
             Path.of("src/main/resources/lua/traffic/deduct_shared.lua");
     private static final Path REFILL_GATE_SCRIPT =
             Path.of("src/main/resources/lua/traffic/refill_gate.lua");
 
     @Test
-    void keepsIndividualPolicyPriorityOrder() throws IOException {
-        String script = Files.readString(INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("1차 개인 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
+    void keepsPolicyCheckOrderForIndividual() throws IOException {
+        String script = Files.readString(POLICY_CHECK_INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
-                "local whitelist_bypass = false",
-                "if not whitelist_bypass then",
+                "if is_policy_enabled(policy_whitelist_key)",
                 "if is_policy_enabled(policy_immediate_key)",
-                "if is_policy_enabled(policy_repeat_key)",
-                "if is_policy_enabled(policy_daily_key)",
-                "if is_policy_enabled(policy_app_data_key)",
-                "if is_policy_enabled(policy_app_speed_key)"
+                "if is_policy_enabled(policy_repeat_key)"
         );
     }
 
     @Test
-    void keepsSharedPolicyPriorityOrder() throws IOException {
-        String script = Files.readString(SHARED_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("1차 공유 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
+    void keepsPolicyCheckOrderForShared() throws IOException {
+        String script = Files.readString(POLICY_CHECK_SHARED_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
-                "local whitelist_bypass = false",
-                "if not whitelist_bypass then",
+                "if is_policy_enabled(policy_whitelist_key)",
                 "if is_policy_enabled(policy_immediate_key)",
-                "if is_policy_enabled(policy_repeat_key)",
-                "if answer > 0 and is_policy_enabled(policy_daily_key)",
-                "if answer > 0 and is_policy_enabled(policy_shared_key)",
-                "if answer > 0 and is_policy_enabled(policy_app_data_key)",
-                "if answer > 0 and is_policy_enabled(policy_app_speed_key)"
+                "if is_policy_enabled(policy_repeat_key)"
         );
     }
 
     @Test
-    void evaluatesIndividualPolicyChecksInsideWhitelistGuard() throws IOException {
-        String script = Files.readString(INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("2차 deduct Lua는 immediate/repeat 차단 정책을 직접 검사하지 않는다")
+    void deductScriptsDoNotCheckBlockPoliciesDirectly() throws IOException {
+        String individualScript = Files.readString(DEDUCT_INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
+        String sharedScript = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
 
-        int bypassGuardIndex = script.indexOf("if not whitelist_bypass then");
-        int immediateIndex = script.indexOf("if is_policy_enabled(policy_immediate_key)");
-        int speedIndex = script.indexOf("if is_policy_enabled(policy_app_speed_key)");
-        int writeIndex = script.indexOf("redis.call(\"HINCRBY\", remaining_key, \"amount\", -answer)");
-
-        assertTrue(bypassGuardIndex >= 0, "Whitelist bypass guard must exist.");
-        assertTrue(immediateIndex > bypassGuardIndex, "Immediate policy check must run after whitelist guard.");
-        assertTrue(speedIndex > immediateIndex, "App speed policy check must run after immediate policy check.");
-        assertTrue(writeIndex > speedIndex, "Redis write must run after policy checks.");
+        assertTrue(!individualScript.contains("BLOCKED_IMMEDIATE"), "Individual deduct must not return BLOCKED_IMMEDIATE.");
+        assertTrue(!individualScript.contains("BLOCKED_REPEAT"), "Individual deduct must not return BLOCKED_REPEAT.");
+        assertTrue(!sharedScript.contains("BLOCKED_IMMEDIATE"), "Shared deduct must not return BLOCKED_IMMEDIATE.");
+        assertTrue(!sharedScript.contains("BLOCKED_REPEAT"), "Shared deduct must not return BLOCKED_REPEAT.");
     }
 
     @Test
-    void evaluatesSharedPolicyChecksInsideWhitelistGuard() throws IOException {
-        String script = Files.readString(SHARED_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("2차 deduct Lua는 whitelist bypass flag 입력을 사용한다")
+    void deductScriptsUseWhitelistBypassFlag() throws IOException {
+        String individualScript = Files.readString(DEDUCT_INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
+        String sharedScript = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
 
-        int bypassGuardIndex = script.indexOf("if not whitelist_bypass then");
-        int immediateIndex = script.indexOf("if is_policy_enabled(policy_immediate_key)");
-        int monthlySharedIndex = script.indexOf("if answer > 0 and is_policy_enabled(policy_shared_key)");
-        int speedIndex = script.indexOf("if answer > 0 and is_policy_enabled(policy_app_speed_key)");
-        int writeIndex = script.indexOf("redis.call(\"HINCRBY\", remaining_key, \"amount\", -answer)");
-
-        assertTrue(bypassGuardIndex >= 0, "Whitelist bypass guard must exist.");
-        assertTrue(immediateIndex > bypassGuardIndex, "Immediate policy check must run after whitelist guard.");
-        assertTrue(monthlySharedIndex > immediateIndex, "Shared monthly policy check must run after immediate policy check.");
-        assertTrue(speedIndex > monthlySharedIndex, "App speed policy check must run after shared monthly policy check.");
-        assertTrue(writeIndex > speedIndex, "Redis write must run after policy checks.");
-    }
-
-    @Test
-    void checksIndividualBlockPolicyBeforeZeroBalanceBranch() throws IOException {
-        String script = Files.readString(INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
-
-        assertAppearsInOrder(
-                script,
-                "if is_policy_enabled(policy_immediate_key)",
-                "if is_policy_enabled(policy_repeat_key)",
-                "if answer <= 0 then"
+        assertTrue(
+                individualScript.contains("local whitelist_bypass_flag = tonumber(ARGV[7] or \"0\")"),
+                "Individual deduct script must consume whitelist bypass flag from ARGV[7]."
+        );
+        assertTrue(
+                sharedScript.contains("local whitelist_bypass_flag = tonumber(ARGV[8] or \"0\")"),
+                "Shared deduct script must consume whitelist bypass flag from ARGV[8]."
         );
     }
 
     @Test
-    void checksSharedBlockPolicyBeforeZeroBalanceBranch() throws IOException {
-        String script = Files.readString(SHARED_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("2차 deduct Lua는 global policy guard 이후 잔량 조회를 수행한다")
+    void checksGlobalPolicyGuardBeforeBalanceRead() throws IOException {
+        String individualScript = Files.readString(DEDUCT_INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
+        String sharedScript = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
-                script,
-                "if is_policy_enabled(policy_immediate_key)",
-                "if is_policy_enabled(policy_repeat_key)",
-                "if answer <= 0 then"
-        );
-    }
-
-    @Test
-    @DisplayName("전역 정책 키 누락 가드는 개인풀 정책 판정보다 먼저 수행된다")
-    void checksGlobalPolicyGuardBeforeIndividualPolicyChecks() throws IOException {
-        String script = Files.readString(INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
-
-        assertAppearsInOrder(
-                script,
+                individualScript,
                 "if has_missing_global_policy_key(",
                 "return as_json(0, \"GLOBAL_POLICY_HYDRATE\")",
-                "local whitelist_bypass = false"
+                "local current_amount = tonumber(redis.call(\"HGET\", remaining_key, \"amount\") or \"-1\")"
         );
-    }
-
-    @Test
-    @DisplayName("전역 정책 키 누락 가드는 공유풀 정책 판정보다 먼저 수행된다")
-    void checksGlobalPolicyGuardBeforeSharedPolicyChecks() throws IOException {
-        String script = Files.readString(SHARED_SCRIPT, StandardCharsets.UTF_8);
-
         assertAppearsInOrder(
-                script,
+                sharedScript,
                 "if has_missing_global_policy_key(",
                 "return as_json(0, \"GLOBAL_POLICY_HYDRATE\")",
-                "local whitelist_bypass = false"
-        );
-    }
-
-    @Test
-    void doesNotWriteDbEmptyFlagInDeductScripts() throws IOException {
-        String individualScript = Files.readString(INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
-        String sharedScript = Files.readString(SHARED_SCRIPT, StandardCharsets.UTF_8);
-
-        assertTrue(!individualScript.contains("is_empty"), "Individual deduct script must not write is_empty flag.");
-        assertTrue(!sharedScript.contains("is_empty"), "Shared deduct script must not write is_empty flag.");
-    }
-
-    @Test
-    void refillGateChecksDbEmptyBeforeThreshold() throws IOException {
-        String script = Files.readString(REFILL_GATE_SCRIPT, StandardCharsets.UTF_8);
-
-        assertAppearsInOrder(
-                script,
-                "if is_empty == 1 then",
-                "if current_amount >= threshold then"
+                "local current_amount = tonumber(redis.call(\"HGET\", remaining_key, \"amount\") or \"-1\")"
         );
     }
 
     @Test
     @DisplayName("공유풀 Lua는 QoS 보정 키를 추가로 받고 QOS 상태를 반환할 수 있다")
     void sharedScriptAcceptsQosKeyAndStatus() throws IOException {
-        String script = Files.readString(SHARED_SCRIPT, StandardCharsets.UTF_8);
+        String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
 
         assertTrue(
                 script.contains("local individual_remaining_key = KEYS[20]"),
@@ -175,7 +118,7 @@ class TrafficLuaPolicyContractTest {
     @Test
     @DisplayName("QoS 보정이 적용된 경우 공유풀 잔량/월 사용량 차감은 건너뛴다")
     void sharedScriptSkipsSharedDeductWhenQosFallbackApplies() throws IOException {
-        String script = Files.readString(SHARED_SCRIPT, StandardCharsets.UTF_8);
+        String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
@@ -184,6 +127,18 @@ class TrafficLuaPolicyContractTest {
                 "used_qos_fallback = true",
                 "if not used_qos_fallback then",
                 "redis.call(\"HINCRBY\", remaining_key, \"amount\", -answer)"
+        );
+    }
+
+    @Test
+    @DisplayName("refill gate는 is_empty 검사 후 threshold를 평가한다")
+    void refillGateChecksDbEmptyBeforeThreshold() throws IOException {
+        String script = Files.readString(REFILL_GATE_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                script,
+                "if is_empty == 1 then",
+                "if current_amount >= threshold then"
         );
     }
 

@@ -134,7 +134,7 @@ public class FamilySharedPoolsService {
         }
 
         sharedPoolMapper.updateFamilyPoolData(familyId, amount);
-        syncSharedPoolDbEmptyFlagAfterContribution(familyId);
+        syncSharedPoolWriteThroughAfterContribution(familyId, amount);
         sharedPoolMapper.insertContribution(familyId, lineId, amount);
 
         try {
@@ -159,7 +159,7 @@ public class FamilySharedPoolsService {
         sendAlarmToFamily(familyId, lineId, AlarmType.SHARED_POOL_CONTRIBUTION);
     }
 
-    private void syncSharedPoolDbEmptyFlagAfterContribution(Long familyId) {
+    private void syncSharedPoolWriteThroughAfterContribution(Long familyId, Long amount) {
         if (familyId == null || familyId <= 0) {
             return;
         }
@@ -172,6 +172,9 @@ public class FamilySharedPoolsService {
         }
 
         writeThroughService.markSharedBalanceNotEmpty(familyId);
+        if (amount != null && amount > 0) {
+            writeThroughService.markSharedMetaContribution(familyId, amount);
+        }
     }
 
     public SharedPoolDetailResDto getSharedPoolDetail(Long familyId, Long lineId) {
@@ -275,7 +278,24 @@ public class FamilySharedPoolsService {
 
     public void updateSharedDataThreshold(Long familyId, UpdateSharedDataThresholdReqDto request) {
         sharedPoolMapper.updateSharedDataThreshold(familyId, request.getNewFamilyThreshold());
+        syncSharedThresholdMetaAfterUpdate(familyId, request.getNewFamilyThreshold());
         sendAlarmToFamily(familyId, null, AlarmType.SHARED_POOL_THRESHOLD_CHANGE);
+    }
+
+    private void syncSharedThresholdMetaAfterUpdate(Long familyId, Long familyThreshold) {
+        if (familyId == null || familyId <= 0) {
+            return;
+        }
+
+        TrafficBalanceStateWriteThroughService writeThroughService =
+                trafficBalanceStateWriteThroughServiceProvider.getIfAvailable();
+        if (writeThroughService == null) {
+            log.debug("traffic_balance_state_write_through_unavailable_for_threshold familyId={}", familyId);
+            return;
+        }
+
+        long normalizedThreshold = familyThreshold == null ? 0L : Math.max(0L, familyThreshold);
+        writeThroughService.markSharedMetaThresholdUpdated(familyId, normalizedThreshold, true);
     }
 
     public SharedPoolMonthlyUsageResDto getFamilyMonthlySharedUsageTotal(AuthUserDetails principal) {

@@ -12,6 +12,7 @@ import java.util.Optional;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.ObjectProvider;
 
 import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
 import com.pooli.policy.domain.dto.response.PolicyActivationSnapshotResDto;
@@ -34,6 +35,7 @@ import com.pooli.traffic.mapper.TrafficDbSpeedBucketMapper;
 import com.pooli.traffic.mapper.TrafficDbUsageMapper;
 import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
+import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -54,7 +56,8 @@ public class TrafficDbDeductFallbackService {
     private static final int POLICY_APP_WHITELIST_ID = 7;
 
     private static final int APP_SPEED_LIMIT_UPLOAD_MULTIPLIER = 125;
-    private static final long APP_SPEED_WINDOW_SECONDS = 3L;
+    private static final long APP_SPEED_WINDOW_SECONDS = 1L;
+    private static final String APP_SPEED_BUCKET_POOL_TYPE = TrafficPoolType.INDIVIDUAL.name();
 
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final PolicyBackOfficeMapper policyBackOfficeMapper;
@@ -66,6 +69,7 @@ public class TrafficDbDeductFallbackService {
     private final TrafficDbUsageMapper trafficDbUsageMapper;
     private final TrafficDbSpeedBucketMapper trafficDbSpeedBucketMapper;
     private final TrafficUsageDeltaRecordService trafficUsageDeltaRecordService;
+    private final ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
 
     /**
      * DB fallback 정책 판정 + 차감 + 집계 갱신을 단일 트랜잭션으로 수행합니다.
@@ -108,131 +112,174 @@ public class TrafficDbDeductFallbackService {
 
         long currentAmount = selectRemainingAmountForUpdate(poolType, payload);
         long normalizedRequestedBytes = Math.max(0L, requestedBytes);
-        long answer = Math.min(currentAmount, normalizedRequestedBytes);
-        TrafficLuaStatus finalStatus = currentAmount < normalizedRequestedBytes
-                ? TrafficLuaStatus.NO_BALANCE
-                : TrafficLuaStatus.OK;
-
-        if (answer <= 0) {
-            return buildResult(0L, finalStatus);
-        }
+        long policyCappedTarget = normalizedRequestedBytes;
+        TrafficLuaStatus finalStatus = TrafficLuaStatus.OK;
 
         if (!whitelistBypass) {
-            answer = applyDailyLimitIfEnabled(policyActivation, lineLimit, payload.getLineId(), usageDate, answer);
-            if (answer <= 0) {
+            long beforeDailyCap = policyCappedTarget;
+            policyCappedTarget = applyDailyLimitIfEnabled(
+                    policyActivation,
+                    lineLimit,
+                    payload.getLineId(),
+                    usageDate,
+                    policyCappedTarget
+            );
+            if (policyCappedTarget <= 0) {
                 return buildResult(0L, TrafficLuaStatus.HIT_DAILY_LIMIT);
             }
-            if (answer < Math.min(currentAmount, normalizedRequestedBytes)) {
+            if (policyCappedTarget < beforeDailyCap) {
                 finalStatus = TrafficLuaStatus.HIT_DAILY_LIMIT;
             }
 
             if (poolType == TrafficPoolType.SHARED) {
-                long beforeSharedCap = answer;
-                answer = applySharedMonthlyLimitIfEnabled(policyActivation, lineLimit, payload.getLineId(), targetMonth, answer);
-                if (answer <= 0) {
+                long beforeSharedCap = policyCappedTarget;
+                policyCappedTarget = applySharedMonthlyLimitIfEnabled(
+                        policyActivation,
+                        lineLimit,
+                        payload.getLineId(),
+                        targetMonth,
+                        policyCappedTarget
+                );
+                if (policyCappedTarget <= 0) {
                     return buildResult(0L, TrafficLuaStatus.HIT_MONTHLY_SHARED_LIMIT);
                 }
-                if (answer < beforeSharedCap) {
+                if (policyCappedTarget < beforeSharedCap) {
                     finalStatus = TrafficLuaStatus.HIT_MONTHLY_SHARED_LIMIT;
                 }
             }
 
-            long beforeAppDailyCap = answer;
-            answer = applyAppDailyLimitIfEnabled(policyActivation, appPolicy, payload.getLineId(), payload.getAppId(), usageDate, answer);
-            if (answer <= 0) {
+            long beforeAppDailyCap = policyCappedTarget;
+            policyCappedTarget = applyAppDailyLimitIfEnabled(
+                    policyActivation,
+                    appPolicy,
+                    payload.getLineId(),
+                    payload.getAppId(),
+                    usageDate,
+                    policyCappedTarget
+            );
+            if (policyCappedTarget <= 0) {
                 return buildResult(0L, TrafficLuaStatus.HIT_APP_DAILY_LIMIT);
             }
-            if (answer < beforeAppDailyCap) {
+            if (policyCappedTarget < beforeAppDailyCap) {
                 finalStatus = TrafficLuaStatus.HIT_APP_DAILY_LIMIT;
             }
 
-            long beforeAppSpeedCap = answer;
-            answer = applyAppSpeedLimitIfEnabled(policyActivation, poolType, appPolicy, payload, nowEpochSecond, answer);
-            if (answer <= 0) {
+            long beforeAppSpeedCap = policyCappedTarget;
+            policyCappedTarget = applyAppSpeedLimitIfEnabled(
+                    policyActivation,
+                    poolType,
+                    appPolicy,
+                    payload,
+                    nowEpochSecond,
+                    policyCappedTarget
+            );
+            if (policyCappedTarget <= 0) {
                 return buildResult(0L, TrafficLuaStatus.HIT_APP_SPEED);
             }
-            if (answer < beforeAppSpeedCap) {
+            if (policyCappedTarget < beforeAppSpeedCap) {
                 finalStatus = TrafficLuaStatus.HIT_APP_SPEED;
             }
+        }
+
+        long answer = Math.min(currentAmount, policyCappedTarget);
+        boolean insufficientBalance = currentAmount < policyCappedTarget;
+        if (insufficientBalance && finalStatus != TrafficLuaStatus.HIT_APP_SPEED) {
+            finalStatus = TrafficLuaStatus.NO_BALANCE;
+        }
+        if (answer <= 0) {
+            // policyCappedTarget<=0은 위 정책 분기에서 이미 즉시 반환되므로,
+            // 여기 answer==0은 정책 허용량이 남아있지만 잔량이 부족한 경우다.
+            // HIT_APP_SPEED 우선순위만 유지하고 나머지는 NO_BALANCE로 리필 경로를 연다.
+            if (finalStatus == TrafficLuaStatus.HIT_APP_SPEED) {
+                return buildResult(0L, TrafficLuaStatus.HIT_APP_SPEED);
+            }
+            return buildResult(0L, TrafficLuaStatus.NO_BALANCE);
         }
 
         int updatedRows = deductRemainingAmount(poolType, payload, answer);
         if (updatedRows <= 0) {
             long reloadedAmount = selectRemainingAmount(poolType, payload);
-            long reloadedAnswer = Math.min(reloadedAmount, normalizedRequestedBytes);
-            TrafficLuaStatus reloadedStatus = reloadedAmount < normalizedRequestedBytes
-                    ? TrafficLuaStatus.NO_BALANCE
-                    : TrafficLuaStatus.OK;
-            if (reloadedAnswer <= 0) {
-                return buildResult(0L, reloadedStatus);
-            }
+            long reloadedPolicyCappedTarget = normalizedRequestedBytes;
+            TrafficLuaStatus reloadedStatus = TrafficLuaStatus.OK;
 
             // 동시성으로 잔량이 바뀐 재시도 경로에서도 최초 계산과 동일한 정책 제한을 다시 적용해
             // 제한 우회 없이 `deductRemainingAmount`가 항상 안전한 차감량만 사용하도록 보장합니다.
             if (!whitelistBypass) {
-                long beforeDailyCap = reloadedAnswer;
-                reloadedAnswer = applyDailyLimitIfEnabled(
+                long beforeDailyCap = reloadedPolicyCappedTarget;
+                reloadedPolicyCappedTarget = applyDailyLimitIfEnabled(
                         policyActivation,
                         lineLimit,
                         payload.getLineId(),
                         usageDate,
-                        reloadedAnswer
+                        reloadedPolicyCappedTarget
                 );
-                if (reloadedAnswer <= 0) {
+                if (reloadedPolicyCappedTarget <= 0) {
                     return buildResult(0L, TrafficLuaStatus.HIT_DAILY_LIMIT);
                 }
-                if (reloadedAnswer < beforeDailyCap) {
+                if (reloadedPolicyCappedTarget < beforeDailyCap) {
                     reloadedStatus = TrafficLuaStatus.HIT_DAILY_LIMIT;
                 }
 
                 if (poolType == TrafficPoolType.SHARED) {
-                    long beforeSharedCap = reloadedAnswer;
-                    reloadedAnswer = applySharedMonthlyLimitIfEnabled(
+                    long beforeSharedCap = reloadedPolicyCappedTarget;
+                    reloadedPolicyCappedTarget = applySharedMonthlyLimitIfEnabled(
                             policyActivation,
                             lineLimit,
                             payload.getLineId(),
                             targetMonth,
-                            reloadedAnswer
+                            reloadedPolicyCappedTarget
                     );
-                    if (reloadedAnswer <= 0) {
+                    if (reloadedPolicyCappedTarget <= 0) {
                         return buildResult(0L, TrafficLuaStatus.HIT_MONTHLY_SHARED_LIMIT);
                     }
-                    if (reloadedAnswer < beforeSharedCap) {
+                    if (reloadedPolicyCappedTarget < beforeSharedCap) {
                         reloadedStatus = TrafficLuaStatus.HIT_MONTHLY_SHARED_LIMIT;
                     }
                 }
 
-                long beforeAppDailyCap = reloadedAnswer;
-                reloadedAnswer = applyAppDailyLimitIfEnabled(
+                long beforeAppDailyCap = reloadedPolicyCappedTarget;
+                reloadedPolicyCappedTarget = applyAppDailyLimitIfEnabled(
                         policyActivation,
                         appPolicy,
                         payload.getLineId(),
                         payload.getAppId(),
                         usageDate,
-                        reloadedAnswer
+                        reloadedPolicyCappedTarget
                 );
-                if (reloadedAnswer <= 0) {
+                if (reloadedPolicyCappedTarget <= 0) {
                     return buildResult(0L, TrafficLuaStatus.HIT_APP_DAILY_LIMIT);
                 }
-                if (reloadedAnswer < beforeAppDailyCap) {
+                if (reloadedPolicyCappedTarget < beforeAppDailyCap) {
                     reloadedStatus = TrafficLuaStatus.HIT_APP_DAILY_LIMIT;
                 }
 
-                long beforeAppSpeedCap = reloadedAnswer;
-                reloadedAnswer = applyAppSpeedLimitIfEnabled(
+                long beforeAppSpeedCap = reloadedPolicyCappedTarget;
+                reloadedPolicyCappedTarget = applyAppSpeedLimitIfEnabled(
                         policyActivation,
                         poolType,
                         appPolicy,
                         payload,
                         nowEpochSecond,
-                        reloadedAnswer
+                        reloadedPolicyCappedTarget
                 );
-                if (reloadedAnswer <= 0) {
+                if (reloadedPolicyCappedTarget <= 0) {
                     return buildResult(0L, TrafficLuaStatus.HIT_APP_SPEED);
                 }
-                if (reloadedAnswer < beforeAppSpeedCap) {
+                if (reloadedPolicyCappedTarget < beforeAppSpeedCap) {
                     reloadedStatus = TrafficLuaStatus.HIT_APP_SPEED;
                 }
+            }
+
+            long reloadedAnswer = Math.min(reloadedAmount, reloadedPolicyCappedTarget);
+            boolean reloadedInsufficientBalance = reloadedAmount < reloadedPolicyCappedTarget;
+            if (reloadedInsufficientBalance && reloadedStatus != TrafficLuaStatus.HIT_APP_SPEED) {
+                reloadedStatus = TrafficLuaStatus.NO_BALANCE;
+            }
+            if (reloadedAnswer <= 0) {
+                if (reloadedStatus == TrafficLuaStatus.HIT_APP_SPEED) {
+                    return buildResult(0L, TrafficLuaStatus.HIT_APP_SPEED);
+                }
+                return buildResult(0L, TrafficLuaStatus.NO_BALANCE);
             }
 
             updatedRows = deductRemainingAmount(poolType, payload, reloadedAnswer);
@@ -252,12 +299,22 @@ public class TrafficDbDeductFallbackService {
         Long speedBucketOwnerId = resolveSpeedBucketOwnerId(poolType, payload);
         if (speedBucketOwnerId != null && speedBucketOwnerId > 0) {
             trafficDbSpeedBucketMapper.upsertUsage(
-                    poolType.name(),
+                    APP_SPEED_BUCKET_POOL_TYPE,
                     speedBucketOwnerId,
                     payload.getAppId(),
                     nowEpochSecond,
                     answer
             );
+        }
+
+        if (poolType == TrafficPoolType.SHARED && payload.getFamilyId() != null && payload.getFamilyId() > 0 && answer > 0) {
+            if (trafficBalanceStateWriteThroughServiceProvider != null) {
+                TrafficBalanceStateWriteThroughService writeThroughService =
+                        trafficBalanceStateWriteThroughServiceProvider.getIfAvailable();
+                if (writeThroughService != null) {
+                    writeThroughService.markSharedMetaDbFallbackDeducted(payload.getFamilyId(), answer);
+                }
+            }
         }
 
         trafficUsageDeltaRecordService.record(
@@ -352,7 +409,7 @@ public class TrafficDbDeductFallbackService {
     }
 
     /**
-     * Lua app speed 분기와 동일하게 최근 3초 버킷 기준으로 answer를 제한합니다.
+     * Lua app speed 분기와 동일하게 최근 1초 버킷 기준으로 answer를 제한합니다.
      */
     private long applyAppSpeedLimitIfEnabled(
             Map<Integer, Boolean> policyActivation,
@@ -379,7 +436,7 @@ public class TrafficDbDeductFallbackService {
         long fromEpochSecond = nowEpochSecond - (APP_SPEED_WINDOW_SECONDS - 1);
         long speedUsed = normalizeNonNegative(
                 trafficDbSpeedBucketMapper.selectRecentUsageSum(
-                        poolType.name(),
+                        APP_SPEED_BUCKET_POOL_TYPE,
                         ownerId,
                         payload.getAppId(),
                         fromEpochSecond,
@@ -567,10 +624,9 @@ public class TrafficDbDeductFallbackService {
             return null;
         }
 
-        return switch (poolType) {
-            case INDIVIDUAL -> payload.getLineId();
-            case SHARED -> payload.getFamilyId();
-        };
+        // 앱 속도 정책 단위는 "회선(line) + 앱"으로 고정된다.
+        // 공유풀 차감 경로에서도 동일 회선 버킷을 사용해 정책 우회를 방지한다.
+        return payload.getLineId();
     }
 
     private boolean isPayloadValid(TrafficPoolType poolType, TrafficPayloadReqDto payload) {

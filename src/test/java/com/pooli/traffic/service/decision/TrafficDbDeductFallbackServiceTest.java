@@ -203,6 +203,60 @@ class TrafficDbDeductFallbackServiceTest {
         );
     }
 
+    @Test
+    @DisplayName("공유풀 차감이어도 앱 속도 버킷은 lineId 기준으로 조회/적재한다")
+    void sharedPoolUsesLineScopedAppSpeedBucket() {
+        // given
+        TrafficPayloadReqDto payload = payload();
+        when(policyBackOfficeMapper.selectPolicyActivationSnapshot())
+                .thenReturn(policySnapshot(false, false, false, false, false, true, false));
+        when(appPolicyMapper.findEntityExistByLineIdAndAppId(11L, 33))
+                .thenReturn(Optional.of(AppPolicy.builder()
+                        .lineId(11L)
+                        .applicationId(33)
+                        .isActive(true)
+                        .speedLimit(1)
+                        .isWhitelist(false)
+                        .build()));
+        when(trafficRefillSourceMapper.selectSharedRemainingForUpdate(22L)).thenReturn(100L);
+        when(trafficDbSpeedBucketMapper.selectRecentUsageSum(
+                eq(TrafficPoolType.INDIVIDUAL.name()),
+                eq(11L),
+                eq(33),
+                anyLong(),
+                anyLong()
+        )).thenReturn(0L);
+        when(trafficRefillSourceMapper.deductSharedRemaining(22L, 40L)).thenReturn(1);
+
+        // when
+        TrafficLuaExecutionResult result = trafficDbDeductFallbackService.deduct(
+                TrafficPoolType.SHARED,
+                payload,
+                40L,
+                TrafficDeductExecutionContext.of(payload.getTraceId())
+        );
+
+        // then
+        assertAll(
+                () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
+                () -> assertEquals(40L, result.getAnswer())
+        );
+        verify(trafficDbSpeedBucketMapper).selectRecentUsageSum(
+                eq(TrafficPoolType.INDIVIDUAL.name()),
+                eq(11L),
+                eq(33),
+                anyLong(),
+                anyLong()
+        );
+        verify(trafficDbSpeedBucketMapper).upsertUsage(
+                eq(TrafficPoolType.INDIVIDUAL.name()),
+                eq(11L),
+                eq(33),
+                anyLong(),
+                eq(40L)
+        );
+    }
+
     private TrafficPayloadReqDto payload() {
         return TrafficPayloadReqDto.builder()
                 .traceId("trace-001")
