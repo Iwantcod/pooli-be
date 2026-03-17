@@ -280,6 +280,51 @@ public class UserPolicyController {
     }
 
     @Operation(
+            summary = "특정 구성원의 반복적 차단 정책 활성화/비활성화",
+            description = "반복적 차단 정책을 활성화하거나 혹은 비활성화합니다. 가족 대표자 권한이 필요합니다."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "반복적 차단 정책 활성화/비활성화 요청 성공"),
+        @ApiResponse(
+                responseCode = "400",
+                description = """
+                    잘못된 요청
+	                - COMMON:4000 요청 형식 불일치
+	                - COMMON:4001 요청 DTO 필드 유효성 검증 실패
+	                - COMMON:4002 RequestParam 유효성 검증 실패
+	                - COMMON:4003 RequestParam 타입 불일치
+	                - COMMON:4004 필수 RequestParam 누락
+	                - COMMON:4006 Content-Type 불일치
+	                - POLICY:4000 차단 시작 시간은 종료 시간보다 이전이어야 함
+	                - POLICY:4001 차단/종료 시간 누락
+	                - POLICY:4002 차단 기간 24시간 미만으로 설정 필수         
+                    """
+            ),
+        @ApiResponse(
+                responseCode = "403",
+                description = """
+                    가족 대표자 권한 없음
+                    
+                    - COMMON:4300 가족 대표자 권한이 없음
+                    """
+            ),
+        @ApiResponse(responseCode = "404", description = "리소스를 찾을 수 없음"),
+        @ApiResponse(responseCode = "409", description = "정책 충돌"),
+        @ApiResponse(responseCode = "500", description = "서버 내부 오류")
+    })
+    @PreAuthorize("@authz.requireAdminOrOwner(authentication)")
+    @PatchMapping("/lines/repeat-block/enable-toggles")
+    public ResponseEntity<BlockPolicyResDto> toggleRepeatBlockPolicy(
+            @Parameter(name = "repeatBlockId", description = "반복적 차단 식별자", example = "202")
+            @RequestParam("repeatBlockId") Long repeatBlockId,
+            @RequestBody BlockPolicyUpdateReqDto request,
+            @AuthenticationPrincipal AuthUserDetails auth
+    ) {
+        BlockPolicyResDto answer = userPolicyService.toggleRepeatBlockPolicy(repeatBlockId, request, auth);
+        return ResponseEntity.ok(answer);
+    }
+    
+    @Operation(
             summary = "특정 구성원의 즉시 차단 정책 수정",
             description = "특정 구성원의 회선 ID 필요. 해당 회선의 즉시 차단 정책 내용을 수정합니다."
     )
