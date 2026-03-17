@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -58,7 +59,8 @@ class TrafficDeductOrchestratorServiceTest {
             // then
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(103L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
+            verify(trafficHydrateRefillAdapterService, never())
+                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
             verify(trafficRecentUsageBucketService).recordUsage(
                     com.pooli.traffic.domain.enums.TrafficPoolType.INDIVIDUAL,
                     payload,
@@ -111,6 +113,35 @@ class TrafficDeductOrchestratorServiceTest {
         }
 
         @Test
+        void successWhenSharedDeductedButThresholdAlarmThrowsException() {
+            // given
+            TrafficPayloadReqDto payload = payload(100L);
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
+                    .thenReturn(luaResult(4L, TrafficLuaStatus.NO_BALANCE));
+            when(trafficHydrateRefillAdapterService.executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class)))
+                    .thenReturn(luaResult(96L, TrafficLuaStatus.OK));
+            doThrow(new RuntimeException("alarm enqueue failed"))
+                    .when(trafficSharedPoolThresholdAlarmService)
+                    .checkAndEnqueueIfReached(22L);
+
+            // when
+            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
+
+            // then
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
+            verify(trafficHydrateRefillAdapterService)
+                    .executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class));
+            verify(trafficSharedPoolThresholdAlarmService).checkAndEnqueueIfReached(22L);
+            assertAll(
+                    () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
+                    () -> assertEquals(100L, result.getDeductedTotalBytes()),
+                    () -> assertEquals(0L, result.getApiRemainingData()),
+                    () -> assertEquals(TrafficLuaStatus.OK, result.getLastLuaStatus())
+            );
+        }
+
+        @Test
         void noSharedWhenResidualIsZeroEvenNoBalance() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
@@ -123,7 +154,8 @@ class TrafficDeductOrchestratorServiceTest {
             // then
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
+            verify(trafficHydrateRefillAdapterService, never())
+                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
             verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
@@ -146,7 +178,8 @@ class TrafficDeductOrchestratorServiceTest {
             // then
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
+            verify(trafficHydrateRefillAdapterService, never())
+                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
             verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, result.getFinalStatus()),
@@ -169,7 +202,8 @@ class TrafficDeductOrchestratorServiceTest {
             // then
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
+            verify(trafficHydrateRefillAdapterService, never())
+                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
             verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
 
             assertAll(
@@ -193,7 +227,8 @@ class TrafficDeductOrchestratorServiceTest {
             // then
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
+            verify(trafficHydrateRefillAdapterService, never())
+                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
             verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             assertAll(
                     () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
@@ -256,7 +291,8 @@ class TrafficDeductOrchestratorServiceTest {
             // then
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never()).executeSharedWithRecovery(eq(payload), anyLong());
+            verify(trafficHydrateRefillAdapterService, never())
+                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
             verifyNoInteractions(trafficRecentUsageBucketService);
             verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             assertAll(

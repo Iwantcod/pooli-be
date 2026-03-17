@@ -77,7 +77,7 @@ public class TrafficDeductOrchestratorService {
                     apiRemainingData = clampRemaining(apiRemainingData - sharedDeducted);
                     trafficRecentUsageBucketService.recordUsage(TrafficPoolType.SHARED, payload, sharedDeducted);
                     if (sharedDeducted > 0) {
-                        trafficSharedPoolThresholdAlarmService.checkAndEnqueueIfReached(payload.getFamilyId());
+                        safeCheckAndEnqueueSharedThresholdAlarm(payload);
                     }
                 }
             }
@@ -99,6 +99,25 @@ public class TrafficDeductOrchestratorService {
                 .createdAt(startedAt)
                 .finishedAt(LocalDateTime.now())
                 .build();
+    }
+
+    /**
+     * 공유풀 임계치 알람은 부가 기능이므로, 실패가 핵심 차감 결과를 오염시키지 않게 보호합니다.
+     */
+    private void safeCheckAndEnqueueSharedThresholdAlarm(TrafficPayloadReqDto payload) {
+        Long familyId = payload == null ? null : payload.getFamilyId();
+        String traceId = payload == null ? null : payload.getTraceId();
+        try {
+            trafficSharedPoolThresholdAlarmService.checkAndEnqueueIfReached(familyId);
+        } catch (Exception e) {
+            // 알람 enqueue 실패는 관측성 이슈로 처리하고, 차감 결과는 그대로 유지한다.
+            log.warn(
+                    "traffic_shared_threshold_alarm_enqueue_failed traceId={} familyId={}",
+                    traceId,
+                    familyId,
+                    e
+            );
+        }
     }
 
     /**
