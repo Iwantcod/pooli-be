@@ -428,7 +428,7 @@ class UserPolicyServiceImplTest {
         }
 
         @Test
-        @DisplayName("반복 차단 정책 토글 대상이 없으면 REPEAT_BLOCK_NOT_FOUND를 던진다")
+        @DisplayName("toggle repeat block policy not found throws")
         void toggleRepeatBlockPolicy_notFound_throws() {
             // given
             when(repeatBlockMapper.selectRepeatBlockById(9L)).thenReturn(null);
