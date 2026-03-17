@@ -83,6 +83,12 @@ if refill_amount and refill_amount > 0 then
   if not refill_idempotency_key or refill_idempotency_key == "" then
     return as_json(-1, "ERROR")
   end
+  -- 멱등 TTL이 유효하지 않으면 리필 차감/멱등키 등록을 시작하지 않는다.
+  if not refill_idempotency_ttl_seconds
+    or refill_idempotency_ttl_seconds <= 0
+    or refill_idempotency_ttl_seconds ~= math.floor(refill_idempotency_ttl_seconds) then
+    return as_json(-1, "ERROR")
+  end
 
   if redis.call("EXISTS", refill_idempotency_key) == 0 then
     local normalized_refill_uuid = "1"
@@ -96,7 +102,7 @@ if refill_amount and refill_amount > 0 then
       refill_idempotency_key,
       normalized_refill_uuid,
       "EX",
-      math.max(1, refill_idempotency_ttl_seconds),
+      refill_idempotency_ttl_seconds,
       "NX"
     )
   end
