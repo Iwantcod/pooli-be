@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,6 +16,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
@@ -27,6 +32,8 @@ import com.pooli.data.mapper.DataMapper;
 import com.pooli.family.domain.entity.FamilyLine;
 import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.PermissionLineMapper;
+import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 @ExtendWith(MockitoExtension.class)
 class DataServiceImplTest {
@@ -39,6 +46,21 @@ class DataServiceImplTest {
 
     @Mock
     private FamilyLineMapper familyLineMapper;
+
+    @Mock
+    private StringRedisTemplate cacheStringRedisTemplate;
+
+    @Mock
+    private HashOperations<String, Object, Object> hashOperations;
+
+    @Mock
+    private ValueOperations<String, String> valueOperations;
+
+    @Mock
+    private TrafficRedisKeyFactory trafficRedisKeyFactory;
+
+    @Mock
+    private TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
     @InjectMocks
     private DataServiceImpl dataService;
@@ -126,7 +148,7 @@ class DataServiceImplTest {
     }
 
     @Test
-    @DisplayName("앱 데이터 사용량: 회선 없음이면 DATA_NOT_FOUND")
+    @DisplayName("앱 데이터 사용량: 회선 없으면 DATA_NOT_FOUND")
     void getAppDataUsage_familyLineNotFound_throws() {
         AuthUserDetails principal = principalWithLineId(2L);
         when(permissionLineMapper.isPermissionEnabledByTitle(1L)).thenReturn(true);
@@ -153,7 +175,7 @@ class DataServiceImplTest {
     }
 
     @Test
-    @DisplayName("앱 데이터 사용량: 권한 활성이나 비공개면 isPublic=false 반환")
+    @DisplayName("앱 데이터 사용량: 공개 권한 있어도 비공개면 isPublic=false 반환")
     void getAppDataUsage_notPublic_returnsPrivate() {
         AuthUserDetails principal = principalWithLineId(2L);
         when(permissionLineMapper.isPermissionEnabledByTitle(1L)).thenReturn(true);
@@ -179,7 +201,7 @@ class DataServiceImplTest {
     }
 
     @Test
-    @DisplayName("앱 데이터 사용량: 앱 사용량 합산 반환")
+    @DisplayName("앱 데이터 사용량: 총 사용량 합산 반환")
     void getAppDataUsage_success_returnsTotal() {
         AuthUserDetails principal = principalWithLineId(2L);
         List<AppDataUsageResDto.AppUsageDto> apps = List.of(
@@ -209,20 +231,65 @@ class DataServiceImplTest {
     }
 
     @Test
-    @DisplayName("데이터 요약: 값 반환")
-    void getDataSummary_success_returnsDto() {
+    @DisplayName("데이터 요약: Redis 버퍼 잔여량을 합산해서 반환")
+    void getDataSummary_success_returnsMergedBalances() {
+        YearMonth targetMonth = YearMonth.of(2026, 3);
         DataBalancesResDto dto = DataBalancesResDto.builder()
             .lineId(1L)
+            .userName("user")
             .role("OWNER")
             .sharedDataRemaining(100L)
             .personalDataRemaining(50L)
             .planName("plan")
             .build();
         when(dataMapper.findDataSummaryByLineId(1L)).thenReturn(dto);
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+        when(trafficRedisKeyFactory.remainingIndivAmountKey(1L, targetMonth))
+            .thenReturn("pooli:remaining_indiv_amount:1:202603");
+        when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.of(familyLine(true)));
+        when(trafficRedisKeyFactory.remainingSharedAmountKey(1L, targetMonth))
+            .thenReturn("pooli:remaining_shared_amount:1:202603");
+        when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(hashOperations.get("pooli:remaining_indiv_amount:1:202603", "amount")).thenReturn("20");
+        when(hashOperations.get("pooli:remaining_shared_amount:1:202603", "amount")).thenReturn("30");
 
         DataBalancesResDto result = dataService.getDataSummary(1L);
 
-        assertThat(result).isEqualTo(dto);
+        assertThat(result.getLineId()).isEqualTo(1L);
+        assertThat(result.getUserName()).isEqualTo("user");
+        assertThat(result.getRole()).isEqualTo("OWNER");
+        assertThat(result.getPersonalDataRemaining()).isEqualTo(70L);
+        assertThat(result.getSharedDataRemaining()).isEqualTo(130L);
+        assertThat(result.getPlanName()).isEqualTo("plan");
+    }
+
+    @Test
+    @DisplayName("데이터 요약: Redis 값이 없으면 DB 값을 유지")
+    void getDataSummary_whenRedisMissing_keepsDbValues() {
+        YearMonth targetMonth = YearMonth.of(2026, 3);
+        DataBalancesResDto dto = DataBalancesResDto.builder()
+            .lineId(1L)
+            .userName("user")
+            .role("OWNER")
+            .sharedDataRemaining(100L)
+            .personalDataRemaining(50L)
+            .planName("plan")
+            .build();
+        when(dataMapper.findDataSummaryByLineId(1L)).thenReturn(dto);
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+        when(trafficRedisKeyFactory.remainingIndivAmountKey(1L, targetMonth))
+            .thenReturn("pooli:remaining_indiv_amount:1:202603");
+        when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.of(familyLine(true)));
+        when(trafficRedisKeyFactory.remainingSharedAmountKey(1L, targetMonth))
+            .thenReturn("pooli:remaining_shared_amount:1:202603");
+        when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(hashOperations.get("pooli:remaining_indiv_amount:1:202603", "amount")).thenReturn(null);
+        when(hashOperations.get("pooli:remaining_shared_amount:1:202603", "amount")).thenReturn(null);
+
+        DataBalancesResDto result = dataService.getDataSummary(1L);
+
+        assertThat(result.getPersonalDataRemaining()).isEqualTo(50L);
+        assertThat(result.getSharedDataRemaining()).isEqualTo(100L);
     }
 
     @Test
@@ -237,6 +304,7 @@ class DataServiceImplTest {
     @Test
     @DisplayName("데이터 사용량: 조회 결과 없으면 DATA_NOT_FOUND")
     void getDataUsage_null_throws() {
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
         when(dataMapper.findDataUsageAggregateByLineIdAndMonth(1L, 202603)).thenReturn(null);
 
         assertThatThrownBy(() -> dataService.getDataUsage(1L, 202603))
@@ -249,17 +317,32 @@ class DataServiceImplTest {
     @DisplayName("데이터 사용량: 현재 월이면 총량 포함 반환")
     void getDataUsage_currentMonth_returnsTotals() {
         int yearMonth = currentYearMonth();
+        YearMonth targetMonth = YearMonth.now(ZoneId.of("Asia/Seoul"));
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
         DataUsageResDto row = DataUsageResDto.builder()
             .personalUsedAmount(10L)
             .sharedPoolUsedAmount(20L)
             .personalTotalAmount(100L)
             .sharedPoolTotalAmount(200L)
             .build();
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
         when(dataMapper.findDataUsageAggregateByLineIdAndMonth(1L, yearMonth)).thenReturn(row);
+        when(dataMapper.findDailyTotalUsageByLineIdAndDate(1L, today)).thenReturn(15L);
+        when(trafficRedisKeyFactory.dailyTotalUsageKey(1L, today))
+            .thenReturn("pooli:daily_total_usage:1:" + today.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE));
+        when(trafficRedisKeyFactory.monthlySharedUsageKey(1L, targetMonth))
+            .thenReturn("pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM")));
+        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("pooli:daily_total_usage:1:" + today.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)))
+            .thenReturn("25");
+        when(valueOperations.get("pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM"))))
+            .thenReturn("30");
 
         DataUsageResDto result = dataService.getDataUsage(1L, yearMonth);
 
         assertThat(result.getIsCurrentMonth()).isTrue();
+        assertThat(result.getPersonalUsedAmount()).isEqualTo(10L);
+        assertThat(result.getSharedPoolUsedAmount()).isEqualTo(30L);
         assertThat(result.getPersonalTotalAmount()).isEqualTo(100L);
         assertThat(result.getSharedPoolTotalAmount()).isEqualTo(200L);
     }
@@ -274,6 +357,7 @@ class DataServiceImplTest {
             .personalTotalAmount(100L)
             .sharedPoolTotalAmount(200L)
             .build();
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
         when(dataMapper.findDataUsageAggregateByLineIdAndMonth(1L, yearMonth)).thenReturn(row);
 
         DataUsageResDto result = dataService.getDataUsage(1L, yearMonth);

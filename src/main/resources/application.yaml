@@ -39,7 +39,7 @@ mybatis:
   type-aliases-package: com.pooli
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
     #cache-enabled: true
 
 server:
@@ -73,6 +73,8 @@ app:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
   redis:
     namespace: ${REDIS_NAMESPACE:pooli}
+
+
     cache:
       host: ${CACHE_REDIS_HOST}
       port: ${CACHE_REDIS_PORT}
@@ -98,10 +100,20 @@ app:
         rewrite-config-on-startup: ${CACHE_REDIS_AOF_REWRITE_CONFIG_ON_STARTUP:true}
         # 운영자가 원할 때만 초기 BGREWRITEAOF 수행
         trigger-background-rewrite-on-startup: ${CACHE_REDIS_AOF_TRIGGER_BACKGROUND_REWRITE_ON_STARTUP:false}
+      sentinel:
+        master: ${CACHE_REDIS_SENTINEL_MASTER:}
+        nodes: ${CACHE_REDIS_SENTINEL_NODES:}
+        password: ${CACHE_REDIS_SENTINEL_PASSWORD:}
+
     streams:
       host: ${STREAMS_REDIS_HOST}
       port: ${STREAMS_REDIS_PORT}
       password: ${STREAMS_REDIS_PASSWORD}
+      sentinel:
+        master: ${STREAMS_REDIS_SENTINEL_MASTER:}
+        nodes: ${STREAMS_REDIS_SENTINEL_NODES:}
+        password: ${STREAMS_REDIS_SENTINEL_PASSWORD:}
+
   streams:
     key-traffic-request: ${STREAMS_KEY_TRAFFIC_REQUEST}
     group-traffic: ${STREAMS_GROUP_TRAFFIC}
