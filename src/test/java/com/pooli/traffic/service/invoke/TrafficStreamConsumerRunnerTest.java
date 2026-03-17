@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -159,12 +160,17 @@ public class TrafficStreamConsumerRunnerTest {
                 mdcTraceIdAtOrchestrator.set(MDC.get("traceId"));
                 return orchestratorResult;
             });
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("1-0"))).thenReturn(true);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("1-0"), anyLong()))
+                    .thenReturn(true);
 
             invokeHandleRecord(record);
 
+            ArgumentCaptor<Long> latencyCaptor = ArgumentCaptor.forClass(Long.class);
             assertEquals("trace-001", mdcTraceIdAtOrchestrator.get());
             assertNull(MDC.get("traceId"));
+            verify(trafficDeductDoneLogService)
+                    .saveIfAbsent(any(), eq(orchestratorResult), eq("1-0"), latencyCaptor.capture());
+            assertTrue(latencyCaptor.getValue() >= 0L);
             verify(trafficStreamInfraService).acknowledge(record.getId());
             // 성공 경로에서는 ACK 직후 release + finally 정리 release가 모두 발생한다.
             verify(trafficInFlightDedupeService, times(2)).release("trace-001");
@@ -261,7 +267,8 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficDeductDoneLogService.existsByTraceId("trace-dup")).thenReturn(false);
             when(trafficInFlightDedupeService.tryClaim("trace-dup")).thenReturn(true);
             when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("3-0"))).thenReturn(false);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("3-0"), anyLong()))
+                    .thenReturn(false);
 
             invokeHandleRecord(record);
 
@@ -294,13 +301,14 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficDeductDoneLogService.existsByTraceId("trace-blocked")).thenReturn(false);
             when(trafficInFlightDedupeService.tryClaim("trace-blocked")).thenReturn(true);
             when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("6-0"))).thenReturn(true);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("6-0"), anyLong()))
+                    .thenReturn(true);
 
             invokeHandleRecord(record);
 
             ArgumentCaptor<TrafficDeductResultResDto> resultCaptor =
                     ArgumentCaptor.forClass(TrafficDeductResultResDto.class);
-            verify(trafficDeductDoneLogService).saveIfAbsent(any(), resultCaptor.capture(), eq("6-0"));
+            verify(trafficDeductDoneLogService).saveIfAbsent(any(), resultCaptor.capture(), eq("6-0"), anyLong());
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verify(trafficInFlightDedupeService, times(2)).release("trace-blocked");
             assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, resultCaptor.getValue().getFinalStatus());
@@ -331,7 +339,7 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficDeductDoneLogService.existsByTraceId("trace-fail")).thenReturn(false);
             when(trafficInFlightDedupeService.tryClaim("trace-fail")).thenReturn(true);
             when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("4-0")))
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("4-0"), anyLong()))
                     .thenThrow(new RuntimeException("mongo down"));
 
             invokeHandleRecord(record);
@@ -412,7 +420,8 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficDeductDoneLogService.existsByTraceId("trace-order")).thenReturn(false);
             when(trafficInFlightDedupeService.tryClaim("trace-order")).thenReturn(true);
             when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("7-0"))).thenReturn(true);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("7-0"), anyLong()))
+                    .thenReturn(true);
 
             invokeHandleRecord(record);
 
@@ -421,7 +430,8 @@ public class TrafficStreamConsumerRunnerTest {
                     trafficStreamInfraService,
                     trafficInFlightDedupeService
             );
-            inOrder.verify(trafficDeductDoneLogService).saveIfAbsent(any(), eq(orchestratorResult), eq("7-0"));
+            inOrder.verify(trafficDeductDoneLogService)
+                    .saveIfAbsent(any(), eq(orchestratorResult), eq("7-0"), anyLong());
             inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
             inOrder.verify(trafficInFlightDedupeService, times(2)).release("trace-order");
         }

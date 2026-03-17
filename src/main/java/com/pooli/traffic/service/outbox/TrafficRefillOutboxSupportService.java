@@ -5,6 +5,7 @@ import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.RedisConnectionFailureException;
@@ -18,6 +19,7 @@ import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficPoolType;
 import com.pooli.traffic.domain.outbox.payload.RefillOutboxPayload;
 import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
+import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
@@ -39,6 +41,7 @@ public class TrafficRefillOutboxSupportService {
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficRefillSourceMapper trafficRefillSourceMapper;
     private final RedisOutboxRecordService redisOutboxRecordService;
+    private final ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
 
     /**
      * 리필 UUID 멱등키를 NX 조건으로 등록합니다.
@@ -97,6 +100,7 @@ public class TrafficRefillOutboxSupportService {
             case SHARED -> {
                 if (payload.getFamilyId() != null) {
                     trafficRefillSourceMapper.restoreSharedRemaining(payload.getFamilyId(), restoreAmount);
+                    syncSharedMetaAfterRestore(payload.getFamilyId(), restoreAmount);
                 }
             }
         }
@@ -120,6 +124,7 @@ public class TrafficRefillOutboxSupportService {
             case SHARED -> {
                 if (payload.getFamilyId() != null) {
                     trafficRefillSourceMapper.restoreSharedRemaining(payload.getFamilyId(), payload.getActualRefillAmount());
+                    syncSharedMetaAfterRestore(payload.getFamilyId(), payload.getActualRefillAmount());
                 }
             }
         }
@@ -266,5 +271,24 @@ public class TrafficRefillOutboxSupportService {
         } catch (DateTimeParseException e) {
             throw new ApplicationException(CommonErrorCode.INTERNAL_SERVER_ERROR, "REFILL targetMonth 파싱에 실패했습니다.");
         }
+    }
+
+    /**
+     * 공유풀 DB 복구(write-through) 시 family meta 캐시 DB 잔량을 함께 복구합니다.
+     */
+    private void syncSharedMetaAfterRestore(Long familyId, Long restoreAmount) {
+        if (familyId == null || familyId <= 0 || restoreAmount == null || restoreAmount <= 0) {
+            return;
+        }
+        if (trafficBalanceStateWriteThroughServiceProvider == null) {
+            return;
+        }
+
+        TrafficBalanceStateWriteThroughService writeThroughService =
+                trafficBalanceStateWriteThroughServiceProvider.getIfAvailable();
+        if (writeThroughService == null) {
+            return;
+        }
+        writeThroughService.markSharedMetaRestored(familyId, restoreAmount);
     }
 }

@@ -153,6 +153,13 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * 공유풀 임계치 판단에 필요한 family 메타 캐시 키입니다.
+     */
+    public String familyMetaKey(long familyId) {
+        return namespaced("family_meta:" + familyId);
+    }
+
+    /**
       * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
      */
     public String indivRefillLockKey(long lineId) {
@@ -193,6 +200,13 @@ public class TrafficRedisKeyFactory {
     public String speedBucketIndividualKey(long lineId, long epochSecond) {
         // 속도 버킷은 초 단위로 키를 분리한다.
         return namespaced("speed_bucket:individual:" + lineId + ":" + epochSecond);
+    }
+
+    /**
+      * 앱 속도 제한 검증용 개인풀 버킷 키를 생성합니다.
+     */
+    public String speedBucketIndividualAppKey(long lineId, int appId, long epochSecond) {
+        return namespaced("speed_bucket:individual:" + lineId + ":" + appId + ":" + epochSecond);
     }
 
     /**

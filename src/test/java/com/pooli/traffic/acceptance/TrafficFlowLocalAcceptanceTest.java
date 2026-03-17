@@ -3,9 +3,7 @@ package com.pooli.traffic.acceptance;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 
@@ -48,6 +46,7 @@ import com.pooli.traffic.domain.dto.response.TrafficGenerateResDto;
 import com.pooli.traffic.domain.entity.TrafficDeductDoneLog;
 import com.pooli.traffic.service.outbox.RedisOutboxRetryScheduler;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
+import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
@@ -122,6 +121,9 @@ class TrafficFlowLocalAcceptanceTest {
 
     @MockitoSpyBean
     private TrafficQuotaCacheService trafficQuotaCacheService;
+
+    @MockitoSpyBean
+    private TrafficLuaScriptInfraService trafficLuaScriptInfraService;
 
     @BeforeEach
     void setUp() {
@@ -255,22 +257,18 @@ class TrafficFlowLocalAcceptanceTest {
         String balanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(LINE_ID, targetMonth);
         cacheStringRedisTemplate.delete(balanceKey);
 
-        // 첫 번째 Redis 반영 시도만 강제로 실패시켜 outbox FAIL 경로를 재현한다.
-        AtomicBoolean firstAttempt = new AtomicBoolean(true);
+        // 리필-재차감(2차 Lua) 호출 1회만 강제로 실패시켜 outbox FAIL 경로를 재현한다.
+        // 현재 구현은 실시간 경로에서 applyRefillWithIdempotency를 호출하지 않으므로
+        // 리필이 포함된 Lua 호출(인자 refill_amount > 0)을 실패 지점으로 잡는다.
+        AtomicBoolean firstRefillRetryAttempt = new AtomicBoolean(true);
         doAnswer(invocation -> {
-            if (firstAttempt.compareAndSet(true, false)) {
-                throw new IllegalStateException("forced_timeout_on_first_refill_apply");
+            List<String> args = invocation.getArgument(1);
+            boolean refillRetryCall = args != null && args.size() > 7 && !"0".equals(args.get(7));
+            if (refillRetryCall && firstRefillRetryAttempt.compareAndSet(true, false)) {
+                throw new IllegalStateException("forced_failure_on_refill_retry_lua");
             }
             return invocation.callRealMethod();
-        }).when(trafficQuotaCacheService).applyRefillWithIdempotency(
-                anyString(),
-                anyString(),
-                anyString(),
-                anyLong(),
-                anyLong(),
-                anyLong(),
-                anyBoolean()
-        );
+        }).when(trafficLuaScriptInfraService).executeDeductIndividual(anyList(), anyList());
 
         try {
             String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
@@ -299,7 +297,7 @@ class TrafficFlowLocalAcceptanceTest {
             );
         } finally {
             // Spy 설정이 다른 시나리오에 영향을 주지 않도록 테스트 종료 시 초기화한다.
-            reset(trafficQuotaCacheService);
+            reset(trafficLuaScriptInfraService, trafficQuotaCacheService);
         }
     }
 
@@ -474,6 +472,26 @@ class TrafficFlowLocalAcceptanceTest {
 
         String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
         assertDoneLog(traceId, 0L, 50L, "PARTIAL_SUCCESS", "HIT_APP_SPEED");
+    }
+
+    @Test
+    @DisplayName("[B-11-1] app speed cap이 걸린 상태에서 잔량이 부족하면 NO_BALANCE로 리필 경로를 연다")
+    void shouldReturnNoBalanceWhenSpeedCappedButBalanceIsInsufficient() throws Exception {
+        upsertAppPolicy(LINE_ID, APP_ID, -1L, 1, true, false);
+        setLineRemaining(LINE_ID, 0L);
+        setFamilyRemaining(FAMILY_ID, 0L);
+        syncPolicySnapshot();
+
+        YearMonth currentMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+        String indivBalanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(LINE_ID, currentMonth);
+        // 테스트 목적: Redis 잔량(50) < speed cap(60) 상태를 명시적으로 만들어 NO_BALANCE 분기를 검증한다.
+        cacheStringRedisTemplate.opsForHash().put(indivBalanceKey, "amount", "50");
+        cacheStringRedisTemplate.opsForHash().put(indivBalanceKey, "is_empty", "0");
+        cacheStringRedisTemplate.opsForHash().put(indivBalanceKey, "qos", "0");
+        primeSpeedBucket(LINE_ID, 65L);
+
+        String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 100L);
+        assertDoneLog(traceId, 50L, 50L, "PARTIAL_SUCCESS", "NO_BALANCE");
     }
 
     @Test
@@ -943,9 +961,13 @@ class TrafficFlowLocalAcceptanceTest {
     }
 
     private void primeSpeedBucket(long lineId, long usedBytes) {
+        primeSpeedBucket(lineId, APP_ID, usedBytes);
+    }
+
+    private void primeSpeedBucket(long lineId, int appId, long usedBytes) {
         long nowEpochSec = Instant.now().getEpochSecond();
         for (long offset = -2L; offset <= 5L; offset++) {
-            String key = trafficRedisKeyFactory.speedBucketIndividualKey(lineId, nowEpochSec + offset);
+            String key = trafficRedisKeyFactory.speedBucketIndividualAppKey(lineId, appId, nowEpochSec + offset);
             cacheStringRedisTemplate.opsForValue().set(key, String.valueOf(usedBytes), Duration.ofSeconds(30));
         }
     }
