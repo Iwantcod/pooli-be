@@ -148,21 +148,27 @@ if refill_amount and refill_amount > 0 then
     return as_json(-1, "ERROR")
   end
 
-  if redis.call("EXISTS", refill_idempotency_key) == 0 then
-    local normalized_refill_uuid = "1"
-    if refill_uuid and refill_uuid ~= "" then
-      normalized_refill_uuid = refill_uuid
-    end
+  local normalized_refill_uuid = "1"
+  if refill_uuid and refill_uuid ~= "" then
+    normalized_refill_uuid = refill_uuid
+  end
+
+  -- SET NX를 먼저 수행해 idempotency 키 획득에 성공한 경우에만 refill을 반환한다.
+  local refill_guard_result = redis.call(
+    "SET",
+    refill_idempotency_key,
+    normalized_refill_uuid,
+    "EX",
+    math.max(1, refill_idempotency_ttl_seconds),
+    "NX"
+  )
+  local refill_guard_acquired = refill_guard_result == "OK"
+  if (not refill_guard_acquired) and type(refill_guard_result) == "table" then
+    refill_guard_acquired = refill_guard_result.ok == "OK"
+  end
+  if refill_guard_acquired then
     redis.call("HINCRBY", remaining_key, "amount", refill_amount)
     redis.call("HSET", remaining_key, "is_empty", refill_db_empty_flag)
-    redis.call(
-      "SET",
-      refill_idempotency_key,
-      normalized_refill_uuid,
-      "EX",
-      math.max(1, refill_idempotency_ttl_seconds),
-      "NX"
-    )
   end
 end
 
