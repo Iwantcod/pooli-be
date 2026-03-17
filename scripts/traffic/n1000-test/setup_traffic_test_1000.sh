@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# 100-line traffic policy test setup
+# 1000-line traffic policy test setup
 # -----------------------------------------------------------------------------
 # This script prepares a deterministic start point by running:
 # 1) Redis FLUSHALL (cache Redis)
@@ -11,9 +11,9 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env}"
-SETUP_SQL_FILE="$SCRIPT_DIR/setup_traffic_test_100.sql"
+SETUP_SQL_FILE="$SCRIPT_DIR/setup_traffic_test_1000.sql"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "ERROR: env file not found: $ENV_FILE"
@@ -107,7 +107,7 @@ mongo_eval() {
 }
 
 echo "==============================================="
-echo "Traffic 100 Setup (Flush + Mongo clear + SQL)"
+echo "Traffic 1000 Setup (Flush + Mongo clear + SQL)"
 echo "env_file                : $ENV_FILE"
 echo "setup_sql               : $SETUP_SQL_FILE"
 echo "mysql                   : $DB_HOST:$DB_PORT/$DB_NAME"
@@ -134,6 +134,6 @@ echo "  done"
 echo
 echo "Setup completed."
 echo "Run next:"
-echo "  k6 run scripts/traffic/k6_traffic_test_100.js"
-echo "  k6 run scripts/traffic/k6_traffic_test_100_speed_exact.js"
-echo "  scripts/traffic/verify_policy_consistency_100_suite.sh"
+echo "  k6 run scripts/traffic/n1000-test/k6_traffic_test_1000.js"
+echo "  k6 run scripts/traffic/n1000-test/k6_traffic_test_1000_speed_exact.js"
+echo "  scripts/traffic/n1000-test/verify_policy_consistency_1000_suite.sh"
