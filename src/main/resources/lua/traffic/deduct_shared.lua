@@ -67,8 +67,11 @@ local function resolve_qos_fallback(
   local normalized_app_speed_limit = nil
   if app_speed_limit_key and app_speed_limit_key ~= "" then
     local raw_app_speed_limit = tonumber(redis.call("HGET", app_speed_limit_key, app_speed_field) or "-1")
-    normalized_app_speed_limit = math.max(0, raw_app_speed_limit or -1)
-    fallback_answer = math.min(fallback_answer, normalized_app_speed_limit)
+    -- -1(또는 미존재)은 무제한이므로 QoS fallback에서 app speed cap을 적용하지 않는다.
+    if raw_app_speed_limit and raw_app_speed_limit >= 0 then
+      normalized_app_speed_limit = raw_app_speed_limit
+      fallback_answer = math.min(fallback_answer, normalized_app_speed_limit)
+    end
   end
 
   fallback_answer = math.min(fallback_answer, target_data)
