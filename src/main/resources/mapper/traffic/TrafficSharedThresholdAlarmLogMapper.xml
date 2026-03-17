@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.traffic.mapper.TrafficSharedThresholdAlarmLogMapper">
+
+    <insert id="insertIgnore">
+        INSERT IGNORE INTO TRAFFIC_SHARED_THRESHOLD_ALARM_LOG (
+            family_id,
+            target_month,
+            threshold_pct,
+            created_at
+        ) VALUES (
+            #{familyId},
+            #{targetMonth},
+            #{thresholdPct},
+            NOW(6)
+        )
+    </insert>
+
+</mapper>
