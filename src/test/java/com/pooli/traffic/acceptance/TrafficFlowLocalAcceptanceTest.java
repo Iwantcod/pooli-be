@@ -475,6 +475,26 @@ class TrafficFlowLocalAcceptanceTest {
     }
 
     @Test
+    @DisplayName("[B-11-1] app speed cap이 걸린 상태에서 잔량이 부족하면 NO_BALANCE로 리필 경로를 연다")
+    void shouldReturnNoBalanceWhenSpeedCappedButBalanceIsInsufficient() throws Exception {
+        upsertAppPolicy(LINE_ID, APP_ID, -1L, 1, true, false);
+        setLineRemaining(LINE_ID, 0L);
+        setFamilyRemaining(FAMILY_ID, 0L);
+        syncPolicySnapshot();
+
+        YearMonth currentMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+        String indivBalanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(LINE_ID, currentMonth);
+        // 테스트 목적: Redis 잔량(50) < speed cap(60) 상태를 명시적으로 만들어 NO_BALANCE 분기를 검증한다.
+        cacheStringRedisTemplate.opsForHash().put(indivBalanceKey, "amount", "50");
+        cacheStringRedisTemplate.opsForHash().put(indivBalanceKey, "is_empty", "0");
+        cacheStringRedisTemplate.opsForHash().put(indivBalanceKey, "qos", "0");
+        primeSpeedBucket(LINE_ID, 65L);
+
+        String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 100L);
+        assertDoneLog(traceId, 50L, 50L, "PARTIAL_SUCCESS", "NO_BALANCE");
+    }
+
+    @Test
     @DisplayName("[B-12] 일일 총량 제한이 앱 일일 제한보다 먼저 적용된다")
     void shouldHitDailyLimitBeforeAppDailyLimit() throws Exception {
         upsertLineLimit(LINE_ID, 20L, true, -1L, false);

@@ -160,6 +160,92 @@ class TrafficDbDeductFallbackServiceTest {
     }
 
     @Test
+    @DisplayName("AppSpeed로 cap된 목표량보다 잔량이 작으면 부분 차감 후 NO_BALANCE를 반환한다")
+    void returnsNoBalanceWhenAppSpeedCappedButBalanceIsInsufficient() {
+        // given
+        TrafficPayloadReqDto payload = payload();
+        when(policyBackOfficeMapper.selectPolicyActivationSnapshot())
+                .thenReturn(policySnapshot(false, false, false, false, false, true, false));
+        when(appPolicyMapper.findEntityExistByLineIdAndAppId(11L, 33))
+                .thenReturn(Optional.of(AppPolicy.builder()
+                        .lineId(11L)
+                        .applicationId(33)
+                        .isActive(true)
+                        .speedLimit(1)
+                        .isWhitelist(false)
+                        .build()));
+        when(trafficRefillSourceMapper.selectIndividualRemainingForUpdate(11L)).thenReturn(50L);
+        when(trafficDbSpeedBucketMapper.selectRecentUsageSum(
+                eq(TrafficPoolType.INDIVIDUAL.name()),
+                eq(11L),
+                eq(33),
+                anyLong(),
+                anyLong()
+        )).thenReturn(65L);
+        when(trafficRefillSourceMapper.deductIndividualRemaining(11L, 50L)).thenReturn(1);
+
+        // when
+        TrafficLuaExecutionResult result = trafficDbDeductFallbackService.deduct(
+                TrafficPoolType.INDIVIDUAL,
+                payload,
+                100L,
+                TrafficDeductExecutionContext.of(payload.getTraceId())
+        );
+
+        // then
+        assertAll(
+                () -> assertEquals(TrafficLuaStatus.NO_BALANCE, result.getStatus()),
+                () -> assertEquals(50L, result.getAnswer())
+        );
+        verify(trafficRefillSourceMapper).deductIndividualRemaining(11L, 50L);
+        verify(trafficDbUsageMapper).upsertDailyTotalUsage(eq(11L), any(), eq(50L));
+        verify(trafficDbUsageMapper).upsertDailyAppUsage(eq(11L), eq(33), any(), eq(50L));
+    }
+
+    @Test
+    @DisplayName("AppSpeed로 cap되어도 차감이 성공하면 최종 상태는 HIT_APP_SPEED다")
+    void returnsHitAppSpeedWhenSpeedCapAppliedAndDeductSucceeded() {
+        // given
+        TrafficPayloadReqDto payload = payload();
+        when(policyBackOfficeMapper.selectPolicyActivationSnapshot())
+                .thenReturn(policySnapshot(false, false, false, false, false, true, false));
+        when(appPolicyMapper.findEntityExistByLineIdAndAppId(11L, 33))
+                .thenReturn(Optional.of(AppPolicy.builder()
+                        .lineId(11L)
+                        .applicationId(33)
+                        .isActive(true)
+                        .speedLimit(1)
+                        .isWhitelist(false)
+                        .build()));
+        when(trafficRefillSourceMapper.selectIndividualRemainingForUpdate(11L)).thenReturn(200L);
+        when(trafficDbSpeedBucketMapper.selectRecentUsageSum(
+                eq(TrafficPoolType.INDIVIDUAL.name()),
+                eq(11L),
+                eq(33),
+                anyLong(),
+                anyLong()
+        )).thenReturn(65L);
+        when(trafficRefillSourceMapper.deductIndividualRemaining(11L, 60L)).thenReturn(1);
+
+        // when
+        TrafficLuaExecutionResult result = trafficDbDeductFallbackService.deduct(
+                TrafficPoolType.INDIVIDUAL,
+                payload,
+                100L,
+                TrafficDeductExecutionContext.of(payload.getTraceId())
+        );
+
+        // then
+        assertAll(
+                () -> assertEquals(TrafficLuaStatus.HIT_APP_SPEED, result.getStatus()),
+                () -> assertEquals(60L, result.getAnswer())
+        );
+        verify(trafficRefillSourceMapper).deductIndividualRemaining(11L, 60L);
+        verify(trafficDbUsageMapper).upsertDailyTotalUsage(eq(11L), any(), eq(60L));
+        verify(trafficDbUsageMapper).upsertDailyAppUsage(eq(11L), eq(33), any(), eq(60L));
+    }
+
+    @Test
     @DisplayName("DB fallback 차감 성공 시 집계와 usage delta를 함께 반영한다")
     void updatesUsageAndRecordsDeltaWhenFallbackDeductSucceeds() {
         // given

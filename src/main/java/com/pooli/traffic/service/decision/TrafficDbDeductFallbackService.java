@@ -114,6 +114,7 @@ public class TrafficDbDeductFallbackService {
         long normalizedRequestedBytes = Math.max(0L, requestedBytes);
         long policyCappedTarget = normalizedRequestedBytes;
         TrafficLuaStatus finalStatus = TrafficLuaStatus.OK;
+        boolean appSpeedCapped = false;
 
         if (!whitelistBypass) {
             long beforeDailyCap = policyCappedTarget;
@@ -177,23 +178,24 @@ public class TrafficDbDeductFallbackService {
                 return buildResult(0L, TrafficLuaStatus.HIT_APP_SPEED);
             }
             if (policyCappedTarget < beforeAppSpeedCap) {
-                finalStatus = TrafficLuaStatus.HIT_APP_SPEED;
+                appSpeedCapped = true;
             }
         }
 
         long answer = Math.min(currentAmount, policyCappedTarget);
         boolean insufficientBalance = currentAmount < policyCappedTarget;
-        if (insufficientBalance && finalStatus != TrafficLuaStatus.HIT_APP_SPEED) {
+        if (insufficientBalance) {
             finalStatus = TrafficLuaStatus.NO_BALANCE;
         }
         if (answer <= 0) {
-            // policyCappedTarget<=0은 위 정책 분기에서 이미 즉시 반환되므로,
-            // 여기 answer==0은 정책 허용량이 남아있지만 잔량이 부족한 경우다.
-            // HIT_APP_SPEED 우선순위만 유지하고 나머지는 NO_BALANCE로 리필 경로를 연다.
-            if (finalStatus == TrafficLuaStatus.HIT_APP_SPEED) {
-                return buildResult(0L, TrafficLuaStatus.HIT_APP_SPEED);
-            }
+            // speed_remaining<=0은 위에서 즉시 HIT_APP_SPEED로 반환된다.
+            // 여기 answer==0은 잔량 부족 성격이므로 NO_BALANCE로 리필 경로를 연다.
             return buildResult(0L, TrafficLuaStatus.NO_BALANCE);
+        }
+
+        // 잔량 부족이 없고 차감이 완료된 경우에만 app speed 제한 상태를 최종 상태로 확정한다.
+        if (appSpeedCapped && !insufficientBalance) {
+            finalStatus = TrafficLuaStatus.HIT_APP_SPEED;
         }
 
         int updatedRows = deductRemainingAmount(poolType, payload, answer);
@@ -201,6 +203,7 @@ public class TrafficDbDeductFallbackService {
             long reloadedAmount = selectRemainingAmount(poolType, payload);
             long reloadedPolicyCappedTarget = normalizedRequestedBytes;
             TrafficLuaStatus reloadedStatus = TrafficLuaStatus.OK;
+            boolean reloadedAppSpeedCapped = false;
 
             // 동시성으로 잔량이 바뀐 재시도 경로에서도 최초 계산과 동일한 정책 제한을 다시 적용해
             // 제한 우회 없이 `deductRemainingAmount`가 항상 안전한 차감량만 사용하도록 보장합니다.
@@ -266,20 +269,22 @@ public class TrafficDbDeductFallbackService {
                     return buildResult(0L, TrafficLuaStatus.HIT_APP_SPEED);
                 }
                 if (reloadedPolicyCappedTarget < beforeAppSpeedCap) {
-                    reloadedStatus = TrafficLuaStatus.HIT_APP_SPEED;
+                    reloadedAppSpeedCapped = true;
                 }
             }
 
             long reloadedAnswer = Math.min(reloadedAmount, reloadedPolicyCappedTarget);
             boolean reloadedInsufficientBalance = reloadedAmount < reloadedPolicyCappedTarget;
-            if (reloadedInsufficientBalance && reloadedStatus != TrafficLuaStatus.HIT_APP_SPEED) {
+            if (reloadedInsufficientBalance) {
                 reloadedStatus = TrafficLuaStatus.NO_BALANCE;
             }
             if (reloadedAnswer <= 0) {
-                if (reloadedStatus == TrafficLuaStatus.HIT_APP_SPEED) {
-                    return buildResult(0L, TrafficLuaStatus.HIT_APP_SPEED);
-                }
                 return buildResult(0L, TrafficLuaStatus.NO_BALANCE);
+            }
+
+            // 재조회 경로도 동일하게, 잔량 부족이 없을 때만 app speed 상태를 확정한다.
+            if (reloadedAppSpeedCapped && !reloadedInsufficientBalance) {
+                reloadedStatus = TrafficLuaStatus.HIT_APP_SPEED;
             }
 
             updatedRows = deductRemainingAmount(poolType, payload, reloadedAnswer);
