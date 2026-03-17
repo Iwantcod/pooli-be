@@ -330,9 +330,9 @@ public class UserPolicyServiceImpl implements UserPolicyService {
         }
 
         if (newIsActive) {
-            alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.UPDATE_REPEAT_BLOCK);
+            alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.CREATE_REPEAT_BLOCK);
         } else {
-            alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_CHANGE, AlarmType.UPDATE_REPEAT_BLOCK);
+            alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.DELETE_REPEAT_BLOCK);
         }
 
         List<RepeatBlockPolicyResDto> latestRepeatBlocks = repeatBlockMapper.selectRepeatBlocksByLineId(
