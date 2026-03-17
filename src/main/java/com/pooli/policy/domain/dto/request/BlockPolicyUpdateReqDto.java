@@ -9,5 +9,5 @@ import lombok.Setter;
 @Schema(description = "차단 정책 단건 수정 요청")
 public class BlockPolicyUpdateReqDto {
     @Schema(description = "수정할 정책 활성화 여부", example = "true", requiredMode = Schema.RequiredMode.REQUIRED)
-    private Boolean enabled;
+    private Boolean isActive;
 }

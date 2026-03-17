@@ -40,4 +40,5 @@ public interface RepeatBlockMapper {
      // 특정 구성원의 반복적 차단 정책 삭제
 	 int deleteRepeatBlock(@Param("repeatBlockId") Long repeatBlockId);
 
+	 int updateIsActive(@Param("repeatBlockId") Long repeatBlockId, @Param("isActive") Boolean isActive);
 }

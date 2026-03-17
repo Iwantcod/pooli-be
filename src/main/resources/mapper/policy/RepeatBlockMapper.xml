@@ -65,6 +65,13 @@
         WHERE repeat_block_id = #{repeatBlockId}
           AND deleted_at IS NULL
     </select>
+
+    <update id="updateIsActive">
+        UPDATE REPEAT_BLOCK
+        SET is_active = #{isActive}, updated_at = NOW()
+        WHERE repeat_block_id = #{repeatBlockId}
+          AND deleted_at IS NULL
+    </update>
     
 	<update id="deleteRepeatBlock">
 	  UPDATE REPEAT_BLOCK
