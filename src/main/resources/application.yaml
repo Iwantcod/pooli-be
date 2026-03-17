@@ -73,14 +73,26 @@ app:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
   redis:
     namespace: ${REDIS_NAMESPACE:pooli}
+
+
     cache:
       host: ${CACHE_REDIS_HOST}
       port: ${CACHE_REDIS_PORT}
       password: ${CACHE_REDIS_PASSWORD}
+      sentinel:
+        master: ${CACHE_REDIS_SENTINEL_MASTER:}
+        nodes: ${CACHE_REDIS_SENTINEL_NODES:}
+        password: ${CACHE_REDIS_SENTINEL_PASSWORD:}
+
     streams:
       host: ${STREAMS_REDIS_HOST}
       port: ${STREAMS_REDIS_PORT}
       password: ${STREAMS_REDIS_PASSWORD}
+      sentinel:
+        master: ${STREAMS_REDIS_SENTINEL_MASTER:}
+        nodes: ${STREAMS_REDIS_SENTINEL_NODES:}
+        password: ${STREAMS_REDIS_SENTINEL_PASSWORD:}
+
   streams:
     key-traffic-request: ${STREAMS_KEY_TRAFFIC_REQUEST}
     group-traffic: ${STREAMS_GROUP_TRAFFIC}
