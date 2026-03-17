@@ -152,10 +152,7 @@
         ah.line_id AS lineId,
         ah.alarm_code AS alarmCode,
         ah.value,
-        CASE
-        WHEN ah.read_at IS NULL THEN FALSE
-        ELSE TRUE
-        END AS isRead,
+        ah.read_at AS readAt,
         ah.created_at AS createdAt
 
         FROM ALARM_HISTORY ah
@@ -170,21 +167,14 @@
         <!-- 알람 세팅 기준으로 조회 -->
         AND (
         ah.alarm_code = 'OTHERS'
-        OR
-        s.user_id IS NULL
-        OR
-        (
+        OR s.user_id IS NULL
+        OR (
         (ah.alarm_code = 'FAMILY' AND s.family_alarm = TRUE)
-        OR
-        (ah.alarm_code = 'USER' AND s.user_alarm = TRUE)
-        OR
-        (ah.alarm_code = 'POLICY_CHANGE' AND s.policy_change_alarm = TRUE)
-        OR
-        (ah.alarm_code = 'POLICY_LIMIT' AND s.policy_limit_alarm = TRUE)
-        OR
-        (ah.alarm_code = 'PERMISSION' AND s.permission_alarm = TRUE)
-        OR
-        (ah.alarm_code = 'QUESTION' AND s.question_alarm = TRUE)
+        OR (ah.alarm_code = 'USER' AND s.user_alarm = TRUE)
+        OR (ah.alarm_code = 'POLICY_CHANGE' AND s.policy_change_alarm = TRUE)
+        OR (ah.alarm_code = 'POLICY_LIMIT' AND s.policy_limit_alarm = TRUE)
+        OR (ah.alarm_code = 'PERMISSION' AND s.permission_alarm = TRUE)
+        OR (ah.alarm_code = 'QUESTION' AND s.question_alarm = TRUE)
         )
         )
 
