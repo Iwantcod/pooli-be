@@ -18,6 +18,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
+import com.pooli.monitoring.metrics.TrafficGeneratorMetrics;
 import com.pooli.monitoring.metrics.TrafficRequestMetrics;
 import com.pooli.traffic.config.TrafficSchedulingConfig;
 import com.pooli.traffic.controller.TrafficController;
@@ -130,6 +131,7 @@ class TrafficProfileBootTest {
                 .withBean(TrafficInFlightDedupeService.class, () -> mock(TrafficInFlightDedupeService.class))
                 .withBean(TrafficDeductDoneLogService.class, () -> mock(TrafficDeductDoneLogService.class))
                 .withBean(TrafficRedisKeyFactory.class, () -> mock(TrafficRedisKeyFactory.class))
+                .withBean(TrafficGeneratorMetrics.class, () -> mock(TrafficGeneratorMetrics.class))
                 .withBean(TrafficRequestMetrics.class, () -> mock(TrafficRequestMetrics.class))
                 .withBean(TrafficPolicyVersionedRedisService.class, () -> mock(TrafficPolicyVersionedRedisService.class))
                 .withBean(RedisOutboxRecordService.class, () -> mock(RedisOutboxRecordService.class))

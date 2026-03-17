@@ -46,6 +46,7 @@ import org.springframework.data.redis.connection.stream.RecordId;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
+import com.pooli.monitoring.metrics.TrafficGeneratorMetrics;
 import com.pooli.traffic.domain.TrafficStreamFields;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
 import com.pooli.traffic.domain.enums.TrafficFinalStatus;
@@ -77,6 +78,9 @@ public class TrafficStreamConsumerRunnerTest {
     @Mock
     private TrafficStreamReclaimService trafficStreamReclaimService;
 
+    @Mock
+    private TrafficGeneratorMetrics trafficGeneratorMetrics;
+
     private TrafficStreamConsumerRunner trafficStreamConsumerRunner;
     private AppStreamsProperties appStreamsProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -106,7 +110,8 @@ public class TrafficStreamConsumerRunnerTest {
                 trafficDeductOrchestratorService,
                 trafficInFlightDedupeService,
                 trafficDeductDoneLogService,
-                trafficStreamReclaimService
+                trafficStreamReclaimService,
+                trafficGeneratorMetrics
         );
         MDC.clear();
     }

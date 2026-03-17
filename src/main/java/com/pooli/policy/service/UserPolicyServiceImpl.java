@@ -22,6 +22,7 @@ import com.pooli.policy.domain.dto.request.AppDataLimitUpdateReqDto;
 import com.pooli.policy.domain.dto.request.AppPolicyActiveToggleReqDto;
 import com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto;
 import com.pooli.policy.domain.dto.request.AppSpeedLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.BlockPolicyUpdateReqDto;
 import com.pooli.policy.domain.dto.request.ImmediateBlockReqDto;
 import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
 import com.pooli.policy.domain.dto.request.RepeatBlockDayReqDto;
@@ -29,6 +30,7 @@ import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
 import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
 import com.pooli.policy.domain.dto.response.AppPolicyResDto;
 import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
+import com.pooli.policy.domain.dto.response.BlockPolicyResDto;
 import com.pooli.policy.domain.dto.response.BlockStatusResDto;
 import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
 import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
@@ -308,6 +310,46 @@ public class UserPolicyServiceImpl implements UserPolicyService {
                 .isBlocked(false)
                 .blockEndsAt(null)
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public BlockPolicyResDto toggleRepeatBlockPolicy(Long repeatBlockId, BlockPolicyUpdateReqDto request,
+            AuthUserDetails auth) {
+        RepeatBlockPolicyResDto exist = repeatBlockMapper.selectRepeatBlockById(repeatBlockId);
+        if (exist == null) {
+            throw new ApplicationException(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
+        }
+
+        checkIsSameFamilyGroup(exist.getLineId(), auth.getLineId(), auth);
+
+        boolean newIsActive = !Boolean.TRUE.equals(exist.getIsActive());
+        int ret = repeatBlockMapper.updateIsActive(repeatBlockId, newIsActive);
+        if (ret != 1) {
+            throw new ApplicationException(CommonErrorCode.DATABASE_ERROR);
+        }
+
+        if (newIsActive) {
+            alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.CREATE_REPEAT_BLOCK);
+        } else {
+            alarmHistoryService.createAlarm(exist.getLineId(), AlarmCode.POLICY_LIMIT, AlarmType.DELETE_REPEAT_BLOCK);
+        }
+
+        List<RepeatBlockPolicyResDto> latestRepeatBlocks = repeatBlockMapper.selectRepeatBlocksByLineId(
+                exist.getLineId());
+        applyWriteThrough(
+                "repeat_block_toggle_active lineId=" + exist.getLineId() + " repeatBlockId=" + repeatBlockId,
+                writeThroughService -> writeThroughService.syncRepeatBlock(exist.getLineId(), latestRepeatBlocks));
+
+        BlockPolicyResDto updatedResponse = BlockPolicyResDto.builder()
+                .blockPolicyId(repeatBlockId)
+                .lineId(exist.getLineId())
+                .isActive(newIsActive)
+                .build();
+
+        policyHistoryService.log("REPEAT_BLOCK", "UPDATE", repeatBlockId, exist, updatedResponse);
+
+        return updatedResponse;
     }
 
     @Override

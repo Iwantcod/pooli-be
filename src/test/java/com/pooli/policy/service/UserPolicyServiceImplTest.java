@@ -37,6 +37,7 @@ import com.pooli.policy.domain.dto.request.AppDataLimitUpdateReqDto;
 import com.pooli.policy.domain.dto.request.AppPolicyActiveToggleReqDto;
 import com.pooli.policy.domain.dto.request.AppPolicySearchCondReqDto;
 import com.pooli.policy.domain.dto.request.AppSpeedLimitUpdateReqDto;
+import com.pooli.policy.domain.dto.request.BlockPolicyUpdateReqDto;
 import com.pooli.policy.domain.dto.request.ImmediateBlockReqDto;
 import com.pooli.policy.domain.dto.request.LimitPolicyUpdateReqDto;
 import com.pooli.policy.domain.dto.request.RepeatBlockDayReqDto;
@@ -44,6 +45,7 @@ import com.pooli.policy.domain.dto.request.RepeatBlockPolicyReqDto;
 import com.pooli.policy.domain.dto.response.ActivePolicyResDto;
 import com.pooli.policy.domain.dto.response.AppPolicyResDto;
 import com.pooli.policy.domain.dto.response.AppliedPolicyResDto;
+import com.pooli.policy.domain.dto.response.BlockPolicyResDto;
 import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
 import com.pooli.policy.domain.dto.response.LimitPolicyResDto;
 import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
@@ -385,6 +387,58 @@ class UserPolicyServiceImplTest {
             // then
             assertThat(result.getRepeatBlockId()).isEqualTo(7L);
             assertThat(result.getIsActive()).isFalse();
+        }
+
+        @Test
+        @DisplayName("반복 차단 정책 토글 성공 시 활성 상태를 반전하고 알림과 이력을 저장한다")
+        void toggleRepeatBlockPolicy_success() {
+            // given
+            Long lineId = 100L;
+            allowFamily(100L, lineId);
+            RepeatBlockPolicyResDto repeatBlock = RepeatBlockPolicyResDto.builder()
+                    .repeatBlockId(9L)
+                    .lineId(lineId)
+                    .isActive(false)
+                    .build();
+
+            when(repeatBlockMapper.selectRepeatBlockById(9L)).thenReturn(repeatBlock);
+            when(repeatBlockMapper.updateIsActive(9L, true)).thenReturn(1);
+            when(repeatBlockMapper.selectRepeatBlocksByLineId(lineId))
+                    .thenReturn(List.of(RepeatBlockPolicyResDto.builder()
+                            .repeatBlockId(9L)
+                            .lineId(lineId)
+                            .isActive(true)
+                            .build()));
+
+            // when
+            BlockPolicyResDto result = userPolicyService.toggleRepeatBlockPolicy(
+                    9L,
+                    new BlockPolicyUpdateReqDto(),
+                    userAuth(100L));
+
+            // then
+            assertThat(result.getBlockPolicyId()).isEqualTo(9L);
+            assertThat(result.getIsActive()).isTrue();
+            verify(repeatBlockMapper).updateIsActive(9L, true);
+            verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.CREATE_REPEAT_BLOCK);
+
+            ArgumentCaptor<BlockPolicyResDto> captor = ArgumentCaptor.forClass(BlockPolicyResDto.class);
+            verify(policyHistoryService).log(eq("REPEAT_BLOCK"), eq("UPDATE"), eq(9L), eq(repeatBlock), captor.capture());
+            assertThat(captor.getValue().getIsActive()).isTrue();
+        }
+
+        @Test
+        @DisplayName("toggle repeat block policy not found throws")
+        void toggleRepeatBlockPolicy_notFound_throws() {
+            // given
+            when(repeatBlockMapper.selectRepeatBlockById(9L)).thenReturn(null);
+
+            // when
+            ApplicationException ex = assertThrows(ApplicationException.class,
+                    () -> userPolicyService.toggleRepeatBlockPolicy(9L, new BlockPolicyUpdateReqDto(), userAuth(100L)));
+
+            // then
+            assertThat(ex.getErrorCode()).isEqualTo(PolicyErrorCode.REPEAT_BLOCK_NOT_FOUND);
         }
 
         @Test

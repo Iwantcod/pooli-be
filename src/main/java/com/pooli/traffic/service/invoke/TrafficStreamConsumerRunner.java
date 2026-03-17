@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
+import com.pooli.monitoring.metrics.TrafficGeneratorMetrics;
 import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import org.slf4j.MDC;
@@ -61,6 +62,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final TrafficDeductDoneLogService trafficDeductDoneLogService;
     // pending reclaim/retry/DLQ 분기 서비스
     private final TrafficStreamReclaimService trafficStreamReclaimService;
+    private final TrafficGeneratorMetrics trafficGeneratorMetrics;
 
     // 전역적인 소비 루프 동작 여부 플래그(start/stop 간 공유)
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -342,6 +344,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
                 // ACK까지 성공한 뒤 in-flight 키를 정리한다.
                 trafficInFlightDedupeService.release(payload.getTraceId());
+
+                trafficGeneratorMetrics.incrementProcessed();
 
                 LocalDateTime loggedAt = LocalDateTime.now();
                 String logEventName = saved ? "traffic_stream_record_done" : "traffic_stream_record_done_duplicate";

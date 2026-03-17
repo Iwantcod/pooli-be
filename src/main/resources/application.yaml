@@ -79,6 +79,27 @@ app:
       host: ${CACHE_REDIS_HOST}
       port: ${CACHE_REDIS_PORT}
       password: ${CACHE_REDIS_PASSWORD}
+      # traffic 정책/차감/멱등 키는 cache Redis에 저장되므로
+      # AOF도 cache Redis 기준으로만 켜고 검증합니다.
+      aof:
+        # AOF 백업 사용 여부
+        enabled: ${CACHE_REDIS_AOF_ENABLED:false}
+        # 앱 시작 시 Redis CONFIG SET으로 값을 직접 맞출지 여부
+        configure-on-startup: ${CACHE_REDIS_AOF_CONFIGURE_ON_STARTUP:true}
+        # 기대한 AOF 설정이 아니면 애플리케이션을 즉시 중단할지 여부
+        fail-fast: ${CACHE_REDIS_AOF_FAIL_FAST:true}
+        # 성능과 유실 범위의 균형값으로 everysec 기본 사용
+        appendfsync: ${CACHE_REDIS_AOF_APPEND_FSYNC:everysec}
+        # AOF 파일이 일정 비율 이상 커지면 rewrite
+        auto-rewrite-percentage: ${CACHE_REDIS_AOF_AUTO_REWRITE_PERCENTAGE:100}
+        # 작은 파일에서 rewrite가 과하게 돌지 않도록 최소 크기 지정
+        auto-rewrite-min-size: ${CACHE_REDIS_AOF_AUTO_REWRITE_MIN_SIZE:64mb}
+        # 재시작 속도를 위해 RDB preamble 사용
+        use-rdb-preamble: ${CACHE_REDIS_AOF_USE_RDB_PREAMBLE:true}
+        # CONFIG SET 후 redis.conf까지 저장 가능한 환경이면 즉시 반영
+        rewrite-config-on-startup: ${CACHE_REDIS_AOF_REWRITE_CONFIG_ON_STARTUP:true}
+        # 운영자가 원할 때만 초기 BGREWRITEAOF 수행
+        trigger-background-rewrite-on-startup: ${CACHE_REDIS_AOF_TRIGGER_BACKGROUND_REWRITE_ON_STARTUP:false}
       sentinel:
         master: ${CACHE_REDIS_SENTINEL_MASTER:}
         nodes: ${CACHE_REDIS_SENTINEL_NODES:}
