@@ -172,6 +172,8 @@ if current_amount < 0 then
 end
 
 local final_status = "OK"
+-- app speed가 실제로 요청량을 줄였는지 추적해 차감 성공 후 상태를 확정한다.
+local app_speed_capped = false
 -- 정책 판정은 요청량 전체 기준으로 먼저 수행한다.
 local policy_capped_target = target_data
 local used_qos_fallback = false
@@ -236,13 +238,14 @@ if not whitelist_bypass then
     if app_speed_limit >= 0 then
       local speed_used = tonumber(redis.call("GET", speed_bucket_key) or "0")
       local speed_remaining = math.max(0, app_speed_limit - speed_used)
-      local before_speed_cap = policy_capped_target
-      policy_capped_target = math.min(policy_capped_target, speed_remaining)
-      if policy_capped_target <= 0 then
+      -- 이번 1초 윈도우 예산이 0이면 공유/개인 경로와 무관하게 즉시 app speed로 종료한다.
+      if speed_remaining <= 0 then
         return as_json(0, "HIT_APP_SPEED")
       end
+      local before_speed_cap = policy_capped_target
+      policy_capped_target = math.min(policy_capped_target, speed_remaining)
       if policy_capped_target < before_speed_cap then
-        final_status = "HIT_APP_SPEED"
+        app_speed_capped = true
       end
     end
   end
@@ -250,22 +253,17 @@ end
 
 local answer = math.min(current_amount, policy_capped_target)
 local insufficient_balance = current_amount < policy_capped_target
--- 정책 제한이 이미 적용되었는지 기록해, answer==0일 때 QoS fallback 적용 여부를 결정한다.
-local was_policy_limited = final_status ~= "OK"
+-- 잔량 비교 이전 정책 제한 여부를 기록해, answer==0일 때 QoS fallback 적용 여부를 결정한다.
+local was_policy_limited_before_balance = final_status ~= "OK" or app_speed_capped
 
--- 정책 허용량이 남아 있는데 잔량이 부족하면(NO_BALANCE) 리필 경로로 연결한다.
--- 단, HIT_APP_SPEED는 우선순위가 더 높으므로 그대로 유지한다.
-if insufficient_balance and final_status ~= "HIT_APP_SPEED" then
+-- 정책으로 줄인 목표량 대비 잔량이 부족하면 NO_BALANCE로 리필 경로를 연다.
+if insufficient_balance then
   final_status = "NO_BALANCE"
 end
 
 if answer <= 0 then
-  if final_status == "HIT_APP_SPEED" then
-    return as_json(0, "HIT_APP_SPEED")
-  end
-
-  -- 정책 제한이 동반된 answer==0 케이스는 QoS로 우회하지 않고 NO_BALANCE를 유지한다.
-  if was_policy_limited then
+  -- 정책 제한(특히 app speed cap)이 동반된 answer==0 케이스는 QoS로 우회하지 않는다.
+  if was_policy_limited_before_balance then
     return as_json(0, "NO_BALANCE")
   end
 
@@ -298,5 +296,10 @@ end
 
 redis.call("INCRBY", speed_bucket_key, answer)
 redis.call("EXPIRE", speed_bucket_key, SPEED_BUCKET_TTL_SECONDS)
+
+-- 잔량 부족 없이 차감이 완료된 경우에만 app speed 제한 상태를 최종 상태로 확정한다.
+if app_speed_capped and not insufficient_balance then
+  final_status = "HIT_APP_SPEED"
+end
 
 return as_json(answer, final_status)

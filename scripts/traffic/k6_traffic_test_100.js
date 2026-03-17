@@ -1,20 +1,11 @@
-import { buildK6Scenario } from './k6_scaled_traffic_lib.js';
+import { buildBurstStressScenario100 } from './k6_scaled_traffic_lib.js';
 
-// 100-line scale test entrypoint.
-// - lineId: 1~100
-// - familyId: 1~25 (4 lines per family)
-// - request interval: 1 second
-// - per-line attempted usage: 50MB (1~3MB chunks)
-const scenario = buildK6Scenario(100);
+// Scenario A: 100-line burst stress test
+// - scope: line_id 1~100, family_id 1~25
+// - all groups run with line-internal burst(http.batch)
+// - round interval: 1 second
+const scenario = buildBurstStressScenario100();
 
-export const options = {
-  ...scenario.options,
-  scenarios: {
-    small_traffic_100: {
-      ...scenario.options.scenarios.scaled_traffic,
-    },
-  },
-};
-
+export const options = scenario.options;
 export const setup = scenario.setup;
 export default scenario.default;
