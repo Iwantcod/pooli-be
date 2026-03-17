@@ -418,13 +418,13 @@ class UserPolicyServiceImplTest {
 
             // then
             assertThat(result.getBlockPolicyId()).isEqualTo(9L);
-            assertThat(result.getEnabled()).isTrue();
+            assertThat(result.getIsActive()).isTrue();
             verify(repeatBlockMapper).updateIsActive(9L, true);
             verify(alarmHistoryService).createAlarm(lineId, AlarmCode.POLICY_LIMIT, AlarmType.CREATE_REPEAT_BLOCK);
 
             ArgumentCaptor<BlockPolicyResDto> captor = ArgumentCaptor.forClass(BlockPolicyResDto.class);
             verify(policyHistoryService).log(eq("REPEAT_BLOCK"), eq("UPDATE"), eq(9L), eq(repeatBlock), captor.capture());
-            assertThat(captor.getValue().getEnabled()).isTrue();
+            assertThat(captor.getValue().getIsActive()).isTrue();
         }
 
         @Test
