@@ -64,4 +64,7 @@ public class TrafficDeductDoneLog {
 
     @Field("logged_at")
     private LocalDateTime loggedAt;
+
+    @Field("latency")
+    private Long latency;
 }

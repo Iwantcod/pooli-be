@@ -79,7 +79,8 @@ public class TrafficDeductDoneLogService {
     public boolean saveIfAbsent(
             TrafficPayloadReqDto payload,
             TrafficDeductResultResDto result,
-            String recordId
+            String recordId,
+            Long latency
     ) {
         if (payload == null || result == null) {
             throw new IllegalArgumentException("payload/result must not be null");
@@ -104,6 +105,7 @@ public class TrafficDeductDoneLogService {
                             .createdAt(defaultNowIfNull(result.getCreatedAt()))
                             .finishedAt(defaultNowIfNull(result.getFinishedAt()))
                             .loggedAt(LocalDateTime.now())
+                            .latency(latency)
                             .build()
             );
             return true;

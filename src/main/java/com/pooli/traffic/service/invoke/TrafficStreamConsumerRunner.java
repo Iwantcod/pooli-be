@@ -333,7 +333,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 // Mongo 완료 로그 저장을 먼저 수행한다.
                 // - 신규 저장(true) 또는 중복 저장(false)은 모두 idempotent 성공으로 간주한다.
                 // - 저장 예외가 발생하면 ACK를 하지 않아 재전달로 복구한다.
-                boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload, result, recordId);
+                // latency는 레코드 처리 시작 시점부터 done-log 저장 직전까지의 ms를 사용한다.
+                long latency = Math.max(0L, System.currentTimeMillis() - consumeStartTimeMs);
+                boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload, result, recordId, latency);
 
                 // "저장 성공 후 ACK" 규칙을 보장하기 위해 영속화 이후에만 ACK한다.
                 trafficStreamInfraService.acknowledge(record.getId());
@@ -344,7 +346,6 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 LocalDateTime loggedAt = LocalDateTime.now();
                 String logEventName = saved ? "traffic_stream_record_done" : "traffic_stream_record_done_duplicate";
 
-                long latency = System.currentTimeMillis() - consumeStartTimeMs;
                 log.info(
                         logEventName + " "
                                 + "trace_id={} record_id={} line_id={} family_id={} app_id={} "
