@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.traffic.mapper.TrafficFamilyMetaMapper">
+
+    <select id="selectFamilyMeta" resultType="com.pooli.traffic.domain.TrafficFamilyMetaSnapshot">
+        SELECT
+            family_id AS familyId,
+            pool_total_data AS poolTotalData,
+            pool_remaining_data AS dbRemainingData,
+            family_threshold AS familyThreshold,
+            is_threshold_active AS thresholdActive
+        FROM FAMILY
+        WHERE family_id = #{familyId}
+          AND deleted_at IS NULL
+    </select>
+
+</mapper>

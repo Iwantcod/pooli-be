@@ -177,6 +177,7 @@ class FamilySharedPoolsServiceTest {
         verify(sharedPoolMapper).updateFamilyPoolData(1L, 500_000L);
         verify(sharedPoolMapper).insertContribution(1L, 101L, 500_000L);
         verify(trafficBalanceStateWriteThroughService).markSharedBalanceNotEmpty(1L);
+        verify(trafficBalanceStateWriteThroughService).markSharedMetaContribution(1L, 500_000L);
         verify(transferLogRepository).save(any(SharedPoolTransferLog.class));
         verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY), eq(AlarmType.SHARED_POOL_CONTRIBUTION));
         verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any());

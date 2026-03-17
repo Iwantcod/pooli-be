@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum TrafficLuaScriptType {
+    POLICY_CHECK_INDIVIDUAL("policy_check_indiv", "lua/traffic/policy_check_indiv.lua"),
+    POLICY_CHECK_SHARED("policy_check_shared", "lua/traffic/policy_check_shared.lua"),
     DEDUCT_INDIVIDUAL("deduct_indiv", "lua/traffic/deduct_indiv.lua"),
     DEDUCT_SHARED("deduct_shared", "lua/traffic/deduct_shared.lua"),
     REFILL_GATE("refill_gate", "lua/traffic/refill_gate.lua"),

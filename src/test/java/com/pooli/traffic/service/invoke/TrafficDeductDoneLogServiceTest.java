@@ -119,8 +119,10 @@ public class TrafficDeductDoneLogServiceTest {
         @Test
         @DisplayName("신규 insert가 성공하면 true를 반환한다")
         void returnsTrueWhenInserted() {
+            long latency = 123L;
+
             // when
-            boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload(), result(), "1-0");
+            boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload(), result(), "1-0", latency);
 
             // then
             assertTrue(saved);
@@ -130,6 +132,7 @@ public class TrafficDeductDoneLogServiceTest {
             assertEquals("trace-001", savedLog.getTraceId());
             assertEquals("1-0", savedLog.getRecordId());
             assertEquals(90L, savedLog.getDeductedTotalBytes());
+            assertEquals(latency, savedLog.getLatency());
         }
 
         @ParameterizedTest
@@ -150,7 +153,8 @@ public class TrafficDeductDoneLogServiceTest {
             boolean saved = trafficDeductDoneLogService.saveIfAbsent(
                     payload(),
                     result(TrafficFinalStatus.PARTIAL_SUCCESS, policyFailureStatus, 0L, 100L),
-                    "1-1"
+                    "1-1",
+                    55L
             );
 
             // then
@@ -172,7 +176,7 @@ public class TrafficDeductDoneLogServiceTest {
                     .thenThrow(new DuplicateKeyException("duplicate trace_id"));
 
             // when
-            boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload(), result(), "1-0");
+            boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload(), result(), "1-0", 10L);
 
             // then
             assertFalse(saved);
@@ -188,7 +192,7 @@ public class TrafficDeductDoneLogServiceTest {
             // when & then
             assertThrows(
                     IllegalStateException.class,
-                    () -> trafficDeductDoneLogService.saveIfAbsent(payload(), result(), "1-0")
+                    () -> trafficDeductDoneLogService.saveIfAbsent(payload(), result(), "1-0", 10L)
             );
         }
     }

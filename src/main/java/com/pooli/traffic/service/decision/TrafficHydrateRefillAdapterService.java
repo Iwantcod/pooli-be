@@ -179,33 +179,44 @@ public class TrafficHydrateRefillAdapterService {
         YearMonth targetMonth = resolveTargetMonth(payload);
         String balanceKey = resolveBalanceKey(poolType, payload, targetMonth);
 
-        // 3. 1차 차감을 실행합니다. Redis 연결 문제 시 설정된 횟수만큼 재시도하거나 DB 폴백으로 전환됩니다.
+        // 3. 차단성 정책(즉시/반복/화이트리스트)만 1회 검증합니다.
+        // 화이트리스트 우회 여부(answer=1)를 이후 2차 차감 Lua에 전달합니다.
+        TrafficLuaExecutionResult policyCheckResult = executePolicyCheckWithGlobalRecovery(poolType, payload);
+        if (policyCheckResult.getStatus() != TrafficLuaStatus.OK) {
+            return policyCheckResult;
+        }
+        int whitelistBypassFlag = policyCheckResult.getAnswer() > 0 ? 1 : 0;
+
+        // 4. 2차 차감을 실행합니다. Redis 연결 문제 시 설정된 횟수만큼 재시도하거나 DB 폴백으로 전환됩니다.
         TrafficLuaExecutionResult initialResult = executeDeduct(
                 poolType,
                 payload,
                 balanceKey,
                 requestedDataBytes,
                 context,
+                whitelistBypassFlag,
+                RefillLuaArguments.none(),
                 true
         );
         if (isFallbackActivated(context)) {
             return initialResult; // 이미 DB 폴백이 활성화된 경우 추가 복구 로직 없이 반환합니다.
         }
 
-        // 4. 리턴된 상태가 GLOBAL_POLICY_HYDRATE인 경우, 유실된 전역 정책 스냅샷을 복구하고 재시도합니다.
+        // 5. 리턴된 상태가 GLOBAL_POLICY_HYDRATE인 경우, 유실된 전역 정책 스냅샷을 복구하고 재시도합니다.
         TrafficLuaExecutionResult afterGlobalPolicyHydrateResult = handleGlobalPolicyHydrateIfNeeded(
                 poolType,
                 payload,
                 balanceKey,
                 requestedDataBytes,
                 initialResult,
-                context
+                context,
+                whitelistBypassFlag
         );
         if (isFallbackActivated(context)) {
             return afterGlobalPolicyHydrateResult;
         }
 
-        // 5. 리턴된 상태가 HYDRATE인 경우, Redis 캐시에 잔량 정보가 없으므로 DB 원본 데이터를 로드하고 재시도합니다.
+        // 6. 리턴된 상태가 HYDRATE인 경우, Redis 캐시에 잔량 정보가 없으므로 DB 원본 데이터를 로드하고 재시도합니다.
         TrafficLuaExecutionResult afterHydrateResult = handleHydrateIfNeeded(
                 poolType,
                 payload,
@@ -213,13 +224,15 @@ public class TrafficHydrateRefillAdapterService {
                 balanceKey,
                 requestedDataBytes,
                 afterGlobalPolicyHydrateResult,
-                context
+                context,
+                whitelistBypassFlag
         );
         if (isFallbackActivated(context)) {
             return afterHydrateResult;
         }
 
-        // 6. 리턴된 상태가 NO_BALANCE인 경우, DB에서 잔량을 차감(리필)하여 Redis로 가져온 뒤 재시도합니다.
+        // 7. 리턴된 상태가 NO_BALANCE인 경우, DB에서 잔량을 차감(리필)하여
+        // "리필 반영 + 재차감"을 2차 Lua 1회로 같이 수행합니다.
         return handleRefillIfNeeded(
                 poolType,
                 payload,
@@ -227,8 +240,90 @@ public class TrafficHydrateRefillAdapterService {
                 balanceKey,
                 requestedDataBytes,
                 afterHydrateResult,
-                context
+                context,
+                whitelistBypassFlag
         );
+    }
+
+    /**
+     * 1차 Lua(차단성 정책 전용)를 실행하고, GLOBAL_POLICY_HYDRATE가 나오면 bootstrap 복구 후 재시도합니다.
+     */
+    private TrafficLuaExecutionResult executePolicyCheckWithGlobalRecovery(
+            TrafficPoolType poolType,
+            TrafficPayloadReqDto payload
+    ) {
+        TrafficLuaExecutionResult policyCheckResult = executePolicyCheckLua(poolType, payload);
+        if (policyCheckResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
+            return policyCheckResult;
+        }
+
+        TrafficLuaExecutionResult retriedResult = policyCheckResult;
+        for (int retry = 0; retry < HYDRATE_RETRY_MAX; retry++) {
+            try {
+                trafficPolicyBootstrapService.hydrateOnDemand();
+            } catch (RuntimeException e) {
+                log.error(
+                        "traffic_policy_check_global_hydrate_failed poolType={} traceId={} retry={}",
+                        poolType,
+                        payload == null ? null : payload.getTraceId(),
+                        retry + 1,
+                        e
+                );
+            }
+
+            retriedResult = executePolicyCheckLua(poolType, payload);
+            if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
+                return retriedResult;
+            }
+            sleepHydrateLockWait();
+        }
+
+        log.error(
+                "traffic_policy_check_global_hydrate_retry_exhausted poolType={} traceId={}",
+                poolType,
+                payload == null ? null : payload.getTraceId()
+        );
+        return retriedResult;
+    }
+
+    /**
+     * 1차 Lua(차단성 정책 전용)를 실행합니다.
+     */
+    private TrafficLuaExecutionResult executePolicyCheckLua(
+            TrafficPoolType poolType,
+            TrafficPayloadReqDto payload
+    ) {
+        LocalDateTime now = LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
+        long nowEpochSecond = now.atZone(trafficRedisRuntimePolicy.zoneId()).toEpochSecond();
+        int dayNum = now.getDayOfWeek().getValue() % 7;
+        int secOfDay = now.toLocalTime().toSecondOfDay();
+
+        String policyRepeatKey = trafficRedisKeyFactory.policyKey(POLICY_REPEAT_BLOCK_ID);
+        String policyImmediateKey = trafficRedisKeyFactory.policyKey(POLICY_IMMEDIATE_BLOCK_ID);
+        String policyAppWhitelistKey = trafficRedisKeyFactory.policyKey(POLICY_APP_WHITELIST_ID);
+        String appWhitelistKey = trafficRedisKeyFactory.appWhitelistKey(payload.getLineId());
+        String immediatelyBlockEndKey = trafficRedisKeyFactory.immediatelyBlockEndKey(payload.getLineId());
+        String repeatBlockKey = trafficRedisKeyFactory.repeatBlockKey(payload.getLineId());
+
+        List<String> keys = List.of(
+                policyRepeatKey,
+                policyImmediateKey,
+                policyAppWhitelistKey,
+                appWhitelistKey,
+                immediatelyBlockEndKey,
+                repeatBlockKey
+        );
+        List<String> args = List.of(
+                String.valueOf(payload.getAppId()),
+                String.valueOf(dayNum),
+                String.valueOf(secOfDay),
+                String.valueOf(nowEpochSecond)
+        );
+
+        return switch (poolType) {
+            case INDIVIDUAL -> trafficLuaScriptInfraService.executePolicyCheckIndividual(keys, args);
+            case SHARED -> trafficLuaScriptInfraService.executePolicyCheckShared(keys, args);
+        };
     }
 
     /**
@@ -249,7 +344,8 @@ public class TrafficHydrateRefillAdapterService {
             String balanceKey,
             long requestedDataBytes,
             TrafficLuaExecutionResult currentResult,
-            TrafficDeductExecutionContext context
+            TrafficDeductExecutionContext context,
+            int whitelistBypassFlag
     ) {
         if (currentResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
             return currentResult;
@@ -278,6 +374,8 @@ public class TrafficHydrateRefillAdapterService {
                     balanceKey,
                     requestedDataBytes,
                     context,
+                    whitelistBypassFlag,
+                    RefillLuaArguments.none(),
                     true
             );
             if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
@@ -311,7 +409,8 @@ public class TrafficHydrateRefillAdapterService {
             String balanceKey,
             long requestedDataBytes,
             TrafficLuaExecutionResult currentResult,
-            TrafficDeductExecutionContext context
+            TrafficDeductExecutionContext context,
+            int whitelistBypassFlag
     ) {
         if (currentResult.getStatus() != TrafficLuaStatus.HYDRATE) {
             return currentResult;
@@ -343,6 +442,8 @@ public class TrafficHydrateRefillAdapterService {
                     balanceKey,
                     requestedDataBytes,
                     context,
+                    whitelistBypassFlag,
+                    RefillLuaArguments.none(),
                     true
             );
             if (retriedResult.getStatus() != TrafficLuaStatus.HYDRATE) {
@@ -400,7 +501,8 @@ public class TrafficHydrateRefillAdapterService {
             String balanceKey,
             long requestedDataBytes,
             TrafficLuaExecutionResult currentResult,
-            TrafficDeductExecutionContext context
+            TrafficDeductExecutionContext context,
+            int whitelistBypassFlag
     ) {
         if (currentResult.getStatus() != TrafficLuaStatus.NO_BALANCE) {
             return currentResult;
@@ -476,6 +578,8 @@ public class TrafficHydrateRefillAdapterService {
                 return retriedResult;
             }
 
+            Long outboxRecordId = null;
+            String outboxRefillUuid = null;
             try {
                 // [Step 3] DB 원본 잔량 차감 (Outbox 기록 포함)
                 String refillUuid = UUID.randomUUID().toString();
@@ -489,8 +593,8 @@ public class TrafficHydrateRefillAdapterService {
                 long dbRemainingBefore = normalizeNonNegative(claimResult == null ? null : claimResult.getDbRemainingBefore());
                 long actualRefillAmount = normalizeNonNegative(claimResult == null ? null : claimResult.getActualRefillAmount());
                 long dbRemainingAfter = normalizeNonNegative(claimResult == null ? null : claimResult.getDbRemainingAfter());
-                Long outboxRecordId = claimResult == null ? null : claimResult.getOutboxRecordId();
-                String outboxRefillUuid = claimResult == null ? null : claimResult.getRefillUuid();
+                outboxRecordId = claimResult == null ? null : claimResult.getOutboxRecordId();
+                outboxRefillUuid = claimResult == null ? null : claimResult.getRefillUuid();
 
                 if (actualRefillAmount <= 0) {
                     // DB에도 더 이상 잔량이 없는 경우(No-Op) 성공 처리 후 반환합니다.
@@ -511,9 +615,7 @@ public class TrafficHydrateRefillAdapterService {
                     return retriedResult;
                 }
 
-                long monthlyExpireAt = trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth);
-
-                // Redis 반영 직전 락 상태를 한 번 더 체크합니다 (Safety Check).
+                // 2차 Lua 호출 직전 락 상태를 한 번 더 확인해 claim 이후 경합 구간을 줄입니다.
                 boolean lockStillOwned = trafficLuaScriptInfraService.executeLockHeartbeat(
                         lockKey,
                         payload.getTraceId(),
@@ -522,7 +624,7 @@ public class TrafficHydrateRefillAdapterService {
                 if (!lockStillOwned) {
                     // 락 유실 시 Redis 반영을 중단하고 기록된 Outbox 레코드의 상태를 보정(보상처리)합니다.
                     log.warn(
-                            "traffic_refill_lock_lost_before_redis_apply poolType={} lockKey={}",
+                            "traffic_refill_lock_lost_before_deduct poolType={} lockKey={}",
                             poolType,
                             lockKey
                     );
@@ -537,66 +639,19 @@ public class TrafficHydrateRefillAdapterService {
                     return retriedResult;
                 }
 
-                try {
-                    // [Step 4] Redis 잔액 갱신 및 멱등성 보장
-                    // DB에서 가져온 actualRefillAmount만큼 Redis 잔량을 원자적으로 증가시키고,
-                    // UUID를 멱등 키로 등록하여 중복 실행을 원천 차단합니다.
-                    boolean applied = trafficQuotaCacheService.applyRefillWithIdempotency(
-                            balanceKey,
-                            trafficRefillOutboxSupportService.resolveIdempotencyKey(outboxRefillUuid),
-                            outboxRefillUuid,
-                            actualRefillAmount,
-                            monthlyExpireAt,
-                            trafficRefillOutboxSupportService.refillIdempotencyTtlSeconds(),
-                            // DB 잔량 완전 소진 여부도 함께 기록합니다.
-                            dbRemainingAfter <= 0
-                    );
-                    if (!applied) {
-                        // 이미 동일 UUID로 리필이 반영된 경우 중복 반영 없이 재차감 단계로 넘어갑니다.
-                        log.info(
-                                "traffic_refill_idempotent_skip poolType={} balanceKey={} outboxId={} uuid={}",
-                                poolType,
-                                balanceKey,
-                                outboxRecordId,
-                                outboxRefillUuid
-                        );
-                        markOutboxSuccessIfPresent(outboxRecordId);
-                        trafficRefillOutboxSupportService.clearIdempotency(outboxRefillUuid);
-                        trafficRefillMetrics.increment(poolType.name(), "idempotent_skip");
-                        
-                        // 재차감 실행 및 1차 결과와의 병합
-                        TrafficLuaExecutionResult refillRetryResult = executeDeduct(
-                                poolType,
-                                payload,
-                                balanceKey,
-                                retryTargetData,
-                                context,
-                                false
-                        );
-                        retriedResult = mergeRefillRetryResult(
-                                normalizedRequestedDataBytes,
-                                firstDeductedAmount,
-                                refillRetryResult
-                        );
-                        return retriedResult;
-                    }
-
-                    // [Step 5] 성공 마무리 및 멱등 키 정리
-                    markOutboxSuccessIfPresent(outboxRecordId);
-                    trafficRefillOutboxSupportService.clearIdempotency(outboxRefillUuid);
-                } catch (RuntimeException redisApplyException) {
-                    // Redis 반영 중 실패 시 Outbox를 실패 처리하여 향후 스케줄러에 의한 복구를 유도합니다.
-                    markOutboxFailIfPresent(outboxRecordId);
-                    RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(redisApplyException);
-                    trafficRefillMetrics.increment(
-                            poolType.name(),
-                            trafficRefillOutboxSupportService.isTimeoutFailure(unwrapped) ? "redis_timeout" : "redis_error"
-                    );
-                    return retriedResult;
-                }
+                String normalizedRefillUuid = (outboxRefillUuid == null || outboxRefillUuid.isBlank())
+                        ? refillUuid
+                        : outboxRefillUuid;
+                RefillLuaArguments refillLuaArguments = RefillLuaArguments.of(
+                        actualRefillAmount,
+                        normalizedRefillUuid,
+                        trafficRefillOutboxSupportService.resolveIdempotencyKey(normalizedRefillUuid),
+                        trafficRefillOutboxSupportService.refillIdempotencyTtlSeconds(),
+                        dbRemainingAfter <= 0
+                );
 
                 log.info(
-                        "traffic_refill_applied poolType={} balanceKey={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
+                        "traffic_refill_claimed poolType={} balanceKey={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
                         poolType,
                         balanceKey,
                         requestedRefillUnit,
@@ -608,17 +663,22 @@ public class TrafficHydrateRefillAdapterService {
                         actualRefillAmount,
                         dbRemainingAfter
                 );
-                trafficRefillMetrics.increment(poolType.name(), "refill_applied");
 
-                // [Step 6] 리필 완료된 잔액을 기반으로 실제 요청량에 대한 차감을 다시 실행합니다.
+                // [Step 4] 리필 반영 + 재차감을 2차 Lua 1회 호출로 수행합니다.
                 TrafficLuaExecutionResult refillRetryResult = executeDeduct(
                         poolType,
                         payload,
                         balanceKey,
                         retryTargetData,
                         context,
+                        whitelistBypassFlag,
+                        refillLuaArguments,
                         false
                 );
+                markOutboxSuccessIfPresent(outboxRecordId);
+                trafficRefillOutboxSupportService.clearIdempotency(normalizedRefillUuid);
+                trafficRefillMetrics.increment(poolType.name(), "refill_applied");
+
                 // 1차에서 부분 성공한 양과 리필 후 추가 성공한 양을 합산하여 최종 결과를 도출합니다.
                 retriedResult = mergeRefillRetryResult(
                         normalizedRequestedDataBytes,
@@ -627,14 +687,26 @@ public class TrafficHydrateRefillAdapterService {
                 );
                 return retriedResult;
             } catch (RuntimeException e) {
+                markOutboxFailIfPresent(outboxRecordId);
+                RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
+                String metricKey;
+                if (trafficRefillOutboxSupportService.isTimeoutFailure(unwrapped)) {
+                    metricKey = "redis_timeout";
+                } else if (trafficRefillOutboxSupportService.isConnectionFailure(unwrapped)) {
+                    metricKey = "redis_error";
+                } else {
+                    metricKey = "db_error";
+                }
                 log.error(
-                        "traffic_refill_db_claim_failed poolType={} balanceKey={} traceId={}",
+                        "traffic_refill_flow_failed poolType={} balanceKey={} traceId={} outboxId={} uuid={}",
                         poolType,
                         balanceKey,
                         payload.getTraceId(),
+                        outboxRecordId,
+                        outboxRefillUuid,
                         e
                 );
-                trafficRefillMetrics.increment(poolType.name(), "db_error");
+                trafficRefillMetrics.increment(poolType.name(), metricKey);
                 return retriedResult;
             } finally {
                 // 어떤 경우든 리필 시퀀스가 종료되면 획득했던 리필 락을 해제합니다.
@@ -685,6 +757,8 @@ public class TrafficHydrateRefillAdapterService {
             String balanceKey,
             long requestedDataBytes,
             TrafficDeductExecutionContext context,
+            int whitelistBypassFlag,
+            RefillLuaArguments refillLuaArguments,
             boolean allowDbFallback
     ) {
         // 이미 DB 폴백이 활성화된 경우 Redis를 거치지 않고 바로 DB 서비스를 호출합니다.
@@ -699,7 +773,14 @@ public class TrafficHydrateRefillAdapterService {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 // 실제 Lua 스크립트를 호출하여 Redis 차감을 수행합니다.
-                return executeDeductLua(poolType, payload, balanceKey, requestedDataBytes);
+                return executeDeductLua(
+                        poolType,
+                        payload,
+                        balanceKey,
+                        requestedDataBytes,
+                        whitelistBypassFlag,
+                        refillLuaArguments == null ? RefillLuaArguments.none() : refillLuaArguments
+                );
             } catch (RuntimeException redisException) {
                 // Redis 예외 발생 시 재시도 가능 여부(Timeout, Connection failure)를 확인합니다.
                 RuntimeException unwrappedException = trafficRefillOutboxSupportService.unwrapRuntimeException(redisException);
@@ -735,10 +816,10 @@ public class TrafficHydrateRefillAdapterService {
                     requestedDataBytes,
                     lastException
             );
-            return TrafficLuaExecutionResult.builder()
-                    .answer(0L)
-                    .status(TrafficLuaStatus.NO_BALANCE)
-                    .build();
+            if (lastException == null) {
+                throw new IllegalStateException("traffic_deduct_redis_retry_exhausted_after_refill");
+            }
+            throw new IllegalStateException("traffic_deduct_redis_retry_exhausted_after_refill", lastException);
         }
 
         // Redis 재시도 횟수를 모두 소진한 경우 DB 폴백 모드로 전환합니다.
@@ -767,7 +848,9 @@ public class TrafficHydrateRefillAdapterService {
             TrafficPoolType poolType,
             TrafficPayloadReqDto payload,
             String balanceKey,
-            long requestedDataBytes
+            long requestedDataBytes,
+            int whitelistBypassFlag,
+            RefillLuaArguments refillLuaArguments
     ) {
         // 현재 시간 및 만료 시점(일일/월간)을 계산합니다.
         LocalDateTime now = LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
@@ -800,17 +883,27 @@ public class TrafficHydrateRefillAdapterService {
         return switch (poolType) {
             case INDIVIDUAL -> {
                 // 개인풀의 경우 속도 제어를 위한 속도 버킷 키를 포함하여 스크립트를 실행합니다.
-                String speedBucketKey = trafficRedisKeyFactory.speedBucketIndividualKey(payload.getLineId(), nowEpochSecond);
+                String speedBucketKey = trafficRedisKeyFactory.speedBucketIndividualAppKey(
+                        payload.getLineId(),
+                        payload.getAppId(),
+                        nowEpochSecond
+                );
                 List<String> keys = List.of(
                         balanceKey, policyRepeatKey, policyImmediateKey, policyLineLimitDailyKey,
                         policyAppDataKey, policyAppSpeedKey, policyAppWhitelistKey, appWhitelistKey,
                         immediatelyBlockEndKey, repeatBlockKey, dailyTotalLimitKey, dailyTotalUsageKey,
-                        appDataDailyLimitKey, dailyAppUsageKey, appSpeedLimitKey, speedBucketKey
+                        appDataDailyLimitKey, dailyAppUsageKey, appSpeedLimitKey, speedBucketKey,
+                        refillLuaArguments.refillIdempotencyKey()
                 );
                 List<String> args = List.of(
                         String.valueOf(requestedDataBytes), String.valueOf(payload.getAppId()),
                         String.valueOf(dayNum), String.valueOf(secOfDay),
-                        String.valueOf(nowEpochSecond), String.valueOf(dailyExpireAt)
+                        String.valueOf(nowEpochSecond), String.valueOf(dailyExpireAt),
+                        String.valueOf(whitelistBypassFlag),
+                        String.valueOf(refillLuaArguments.refillAmount()),
+                        refillLuaArguments.refillUuid(),
+                        String.valueOf(refillLuaArguments.refillIdempotencyTtlSeconds()),
+                        refillLuaArguments.dbEmptyFlag()
                 );
                 yield trafficLuaScriptInfraService.executeDeductIndividual(keys, args);
             }
@@ -818,23 +911,71 @@ public class TrafficHydrateRefillAdapterService {
                 // 공유풀의 경우 월간 공유 한도 키를 추가로 포함하여 스크립트를 실행합니다.
                 String monthlySharedLimitKey = trafficRedisKeyFactory.monthlySharedLimitKey(payload.getLineId());
                 String monthlySharedUsageKey = trafficRedisKeyFactory.monthlySharedUsageKey(payload.getLineId(), targetUsageMonth);
-                String speedBucketKey = trafficRedisKeyFactory.speedBucketSharedKey(payload.getFamilyId(), nowEpochSecond);
+                // 앱 속도 제한은 풀 유형과 무관하게 회선(line) + 앱 단위로 동일하게 적용합니다.
+                String speedBucketKey = trafficRedisKeyFactory.speedBucketIndividualAppKey(
+                        payload.getLineId(),
+                        payload.getAppId(),
+                        nowEpochSecond
+                );
                 String individualRemainingKey = trafficRedisKeyFactory.remainingIndivAmountKey(payload.getLineId(), targetUsageMonth);
                 List<String> keys = List.of(
                         balanceKey, policyRepeatKey, policyImmediateKey, policyLineLimitSharedKey,
                         policyLineLimitDailyKey, policyAppDataKey, policyAppSpeedKey, policyAppWhitelistKey,
                         appWhitelistKey, immediatelyBlockEndKey, repeatBlockKey, dailyTotalLimitKey,
                         dailyTotalUsageKey, monthlySharedLimitKey, monthlySharedUsageKey,
-                        appDataDailyLimitKey, dailyAppUsageKey, appSpeedLimitKey, speedBucketKey, individualRemainingKey
+                        appDataDailyLimitKey, dailyAppUsageKey, appSpeedLimitKey, speedBucketKey, individualRemainingKey,
+                        refillLuaArguments.refillIdempotencyKey()
                 );
                 List<String> args = List.of(
                         String.valueOf(requestedDataBytes), String.valueOf(payload.getAppId()),
                         String.valueOf(dayNum), String.valueOf(secOfDay),
-                        String.valueOf(nowEpochSecond), String.valueOf(dailyExpireAt), String.valueOf(monthlyExpireAt)
+                        String.valueOf(nowEpochSecond), String.valueOf(dailyExpireAt), String.valueOf(monthlyExpireAt),
+                        String.valueOf(whitelistBypassFlag),
+                        String.valueOf(refillLuaArguments.refillAmount()),
+                        refillLuaArguments.refillUuid(),
+                        String.valueOf(refillLuaArguments.refillIdempotencyTtlSeconds()),
+                        refillLuaArguments.dbEmptyFlag()
                 );
                 yield trafficLuaScriptInfraService.executeDeductShared(keys, args);
             }
         };
+    }
+
+    /**
+     * 2차 Lua 호출 시 리필 적용 파라미터를 전달하기 위한 값 객체입니다.
+     */
+    private record RefillLuaArguments(
+            long refillAmount,
+            String refillUuid,
+            String refillIdempotencyKey,
+            long refillIdempotencyTtlSeconds,
+            String dbEmptyFlag
+    ) {
+        private static final String UNUSED_KEY = "__unused_refill_idempotency__";
+
+        private static RefillLuaArguments none() {
+            return new RefillLuaArguments(0L, "", UNUSED_KEY, 0L, "0");
+        }
+
+        private static RefillLuaArguments of(
+                long refillAmount,
+                String refillUuid,
+                String refillIdempotencyKey,
+                long refillIdempotencyTtlSeconds,
+                boolean dbEmpty
+        ) {
+            String normalizedUuid = refillUuid == null ? "" : refillUuid;
+            String normalizedKey = (refillIdempotencyKey == null || refillIdempotencyKey.isBlank())
+                    ? UNUSED_KEY
+                    : refillIdempotencyKey;
+            return new RefillLuaArguments(
+                    Math.max(0L, refillAmount),
+                    normalizedUuid,
+                    normalizedKey,
+                    Math.max(0L, refillIdempotencyTtlSeconds),
+                    dbEmpty ? "1" : "0"
+            );
+        }
     }
 
     /**

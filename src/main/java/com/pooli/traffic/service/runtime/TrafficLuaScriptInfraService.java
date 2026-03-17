@@ -68,6 +68,22 @@ public class TrafficLuaScriptInfraService {
     /**
      * 개인풀 차감 Lua 스크립트를 실행합니다.
      */
+    public TrafficLuaExecutionResult executePolicyCheckIndividual(List<String> keys, List<String> args) {
+        String rawJson = executeStringSingle(TrafficLuaScriptType.POLICY_CHECK_INDIVIDUAL, keys, args);
+        return parseDeductResult(rawJson, TrafficLuaScriptType.POLICY_CHECK_INDIVIDUAL);
+    }
+
+    /**
+     * 공유풀 차단성 정책 검증 Lua 스크립트를 실행합니다.
+     */
+    public TrafficLuaExecutionResult executePolicyCheckShared(List<String> keys, List<String> args) {
+        String rawJson = executeStringSingle(TrafficLuaScriptType.POLICY_CHECK_SHARED, keys, args);
+        return parseDeductResult(rawJson, TrafficLuaScriptType.POLICY_CHECK_SHARED);
+    }
+
+    /**
+     * 개인풀 차감 Lua 스크립트를 실행합니다.
+     */
     public TrafficLuaExecutionResult executeDeductIndividual(List<String> keys, List<String> args) {
         String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_INDIVIDUAL, keys, args);
         return parseDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_INDIVIDUAL);
@@ -248,7 +264,7 @@ public class TrafficLuaScriptInfraService {
      */
     private void registerScript(TrafficLuaScriptType scriptType, String scriptText) {
         switch (scriptType) {
-            case DEDUCT_INDIVIDUAL, DEDUCT_SHARED -> {
+            case POLICY_CHECK_INDIVIDUAL, POLICY_CHECK_SHARED, DEDUCT_INDIVIDUAL, DEDUCT_SHARED -> {
                 DefaultRedisScript<String> redisScript = new DefaultRedisScript<>();
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(String.class);
