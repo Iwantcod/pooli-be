@@ -30,6 +30,10 @@ NAME_SYLLABLES = [chr(code) for code in range(0xAC00, 0xAC00 + 120)]
 
 DAY_OF_WEEK_ORDER = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 WEEKDAY_SET = {"MON", "TUE", "WED", "THU", "FRI"}
+NEXT_DAY_OF_WEEK = {
+    day: DAY_OF_WEEK_ORDER[(idx + 1) % len(DAY_OF_WEEK_ORDER)]
+    for idx, day in enumerate(DAY_OF_WEEK_ORDER)
+}
 
 
 def ts(dt: datetime) -> str:
@@ -710,7 +714,7 @@ SELECT 'C12_policy_scope_and_completeness' AS check_name,
        COUNT(*) AS violations
 FROM tmp_line_policy_presence p
 WHERE
-      (p.should_have_policy = 1 AND (p.ll_cnt <> 1 OR p.ap_cnt < 3 OR p.ap_cnt > 5 OR p.rb_cnt <> 1 OR p.rbd_cnt <> 7))
+      (p.should_have_policy = 1 AND (p.ll_cnt <> 1 OR p.ap_cnt < 3 OR p.ap_cnt > 5 OR p.rb_cnt <> 1 OR p.rbd_cnt <> 12))
    OR (p.should_have_policy = 0 AND (p.ll_cnt <> 0 OR p.ap_cnt <> 0 OR p.rb_cnt <> 0 OR p.rbd_cnt <> 0));
 
 -- D01: 총 사용자 수는 일반유저 N + 관리자 5명이어야 한다.
@@ -779,12 +783,71 @@ LEFT JOIN (
 ) x ON x.family_id = f.family_id
 WHERE f.pool_base_data <> COALESCE(x.expected_base, 0);
 
--- D08: REPEAT_BLOCK_DAY는 주중 22:00~07:00, 주말 00:00~09:00이어야 한다.
+-- D08: REPEAT_BLOCK_DAY는 자정 경계 분할 규칙(주중 야간 2건 + 주말 1건)을 만족해야 한다.
 SELECT 'D08_repeat_block_day_time_window' AS check_name,
-       COUNT(*) AS violations
-FROM REPEAT_BLOCK_DAY d
-WHERE (d.day_of_week IN ('MON', 'TUE', 'WED', 'THU', 'FRI') AND NOT (d.start_at = '22:00:00' AND d.end_at = '07:00:00'))
-   OR (d.day_of_week IN ('SAT', 'SUN') AND NOT (d.start_at = '00:00:00' AND d.end_at = '09:00:00'));
+       (
+         SELECT COUNT(*)
+         FROM (
+           SELECT rb.repeat_block_id,
+                  e.day_of_week,
+                  e.start_at,
+                  e.end_at,
+                  e.expected_cnt,
+                  COALESCE(a.actual_cnt, 0) AS actual_cnt
+           FROM REPEAT_BLOCK rb
+           CROSS JOIN (
+             SELECT 'MON' AS day_of_week, '22:00:00' AS start_at, '23:59:59' AS end_at, 1 AS expected_cnt
+             UNION ALL SELECT 'TUE', '00:00:00', '07:00:00', 1
+             UNION ALL SELECT 'TUE', '22:00:00', '23:59:59', 1
+             UNION ALL SELECT 'WED', '00:00:00', '07:00:00', 1
+             UNION ALL SELECT 'WED', '22:00:00', '23:59:59', 1
+             UNION ALL SELECT 'THU', '00:00:00', '07:00:00', 1
+             UNION ALL SELECT 'THU', '22:00:00', '23:59:59', 1
+             UNION ALL SELECT 'FRI', '00:00:00', '07:00:00', 1
+             UNION ALL SELECT 'FRI', '22:00:00', '23:59:59', 1
+             UNION ALL SELECT 'SAT', '00:00:00', '07:00:00', 1
+             UNION ALL SELECT 'SAT', '00:00:00', '09:00:00', 1
+             UNION ALL SELECT 'SUN', '00:00:00', '09:00:00', 1
+           ) e
+           LEFT JOIN (
+             SELECT repeat_block_id,
+                    day_of_week,
+                    start_at,
+                    end_at,
+                    COUNT(*) AS actual_cnt
+             FROM REPEAT_BLOCK_DAY
+             GROUP BY repeat_block_id, day_of_week, start_at, end_at
+           ) a
+             ON a.repeat_block_id = rb.repeat_block_id
+            AND a.day_of_week = e.day_of_week
+            AND a.start_at = e.start_at
+            AND a.end_at = e.end_at
+         ) x
+         WHERE x.actual_cnt <> x.expected_cnt
+       )
+       +
+       (
+         SELECT COUNT(*)
+         FROM REPEAT_BLOCK_DAY d
+         LEFT JOIN (
+           SELECT 'MON' AS day_of_week, '22:00:00' AS start_at, '23:59:59' AS end_at
+           UNION ALL SELECT 'TUE', '00:00:00', '07:00:00'
+           UNION ALL SELECT 'TUE', '22:00:00', '23:59:59'
+           UNION ALL SELECT 'WED', '00:00:00', '07:00:00'
+           UNION ALL SELECT 'WED', '22:00:00', '23:59:59'
+           UNION ALL SELECT 'THU', '00:00:00', '07:00:00'
+           UNION ALL SELECT 'THU', '22:00:00', '23:59:59'
+           UNION ALL SELECT 'FRI', '00:00:00', '07:00:00'
+           UNION ALL SELECT 'FRI', '22:00:00', '23:59:59'
+           UNION ALL SELECT 'SAT', '00:00:00', '07:00:00'
+           UNION ALL SELECT 'SAT', '00:00:00', '09:00:00'
+           UNION ALL SELECT 'SUN', '00:00:00', '09:00:00'
+         ) e
+           ON e.day_of_week = d.day_of_week
+          AND e.start_at = d.start_at
+          AND e.end_at = d.end_at
+         WHERE e.day_of_week IS NULL
+       ) AS violations;
 
 -- D09: 총 회선 수는 일반유저 수 + 특별가족 추가회선 수(최대 1만)와 같아야 한다.
 SELECT 'D09_lines_total' AS check_name,
@@ -1244,27 +1307,30 @@ def generate(
                 )
 
                 for day_of_week in DAY_OF_WEEK_ORDER:
+                    # 자정 경계를 넘는 차단 구간은 단일 레코드로 표현하지 않고, 날짜별로 분할 저장한다.
                     if day_of_week in WEEKDAY_SET:
-                        start_at = "22:00:00"
-                        end_at = "07:00:00"
+                        windows = [
+                            (day_of_week, "22:00:00", "23:59:59"),
+                            (NEXT_DAY_OF_WEEK[day_of_week], "00:00:00", "07:00:00"),
+                        ]
                     else:
-                        start_at = "00:00:00"
-                        end_at = "09:00:00"
+                        windows = [(day_of_week, "00:00:00", "09:00:00")]
 
-                    csvs.write(
-                        "27_repeat_block_day.csv",
-                        [
-                            repeat_block_day_id,
-                            repeat_block_id,
-                            day_of_week,
-                            start_at,
-                            end_at,
-                            ts(random_dt_after(rng, repeat_block_created, now)),
-                            null(),
-                            null(),
-                        ],
-                    )
-                    repeat_block_day_id += 1
+                    for window_day_of_week, start_at, end_at in windows:
+                        csvs.write(
+                            "27_repeat_block_day.csv",
+                            [
+                                repeat_block_day_id,
+                                repeat_block_id,
+                                window_day_of_week,
+                                start_at,
+                                end_at,
+                                ts(random_dt_after(rng, repeat_block_created, now)),
+                                null(),
+                                null(),
+                            ],
+                        )
+                        repeat_block_day_id += 1
 
                 repeat_block_id += 1
 
