@@ -249,8 +249,6 @@ def write_load_sql(out_dir: Path) -> None:
         "ALARM_HISTORY",
         "TRAFFIC_DEDUCT_DONE",
         "TRAFFIC_REDIS_OUTBOX",
-        "TRAFFIC_DB_SPEED_BUCKET",
-        "TRAFFIC_REDIS_USAGE_DELTA",
         "TRAFFIC_SHARED_THRESHOLD_ALARM_LOG",
         "LINE",
         "ALARM_SETTING",
@@ -432,17 +430,6 @@ def write_load_sql(out_dir: Path) -> None:
             "TRAFFIC_REDIS_OUTBOX",
             "id, event_type, payload, @uuid, status, retry_count, created_at, status_updated_at",
             "SET uuid = NULLIF(NULLIF(@uuid, '\\N'), 'NULL')",
-        ),
-        sql_load_block(
-            "52_traffic_db_speed_bucket.csv",
-            "TRAFFIC_DB_SPEED_BUCKET",
-            "pool_type, owner_id, app_id, bucket_epoch_sec, used_bytes, created_at, updated_at",
-        ),
-        sql_load_block(
-            "53_traffic_redis_usage_delta.csv",
-            "TRAFFIC_REDIS_USAGE_DELTA",
-            "id, trace_id, pool_type, line_id, @family_id, app_id, used_bytes, usage_date, target_month, status, retry_count, @last_error_message, created_at, status_updated_at",
-            "SET family_id = NULLIF(NULLIF(@family_id, '\\N'), 'NULL'), last_error_message = NULLIF(NULLIF(@last_error_message, '\\N'), 'NULL')",
         ),
         sql_load_block(
             "54_traffic_shared_threshold_alarm_log.csv",
@@ -994,62 +981,6 @@ def write_minimal_non_core_rows(
             ],
         )
 
-    base_epoch = int(now.timestamp())
-    for i in range(1, 101):
-        if i % 2 == 0:
-            pool_type = "LINE"
-            owner_id = ((i - 1) % total_lines) + 1
-        else:
-            pool_type = "FAMILY"
-            owner_id = ((i - 1) % family_count) + 1
-
-        app_id = app_ids[(i - 1) % len(app_ids)]
-        bucket_epoch_sec = base_epoch - i * 60
-
-        csvs.write(
-            "52_traffic_db_speed_bucket.csv",
-            [
-                pool_type,
-                owner_id,
-                app_id,
-                bucket_epoch_sec,
-                scale_bytes(5_000_000 + i * 100_000, value_scale),
-                ts(now),
-                ts(now),
-            ],
-        )
-
-    for i in range(1, 101):
-        line_id = ((i - 1) % total_lines) + 1
-        family_id = ((i - 1) % family_count) + 1
-        app_id = app_ids[(i - 1) % len(app_ids)]
-        pool_type = "LINE" if i % 2 == 0 else "FAMILY"
-        family_id_value: object = family_id if pool_type == "FAMILY" else null()
-        usage_date = usage_dates[(i - 1) % len(usage_dates)].isoformat()
-
-        created = random_dt_between(rng, USER_CREATED_AT_START, now)
-        status = "DONE" if i % 4 == 0 else "PENDING"
-
-        csvs.write(
-            "53_traffic_redis_usage_delta.csv",
-            [
-                i,
-                f"trace-delta-{i:08d}",
-                pool_type,
-                line_id,
-                family_id_value,
-                app_id,
-                scale_bytes(10_000_000 + i * 50_000, value_scale),
-                usage_date,
-                target_month,
-                status,
-                0 if status == "DONE" else rng.randint(0, 2),
-                null(),
-                ts(created),
-                ts(random_dt_after(rng, created, now)),
-            ],
-        )
-
     for family_id in range(1, min(50, family_count) + 1):
         for threshold_pct in (70, 90):
             csvs.write(
@@ -1141,8 +1072,6 @@ def generate(
         "44_alarm_history.csv": ["alarm_history_id", "line_id", "alarm_code", "value", "created_at", "deleted_at", "read_at"],
         "50_traffic_deduct_done.csv": ["traffic_deduct_done_id", "trace_id", "line_id", "family_id", "app_id", "api_total_data", "deducted_total_bytes", "api_remaining_data", "final_status", "last_lua_status", "created_at", "finished_at", "persisted_at"],
         "51_traffic_redis_outbox.csv": ["id", "event_type", "payload", "uuid", "status", "retry_count", "created_at", "status_updated_at"],
-        "52_traffic_db_speed_bucket.csv": ["pool_type", "owner_id", "app_id", "bucket_epoch_sec", "used_bytes", "created_at", "updated_at"],
-        "53_traffic_redis_usage_delta.csv": ["id", "trace_id", "pool_type", "line_id", "family_id", "app_id", "used_bytes", "usage_date", "target_month", "status", "retry_count", "last_error_message", "created_at", "status_updated_at"],
         "54_traffic_shared_threshold_alarm_log.csv": ["family_id", "target_month", "threshold_pct", "created_at"],
     }
     for filename, headers in definitions.items():

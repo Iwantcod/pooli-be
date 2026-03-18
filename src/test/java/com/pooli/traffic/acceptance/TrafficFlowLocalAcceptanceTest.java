@@ -163,9 +163,8 @@ class TrafficFlowLocalAcceptanceTest {
         jdbcTemplate.update("DELETE FROM REPEAT_BLOCK WHERE line_id IN (" + TARGET_LINE_IDS + ")");
         jdbcTemplate.update("DELETE FROM APP_POLICY WHERE line_id IN (" + TARGET_LINE_IDS + ")");
         jdbcTemplate.update("DELETE FROM LINE_LIMIT WHERE line_id IN (" + TARGET_LINE_IDS + ")");
-        // 이전 실행에서 남은 outbox/usage delta를 정리해 스케줄러 경쟁으로 인한 비결정성을 제거한다.
+        // 이전 실행에서 남은 outbox를 정리해 스케줄러 경쟁으로 인한 비결정성을 제거한다.
         jdbcTemplate.update("DELETE FROM TRAFFIC_REDIS_OUTBOX");
-        jdbcTemplate.update("DELETE FROM TRAFFIC_REDIS_USAGE_DELTA");
 
         // 테스트 독립성 보장을 위해 cache Redis를 매번 비운다.
         // streams Redis를 flushall 하면 stream key/group/PEL이 함께 사라져
