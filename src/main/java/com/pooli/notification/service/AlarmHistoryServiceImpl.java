@@ -65,7 +65,6 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
     @Transactional
     @Override
     public void sendNotification(NotiSendReqDto request) {
-
         List<Long> lineIds = request.getLineId();
 
         if (request.getTargetType() != NotificationTargetType.DIRECT
@@ -104,10 +103,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
         switch (request.getTargetType()) {
 
             case DIRECT -> {
-
                 targetLineIds = notificationLineMapper.findExistingLineIds(request.getLineId());
-
-
             }
 
             case ALL -> targetLineIds = notificationLineMapper.findAllLineIds();
@@ -127,9 +123,7 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
             );
         }
 
-
         batchInsert(targetLineIds, AlarmCode.OTHERS.name(), jsonValue);
-
     }
 
     @Transactional(readOnly = true)

@@ -275,7 +275,7 @@ class AdminPolicyServiceImplTest {
     private void verifyNotification(AlarmType type, Integer policyId, Integer categoryId, String name) {
         ArgumentCaptor<NotiSendReqDto> captor = ArgumentCaptor.forClass(NotiSendReqDto.class);
         // 테스트 대상 메서드에서 알림 전송이 실제로 호출되었는지 확인하고 payload를 캡처한다.
-        verify(alarmHistoryService, atLeastOnce()).sendNotification(captor.capture());
+        verify(alarmHistoryService, atLeastOnce()).sendNotificationAsync(captor.capture());
 
         NotiSendReqDto req = captor.getValue();
         // 관리자 정책 변경 알림은 OWNER 대상으로만 전송되어야 한다.
