@@ -599,6 +599,8 @@ public class TrafficHydrateRefillAdapterService {
                 if (actualRefillAmount <= 0) {
                     // DB에도 더 이상 잔량이 없는 경우(No-Op) 성공 처리 후 반환합니다.
                     markOutboxSuccessIfPresent(outboxRecordId);
+                    // claim 결과상 DB가 실제 고갈된 경우에만 is_empty=1을 기록해 false positive를 방지한다.
+                    markDbEmptyFlagOnDbNoop(balanceKey, dbRemainingAfter, poolType, payload);
                     log.debug(
                             "traffic_refill_db_noop poolType={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
                             poolType,
@@ -715,6 +717,36 @@ public class TrafficHydrateRefillAdapterService {
         }
 
         return retriedResult;
+    }
+
+    /**
+     * DB claim이 No-Op일 때 DB 고갈 상태를 Redis is_empty 플래그에 반영합니다.
+     *
+     * <p>dbRemainingAfter가 0 이하로 확정된 경우에만 is_empty=1을 기록하고,
+     * Redis 쓰기 실패는 사용자 요청 실패로 승격하지 않기 위해 로그만 남기고 계속 진행합니다.
+     */
+    private void markDbEmptyFlagOnDbNoop(
+            String balanceKey,
+            long dbRemainingAfter,
+            TrafficPoolType poolType,
+            TrafficPayloadReqDto payload
+    ) {
+        if (dbRemainingAfter > 0) {
+            return;
+        }
+
+        try {
+            trafficQuotaCacheService.writeDbEmptyFlag(balanceKey, true);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "traffic_refill_db_noop_empty_flag_write_failed poolType={} balanceKey={} traceId={} dbRemainingAfter={}",
+                    poolType,
+                    balanceKey,
+                    payload == null ? null : payload.getTraceId(),
+                    dbRemainingAfter,
+                    e
+            );
+        }
     }
 
     /**

@@ -541,9 +541,8 @@ class TrafficHydrateRefillAdapterServiceTest {
 
             // then
             assertEquals(TrafficLuaStatus.NO_BALANCE, result.getStatus());
-            // actualRefillAmount=0 → db_noop 경로로 return, applyRefillWithIdempotency 미호출
-            // writeDbEmptyFlag도 별도 호출되지 않음 (Lua 통합)
-            verify(trafficQuotaCacheService, never()).writeDbEmptyFlag(anyString(), anyBoolean());
+            // db_noop이더라도 DB after가 0이면 is_empty=1을 기록한다.
+            verify(trafficQuotaCacheService).writeDbEmptyFlag("pooli:remaining_indiv_amount:11:202603", true);
             verify(trafficQuotaCacheService, never()).applyRefillWithIdempotency(
                     anyString(), anyString(), anyString(), anyLong(), anyLong(), anyLong(), anyBoolean());
             verify(trafficLuaScriptInfraService).executeLockRelease("pooli:indiv_refill_lock:11", payload.getTraceId());
@@ -685,7 +684,56 @@ class TrafficHydrateRefillAdapterServiceTest {
         }
 
         @Test
-        void keepsNoBalanceWhenDbClaimNoop() {
+        void keepsNoBalanceWhenDbClaimNoopAndDbRemainingAfterPositive() {
+            // given
+            TrafficPayloadReqDto payload = createPayload();
+            stubIndividualDeductKeys();
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+            when(trafficRedisKeyFactory.indivRefillLockKey(11L)).thenReturn("pooli:indiv_refill_lock:11");
+            when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
+                    .thenReturn(luaResult(0L, TrafficLuaStatus.NO_BALANCE));
+            when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_indiv_amount:11:202603", 0L)).thenReturn(0L);
+            when(trafficQuotaSourcePort.resolveRefillPlan(TrafficPoolType.INDIVIDUAL, payload))
+                    .thenReturn(refillPlan(10L, 2, 20L, 100L, 30L, "RECENT_10S"));
+            when(trafficLuaScriptInfraService.executeRefillGate(
+                    "pooli:indiv_refill_lock:11",
+                    "pooli:remaining_indiv_amount:11:202603",
+                    payload.getTraceId(),
+                    TrafficRedisRuntimePolicy.LOCK_TTL_MS,
+                    0L,
+                    30L
+            )).thenReturn(TrafficRefillGateStatus.OK);
+            when(trafficLuaScriptInfraService.executeLockHeartbeat(
+                    "pooli:indiv_refill_lock:11",
+                    payload.getTraceId(),
+                    TrafficRedisRuntimePolicy.LOCK_TTL_MS
+            )).thenReturn(true);
+            when(trafficQuotaSourcePort.claimRefillAmountFromDb(
+                    eq(TrafficPoolType.INDIVIDUAL),
+                    eq(payload),
+                    eq(java.time.YearMonth.of(2026, 3)),
+                    eq(100L),
+                    anyString()
+            )).thenReturn(claimResult(100L, 10L, 0L, 10L));
+
+            // when
+            TrafficLuaExecutionResult result =
+                    trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L);
+
+            // then
+            assertAll(
+                    () -> assertEquals(TrafficLuaStatus.NO_BALANCE, result.getStatus()),
+                    () -> assertEquals(0L, result.getAnswer())
+            );
+            verify(trafficQuotaCacheService, never()).refillBalance(anyString(), anyLong(), anyLong());
+            verify(trafficQuotaCacheService, never()).writeDbEmptyFlag(anyString(), anyBoolean());
+            verify(trafficLuaScriptInfraService).executeLockRelease("pooli:indiv_refill_lock:11", payload.getTraceId());
+            verify(trafficRefillMetrics).increment("INDIVIDUAL", "db_noop");
+        }
+
+        @Test
+        void keepsNoBalanceWhenDbEmptyFlagWriteFails() {
             // given
             TrafficPayloadReqDto payload = createPayload();
             stubIndividualDeductKeys();
@@ -717,6 +765,9 @@ class TrafficHydrateRefillAdapterServiceTest {
                     eq(100L),
                     anyString()
             )).thenReturn(claimResult(100L, 0L, 0L, 0L));
+            doThrow(new IllegalStateException("redis unavailable"))
+                    .when(trafficQuotaCacheService)
+                    .writeDbEmptyFlag("pooli:remaining_indiv_amount:11:202603", true);
 
             // when
             TrafficLuaExecutionResult result =
@@ -727,7 +778,7 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(TrafficLuaStatus.NO_BALANCE, result.getStatus()),
                     () -> assertEquals(0L, result.getAnswer())
             );
-            verify(trafficQuotaCacheService, never()).refillBalance(anyString(), anyLong(), anyLong());
+            verify(trafficQuotaCacheService).writeDbEmptyFlag("pooli:remaining_indiv_amount:11:202603", true);
             verify(trafficLuaScriptInfraService).executeLockRelease("pooli:indiv_refill_lock:11", payload.getTraceId());
             verify(trafficRefillMetrics).increment("INDIVIDUAL", "db_noop");
         }
