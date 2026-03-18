@@ -22,17 +22,6 @@ public interface AlarmHistoryMapper {
             @Param("value") String value
     );
 
-    int insertNotificationAlarmsForAll(
-            @Param("alarmCode") String alarmCode,
-            @Param("value") String value
-    );
-
-    int insertNotificationAlarmsByRole(
-            @Param("role") String role,
-            @Param("alarmCode") String alarmCode,
-            @Param("value") String value
-    );
-
     List<AlarmHistory> findAlarmHistoryPage(
             @Param("userId") Long userId,
             @Param("lineId") Long lineId,

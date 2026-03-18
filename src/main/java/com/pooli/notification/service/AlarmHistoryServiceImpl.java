@@ -29,8 +29,6 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 public class AlarmHistoryServiceImpl implements AlarmHistoryService {
-    private static final int NOTIFICATION_BATCH_SIZE = 1000;
-
     private final AlarmHistoryMapper alarmHistoryMapper;
     private final ObjectMapper objectMapper;
     private final NotificationLineMapper notificationLineMapper;
@@ -68,13 +66,13 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
     @Override
     public void sendNotification(NotiSendReqDto request) {
         List<Long> lineIds = request.getLineId();
-        int insertedRows = 0;
 
         if (request.getTargetType() != NotificationTargetType.DIRECT
                 && lineIds != null && !lineIds.isEmpty()) {
             throw new ApplicationException(NotificationErrorCode.INVALID_TARGET_CONDITION);
         }
 
+        List<Long> targetLineIds;
         String jsonValue;
 
         try {
@@ -105,43 +103,27 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
         switch (request.getTargetType()) {
 
             case DIRECT -> {
-                List<Long> targetLineIds = notificationLineMapper.findExistingLineIds(request.getLineId());
-                if (targetLineIds == null || targetLineIds.isEmpty()) {
-                    throw new ApplicationException(
-                            NotificationErrorCode.NOTIFICATION_TARGET_NOT_FOUND
-                    );
-                }
-                batchInsert(targetLineIds, AlarmCode.OTHERS.name(), jsonValue);
-                insertedRows = targetLineIds.size();
+                targetLineIds = notificationLineMapper.findExistingLineIds(request.getLineId());
             }
 
-            case ALL -> insertedRows = alarmHistoryMapper.insertNotificationAlarmsForAll(
-                    AlarmCode.OTHERS.name(),
-                    jsonValue
-            );
+            case ALL -> targetLineIds = notificationLineMapper.findAllLineIds();
 
-            case OWNER -> insertedRows = alarmHistoryMapper.insertNotificationAlarmsByRole(
-                    "OWNER",
-                    AlarmCode.OTHERS.name(),
-                    jsonValue
-            );
+            case OWNER -> targetLineIds = notificationLineMapper.findLineIdsByRole("OWNER");
 
-            case MEMBER -> insertedRows = alarmHistoryMapper.insertNotificationAlarmsByRole(
-                    "MEMBER",
-                    AlarmCode.OTHERS.name(),
-                    jsonValue
-            );
+            case MEMBER -> targetLineIds = notificationLineMapper.findLineIdsByRole("MEMBER");
 
             default -> throw new ApplicationException(
                     NotificationErrorCode.INVALID_TARGET_CONDITION
             );
         }
 
-        if (insertedRows <= 0) {
+        if (targetLineIds == null || targetLineIds.isEmpty()) {
             throw new ApplicationException(
                     NotificationErrorCode.NOTIFICATION_TARGET_NOT_FOUND
             );
         }
+
+        batchInsert(targetLineIds, AlarmCode.OTHERS.name(), jsonValue);
     }
 
     @Transactional(readOnly = true)
@@ -271,9 +253,11 @@ public class AlarmHistoryServiceImpl implements AlarmHistoryService {
 
     private void batchInsert(List<Long> lineIds, String alarmCode, String jsonValue) {
 
-        for (int i = 0; i < lineIds.size(); i += NOTIFICATION_BATCH_SIZE) {
+        int batchSize = 1000;
 
-            int end = Math.min(i + NOTIFICATION_BATCH_SIZE, lineIds.size());
+        for (int i = 0; i < lineIds.size(); i += batchSize) {
+
+            int end = Math.min(i + batchSize, lineIds.size());
 
             List<Long> batch = lineIds.subList(i, end);
 

@@ -48,48 +48,6 @@
         </foreach>
     </insert>
 
-    <insert id="insertNotificationAlarmsForAll">
-        INSERT INTO ALARM_HISTORY (
-        line_id,
-        alarm_code,
-        value,
-        created_at,
-        deleted_at,
-        read_at
-        )
-        SELECT
-        l.line_id,
-        #{alarmCode},
-        #{value},
-        NOW(6),
-        NULL,
-        NULL
-        FROM LINE l
-        WHERE l.deleted_at IS NULL
-    </insert>
-
-    <insert id="insertNotificationAlarmsByRole">
-        INSERT INTO ALARM_HISTORY (
-        line_id,
-        alarm_code,
-        value,
-        created_at,
-        deleted_at,
-        read_at
-        )
-        SELECT DISTINCT
-        fl.line_id,
-        #{alarmCode},
-        #{value},
-        NOW(6),
-        NULL,
-        NULL
-        FROM FAMILY_LINE fl
-        JOIN LINE l ON fl.line_id = l.line_id
-        WHERE fl.role = #{role}
-        AND l.deleted_at IS NULL
-    </insert>
-
     <select id="countAlarmHistory" resultType="long">
 
         SELECT COUNT(*)

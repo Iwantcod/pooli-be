@@ -93,13 +93,14 @@ class AlarmHistoryServiceImplTest {
         NotiSendReqDto req = new NotiSendReqDto();
         req.setTargetType(NotificationTargetType.ALL);
 
-        when(alarmHistoryMapper.insertNotificationAlarmsForAll(eq(AlarmCode.OTHERS.name()), anyString()))
-                .thenReturn(3);
+        when(notificationLineMapper.findAllLineIds())
+                .thenReturn(Arrays.asList(1L, 2L, 3L));
 
         service.sendNotification(req);
 
+        verify(notificationLineMapper).findAllLineIds();
         verify(alarmHistoryMapper)
-                .insertNotificationAlarmsForAll(eq(AlarmCode.OTHERS.name()), anyString());
+                .insertNotificationAlarms(anyList(), eq(AlarmCode.OTHERS.name()), anyString());
     }
 
     @Test
