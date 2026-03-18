@@ -2,6 +2,7 @@ package com.pooli.traffic.service.invoke;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -15,6 +16,7 @@ import java.util.stream.Collectors;
 
 import com.pooli.monitoring.metrics.TrafficGeneratorMetrics;
 import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
+import com.pooli.traffic.domain.enums.TrafficInFlightState;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import org.slf4j.MDC;
 import org.springframework.context.SmartLifecycle;
@@ -29,8 +31,6 @@ import com.pooli.common.config.AppStreamsProperties.WorkerRejectionPolicy;
 import com.pooli.common.dto.Violation;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
-import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
-import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -114,6 +114,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 },
                 buildRejectedExecutionHandler(rejectionPolicy)
         );
+        publishWorkerRuntimeMetrics();
 
         // running 플래그를 먼저 켠 뒤 루프를 제출해
         // 제출 직후 루프가 즉시 종료되는 경쟁 상태를 피한다.
@@ -141,6 +142,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         shutdownExecutor("traffic-stream-reclaim", reclaimExecutor, 0L);
         shutdownExecutor("traffic-stream-poller", pollerExecutor, 0L);
         shutdownExecutor("traffic-stream-worker", workerExecutor, appStreamsProperties.requireShutdownAwaitMs());
+        trafficGeneratorMetrics.updateWorkerIdleThreads(0);
+        trafficGeneratorMetrics.updateWorkerQueueSize(0);
 
         log.info("traffic_stream_consumer_stopped");
     }
@@ -190,6 +193,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     private void consumeNextBatch() {
+        publishWorkerRuntimeMetrics();
         int nextReadCount = resolveNextReadCount();
         if (nextReadCount <= 0) {
             signalWorkerPressure();
@@ -229,6 +233,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     workerExecutor.getQueue().remainingCapacity() + workerExecutor.getQueue().size(),
                     appStreamsProperties.requireWorkerRejectionPolicy()
             );
+        } finally {
+            publishWorkerRuntimeMetrics();
         }
     }
 
@@ -322,10 +328,17 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
                 claimAcquired = trafficInFlightDedupeService.tryClaim(traceId);
                 if (!claimAcquired) {
-                    if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
+                    Optional<TrafficInFlightState> dedupeState = trafficInFlightDedupeService.findState(traceId);
+                    if (dedupeState.filter(state -> state == TrafficInFlightState.DONE).isPresent()) {
                         trafficStreamInfraService.acknowledge(record.getId());
+                        log.info("traffic_stream_record_deduped_done_ack recordId={}", recordId);
+                        return;
                     }
-                    log.info("traffic_stream_record_deduped recordId={}", recordId);
+                    log.info(
+                            "traffic_stream_record_deduped_inflight_pending recordId={} state={}",
+                            recordId,
+                            dedupeState.map(TrafficInFlightState::name).orElse("ABSENT")
+                    );
                     return;
                 }
 
@@ -337,10 +350,11 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 // - 저장 예외가 발생하면 ACK를 하지 않아 재전달로 복구한다.
                 // latency는 레코드 처리 시작 시점부터 done-log 저장 직전까지의 ms를 사용한다.
                 long latency = Math.max(0L, System.currentTimeMillis() - consumeStartTimeMs);
-                boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload, result, recordId, latency);
 
                 // "저장 성공 후 ACK" 규칙을 보장하기 위해 영속화 이후에만 ACK한다.
                 trafficStreamInfraService.acknowledge(record.getId());
+
+                boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload, result, recordId, latency);
 
                 // ACK까지 성공한 뒤 in-flight 키를 정리한다.
                 trafficInFlightDedupeService.release(payload.getTraceId());
@@ -421,6 +435,23 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         }
 
         return Math.min(configuredReadCount, dispatchCapacity);
+    }
+
+    /**
+      * 현재 워커 풀 상태를 읽어 Prometheus Gauge 값으로 반영합니다.
+     */
+    private void publishWorkerRuntimeMetrics() {
+        if (workerExecutor == null) {
+            trafficGeneratorMetrics.updateWorkerIdleThreads(0);
+            trafficGeneratorMetrics.updateWorkerQueueSize(0);
+            return;
+        }
+
+        int idleWorkers = Math.max(0, workerExecutor.getMaximumPoolSize() - workerExecutor.getActiveCount());
+        int queuedTasks = Math.max(0, workerExecutor.getQueue().size());
+
+        trafficGeneratorMetrics.updateWorkerIdleThreads(idleWorkers);
+        trafficGeneratorMetrics.updateWorkerQueueSize(queuedTasks);
     }
 
     private void signalWorkerPressure() {

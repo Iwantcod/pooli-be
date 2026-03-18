@@ -19,6 +19,8 @@ public class TrafficGeneratorMetrics {
 
     private Counter generatedRequests;
     private final AtomicInteger currentSecondProcessed = new AtomicInteger(0);
+    private final AtomicInteger currentWorkerIdleThreads = new AtomicInteger(0);
+    private final AtomicInteger currentWorkerQueueSize = new AtomicInteger(0);
 //    private Timer processLatency;
 
     @PostConstruct
@@ -29,6 +31,14 @@ public class TrafficGeneratorMetrics {
 
         Gauge.builder("traffic_generator_process_tps", currentSecondProcessed, AtomicInteger::get)
                 .description("Traffic generator events processed per second")
+                .register(meterRegistry);
+
+        Gauge.builder("traffic_stream_worker_idle_threads", currentWorkerIdleThreads, AtomicInteger::get)
+                .description("Current number of idle worker threads in stream consumer")
+                .register(meterRegistry);
+
+        Gauge.builder("traffic_stream_worker_queue_size", currentWorkerQueueSize, AtomicInteger::get)
+                .description("Current number of queued tasks waiting for worker execution")
                 .register(meterRegistry);
 
 //        processLatency = Timer.builder("traffic_generator_process_latency")
@@ -46,6 +56,20 @@ public class TrafficGeneratorMetrics {
 
     public void incrementProcessed() {
         currentSecondProcessed.incrementAndGet();
+    }
+
+    /**
+     * 현재 유휴 워커 스레드 개수를 메트릭으로 반영합니다.
+     */
+    public void updateWorkerIdleThreads(int idleThreadCount) {
+        currentWorkerIdleThreads.set(Math.max(0, idleThreadCount));
+    }
+
+    /**
+     * 현재 워커 대기열에 적재된 작업 개수를 메트릭으로 반영합니다.
+     */
+    public void updateWorkerQueueSize(int queueSize) {
+        currentWorkerQueueSize.set(Math.max(0, queueSize));
     }
 
 //    public void recordProcessLatency(long durationMs) {

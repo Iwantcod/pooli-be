@@ -113,16 +113,35 @@ class TrafficLuaPolicyContractTest {
                 script.contains("\"QOS\""),
                 "Shared script must include QOS status."
         );
+        assertTrue(
+                script.contains("local allow_qos_fallback = tonumber(ARGV[13] or \"0\")"),
+                "Shared script must accept allow_qos_fallback flag."
+        );
     }
 
     @Test
-    @DisplayName("QoS 보정이 적용된 경우 공유풀 잔량/월 사용량 차감은 건너뛴다")
+    @DisplayName("공유 DB 리필 전에는 allow 플래그 없이는 QOS로 우회하지 않는다")
+    void sharedScriptRequiresAllowQosFlagBeforeFallback() throws IOException {
+        String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                script,
+                "if answer <= 0 then",
+                "if allow_qos_fallback ~= 1 then",
+                "return as_json(0, \"NO_BALANCE\")",
+                "local qos_answer, qos_status = resolve_qos_fallback("
+        );
+    }
+
+    @Test
+    @DisplayName("allow 플래그로 QoS 보정이 적용되면 공유풀 잔량/월 사용량 차감은 건너뛴다")
     void sharedScriptSkipsSharedDeductWhenQosFallbackApplies() throws IOException {
         String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
                 "if answer <= 0 then",
+                "if allow_qos_fallback ~= 1 then",
                 "local qos_answer, qos_status = resolve_qos_fallback(",
                 "used_qos_fallback = true",
                 "if not used_qos_fallback then",
@@ -145,7 +164,8 @@ class TrafficLuaPolicyContractTest {
     private void assertAppearsInOrder(String script, String... fragments) {
         int previousIndex = -1;
         for (String fragment : fragments) {
-            int currentIndex = script.indexOf(fragment);
+            int searchFromIndex = previousIndex + 1;
+            int currentIndex = script.indexOf(fragment, searchFromIndex);
             assertTrue(currentIndex >= 0, "Required fragment not found. fragment=" + fragment);
             assertTrue(
                     currentIndex > previousIndex,
