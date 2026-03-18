@@ -88,31 +88,37 @@ public class RoleController {
     @PatchMapping("/representative")
     public ResponseEntity<RepresentativeRoleTransferResDto> transferRepresentativeRole(
             @AuthenticationPrincipal AuthUserDetails userDetails,
+            @Parameter(description = "현재 대표 회선 ID (ADMIN 필수, OWNER 무시)", example = "1001") @RequestParam(required = false) Long currentLineId,
             @Parameter(description = "변경 대상 회선 ID", example = "1002") @RequestParam Long changeLineId,
             HttpServletRequest request,
             HttpServletResponse response) {
         RepresentativeRoleTransferResDto result =
-                roleService.transferRepresentativeRole(userDetails.getLineId(), changeLineId);
+                roleService.transferRepresentativeRole(currentLineId, changeLineId, userDetails);
 
-        // 역할 양도 후 현재 사용자 세션의 ROLE_FAMILY_OWNER → ROLE_FAMILY_MEMBER 교체
-        List<GrantedAuthority> updatedAuthorities = userDetails.getAuthorities().stream()
-                .map(auth -> "ROLE_FAMILY_OWNER".equals(auth.getAuthority())
-                        ? new SimpleGrantedAuthority("ROLE_FAMILY_MEMBER")
-                        : auth)
-                .collect(Collectors.toList());
+        // ADMIN이 대리 실행한 경우 세션 권한 변경 불필요
+        boolean isAdmin = userDetails.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        if (!isAdmin) {
+            // 역할 양도 후 현재 사용자 세션의 ROLE_FAMILY_OWNER → ROLE_FAMILY_MEMBER 교체
+            List<GrantedAuthority> updatedAuthorities = userDetails.getAuthorities().stream()
+                    .map(auth -> "ROLE_FAMILY_OWNER".equals(auth.getAuthority())
+                            ? new SimpleGrantedAuthority("ROLE_FAMILY_MEMBER")
+                            : auth)
+                    .collect(Collectors.toList());
 
-        AuthUserDetails updatedUserDetails = AuthUserDetails.builder()
-                .userId(userDetails.getUserId())
-                .email(userDetails.getEmail())
-                .lineId(userDetails.getLineId())
-                .authorities(updatedAuthorities)
-                .build();
+            AuthUserDetails updatedUserDetails = AuthUserDetails.builder()
+                    .userId(userDetails.getUserId())
+                    .email(userDetails.getEmail())
+                    .lineId(userDetails.getLineId())
+                    .authorities(updatedAuthorities)
+                    .build();
 
-        SecurityContext newContext = SecurityContextHolder.createEmptyContext();
-        newContext.setAuthentication(
-                new UsernamePasswordAuthenticationToken(updatedUserDetails, null, updatedAuthorities));
-        SecurityContextHolder.setContext(newContext);
-        securityContextRepository.saveContext(newContext, request, response);
+            SecurityContext newContext = SecurityContextHolder.createEmptyContext();
+            newContext.setAuthentication(
+                    new UsernamePasswordAuthenticationToken(updatedUserDetails, null, updatedAuthorities));
+            SecurityContextHolder.setContext(newContext);
+            securityContextRepository.saveContext(newContext, request, response);
+        }
 
         return ResponseEntity.ok(result);
     }
