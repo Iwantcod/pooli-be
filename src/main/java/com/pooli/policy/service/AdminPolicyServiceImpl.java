@@ -12,6 +12,8 @@ import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.policy.domain.dto.request.AdminCategoryReqDto;
@@ -245,6 +247,16 @@ public class AdminPolicyServiceImpl implements AdminPolicyService {
         req.setTargetType(targetType);
         req.setValue(value);
 
-        alarmHistoryService.sendNotification(req);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    alarmHistoryService.sendNotificationAsync(req);
+                }
+            });
+            return;
+        }
+
+        alarmHistoryService.sendNotificationAsync(req);
     }
 }
