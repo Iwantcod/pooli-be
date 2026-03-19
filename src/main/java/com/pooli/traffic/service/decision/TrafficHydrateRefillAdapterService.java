@@ -599,6 +599,8 @@ public class TrafficHydrateRefillAdapterService {
                 if (actualRefillAmount <= 0) {
                     // DB에도 더 이상 잔량이 없는 경우(No-Op) 성공 처리 후 반환합니다.
                     markOutboxSuccessIfPresent(outboxRecordId);
+                    // claim 결과상 DB가 실제 고갈된 경우에만 is_empty=1을 기록해 false positive를 방지한다.
+                    markDbEmptyFlagOnDbNoop(balanceKey, dbRemainingAfter, poolType, payload);
                     log.debug(
                             "traffic_refill_db_noop poolType={} requestedRefill={} threshold={} delta={} bucketCount={} source={} dbBefore={} actualRefill={} dbAfter={}",
                             poolType,
@@ -612,6 +614,24 @@ public class TrafficHydrateRefillAdapterService {
                             dbRemainingAfter
                     );
                     trafficRefillMetrics.increment(poolType.name(), "db_noop");
+                    if (poolType == TrafficPoolType.SHARED) {
+                        // 공유풀 DB 리필 시도 이후에도 부족하면 마지막으로 QOS fallback을 1회 허용한다.
+                        TrafficLuaExecutionResult qosFallbackResult = retrySharedWithQosFallback(
+                                payload,
+                                balanceKey,
+                                retryTargetData,
+                                context,
+                                whitelistBypassFlag,
+                                retriedResult
+                        );
+                        // DB 리필이 실제로 적용되지 않은 경우, 1차 shared 차감분과 QOS 차감분을 함께 합산해야 한다.
+                        return mergeSharedDbNoopQosFallbackResult(
+                                normalizedRequestedDataBytes,
+                                firstDeductedAmount,
+                                retriedResult,
+                                qosFallbackResult
+                        );
+                    }
                     return retriedResult;
                 }
 
@@ -680,6 +700,26 @@ public class TrafficHydrateRefillAdapterService {
                 trafficRefillMetrics.increment(poolType.name(), "refill_applied");
 
                 // 1차에서 부분 성공한 양과 리필 후 추가 성공한 양을 합산하여 최종 결과를 도출합니다.
+                if (poolType == TrafficPoolType.SHARED && refillRetryResult.getStatus() == TrafficLuaStatus.NO_BALANCE) {
+                    // 공유풀 DB 리필 이후에도 NO_BALANCE면 QOS fallback을 마지막으로 1회 시도한다.
+                    long sharedRemainingData = clampRemaining(retryTargetData - normalizeNonNegative(refillRetryResult.getAnswer()));
+                    if (sharedRemainingData > 0) {
+                        TrafficLuaExecutionResult qosFallbackResult = retrySharedWithQosFallback(
+                                payload,
+                                balanceKey,
+                                sharedRemainingData,
+                                context,
+                                whitelistBypassFlag,
+                                refillRetryResult
+                        );
+                        return mergeSharedQosFallbackResult(
+                                normalizedRequestedDataBytes,
+                                firstDeductedAmount,
+                                refillRetryResult,
+                                qosFallbackResult
+                        );
+                    }
+                }
                 retriedResult = mergeRefillRetryResult(
                         normalizedRequestedDataBytes,
                         firstDeductedAmount,
@@ -718,6 +758,36 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * DB claim이 No-Op일 때 DB 고갈 상태를 Redis is_empty 플래그에 반영합니다.
+     *
+     * <p>dbRemainingAfter가 0 이하로 확정된 경우에만 is_empty=1을 기록하고,
+     * Redis 쓰기 실패는 사용자 요청 실패로 승격하지 않기 위해 로그만 남기고 계속 진행합니다.
+     */
+    private void markDbEmptyFlagOnDbNoop(
+            String balanceKey,
+            long dbRemainingAfter,
+            TrafficPoolType poolType,
+            TrafficPayloadReqDto payload
+    ) {
+        if (dbRemainingAfter > 0) {
+            return;
+        }
+
+        try {
+            trafficQuotaCacheService.writeDbEmptyFlag(balanceKey, true);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "traffic_refill_db_noop_empty_flag_write_failed poolType={} balanceKey={} traceId={} dbRemainingAfter={}",
+                    poolType,
+                    balanceKey,
+                    payload == null ? null : payload.getTraceId(),
+                    dbRemainingAfter,
+                    e
+            );
+        }
+    }
+
+    /**
      * 1차 차감량과 리필 후 재차감량을 합쳐 최종 결과를 만듭니다.
      */
     private TrafficLuaExecutionResult mergeRefillRetryResult(
@@ -734,6 +804,92 @@ public class TrafficHydrateRefillAdapterService {
         return TrafficLuaExecutionResult.builder()
                 .answer(mergedDeductedAmount)
                 .status(mergedStatus)
+                .build();
+    }
+
+    /**
+     * 공유풀 DB 리필 이후에도 부족한 경우에만 QOS fallback을 허용해 재시도합니다.
+     */
+    private TrafficLuaExecutionResult retrySharedWithQosFallback(
+            TrafficPayloadReqDto payload,
+            String balanceKey,
+            long requestedDataBytes,
+            TrafficDeductExecutionContext context,
+            int whitelistBypassFlag,
+            TrafficLuaExecutionResult defaultResult
+    ) {
+        if (requestedDataBytes <= 0) {
+            return defaultResult;
+        }
+
+        return executeDeduct(
+                TrafficPoolType.SHARED,
+                payload,
+                balanceKey,
+                requestedDataBytes,
+                context,
+                whitelistBypassFlag,
+                RefillLuaArguments.withQosFallback(),
+                false
+        );
+    }
+
+    /**
+     * 공유풀 QOS 재시도 결과를 리필 합산 결과에 반영합니다.
+     * QOS 재시도에서 실제 차감량이 없거나 NO_BALANCE면 기존 결과를 그대로 유지합니다.
+     */
+    private TrafficLuaExecutionResult mergeSharedQosFallbackResult(
+            long requestedDataBytes,
+            long firstDeductedAmount,
+            TrafficLuaExecutionResult refillRetryResult,
+            TrafficLuaExecutionResult qosRetryResult
+    ) {
+        if (qosRetryResult == null) {
+            return mergeRefillRetryResult(requestedDataBytes, firstDeductedAmount, refillRetryResult);
+        }
+
+        long qosDeductedAmount = normalizeNonNegative(qosRetryResult.getAnswer());
+        if (qosDeductedAmount <= 0 || qosRetryResult.getStatus() == TrafficLuaStatus.NO_BALANCE) {
+            return mergeRefillRetryResult(requestedDataBytes, firstDeductedAmount, refillRetryResult);
+        }
+
+        long refillDeductedAmount = normalizeNonNegative(refillRetryResult == null ? null : refillRetryResult.getAnswer());
+        long mergedDeductedAmount = clampToMax(
+                requestedDataBytes,
+                safeAdd(firstDeductedAmount, safeAdd(refillDeductedAmount, qosDeductedAmount))
+        );
+        return TrafficLuaExecutionResult.builder()
+                .answer(mergedDeductedAmount)
+                .status(qosRetryResult.getStatus())
+                .build();
+    }
+
+    /**
+     * 공유풀 DB No-Op 이후 QOS fallback 결과를 1차 shared 차감분과 합산합니다.
+     * QOS fallback이 실패하면 기존 1차 결과를 그대로 유지합니다.
+     */
+    private TrafficLuaExecutionResult mergeSharedDbNoopQosFallbackResult(
+            long requestedDataBytes,
+            long firstDeductedAmount,
+            TrafficLuaExecutionResult defaultResult,
+            TrafficLuaExecutionResult qosRetryResult
+    ) {
+        if (qosRetryResult == null) {
+            return defaultResult;
+        }
+
+        long qosDeductedAmount = normalizeNonNegative(qosRetryResult.getAnswer());
+        if (qosDeductedAmount <= 0 || qosRetryResult.getStatus() == TrafficLuaStatus.NO_BALANCE) {
+            return defaultResult;
+        }
+
+        long mergedDeductedAmount = clampToMax(
+                requestedDataBytes,
+                safeAdd(firstDeductedAmount, qosDeductedAmount)
+        );
+        return TrafficLuaExecutionResult.builder()
+                .answer(mergedDeductedAmount)
+                .status(qosRetryResult.getStatus())
                 .build();
     }
 
@@ -903,7 +1059,8 @@ public class TrafficHydrateRefillAdapterService {
                         String.valueOf(refillLuaArguments.refillAmount()),
                         refillLuaArguments.refillUuid(),
                         String.valueOf(refillLuaArguments.refillIdempotencyTtlSeconds()),
-                        refillLuaArguments.dbEmptyFlag()
+                        refillLuaArguments.dbEmptyFlag(),
+                        String.valueOf(refillLuaArguments.allowQosFallback())
                 );
                 yield trafficLuaScriptInfraService.executeDeductIndividual(keys, args);
             }
@@ -934,7 +1091,8 @@ public class TrafficHydrateRefillAdapterService {
                         String.valueOf(refillLuaArguments.refillAmount()),
                         refillLuaArguments.refillUuid(),
                         String.valueOf(refillLuaArguments.refillIdempotencyTtlSeconds()),
-                        refillLuaArguments.dbEmptyFlag()
+                        refillLuaArguments.dbEmptyFlag(),
+                        String.valueOf(refillLuaArguments.allowQosFallback())
                 );
                 yield trafficLuaScriptInfraService.executeDeductShared(keys, args);
             }
@@ -949,12 +1107,17 @@ public class TrafficHydrateRefillAdapterService {
             String refillUuid,
             String refillIdempotencyKey,
             long refillIdempotencyTtlSeconds,
-            String dbEmptyFlag
+            String dbEmptyFlag,
+            int allowQosFallback
     ) {
         private static final String UNUSED_KEY = "__unused_refill_idempotency__";
 
         private static RefillLuaArguments none() {
-            return new RefillLuaArguments(0L, "", UNUSED_KEY, 0L, "0");
+            return new RefillLuaArguments(0L, "", UNUSED_KEY, 0L, "0", 0);
+        }
+
+        private static RefillLuaArguments withQosFallback() {
+            return new RefillLuaArguments(0L, "", UNUSED_KEY, 0L, "0", 1);
         }
 
         private static RefillLuaArguments of(
@@ -973,7 +1136,8 @@ public class TrafficHydrateRefillAdapterService {
                     normalizedUuid,
                     normalizedKey,
                     Math.max(0L, refillIdempotencyTtlSeconds),
-                    dbEmpty ? "1" : "0"
+                    dbEmpty ? "1" : "0",
+                    0
             );
         }
     }

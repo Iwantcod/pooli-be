@@ -31,7 +31,6 @@ import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPoolType;
-import com.pooli.traffic.mapper.TrafficDbSpeedBucketMapper;
 import com.pooli.traffic.mapper.TrafficDbUsageMapper;
 import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
@@ -40,7 +39,8 @@ import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Redis 차감 장애 시 DB에서 Lua 정책 순서를 동일하게 판정해 차감을 수행하는 fallback 서비스입니다.
+ * Redis 차감 장애 시 DB에서 정책 판정을 수행해 차감을 이어가는 fallback 서비스입니다.
+ * App Speed 정책은 Redis 정상 경로에서만 적용하며, DB fallback 경로에서는 의도적으로 제외합니다.
  */
 @Service
 @Profile({"local", "traffic"})
@@ -52,12 +52,7 @@ public class TrafficDbDeductFallbackService {
     private static final int POLICY_LINE_LIMIT_SHARED_ID = 3;
     private static final int POLICY_LINE_LIMIT_DAILY_ID = 4;
     private static final int POLICY_APP_DATA_ID = 5;
-    private static final int POLICY_APP_SPEED_ID = 6;
     private static final int POLICY_APP_WHITELIST_ID = 7;
-
-    private static final int APP_SPEED_LIMIT_UPLOAD_MULTIPLIER = 125;
-    private static final long APP_SPEED_WINDOW_SECONDS = 1L;
-    private static final String APP_SPEED_BUCKET_POOL_TYPE = TrafficPoolType.INDIVIDUAL.name();
 
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final PolicyBackOfficeMapper policyBackOfficeMapper;
@@ -67,8 +62,6 @@ public class TrafficDbDeductFallbackService {
     private final RepeatBlockMapper repeatBlockMapper;
     private final TrafficRefillSourceMapper trafficRefillSourceMapper;
     private final TrafficDbUsageMapper trafficDbUsageMapper;
-    private final TrafficDbSpeedBucketMapper trafficDbSpeedBucketMapper;
-    private final TrafficUsageDeltaRecordService trafficUsageDeltaRecordService;
     private final ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
 
     /**
@@ -88,7 +81,6 @@ public class TrafficDbDeductFallbackService {
         LocalDateTime now = LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
         LocalDate usageDate = now.toLocalDate();
         YearMonth targetMonth = YearMonth.from(now);
-        long nowEpochSecond = now.atZone(trafficRedisRuntimePolicy.zoneId()).toEpochSecond();
 
         Map<Integer, Boolean> policyActivation = loadPolicyActivation();
         Optional<LineLimit> lineLimitOptional = lineLimitMapper.getExistLineLimitByLineId(payload.getLineId());
@@ -114,7 +106,6 @@ public class TrafficDbDeductFallbackService {
         long normalizedRequestedBytes = Math.max(0L, requestedBytes);
         long policyCappedTarget = normalizedRequestedBytes;
         TrafficLuaStatus finalStatus = TrafficLuaStatus.OK;
-        boolean appSpeedCapped = false;
 
         if (!whitelistBypass) {
             long beforeDailyCap = policyCappedTarget;
@@ -164,22 +155,6 @@ public class TrafficDbDeductFallbackService {
             if (policyCappedTarget < beforeAppDailyCap) {
                 finalStatus = TrafficLuaStatus.HIT_APP_DAILY_LIMIT;
             }
-
-            long beforeAppSpeedCap = policyCappedTarget;
-            policyCappedTarget = applyAppSpeedLimitIfEnabled(
-                    policyActivation,
-                    poolType,
-                    appPolicy,
-                    payload,
-                    nowEpochSecond,
-                    policyCappedTarget
-            );
-            if (policyCappedTarget <= 0) {
-                return buildResult(0L, TrafficLuaStatus.HIT_APP_SPEED);
-            }
-            if (policyCappedTarget < beforeAppSpeedCap) {
-                appSpeedCapped = true;
-            }
         }
 
         long answer = Math.min(currentAmount, policyCappedTarget);
@@ -188,14 +163,8 @@ public class TrafficDbDeductFallbackService {
             finalStatus = TrafficLuaStatus.NO_BALANCE;
         }
         if (answer <= 0) {
-            // speed_remaining<=0은 위에서 즉시 HIT_APP_SPEED로 반환된다.
-            // 여기 answer==0은 잔량 부족 성격이므로 NO_BALANCE로 리필 경로를 연다.
+            // answer==0은 잔량 부족 성격이므로 NO_BALANCE로 리필 경로를 연다.
             return buildResult(0L, TrafficLuaStatus.NO_BALANCE);
-        }
-
-        // 잔량 부족이 없고 차감이 완료된 경우에만 app speed 제한 상태를 최종 상태로 확정한다.
-        if (appSpeedCapped && !insufficientBalance) {
-            finalStatus = TrafficLuaStatus.HIT_APP_SPEED;
         }
 
         int updatedRows = deductRemainingAmount(poolType, payload, answer);
@@ -203,7 +172,6 @@ public class TrafficDbDeductFallbackService {
             long reloadedAmount = selectRemainingAmount(poolType, payload);
             long reloadedPolicyCappedTarget = normalizedRequestedBytes;
             TrafficLuaStatus reloadedStatus = TrafficLuaStatus.OK;
-            boolean reloadedAppSpeedCapped = false;
 
             // 동시성으로 잔량이 바뀐 재시도 경로에서도 최초 계산과 동일한 정책 제한을 다시 적용해
             // 제한 우회 없이 `deductRemainingAmount`가 항상 안전한 차감량만 사용하도록 보장합니다.
@@ -255,22 +223,6 @@ public class TrafficDbDeductFallbackService {
                 if (reloadedPolicyCappedTarget < beforeAppDailyCap) {
                     reloadedStatus = TrafficLuaStatus.HIT_APP_DAILY_LIMIT;
                 }
-
-                long beforeAppSpeedCap = reloadedPolicyCappedTarget;
-                reloadedPolicyCappedTarget = applyAppSpeedLimitIfEnabled(
-                        policyActivation,
-                        poolType,
-                        appPolicy,
-                        payload,
-                        nowEpochSecond,
-                        reloadedPolicyCappedTarget
-                );
-                if (reloadedPolicyCappedTarget <= 0) {
-                    return buildResult(0L, TrafficLuaStatus.HIT_APP_SPEED);
-                }
-                if (reloadedPolicyCappedTarget < beforeAppSpeedCap) {
-                    reloadedAppSpeedCapped = true;
-                }
             }
 
             long reloadedAnswer = Math.min(reloadedAmount, reloadedPolicyCappedTarget);
@@ -280,11 +232,6 @@ public class TrafficDbDeductFallbackService {
             }
             if (reloadedAnswer <= 0) {
                 return buildResult(0L, TrafficLuaStatus.NO_BALANCE);
-            }
-
-            // 재조회 경로도 동일하게, 잔량 부족이 없을 때만 app speed 상태를 확정한다.
-            if (reloadedAppSpeedCapped && !reloadedInsufficientBalance) {
-                reloadedStatus = TrafficLuaStatus.HIT_APP_SPEED;
             }
 
             updatedRows = deductRemainingAmount(poolType, payload, reloadedAnswer);
@@ -301,17 +248,6 @@ public class TrafficDbDeductFallbackService {
             trafficDbUsageMapper.upsertFamilySharedUsageDaily(payload.getFamilyId(), payload.getLineId(), usageDate, answer);
         }
 
-        Long speedBucketOwnerId = resolveSpeedBucketOwnerId(poolType, payload);
-        if (speedBucketOwnerId != null && speedBucketOwnerId > 0) {
-            trafficDbSpeedBucketMapper.upsertUsage(
-                    APP_SPEED_BUCKET_POOL_TYPE,
-                    speedBucketOwnerId,
-                    payload.getAppId(),
-                    nowEpochSecond,
-                    answer
-            );
-        }
-
         if (poolType == TrafficPoolType.SHARED && payload.getFamilyId() != null && payload.getFamilyId() > 0 && answer > 0) {
             if (trafficBalanceStateWriteThroughServiceProvider != null) {
                 TrafficBalanceStateWriteThroughService writeThroughService =
@@ -321,17 +257,6 @@ public class TrafficDbDeductFallbackService {
                 }
             }
         }
-
-        trafficUsageDeltaRecordService.record(
-                resolveTraceId(context, payload),
-                poolType,
-                payload.getLineId(),
-                payload.getFamilyId(),
-                payload.getAppId(),
-                answer,
-                usageDate,
-                targetMonth
-        );
 
         return buildResult(answer, finalStatus);
     }
@@ -411,45 +336,6 @@ public class TrafficDbDeductFallbackService {
         long appDailyUsed = normalizeNonNegative(trafficDbUsageMapper.selectDailyAppUsage(lineId, appId, usageDate));
         long appDailyRemaining = Math.max(0L, appDailyLimit - appDailyUsed);
         return Math.min(answer, appDailyRemaining);
-    }
-
-    /**
-     * Lua app speed 분기와 동일하게 최근 1초 버킷 기준으로 answer를 제한합니다.
-     */
-    private long applyAppSpeedLimitIfEnabled(
-            Map<Integer, Boolean> policyActivation,
-            TrafficPoolType poolType,
-            AppPolicy appPolicy,
-            TrafficPayloadReqDto payload,
-            long nowEpochSecond,
-            long answer
-    ) {
-        if (!isPolicyEnabled(policyActivation, POLICY_APP_SPEED_ID)) {
-            return answer;
-        }
-
-        long appSpeedLimit = resolveAppSpeedLimit(appPolicy);
-        if (appSpeedLimit < 0) {
-            return answer;
-        }
-
-        Long ownerId = resolveSpeedBucketOwnerId(poolType, payload);
-        if (ownerId == null || ownerId <= 0) {
-            return answer;
-        }
-
-        long fromEpochSecond = nowEpochSecond - (APP_SPEED_WINDOW_SECONDS - 1);
-        long speedUsed = normalizeNonNegative(
-                trafficDbSpeedBucketMapper.selectRecentUsageSum(
-                        APP_SPEED_BUCKET_POOL_TYPE,
-                        ownerId,
-                        payload.getAppId(),
-                        fromEpochSecond,
-                        nowEpochSecond
-                )
-        );
-        long speedRemaining = Math.max(0L, appSpeedLimit - speedUsed);
-        return Math.min(answer, speedRemaining);
     }
 
     /**
@@ -565,17 +451,6 @@ public class TrafficDbDeductFallbackService {
         return limit;
     }
 
-    private long resolveAppSpeedLimit(AppPolicy appPolicy) {
-        if (appPolicy == null || !Boolean.TRUE.equals(appPolicy.getIsActive())) {
-            return -1L;
-        }
-        Integer speedLimit = appPolicy.getSpeedLimit();
-        if (speedLimit == null || speedLimit < 0) {
-            return -1L;
-        }
-        return (long) speedLimit * APP_SPEED_LIMIT_UPLOAD_MULTIPLIER;
-    }
-
     private int deductRemainingAmount(TrafficPoolType poolType, TrafficPayloadReqDto payload, long deductAmount) {
         if (deductAmount <= 0 || payload == null) {
             return 0;
@@ -624,16 +499,6 @@ public class TrafficDbDeductFallbackService {
         return normalizeNonNegative(rawRemaining);
     }
 
-    private Long resolveSpeedBucketOwnerId(TrafficPoolType poolType, TrafficPayloadReqDto payload) {
-        if (poolType == null || payload == null) {
-            return null;
-        }
-
-        // 앱 속도 정책 단위는 "회선(line) + 앱"으로 고정된다.
-        // 공유풀 차감 경로에서도 동일 회선 버킷을 사용해 정책 우회를 방지한다.
-        return payload.getLineId();
-    }
-
     private boolean isPayloadValid(TrafficPoolType poolType, TrafficPayloadReqDto payload) {
         if (poolType == null || payload == null) {
             return false;
@@ -662,13 +527,6 @@ public class TrafficDbDeductFallbackService {
             case 5 -> DayOfWeek.FRI;
             default -> DayOfWeek.SAT;
         };
-    }
-
-    private String resolveTraceId(TrafficDeductExecutionContext context, TrafficPayloadReqDto payload) {
-        if (context != null && context.getTraceId() != null && !context.getTraceId().isBlank()) {
-            return context.getTraceId();
-        }
-        return payload == null ? null : payload.getTraceId();
     }
 
     private long normalizeNonNegative(Long value) {

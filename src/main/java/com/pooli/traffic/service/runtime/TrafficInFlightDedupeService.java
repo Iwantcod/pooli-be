@@ -1,6 +1,8 @@
 package com.pooli.traffic.service.runtime;
 
 import java.time.Duration;
+import java.util.Locale;
+import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
@@ -47,6 +49,30 @@ public class TrafficInFlightDedupeService {
             log.info("traffic_dedupe_claim_skipped key={}", dedupeKey);
         }
         return acquired;
+    }
+
+    /**
+     * traceId의 dedupe 상태를 조회합니다.
+     * 값이 없거나 정의되지 않은 상태 문자열이면 빈 값을 반환해 호출 측이 안전하게 분기하도록 돕습니다.
+     */
+    public Optional<TrafficInFlightState> findState(String traceId) {
+        if (traceId == null || traceId.isBlank()) {
+            return Optional.empty();
+        }
+
+        String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
+        String stateValue = cacheStringRedisTemplate.opsForValue().get(dedupeKey);
+        if (stateValue == null || stateValue.isBlank()) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(TrafficInFlightState.valueOf(stateValue.trim().toUpperCase(Locale.ROOT)));
+        } catch (IllegalArgumentException e) {
+            // 운영 중 예상치 못한 값이 들어와도 처리 흐름을 끊지 않기 위해 empty로 완충한다.
+            log.warn("traffic_dedupe_state_unknown key={} rawState={}", dedupeKey, stateValue);
+            return Optional.empty();
+        }
     }
 
     /**

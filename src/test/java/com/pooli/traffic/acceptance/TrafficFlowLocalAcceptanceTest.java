@@ -127,11 +127,6 @@ class TrafficFlowLocalAcceptanceTest {
 
     @BeforeEach
     void setUp() {
-        // 테스트 독립성 보장을 위해 cache Redis를 매번 비운다.
-        // streams Redis를 flushall 하면 stream key/group/PEL이 함께 사라져
-        // local consumer 루프가 NOGROUP 상태에 빠질 수 있으므로 여기서는 건드리지 않는다.
-        flushAll(cacheStringRedisTemplate);
-
         // 시나리오 기준 대상 데이터(가족 1, 회선 1~4)가 존재하는지 먼저 검증한다.
         Integer familyExists = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM FAMILY WHERE family_id = ? AND deleted_at IS NULL",
@@ -168,6 +163,13 @@ class TrafficFlowLocalAcceptanceTest {
         jdbcTemplate.update("DELETE FROM REPEAT_BLOCK WHERE line_id IN (" + TARGET_LINE_IDS + ")");
         jdbcTemplate.update("DELETE FROM APP_POLICY WHERE line_id IN (" + TARGET_LINE_IDS + ")");
         jdbcTemplate.update("DELETE FROM LINE_LIMIT WHERE line_id IN (" + TARGET_LINE_IDS + ")");
+        // 이전 실행에서 남은 outbox를 정리해 스케줄러 경쟁으로 인한 비결정성을 제거한다.
+        jdbcTemplate.update("DELETE FROM TRAFFIC_REDIS_OUTBOX");
+
+        // 테스트 독립성 보장을 위해 cache Redis를 매번 비운다.
+        // streams Redis를 flushall 하면 stream key/group/PEL이 함께 사라져
+        // local consumer 루프가 NOGROUP 상태에 빠질 수 있으므로 여기서는 건드리지 않는다.
+        flushAll(cacheStringRedisTemplate);
 
         // 전역 정책 레코드는 soft-delete 흔적을 제거하고 기본 활성 상태로 맞춘다.
         jdbcTemplate.update("UPDATE POLICY SET deleted_at = NULL, is_active = true, updated_at = NOW(6)");
@@ -647,7 +649,8 @@ class TrafficFlowLocalAcceptanceTest {
         setFamilyRemaining(FAMILY_ID, 10L);
 
         String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
-        assertDoneLog(traceId, 20L, 30L, "PARTIAL_SUCCESS", "NO_BALANCE");
+        // shared 경로는 DB 리필을 먼저 시도하고, 그래도 부족하면 마지막 1회 QOS fallback으로 부족분을 보정한다.
+        assertDoneLog(traceId, 50L, 0L, "SUCCESS", "QOS");
     }
 
     @Test

@@ -11,7 +11,7 @@ set -euo pipefail
 # - per-line deducted_sum == sum(min(chunk_i, 125000))
 # -----------------------------------------------------------------------------
 
-ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env}"
 
 if [[ ! -f "$ENV_FILE" ]]; then

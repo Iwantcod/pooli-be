@@ -8,6 +8,8 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
 import com.pooli.monitoring.metrics.TrafficGeneratorMetrics;
+import com.pooli.monitoring.metrics.TrafficRecordStageMetricsLocal;
+import com.pooli.monitoring.metrics.TrafficRecordStageMetricsNoOp;
+import com.pooli.monitoring.metrics.TrafficRecordStageMetricsPort;
 import com.pooli.monitoring.metrics.TrafficRequestMetrics;
 import com.pooli.traffic.config.TrafficSchedulingConfig;
 import com.pooli.traffic.controller.TrafficController;
@@ -54,6 +59,9 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficController.class);
                         assertThat(context).hasSingleBean(TrafficRequestEnqueueService.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
+                        assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
+                        assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
+                                .isInstanceOf(TrafficRecordStageMetricsNoOp.class);
 
                         assertThat(context).doesNotHaveBean(TrafficStreamConsumerRunner.class);
                         assertThat(context).doesNotHaveBean(TrafficStreamReclaimService.class);
@@ -76,6 +84,9 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(RedisOutboxRetryScheduler.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
                         assertThat(context).hasSingleBean(TrafficSchedulingConfig.class);
+                        assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
+                        assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
+                                .isInstanceOf(TrafficRecordStageMetricsNoOp.class);
                     });
         }
 
@@ -92,6 +103,59 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(RedisOutboxRetryScheduler.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
                         assertThat(context).hasSingleBean(TrafficSchedulingConfig.class);
+                        assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
+                        assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
+                                .isInstanceOf(TrafficRecordStageMetricsLocal.class);
+                    });
+        }
+
+        @Test
+        @DisplayName("traffic/api profile keeps handleRecord stage metrics disabled")
+        void nonLocalProfileUsesNoOpHandleRecordMetrics() {
+            contextRunnerWith(disabledConsumerStreamsProperties())
+                    .withPropertyValues("spring.profiles.active=traffic")
+                    .run(context -> {
+                        TrafficRecordStageMetricsPort metricsPort = context.getBean(TrafficRecordStageMetricsPort.class);
+                        MeterRegistry meterRegistry = context.getBean(MeterRegistry.class);
+
+                        metricsPort.recordStageLatency("parse_validate", 5L);
+                        metricsPort.recordTotalLatency(7L);
+                        metricsPort.incrementResult("success");
+
+                        assertThat(meterRegistry.find("traffic_stream_handle_record_stage_latency").timer()).isNull();
+                        assertThat(meterRegistry.find("traffic_stream_handle_record_total_latency").timer()).isNull();
+                        assertThat(meterRegistry.find("traffic_stream_handle_record_result_total").counter()).isNull();
+                    });
+        }
+
+        @Test
+        @DisplayName("local profile records handleRecord stage metrics")
+        void localProfileRecordsHandleRecordMetrics() {
+            contextRunnerWith(disabledConsumerStreamsProperties())
+                    .withPropertyValues("spring.profiles.active=local")
+                    .run(context -> {
+                        TrafficRecordStageMetricsPort metricsPort = context.getBean(TrafficRecordStageMetricsPort.class);
+                        MeterRegistry meterRegistry = context.getBean(MeterRegistry.class);
+
+                        metricsPort.recordStageLatency("parse_validate", 5L);
+                        metricsPort.recordStageLatency("ack", 2L);
+                        metricsPort.recordTotalLatency(9L);
+                        metricsPort.incrementResult("success");
+
+                        assertThat(meterRegistry.find("traffic_stream_handle_record_stage_latency")
+                                .tag("stage", "parse_validate")
+                                .timer())
+                                .isNotNull();
+                        assertThat(meterRegistry.find("traffic_stream_handle_record_stage_latency")
+                                .tag("stage", "ack")
+                                .timer())
+                                .isNotNull();
+                        assertThat(meterRegistry.find("traffic_stream_handle_record_total_latency").timer())
+                                .isNotNull();
+                        assertThat(meterRegistry.find("traffic_stream_handle_record_result_total")
+                                .tag("result", "success")
+                                .counter())
+                                .isNotNull();
                     });
         }
 
@@ -104,6 +168,9 @@ class TrafficProfileBootTest {
                         assertThat(context).hasNotFailed();
                         assertThat(context).hasSingleBean(TrafficStreamConsumerRunner.class);
                         assertThat(context).hasSingleBean(TrafficStreamReclaimService.class);
+                        assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
+                        assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
+                                .isInstanceOf(TrafficRecordStageMetricsNoOp.class);
                         assertThat(context.getBean(TrafficStreamConsumerRunner.class).isRunning()).isTrue();
                     });
         }
@@ -118,6 +185,8 @@ class TrafficProfileBootTest {
                         TrafficStreamReclaimService.class,
                         RedisOutboxRetryScheduler.class,
                         TrafficPolicyWriteThroughService.class,
+                        TrafficRecordStageMetricsLocal.class,
+                        TrafficRecordStageMetricsNoOp.class,
                         TrafficSchedulingConfig.class,
                         TestBeans.class
                 )
@@ -136,7 +205,8 @@ class TrafficProfileBootTest {
                 .withBean(TrafficPolicyVersionedRedisService.class, () -> mock(TrafficPolicyVersionedRedisService.class))
                 .withBean(RedisOutboxRecordService.class, () -> mock(RedisOutboxRecordService.class))
                 .withBean(OutboxRetryStrategyRegistry.class, () -> mock(OutboxRetryStrategyRegistry.class))
-                .withBean(TrafficRefillOutboxSupportService.class, () -> mock(TrafficRefillOutboxSupportService.class));
+                .withBean(TrafficRefillOutboxSupportService.class, () -> mock(TrafficRefillOutboxSupportService.class))
+                .withBean(MeterRegistry.class, SimpleMeterRegistry::new);
     }
 
     private static AppStreamsProperties disabledConsumerStreamsProperties() {
