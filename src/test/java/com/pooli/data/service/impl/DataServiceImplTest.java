@@ -345,6 +345,8 @@ class DataServiceImplTest {
         when(familySharedPoolsService.resolveFamilyMemberMonthlySharedPoolDisplay(1L))
             .thenReturn(FamilyMembersResDto.FamilyMemberDto.builder()
                 .lineId(1)
+                .remainingData(95L)
+                .basicDataAmount(120L)
                 .sharedPoolTotalAmount(200L)
                 .sharedPoolRemainingAmount(170L)
                 .build());
@@ -352,9 +354,9 @@ class DataServiceImplTest {
         DataUsageResDto result = dataService.getDataUsage(1L, yearMonth);
 
         assertThat(result.getIsCurrentMonth()).isTrue();
-        assertThat(result.getPersonalUsedAmount()).isEqualTo(10L);
+        assertThat(result.getPersonalUsedAmount()).isEqualTo(25L);
         assertThat(result.getSharedPoolUsedAmount()).isEqualTo(30L);
-        assertThat(result.getPersonalTotalAmount()).isEqualTo(100L);
+        assertThat(result.getPersonalTotalAmount()).isEqualTo(120L);
         assertThat(result.getSharedPoolTotalAmount()).isEqualTo(200L);
         assertThat(result.getSharedPoolRemainingAmount()).isEqualTo(170L);
     }

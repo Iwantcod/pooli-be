@@ -352,7 +352,10 @@ public class FamilySharedPoolsService {
                         .userName(member.getUserName())
                         .phone(member.getPhone())
                         .planName(member.getPlanName())
-                        .remainingData(member.getRemainingData())
+                        .remainingData(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(
+                                lineId,
+                                member.getRemainingData()
+                        ))
                         .basicDataAmount(member.getBasicDataAmount())
                         .role(member.getRole())
                         .sharedPoolTotalAmount(member.getSharedPoolTotalAmount())
