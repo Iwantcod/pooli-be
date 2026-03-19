@@ -210,12 +210,15 @@ public class FamilySharedPoolsService {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
-        Long monthlySharedPoolRemainingData = resolveFamilyMonthlySharedPoolRemaining(familyId);
+        Long actualPoolRemainingData = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
+                familyId,
+                domain.getPoolRemainingData()
+        );
 
         return SharedPoolMainResDto.builder()
                 .sharedPoolBaseData(domain.getPoolBaseData())
                 .sharedPoolAdditionalData(domain.getMonthlyContributionAmount())
-                .sharedPoolRemainingData(monthlySharedPoolRemainingData)
+                .sharedPoolRemainingData(actualPoolRemainingData)
                 .sharedPoolTotalData(domain.getPoolTotalData())
                 .build();
     }
