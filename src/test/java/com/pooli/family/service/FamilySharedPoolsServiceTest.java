@@ -500,7 +500,7 @@ class FamilySharedPoolsServiceTest {
 
         SharedPoolHistoryItemResDto contributionItem = SharedPoolHistoryItemResDto.builder()
                 .eventType("CONTRIBUTION")
-                .title("\uB370\uC774\uD130 \uBCF4\uD0DC\uAE30")
+                .title("데이터 보태기")
                 .userName("kim")
                 .occurredAt("2026-03-15")
                 .amount(5_000_000_000L)
@@ -509,7 +509,7 @@ class FamilySharedPoolsServiceTest {
 
         SharedPoolHistoryItemResDto usageItem = SharedPoolHistoryItemResDto.builder()
                 .eventType("USAGE")
-                .title("\uB370\uC774\uD130 \uC0AC\uC6A9")
+                .title("데이터 사용")
                 .userName("park")
                 .occurredAt("2026-03-15")
                 .amount(1_200_000_000L)
@@ -532,7 +532,7 @@ class FamilySharedPoolsServiceTest {
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).getEventType()).isEqualTo("CONTRIBUTION");
-        assertThat(result.get(0).getTitle()).isEqualTo("\uB370\uC774\uD130 \uBCF4\uD0DC\uAE30");
+        assertThat(result.get(0).getTitle()).isEqualTo("데이터 보태기");
         assertThat(result.get(0).getUserName()).isEqualTo("kim");
         assertThat(result.get(0).getPrecision()).isEqualTo("DAY");
         assertThat(result.get(1).getEventType()).isEqualTo("USAGE");
