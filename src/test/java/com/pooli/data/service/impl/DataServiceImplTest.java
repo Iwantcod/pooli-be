@@ -129,13 +129,23 @@ class DataServiceImplTest {
     @Test
     @DisplayName("월별 데이터 사용량: 평균 계산 포함 반환")
     void getMonthlyDataUsage_success_returnsAverage() {
+        int yearMonth = previousYearMonth();
+        YearMonth targetMonth = YearMonth.of(yearMonth / 100, yearMonth % 100);
+        YearMonth previousMonth = targetMonth.minusMonths(1);
         List<MonthlyUsageDto> usages = List.of(
-            MonthlyUsageDto.builder().yearMonth("202603").usedAmount(100L).build(),
-            MonthlyUsageDto.builder().yearMonth("202602").usedAmount(300L).build()
+            MonthlyUsageDto.builder()
+                .yearMonth(targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM")))
+                .usedAmount(100L)
+                .build(),
+            MonthlyUsageDto.builder()
+                .yearMonth(previousMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM")))
+                .usedAmount(300L)
+                .build()
         );
-        when(dataMapper.findRecentMonthlyUsageByLineId(1L, 202603)).thenReturn(usages);
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+        when(dataMapper.findRecentMonthlyUsageByLineId(1L, yearMonth)).thenReturn(usages);
 
-        MonthlyDataUsageResDto result = dataService.getMonthlyDataUsage(1L, 202603);
+        MonthlyDataUsageResDto result = dataService.getMonthlyDataUsage(1L, yearMonth);
 
         assertThat(result.getUsages()).isEqualTo(usages);
         assertThat(result.getAverageAmount()).isEqualTo(200L);
