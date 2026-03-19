@@ -55,14 +55,18 @@ public class DataServiceImpl implements DataService {
 		if(usages.isEmpty()) {
 			throw new ApplicationException(DataErrorCode.DATA_NOT_FOUND);
 		}
+
+        List<MonthlyUsageDto> adjustedUsages = usages.stream()
+                .map(usage -> adjustMonthlyUsage(lineId, usage))
+                .toList();
 		
 		
-		Long average = usages.stream()
+		Long average = adjustedUsages.stream()
                 .mapToLong(MonthlyDataUsageResDto.MonthlyUsageDto::getUsedAmount)
-                .sum() / usages.size();
+                .sum() / adjustedUsages.size();
 		
 		MonthlyDataUsageResDto response = MonthlyDataUsageResDto.builder()
-                .usages(usages)
+                .usages(adjustedUsages)
                 .averageAmount(average)
                 .build();
 	
@@ -301,6 +305,42 @@ public class DataServiceImpl implements DataService {
             return null;
         }
         return Math.max(0L, value);
+    }
+
+    private MonthlyUsageDto adjustMonthlyUsage(Long lineId, MonthlyUsageDto usage) {
+        if (usage == null || usage.getYearMonth() == null) {
+            return usage;
+        }
+
+        YearMonth usageMonth = parseMonthlyUsageYearMonth(usage.getYearMonth());
+        if (!isCurrentMonth(usageMonth)) {
+            return usage;
+        }
+
+        DataUsageResDto adjustedCurrentMonthUsage = getDataUsage(lineId, toYearMonthValue(usageMonth));
+        long adjustedTotalUsage = safeAdd(
+                adjustedCurrentMonthUsage.getPersonalUsedAmount(),
+                normalizeNonNegative(adjustedCurrentMonthUsage.getSharedPoolUsedAmount())
+        );
+
+        return MonthlyUsageDto.builder()
+                .yearMonth(usage.getYearMonth())
+                .usedAmount(adjustedTotalUsage)
+                .build();
+    }
+
+    private YearMonth parseMonthlyUsageYearMonth(String yearMonthText) {
+        String normalized = yearMonthText.replace("-", "");
+        int yearMonthValue = Integer.parseInt(normalized);
+        return YearMonth.of(yearMonthValue / 100, yearMonthValue % 100);
+    }
+
+    private boolean isCurrentMonth(YearMonth targetMonth) {
+        return YearMonth.now(trafficRedisRuntimePolicy.zoneId()).equals(targetMonth);
+    }
+
+    private int toYearMonthValue(YearMonth yearMonth) {
+        return yearMonth.getYear() * 100 + yearMonth.getMonthValue();
     }
 
     private long normalizeNonNegative(Long value) {
