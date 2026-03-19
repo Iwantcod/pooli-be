@@ -19,6 +19,7 @@ import com.pooli.policy.domain.dto.request.AdminPolicyReqDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyActiveResDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyCateResDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockRehydrateAllResDto;
 import com.pooli.policy.service.AdminPolicyService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -277,6 +278,37 @@ public class AdminPolicyController {
     ) {
     	AdminPolicyActiveResDto response = adminPolicyService.updateActivationPolicy(policyId, request);
 
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+            summary = "관리자 기능: repeat block Redis 전체 재적재",
+            description = "관리자 전용. 모든 활성 LINE의 repeat block 정책을 DB에서 읽어 Redis snapshot으로 즉시 동기화합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "repeat block Redis 전체 재적재 성공"),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = """
+                            관리자 권한 없음
+
+                            - COMMON:4301 관리자 권한이 없음
+                            """
+            ),
+            @ApiResponse(
+                    responseCode = "500",
+                    description = """
+                            서버 내부 오류
+
+                            - COMMON:5000 서버 내부 오류
+                            - COMMON:5001 데이터베이스 오류
+                            """
+            )
+    })
+    @PreAuthorize("@authz.requireAdmin(authentication)")
+    @PostMapping("/repeat-blocks/rehydrate-all")
+    public ResponseEntity<RepeatBlockRehydrateAllResDto> rehydrateAllRepeatBlocksToRedis() {
+        RepeatBlockRehydrateAllResDto response = adminPolicyService.rehydrateAllRepeatBlocksToRedis();
         return ResponseEntity.ok(response);
     }
 
