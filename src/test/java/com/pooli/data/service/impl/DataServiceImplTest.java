@@ -29,7 +29,9 @@ import com.pooli.data.domain.dto.response.MonthlyDataUsageResDto;
 import com.pooli.data.domain.dto.response.MonthlyDataUsageResDto.MonthlyUsageDto;
 import com.pooli.data.error.DataErrorCode;
 import com.pooli.data.mapper.DataMapper;
+import com.pooli.family.domain.dto.response.FamilyMembersResDto;
 import com.pooli.family.domain.entity.FamilyLine;
+import com.pooli.family.service.FamilySharedPoolsService;
 import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.PermissionLineMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
@@ -46,6 +48,9 @@ class DataServiceImplTest {
 
     @Mock
     private FamilyLineMapper familyLineMapper;
+
+    @Mock
+    private FamilySharedPoolsService familySharedPoolsService;
 
     @Mock
     private StringRedisTemplate cacheStringRedisTemplate;
@@ -342,6 +347,12 @@ class DataServiceImplTest {
             .thenReturn("25");
         when(valueOperations.get("pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM"))))
             .thenReturn("30");
+        when(familySharedPoolsService.resolveFamilyMemberMonthlySharedPoolDisplay(1L))
+            .thenReturn(FamilyMembersResDto.FamilyMemberDto.builder()
+                .lineId(1)
+                .sharedPoolTotalAmount(200L)
+                .sharedPoolRemainingAmount(170L)
+                .build());
 
         DataUsageResDto result = dataService.getDataUsage(1L, yearMonth);
 
@@ -350,6 +361,45 @@ class DataServiceImplTest {
         assertThat(result.getSharedPoolUsedAmount()).isEqualTo(30L);
         assertThat(result.getPersonalTotalAmount()).isEqualTo(100L);
         assertThat(result.getSharedPoolTotalAmount()).isEqualTo(200L);
+        assertThat(result.getSharedPoolRemainingAmount()).isEqualTo(170L);
+    }
+
+    @Test
+    @DisplayName("데이터 사용량: 현재 월 무제한 공유 한도면 잔여량 필드는 유지하고 총량은 -1로 보존")
+    void getDataUsage_currentMonth_unlimitedSharedLimit_preservesUnlimitedTotal() {
+        int yearMonth = currentYearMonth();
+        YearMonth targetMonth = YearMonth.now(ZoneId.of("Asia/Seoul"));
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+        DataUsageResDto row = DataUsageResDto.builder()
+            .personalUsedAmount(10L)
+            .sharedPoolUsedAmount(20L)
+            .personalTotalAmount(100L)
+            .sharedPoolTotalAmount(200L)
+            .build();
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+        when(dataMapper.findDataUsageAggregateByLineIdAndMonth(1L, yearMonth)).thenReturn(row);
+        when(dataMapper.findDailyTotalUsageByLineIdAndDate(1L, today)).thenReturn(15L);
+        when(trafficRedisKeyFactory.dailyTotalUsageKey(1L, today))
+            .thenReturn("pooli:daily_total_usage:1:" + today.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE));
+        when(trafficRedisKeyFactory.monthlySharedUsageKey(1L, targetMonth))
+            .thenReturn("pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM")));
+        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("pooli:daily_total_usage:1:" + today.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)))
+            .thenReturn("25");
+        when(valueOperations.get("pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM"))))
+            .thenReturn("30");
+        when(familySharedPoolsService.resolveFamilyMemberMonthlySharedPoolDisplay(1L))
+            .thenReturn(FamilyMembersResDto.FamilyMemberDto.builder()
+                .lineId(1)
+                .sharedPoolTotalAmount(-1L)
+                .sharedPoolRemainingAmount(170L)
+                .build());
+
+        DataUsageResDto result = dataService.getDataUsage(1L, yearMonth);
+
+        assertThat(result.getSharedPoolUsedAmount()).isEqualTo(30L);
+        assertThat(result.getSharedPoolTotalAmount()).isEqualTo(-1L);
+        assertThat(result.getSharedPoolRemainingAmount()).isEqualTo(170L);
     }
 
     @Test
@@ -370,6 +420,7 @@ class DataServiceImplTest {
         assertThat(result.getIsCurrentMonth()).isFalse();
         assertThat(result.getPersonalTotalAmount()).isNull();
         assertThat(result.getSharedPoolTotalAmount()).isNull();
+        assertThat(result.getSharedPoolRemainingAmount()).isNull();
     }
 
     private static FamilyLine familyLine(boolean isPublic) {

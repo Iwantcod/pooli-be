@@ -15,6 +15,7 @@ import com.pooli.family.domain.dto.response.FamilyMembersResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 import com.pooli.family.exception.FamilyErrorCode;
 import com.pooli.family.mapper.FamilyMapper;
+import com.pooli.family.service.FamilySharedPoolsService;
 import com.pooli.family.service.FamilyService;
 import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
 
@@ -27,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 public class FamilyServiceImpl implements FamilyService {
 
     private final FamilyMapper familyMapper;
+    private final FamilySharedPoolsService familySharedPoolsService;
     private final TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
 
     @Override
@@ -38,15 +40,18 @@ public class FamilyServiceImpl implements FamilyService {
         }
 
         Long familyId = header.getFamilyId() == null ? null : header.getFamilyId().longValue();
-        Long actualSharedPoolRemaining = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
-                familyId,
-                header.getSharedPoolRemainingData()
+        Long familyMonthlySharedRemaining = familyId == null
+                ? null
+                : familySharedPoolsService.resolveFamilyMonthlySharedPoolRemaining(familyId);
+        Long familyMonthlySharedUsed = calculateFamilyMonthlySharedUsed(
+                header.getSharedPoolTotalData(),
+                familyMonthlySharedRemaining
         );
 
         List<FamilyMembersResDto.FamilyMemberDto> members = familyMapper
                 .selectFamilyMembers(header.getFamilyId(), principal.getLineId())
                 .stream()
-                .map(member -> enrichFamilyMember(member, actualSharedPoolRemaining))
+                .map(member -> enrichFamilyMember(member, familyMonthlySharedRemaining, familyMonthlySharedUsed))
                 .toList();
 
         return FamilyMembersResDto.builder()
@@ -112,7 +117,8 @@ public class FamilyServiceImpl implements FamilyService {
 
     private FamilyMembersResDto.FamilyMemberDto enrichFamilyMember(
             FamilyMembersResDto.FamilyMemberDto member,
-            Long actualSharedPoolRemaining
+            Long familyMonthlySharedRemaining,
+            Long familyMonthlySharedUsed
     ) {
         Long lineId = member.getLineId() == null ? null : member.getLineId().longValue();
         Long actualRemainingData = trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(
@@ -132,32 +138,48 @@ public class FamilyServiceImpl implements FamilyService {
                 .basicDataAmount(member.getBasicDataAmount())
                 .role(member.getRole())
                 .sharedPoolTotalAmount(member.getSharedPoolTotalAmount())
-                .sharedPoolRemainingAmount(resolveSharedPoolRemainingAmount(member, actualSharedPoolRemaining))
+                .sharedPoolRemainingAmount(resolveSharedPoolRemainingAmount(
+                        member,
+                        familyMonthlySharedRemaining,
+                        familyMonthlySharedUsed
+                ))
                 .sharedLimitActive(member.getSharedLimitActive())
                 .build();
     }
 
     private Long resolveSharedPoolRemainingAmount(
             FamilyMembersResDto.FamilyMemberDto member,
-            Long actualSharedPoolRemaining
+            Long familyMonthlySharedRemaining,
+            Long familyMonthlySharedUsed
     ) {
-        if (actualSharedPoolRemaining == null) {
+        if (familyMonthlySharedRemaining == null) {
             return member.getSharedPoolRemainingAmount();
         }
         if (!Boolean.TRUE.equals(member.getSharedLimitActive())) {
-            return actualSharedPoolRemaining;
+            return familyMonthlySharedRemaining;
         }
 
-        Long policyRemaining = member.getSharedPoolRemainingAmount();
-        if (policyRemaining == null) {
+        Long policyTotalAmount = member.getSharedPoolTotalAmount();
+        if (policyTotalAmount == null) {
+            return member.getSharedPoolRemainingAmount();
+        }
+        if (policyTotalAmount == -1L) {
+            return familyMonthlySharedRemaining;
+        }
+
+        long normalizedFamilyRemaining = Math.max(0L, familyMonthlySharedRemaining);
+        long normalizedFamilyUsed = familyMonthlySharedUsed == null ? 0L : Math.max(0L, familyMonthlySharedUsed);
+        long policyRemaining = Math.max(0L, policyTotalAmount - normalizedFamilyUsed);
+        return Math.min(normalizedFamilyRemaining, policyRemaining);
+    }
+
+    private Long calculateFamilyMonthlySharedUsed(Long familySharedPoolTotal, Long familyMonthlySharedRemaining) {
+        if (familySharedPoolTotal == null || familyMonthlySharedRemaining == null) {
             return null;
         }
-        if (policyRemaining == -1L) {
-            return actualSharedPoolRemaining;
-        }
-        if (actualSharedPoolRemaining == -1L) {
-            return Math.max(0L, policyRemaining);
-        }
-        return Math.min(Math.max(0L, actualSharedPoolRemaining), Math.max(0L, policyRemaining));
+
+        long normalizedTotal = Math.max(0L, familySharedPoolTotal);
+        long normalizedRemaining = Math.max(0L, familyMonthlySharedRemaining);
+        return Math.max(0L, normalizedTotal - normalizedRemaining);
     }
 }

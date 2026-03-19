@@ -335,7 +335,7 @@ class FamilySharedPoolsServiceTest {
     }
 
     @Test
-    @DisplayName("getSharedPoolMain returns dashboard summary with actual remaining")
+    @DisplayName("getSharedPoolMain returns dashboard summary with monthly remaining")
     void getSharedPoolMain_success() {
         SharedPoolDomain domain = SharedPoolDomain.builder()
                 .poolBaseData(0L)
@@ -345,15 +345,29 @@ class FamilySharedPoolsServiceTest {
                 .build();
 
         when(sharedPoolMapper.selectSharedPoolMain(1L)).thenReturn(domain);
-        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 1_200_000L))
-                .thenReturn(1_350_000L);
+        when(sharedPoolMapper.selectFamilyPoolTotalData(1L)).thenReturn(1_500_000L);
+        when(sharedPoolMapper.selectFamilyMonthlySharedUsageByLine(1L)).thenReturn(List.of(
+                SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
+                        .userName("kim")
+                        .phoneNumber("01010000000")
+                        .monthlySharedPoolUsage(100_000L)
+                        .lineId(101L)
+                        .build(),
+                SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
+                        .userName("park")
+                        .phoneNumber("01020000000")
+                        .monthlySharedPoolUsage(250_000L)
+                        .lineId(201L)
+                        .build()
+        ));
+        when(trafficRedisKeyFactoryProvider.getIfAvailable()).thenReturn(null);
 
         SharedPoolMainResDto result = service.getSharedPoolMain(1L);
 
         assertThat(result.getSharedPoolBaseData()).isEqualTo(0L);
         assertThat(result.getSharedPoolAdditionalData()).isEqualTo(500_000L);
         assertThat(result.getSharedPoolTotalData()).isEqualTo(1_500_000L);
-        assertThat(result.getSharedPoolRemainingData()).isEqualTo(1_350_000L);
+        assertThat(result.getSharedPoolRemainingData()).isEqualTo(1_150_000L);
     }
 
     @Test
