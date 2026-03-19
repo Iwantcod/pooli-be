@@ -161,10 +161,18 @@ public class DataServiceImpl implements DataService {
               sharedPoolUsedAmount = adjustedSharedUsage;
               personalUsedAmount = clampNonNegative(adjustedTotalUsage - adjustedSharedUsage);
 
-              FamilyMembersResDto.FamilyMemberDto sharedPoolDisplay =
+              FamilyMembersResDto.FamilyMemberDto currentDisplay =
                       familySharedPoolsService.resolveFamilyMemberMonthlySharedPoolDisplay(lineId);
-              sharedPoolTotalAmount = normalizeTotalAmount(sharedPoolDisplay.getSharedPoolTotalAmount());
-              sharedPoolRemainingAmount = normalizeRemainingAmount(sharedPoolDisplay.getSharedPoolRemainingAmount());
+              personalTotalAmount = normalizeTotalAmount(currentDisplay.getBasicDataAmount());
+              Long personalRemainingAmount = normalizeRemainingAmount(currentDisplay.getRemainingData());
+              sharedPoolTotalAmount = normalizeTotalAmount(currentDisplay.getSharedPoolTotalAmount());
+              sharedPoolRemainingAmount = normalizeRemainingAmount(currentDisplay.getSharedPoolRemainingAmount());
+
+              if (personalTotalAmount != null
+                      && personalRemainingAmount != null
+                      && personalTotalAmount >= 0L) {
+                  personalUsedAmount = clampNonNegative(personalTotalAmount - personalRemainingAmount);
+              }
 
               if (sharedPoolTotalAmount != null
                       && sharedPoolRemainingAmount != null
