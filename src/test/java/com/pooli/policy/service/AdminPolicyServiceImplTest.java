@@ -12,22 +12,32 @@ import com.pooli.policy.domain.dto.request.AdminPolicyReqDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyActiveResDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyCateResDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockRehydrateAllResDto;
 import com.pooli.policy.exception.PolicyErrorCode;
 import com.pooli.policy.mapper.AdminPolicyMapper;
+import com.pooli.policy.mapper.RepeatBlockMapper;
+import com.pooli.traffic.service.outbox.PolicySyncResult;
+import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
+import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -40,6 +50,16 @@ class AdminPolicyServiceImplTest {
     private AlarmHistoryService alarmHistoryService;
     @Mock
     private PolicyHistoryService policyHistoryService;
+    @Mock
+    private ObjectProvider<TrafficPolicyWriteThroughService> trafficPolicyWriteThroughServiceProvider;
+    @Mock
+    private TrafficPolicyWriteThroughService trafficPolicyWriteThroughService;
+    @Mock
+    private RepeatBlockMapper repeatBlockMapper;
+    @Mock
+    private TrafficRedisKeyFactory trafficRedisKeyFactory;
+    @Mock
+    private StringRedisTemplate cacheStringRedisTemplate;
 
     @InjectMocks
     private AdminPolicyServiceImpl adminPolicyService;
@@ -261,6 +281,73 @@ class AdminPolicyServiceImplTest {
 
             // then
             assertThat(result.getPolicyCategoryId()).isEqualTo(categoryId);
+        }
+
+        @Test
+        @DisplayName("repeat block Redis 전체 재적재 시 성공/실패 집계를 반환한다")
+        void rehydrateAllRepeatBlocksToRedis_returnsSummary() {
+            // given
+            when(trafficPolicyWriteThroughServiceProvider.getIfAvailable()).thenReturn(trafficPolicyWriteThroughService);
+            when(trafficRedisKeyFactory.repeatBlockKeyPattern()).thenReturn("pooli:repeat_block:*");
+            when(trafficRedisKeyFactory.repeatBlockKeyPrefix()).thenReturn("pooli:repeat_block:");
+            when(cacheStringRedisTemplate.keys("pooli:repeat_block:*"))
+                    .thenReturn(Set.of("pooli:repeat_block:11", "pooli:repeat_block:12"));
+            when(repeatBlockMapper.selectRepeatBlocksByLineId(11L)).thenReturn(List.of(RepeatBlockPolicyResDto.builder().build()));
+            when(repeatBlockMapper.selectRepeatBlocksByLineId(12L)).thenReturn(List.of(RepeatBlockPolicyResDto.builder().build()));
+            when(trafficPolicyWriteThroughService.syncRepeatBlockUntracked(eq(11L), any(), anyLong()))
+                    .thenReturn(PolicySyncResult.SUCCESS);
+            when(trafficPolicyWriteThroughService.syncRepeatBlockUntracked(eq(12L), any(), anyLong()))
+                    .thenReturn(PolicySyncResult.CONNECTION_FAILURE);
+
+            // when
+            RepeatBlockRehydrateAllResDto result = adminPolicyService.rehydrateAllRepeatBlocksToRedis();
+
+            // then
+            assertThat(result.getTotalLineCount()).isEqualTo(2);
+            assertThat(result.getSuccessCount()).isEqualTo(1);
+            assertThat(result.getFailureCount()).isEqualTo(1);
+            assertThat(result.getFailedLineIds()).containsExactlyInAnyOrder(12L);
+            verify(trafficPolicyWriteThroughService, times(2)).syncRepeatBlockUntracked(anyLong(), any(), anyLong());
+        }
+
+        @Test
+        @DisplayName("유효하지 않은 repeat block 키는 재적재 대상에서 제외한다")
+        void rehydrateAllRepeatBlocksToRedis_skipsInvalidKeys() {
+            // given
+            when(trafficPolicyWriteThroughServiceProvider.getIfAvailable()).thenReturn(trafficPolicyWriteThroughService);
+            when(trafficRedisKeyFactory.repeatBlockKeyPattern()).thenReturn("pooli:repeat_block:*");
+            when(trafficRedisKeyFactory.repeatBlockKeyPrefix()).thenReturn("pooli:repeat_block:");
+            when(cacheStringRedisTemplate.keys("pooli:repeat_block:*"))
+                    .thenReturn(Set.of("pooli:repeat_block:abc", "pooli:repeat_block:11"));
+            when(repeatBlockMapper.selectRepeatBlocksByLineId(11L)).thenReturn(List.of());
+            when(trafficPolicyWriteThroughService.syncRepeatBlockUntracked(eq(11L), any(), anyLong()))
+                    .thenReturn(PolicySyncResult.SUCCESS);
+
+            // when
+            RepeatBlockRehydrateAllResDto result = adminPolicyService.rehydrateAllRepeatBlocksToRedis();
+
+            // then
+            assertThat(result.getTotalLineCount()).isEqualTo(1);
+            assertThat(result.getSuccessCount()).isEqualTo(1);
+            assertThat(result.getFailureCount()).isEqualTo(0);
+            assertThat(result.getFailedLineIds()).isEmpty();
+            verify(repeatBlockMapper, times(1)).selectRepeatBlocksByLineId(11L);
+        }
+
+        @Test
+        @DisplayName("write-through 서비스가 없으면 전체 재적재 요청을 실패시킨다")
+        void rehydrateAllRepeatBlocksToRedis_withoutWriteThrough_throws() {
+            // given
+            when(trafficPolicyWriteThroughServiceProvider.getIfAvailable()).thenReturn(null);
+
+            // when
+            ApplicationException ex = assertThrows(
+                    ApplicationException.class,
+                    () -> adminPolicyService.rehydrateAllRepeatBlocksToRedis()
+            );
+
+            // then
+            assertThat(ex.getMessage()).contains("cache Redis profile");
         }
     }
 

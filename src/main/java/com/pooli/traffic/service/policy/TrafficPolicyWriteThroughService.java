@@ -44,6 +44,8 @@ public class TrafficPolicyWriteThroughService {
     private static final int WRITE_THROUGH_RETRY_MAX = 3;
     private static final long WRITE_THROUGH_RETRY_BACKOFF_MS = 50L;
     private static final int APP_SPEED_LIMIT_UPLOAD_MULTIPLIER = 125;
+    private static final int END_OF_DAY_SECOND = 86_399;
+    private static final int START_OF_DAY_SECOND = 0;
 
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
@@ -478,9 +480,22 @@ public class TrafficPolicyWriteThroughService {
                 int startAtSec = day.getStartAt().toSecondOfDay();
                 int endAtSec = day.getEndAt().toSecondOfDay();
 
-                String field = "day:" + dayNum + ":" + repeatBlock.getRepeatBlockId();
-                String value = startAtSec + ":" + endAtSec;
-                hashToWrite.put(field, value);
+                if (startAtSec <= endAtSec) {
+                    String field = "day:" + dayNum + ":" + repeatBlock.getRepeatBlockId();
+                    String value = startAtSec + ":" + endAtSec;
+                    hashToWrite.put(field, value);
+                    continue;
+                }
+
+                // 자정 넘김 구간은 Lua 판정(day_num 단일 조회)과 맞추기 위해 당일/익일 2개 field로 분할한다.
+                int nextDayNum = (dayNum + 1) % 7;
+                String todayField = "day:" + dayNum + ":" + repeatBlock.getRepeatBlockId() + ":0";
+                String nextDayField = "day:" + nextDayNum + ":" + repeatBlock.getRepeatBlockId() + ":1";
+
+                String todayValue = startAtSec + ":" + END_OF_DAY_SECOND;
+                String nextDayValue = START_OF_DAY_SECOND + ":" + endAtSec;
+                hashToWrite.put(todayField, todayValue);
+                hashToWrite.put(nextDayField, nextDayValue);
             }
         }
 

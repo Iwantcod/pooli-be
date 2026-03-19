@@ -6,6 +6,7 @@ import com.pooli.policy.domain.dto.request.AdminPolicyReqDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyActiveResDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyCateResDto;
 import com.pooli.policy.domain.dto.response.AdminPolicyResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockRehydrateAllResDto;
 
 import java.util.List;
 
@@ -37,5 +38,8 @@ public interface AdminPolicyService {
 
     // 정책 카테고리 삭제
     AdminPolicyCateResDto deleteCategory(Integer policyCategoryId);
+
+    // repeat block Redis 전체 재적재
+    RepeatBlockRehydrateAllResDto rehydrateAllRepeatBlocksToRedis();
 
 }

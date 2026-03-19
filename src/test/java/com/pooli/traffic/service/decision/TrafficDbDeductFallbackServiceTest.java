@@ -2,6 +2,8 @@ package com.pooli.traffic.service.decision;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -11,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,7 +30,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
 import com.pooli.policy.domain.dto.response.PolicyActivationSnapshotResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockDayResDto;
+import com.pooli.policy.domain.dto.response.RepeatBlockPolicyResDto;
 import com.pooli.policy.domain.entity.AppPolicy;
+import com.pooli.policy.domain.enums.DayOfWeek;
 import com.pooli.policy.mapper.AppPolicyMapper;
 import com.pooli.policy.mapper.ImmediateBlockMapper;
 import com.pooli.policy.mapper.LineLimitMapper;
@@ -41,6 +47,7 @@ import com.pooli.traffic.domain.enums.TrafficPoolType;
 import com.pooli.traffic.mapper.TrafficDbUsageMapper;
 import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficDbDeductFallbackServiceTest {
@@ -202,6 +209,66 @@ class TrafficDbDeductFallbackServiceTest {
         verify(trafficDbUsageMapper).upsertFamilySharedUsageDaily(eq(22L), eq(11L), any(), eq(30L));
     }
 
+    @Test
+    @DisplayName("자정 넘김 repeat block은 당일 밤/익일 새벽 구간을 모두 차단한다")
+    void blocksCrossMidnightRangeForTodayAndPreviousDay() {
+        // given
+        RepeatBlockDayResDto crossMidnight = RepeatBlockDayResDto.builder()
+                .dayOfWeek(DayOfWeek.MON)
+                .startAt(LocalTime.of(22, 0, 0))
+                .endAt(LocalTime.of(7, 0, 0))
+                .build();
+        RepeatBlockPolicyResDto repeatBlock = RepeatBlockPolicyResDto.builder()
+                .repeatBlockId(300L)
+                .lineId(11L)
+                .isActive(true)
+                .days(List.of(crossMidnight))
+                .build();
+        when(repeatBlockMapper.selectRepeatBlocksByLineId(11L)).thenReturn(List.of(repeatBlock));
+
+        // when
+        boolean blockedAtTodayNight = invokeIsRepeatBlocked(11L, LocalTime.of(23, 59, 59), DayOfWeek.MON, DayOfWeek.SUN);
+        boolean blockedAtNextDayEarlyMorning = invokeIsRepeatBlocked(11L, LocalTime.of(0, 0, 0), DayOfWeek.TUE, DayOfWeek.MON);
+        boolean notBlockedAtNextDayNoon = invokeIsRepeatBlocked(11L, LocalTime.NOON, DayOfWeek.TUE, DayOfWeek.MON);
+
+        // then
+        assertAll(
+                () -> assertTrue(blockedAtTodayNight),
+                () -> assertTrue(blockedAtNextDayEarlyMorning),
+                () -> assertFalse(notBlockedAtNextDayNoon)
+        );
+    }
+
+    @Test
+    @DisplayName("same-day repeat block은 기존 범위 비교를 유지한다")
+    void keepsSameDayRangeLogic() {
+        // given
+        RepeatBlockDayResDto sameDay = RepeatBlockDayResDto.builder()
+                .dayOfWeek(DayOfWeek.WED)
+                .startAt(LocalTime.of(9, 0, 0))
+                .endAt(LocalTime.of(18, 0, 0))
+                .build();
+        RepeatBlockPolicyResDto repeatBlock = RepeatBlockPolicyResDto.builder()
+                .repeatBlockId(301L)
+                .lineId(11L)
+                .isActive(true)
+                .days(List.of(sameDay))
+                .build();
+        when(repeatBlockMapper.selectRepeatBlocksByLineId(11L)).thenReturn(List.of(repeatBlock));
+
+        // when
+        boolean blockedInRange = invokeIsRepeatBlocked(11L, LocalTime.of(9, 0, 0), DayOfWeek.WED, DayOfWeek.TUE);
+        boolean blockedAtEndBoundary = invokeIsRepeatBlocked(11L, LocalTime.of(18, 0, 0), DayOfWeek.WED, DayOfWeek.TUE);
+        boolean notBlockedOutOfRange = invokeIsRepeatBlocked(11L, LocalTime.of(18, 0, 1), DayOfWeek.WED, DayOfWeek.TUE);
+
+        // then
+        assertAll(
+                () -> assertTrue(blockedInRange),
+                () -> assertTrue(blockedAtEndBoundary),
+                () -> assertFalse(notBlockedOutOfRange)
+        );
+    }
+
     private TrafficPayloadReqDto payload() {
         return TrafficPayloadReqDto.builder()
                 .traceId("trace-001")
@@ -240,5 +307,23 @@ class TrafficDbDeductFallbackServiceTest {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
+    }
+
+    private boolean invokeIsRepeatBlocked(
+            Long lineId,
+            LocalTime nowTime,
+            DayOfWeek nowDayOfWeek,
+            DayOfWeek yesterdayDayOfWeek
+    ) {
+        return Boolean.TRUE.equals(
+                ReflectionTestUtils.invokeMethod(
+                        trafficDbDeductFallbackService,
+                        "isRepeatBlocked",
+                        lineId,
+                        nowTime,
+                        nowDayOfWeek,
+                        yesterdayDayOfWeek
+                )
+        );
     }
 }
