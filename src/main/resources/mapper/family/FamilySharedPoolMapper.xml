@@ -169,7 +169,8 @@
 	      SELECT
 	          u.user_name AS userName,
 	          l.phone AS phoneNumber,
-	          COALESCE(SUM(fsud.usage_amount), 0) AS monthlySharedPoolUsage
+	          COALESCE(SUM(fsud.usage_amount), 0) AS monthlySharedPoolUsage,
+	          l.line_id AS lineId
 	      FROM FAMILY_LINE fl
 	      JOIN FAMILY f
 	        ON f.family_id = fl.family_id
