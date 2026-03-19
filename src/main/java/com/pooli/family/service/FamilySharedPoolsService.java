@@ -4,18 +4,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,7 +21,6 @@ import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.family.domain.dto.mongo.SharedPoolTransferLog;
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
 import com.pooli.family.domain.dto.response.FamilyMembersResDto;
-import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 import com.pooli.family.domain.dto.response.FamilySharedPoolResDto;
 import com.pooli.family.domain.dto.response.SharedDataThresholdResDto;
 import com.pooli.family.domain.dto.response.SharedPoolDetailResDto;
@@ -231,28 +226,12 @@ public class FamilySharedPoolsService {
         Long familyId = getFamilyIdByLineId(lineId);
         LocalDate startDate = targetMonth.atDay(1);
         LocalDate endDate = targetMonth.plusMonths(1).atDay(1);
-        ZoneId zoneId = ZoneId.systemDefault();
-
-        Map<Long, String> userNameByLineId = familyMapper.selectFamilyMembersSimpleByLineId(lineId).stream()
-                .collect(Collectors.toMap(
-                        FamilyMembersSimpleResDto::getLineId,
-                        FamilyMembersSimpleResDto::getUserName,
-                        (existingValue, replacementValue) -> existingValue
-                ));
 
         List<SharedPoolHistoryItemResDto> usageHistory =
                 sharedPoolMapper.selectSharedPoolUsageHistory(familyId, startDate, endDate);
 
-        List<SharedPoolHistoryItemResDto> contributionHistory = transferLogRepository
-                .findByFamilyIdAndCreatedAtBetween(
-                        familyId,
-                        startDate.atStartOfDay(zoneId).toInstant(),
-                        endDate.atStartOfDay(zoneId).toInstant(),
-                        Sort.by(Sort.Direction.DESC, "createdAt")
-                )
-                .stream()
-                .map(log -> toContributionHistoryItem(log, userNameByLineId, zoneId))
-                .toList();
+        List<SharedPoolHistoryItemResDto> contributionHistory =
+                sharedPoolMapper.selectSharedPoolContributionHistory(familyId, startDate, endDate);
 
         return Stream.concat(contributionHistory.stream(), usageHistory.stream())
                 .sorted(Comparator.comparing(this::parseOccurredAtForSort).reversed())
@@ -514,21 +493,6 @@ public class FamilySharedPoolsService {
                     "yearMonth\uB294 yyyyMM \uD615\uC2DD\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4"
             );
         }
-    }
-
-    private SharedPoolHistoryItemResDto toContributionHistoryItem(
-            SharedPoolTransferLog log,
-            Map<Long, String> userNameByLineId,
-            ZoneId zoneId
-    ) {
-        return SharedPoolHistoryItemResDto.builder()
-                .eventType("CONTRIBUTION")
-                .title("\uB370\uC774\uD130 \uBCF4\uD0DC\uAE30")
-                .userName(userNameByLineId.getOrDefault(log.getLineId(), "\uC54C \uC218 \uC5C6\uC74C"))
-                .occurredAt(log.getCreatedAt().atZone(zoneId).toLocalDateTime().format(HISTORY_EVENT_FORMATTER))
-                .amount(log.getAmount())
-                .precision("EVENT")
-                .build();
     }
 
     private LocalDateTime parseOccurredAtForSort(SharedPoolHistoryItemResDto item) {
