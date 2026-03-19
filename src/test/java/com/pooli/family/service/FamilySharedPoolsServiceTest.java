@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.Collections;
 import java.util.List;
@@ -37,6 +38,7 @@ import com.pooli.family.domain.dto.response.SharedDataThresholdResDto;
 import com.pooli.family.domain.dto.response.SharedPoolDetailResDto;
 import com.pooli.family.domain.dto.response.SharedPoolHistoryItemResDto;
 import com.pooli.family.domain.dto.response.SharedPoolMainResDto;
+import com.pooli.family.domain.dto.response.SharedPoolMonthlyUsageResDto;
 import com.pooli.family.domain.dto.response.SharedPoolMyStatusResDto;
 import com.pooli.family.domain.entity.SharedPoolDomain;
 import com.pooli.family.exception.SharedPoolErrorCode;
@@ -47,7 +49,10 @@ import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
 import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
+import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
 import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
+import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 @ExtendWith(MockitoExtension.class)
 class FamilySharedPoolsServiceTest {
@@ -72,6 +77,24 @@ class FamilySharedPoolsServiceTest {
 
     @Mock
     private TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
+
+    @Mock
+    private ObjectProvider<TrafficRedisKeyFactory> trafficRedisKeyFactoryProvider;
+
+    @Mock
+    private ObjectProvider<TrafficRedisRuntimePolicy> trafficRedisRuntimePolicyProvider;
+
+    @Mock
+    private ObjectProvider<TrafficQuotaCacheService> trafficQuotaCacheServiceProvider;
+
+    @Mock
+    private TrafficRedisKeyFactory trafficRedisKeyFactory;
+
+    @Mock
+    private TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
+
+    @Mock
+    private TrafficQuotaCacheService trafficQuotaCacheService;
 
     @InjectMocks
     private FamilySharedPoolsService service;
@@ -328,6 +351,73 @@ class FamilySharedPoolsServiceTest {
                 .isInstanceOf(ApplicationException.class)
                 .satisfies(ex -> assertThat(((ApplicationException) ex).getErrorCode())
                         .isEqualTo(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("getFamilyMonthlySharedUsageTotal returns max usage between DB and Redis")
+    void getFamilyMonthlySharedUsageTotal_usesMaxUsage() {
+        AuthUserDetails principal = AuthUserDetails.builder()
+                .lineId(101L)
+                .build();
+        ZoneId zoneId = ZoneId.of("Asia/Seoul");
+        YearMonth targetMonth = YearMonth.now(zoneId);
+
+        when(sharedPoolMapper.selectFamilyIdByLineId(101L)).thenReturn(1L);
+        when(sharedPoolMapper.selectFamilyPoolTotalData(1L)).thenReturn(10_000L);
+        when(sharedPoolMapper.selectFamilyMonthlySharedUsageByLine(1L)).thenReturn(List.of(
+                SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
+                        .userName("김민준")
+                        .phoneNumber("01010000000")
+                        .monthlySharedPoolUsage(2_000L)
+                        .lineId(101L)
+                        .build(),
+                SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
+                        .userName("박서준")
+                        .phoneNumber("01020000000")
+                        .monthlySharedPoolUsage(3_000L)
+                        .lineId(201L)
+                        .build()
+        ));
+        when(trafficRedisKeyFactoryProvider.getIfAvailable()).thenReturn(trafficRedisKeyFactory);
+        when(trafficRedisRuntimePolicyProvider.getIfAvailable()).thenReturn(trafficRedisRuntimePolicy);
+        when(trafficQuotaCacheServiceProvider.getIfAvailable()).thenReturn(trafficQuotaCacheService);
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(zoneId);
+        when(trafficRedisKeyFactory.monthlySharedUsageKey(101L, targetMonth)).thenReturn("monthly:101");
+        when(trafficRedisKeyFactory.monthlySharedUsageKey(201L, targetMonth)).thenReturn("monthly:201");
+        when(trafficQuotaCacheService.readValueOrDefault("monthly:101", 0L)).thenReturn(5_000L);
+        when(trafficQuotaCacheService.readValueOrDefault("monthly:201", 0L)).thenReturn(1_000L);
+
+        SharedPoolMonthlyUsageResDto result = service.getFamilyMonthlySharedUsageTotal(principal);
+
+        assertThat(result.getSharedPoolTotalData()).isEqualTo(10_000L);
+        assertThat(result.getMembersUsageList()).hasSize(2);
+        assertThat(result.getMembersUsageList().get(0).getMonthlySharedPoolUsage()).isEqualTo(5_000L);
+        assertThat(result.getMembersUsageList().get(1).getMonthlySharedPoolUsage()).isEqualTo(3_000L);
+    }
+
+    @Test
+    @DisplayName("getFamilyMonthlySharedUsageTotal keeps DB usage when Redis query is unavailable")
+    void getFamilyMonthlySharedUsageTotal_withoutRedisFallsBackToDb() {
+        AuthUserDetails principal = AuthUserDetails.builder()
+                .lineId(101L)
+                .build();
+
+        when(sharedPoolMapper.selectFamilyIdByLineId(101L)).thenReturn(1L);
+        when(sharedPoolMapper.selectFamilyPoolTotalData(1L)).thenReturn(10_000L);
+        when(sharedPoolMapper.selectFamilyMonthlySharedUsageByLine(1L)).thenReturn(List.of(
+                SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
+                        .userName("김민준")
+                        .phoneNumber("01010000000")
+                        .monthlySharedPoolUsage(2_000L)
+                        .lineId(101L)
+                        .build()
+        ));
+        when(trafficRedisKeyFactoryProvider.getIfAvailable()).thenReturn(null);
+
+        SharedPoolMonthlyUsageResDto result = service.getFamilyMonthlySharedUsageTotal(principal);
+
+        assertThat(result.getMembersUsageList()).hasSize(1);
+        assertThat(result.getMembersUsageList().get(0).getMonthlySharedPoolUsage()).isEqualTo(2_000L);
     }
 
     @Test

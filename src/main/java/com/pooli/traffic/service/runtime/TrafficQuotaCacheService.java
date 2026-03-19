@@ -60,6 +60,20 @@ public class TrafficQuotaCacheService {
     /**
      * DB 원천 잔량 고갈 여부를 is_empty 필드(1/0)로 기록합니다.
      */
+    public long readValueOrDefault(String key, long defaultValue) {
+        String rawValue = cacheStringRedisTemplate.opsForValue().get(key);
+        if (rawValue == null) {
+            return defaultValue;
+        }
+
+        try {
+            return Long.parseLong(rawValue);
+        } catch (NumberFormatException e) {
+            log.warn("traffic_quota_value_parse_failed key={} value={}", key, rawValue);
+            return defaultValue;
+        }
+    }
+
     public void writeDbEmptyFlag(String balanceKey, boolean isDbEmpty) {
         cacheStringRedisTemplate.opsForHash().put(
                 balanceKey,

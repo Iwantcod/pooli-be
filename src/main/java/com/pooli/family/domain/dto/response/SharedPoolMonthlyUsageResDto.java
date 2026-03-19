@@ -2,6 +2,8 @@ package com.pooli.family.domain.dto.response;
 
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AccessLevel;
@@ -44,5 +46,9 @@ public class SharedPoolMonthlyUsageResDto {
 
         @Schema(description = "당월 공유풀 사용량(Byte)", example = "150000")
         private Long monthlySharedPoolUsage;
+
+        @JsonIgnore
+        @Schema(hidden = true)
+        private Long lineId;
     }
 }
