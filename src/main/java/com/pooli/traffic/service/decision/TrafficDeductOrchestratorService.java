@@ -3,6 +3,7 @@ package com.pooli.traffic.service.decision;
 import java.time.LocalDateTime;
 
 import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
+import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
@@ -30,6 +31,7 @@ public class TrafficDeductOrchestratorService {
     private final TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
     private final TrafficRecentUsageBucketService trafficRecentUsageBucketService;
     private final TrafficSharedPoolThresholdAlarmService trafficSharedPoolThresholdAlarmService;
+    private final TrafficBalanceStateWriteThroughService trafficBalanceStateWriteThroughService;
 
     /**
      * 이벤트 1건의 목표 데이터량(apiTotalData)을 처리하고 최종 상태를 반환합니다.
@@ -77,6 +79,7 @@ public class TrafficDeductOrchestratorService {
                     apiRemainingData = clampRemaining(apiRemainingData - sharedDeducted);
                     trafficRecentUsageBucketService.recordUsage(TrafficPoolType.SHARED, payload, sharedDeducted);
                     if (sharedDeducted > 0) {
+                        safeSyncSharedMetaConsumed(payload, sharedDeducted);
                         safeCheckAndEnqueueSharedThresholdAlarm(payload);
                     }
                 }
@@ -115,6 +118,30 @@ public class TrafficDeductOrchestratorService {
                     "traffic_shared_threshold_alarm_enqueue_failed traceId={} familyId={}",
                     traceId,
                     familyId,
+                    e
+            );
+        }
+    }
+
+    /**
+     * 공유풀 실사용 차감량을 family meta 캐시에 반영합니다.
+     */
+    private void safeSyncSharedMetaConsumed(TrafficPayloadReqDto payload, long sharedDeducted) {
+        Long familyId = payload == null ? null : payload.getFamilyId();
+        String traceId = payload == null ? null : payload.getTraceId();
+        if (familyId == null || familyId <= 0 || sharedDeducted <= 0) {
+            return;
+        }
+
+        try {
+            trafficBalanceStateWriteThroughService.markSharedMetaConsumed(familyId, sharedDeducted);
+        } catch (Exception e) {
+            // write-through 실패는 관측성/알람 부가 기능으로 취급하고 핵심 차감 결과는 유지한다.
+            log.warn(
+                    "traffic_shared_meta_consumed_write_through_failed traceId={} familyId={} deducted={}",
+                    traceId,
+                    familyId,
+                    sharedDeducted,
                     e
             );
         }
