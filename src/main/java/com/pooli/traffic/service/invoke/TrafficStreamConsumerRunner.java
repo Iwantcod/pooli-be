@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import com.pooli.monitoring.metrics.TrafficGeneratorMetrics;
+import com.pooli.monitoring.metrics.TrafficRecordStageMetricsPort;
 import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
 import com.pooli.traffic.domain.enums.TrafficInFlightState;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
@@ -22,6 +23,7 @@ import org.slf4j.MDC;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -47,6 +49,16 @@ import lombok.extern.slf4j.Slf4j;
 public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
     private static final String TRACE_ID_MDC_KEY = "traceId";
+    private static final String STAGE_PARSE_VALIDATE = "parse_validate";
+    private static final String STAGE_DEDUPE = "dedupe";
+    private static final String STAGE_ORCHESTRATE = "orchestrate";
+    private static final String STAGE_MONGO_SAVE = "mongo_save";
+    private static final String STAGE_ACK = "ack";
+    private static final String STAGE_TOTAL = "total";
+    private static final String RESULT_SUCCESS = "success";
+    private static final String RESULT_FAILED = "failed";
+    private static final String RESULT_DLQ = "dlq";
+    private static final String RESULT_DEDUPED = "deduped";
 
     // Streams read/ack/DLQ 인프라 유틸
     private final TrafficStreamInfraService trafficStreamInfraService;
@@ -63,6 +75,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     // pending reclaim/retry/DLQ 분기 서비스
     private final TrafficStreamReclaimService trafficStreamReclaimService;
     private final TrafficGeneratorMetrics trafficGeneratorMetrics;
+    private final TrafficRecordStageMetricsPort trafficRecordStageMetricsPort;
 
     // 전역적인 소비 루프 동작 여부 플래그(start/stop 간 공유)
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -290,6 +303,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
      */
     private void handleRecord(MapRecord<String, String, String> record) {
         long consumeStartTimeMs = System.currentTimeMillis();
+        long handleStartNs = System.nanoTime();
+        String resultTag = RESULT_FAILED;
         // worker 스레드는 재사용되므로 이전 레코드의 MDC가 남지 않게 먼저 비운다.
         MDC.remove(TRACE_ID_MDC_KEY);
 
@@ -299,67 +314,103 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         // 명세(field=payload)에 맞춰 payload 문자열을 가져온다.
         String payloadJson = trafficStreamInfraService.extractPayload(record);
 
-        if (payloadJson == null || payloadJson.isBlank()) {
-            // payload 자체가 없으면 이후 처리 불가능하므로 DLQ로 우회 후 ACK한다.
-            trafficStreamInfraService.writeDlq(payloadJson, "payload 필드가 비어 있습니다.", recordId);
-            trafficStreamInfraService.acknowledge(record.getId());
-            return;
-        }
-
         try {
-            // JSON payload를 DTO로 역직렬화해 이후 오케스트레이터가 바로 사용할 수 있게 한다.
-            TrafficPayloadReqDto payload = objectMapper.readValue(payloadJson, TrafficPayloadReqDto.class);
-            List<Violation> violations = trafficPayloadValidationService.validate(payload);
-            if (!violations.isEmpty()) {
-                trafficStreamInfraService.writeDlq(payloadJson, buildValidationFailureReason(violations), recordId);
-                trafficStreamInfraService.acknowledge(record.getId());
+            if (payloadJson == null || payloadJson.isBlank()) {
+                // payload 자체가 없으면 이후 처리 불가능하므로 DLQ로 우회 후 ACK한다.
+                trafficStreamInfraService.writeDlq(payloadJson, "payload 필드가 비어 있습니다.", recordId);
+                acknowledgeWithMetrics(record.getId());
+                resultTag = RESULT_DLQ;
                 return;
+            }
+
+            TrafficPayloadReqDto payload;
+            long parseValidateStartNs = System.nanoTime();
+            // JSON payload를 DTO로 역직렬화해 이후 오케스트레이터가 바로 사용할 수 있게 한다.
+            try {
+                payload = objectMapper.readValue(payloadJson, TrafficPayloadReqDto.class);
+                List<Violation> violations = trafficPayloadValidationService.validate(payload);
+                if (!violations.isEmpty()) {
+                    trafficStreamInfraService.writeDlq(payloadJson, buildValidationFailureReason(violations), recordId);
+                    acknowledgeWithMetrics(record.getId());
+                    resultTag = RESULT_DLQ;
+                    return;
+                }
+            } catch (JsonProcessingException e) {
+                long latency = System.currentTimeMillis() - consumeStartTimeMs;
+                log.error("MQ message schema invalid recordId={} latency={}", recordId, e, latency);
+                // 스키마 불일치/JSON 파손은 재처리해도 복구가 어려우므로 DLQ로 분기한다.
+                trafficStreamInfraService.writeDlq(payloadJson, "payload 역직렬화 실패", recordId);
+                acknowledgeWithMetrics(record.getId());
+                resultTag = RESULT_DLQ;
+                return;
+            } finally {
+                trafficRecordStageMetricsPort.recordStageLatency(STAGE_PARSE_VALIDATE, elapsedSinceNs(parseValidateStartNs));
             }
 
             String traceId = payload.getTraceId();
             MDC.put(TRACE_ID_MDC_KEY, traceId);
             boolean claimAcquired = false;
             try {
-                if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
-                    log.info("traffic_stream_record_already_done recordId={}", recordId);
-                    trafficStreamInfraService.acknowledge(record.getId());
-                    return;
-                }
-
-                claimAcquired = trafficInFlightDedupeService.tryClaim(traceId);
-                if (!claimAcquired) {
-                    Optional<TrafficInFlightState> dedupeState = trafficInFlightDedupeService.findState(traceId);
-                    if (dedupeState.filter(state -> state == TrafficInFlightState.DONE).isPresent()) {
-                        trafficStreamInfraService.acknowledge(record.getId());
-                        log.info("traffic_stream_record_deduped_done_ack recordId={}", recordId);
+                long dedupeStartNs = System.nanoTime();
+                try {
+                    if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
+                        log.info("traffic_stream_record_already_done recordId={}", recordId);
+                        acknowledgeWithMetrics(record.getId());
+                        resultTag = RESULT_DEDUPED;
                         return;
                     }
-                    log.info(
-                            "traffic_stream_record_deduped_inflight_pending recordId={} state={}",
-                            recordId,
-                            dedupeState.map(TrafficInFlightState::name).orElse("ABSENT")
-                    );
-                    return;
+
+                    claimAcquired = trafficInFlightDedupeService.tryClaim(traceId);
+                    if (!claimAcquired) {
+                        Optional<TrafficInFlightState> dedupeState = trafficInFlightDedupeService.findState(traceId);
+                        if (dedupeState.filter(state -> state == TrafficInFlightState.DONE).isPresent()) {
+                            acknowledgeWithMetrics(record.getId());
+                            log.info("traffic_stream_record_deduped_done_ack recordId={}", recordId);
+                            resultTag = RESULT_DEDUPED;
+                            return;
+                        }
+                        log.info(
+                                "traffic_stream_record_deduped_inflight_pending recordId={} state={}",
+                                recordId,
+                                dedupeState.map(TrafficInFlightState::name).orElse("ABSENT")
+                        );
+                        resultTag = RESULT_DEDUPED;
+                        return;
+                    }
+                } finally {
+                    trafficRecordStageMetricsPort.recordStageLatency(STAGE_DEDUPE, elapsedSinceNs(dedupeStartNs));
                 }
 
                 // 이벤트 단위 오케스트레이터를 실행해 개인풀/공유풀 차감 결과를 계산한다.
-                TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
+                TrafficDeductResultResDto result;
+                long orchestrateStartNs = System.nanoTime();
+                try {
+                    result = trafficDeductOrchestratorService.orchestrate(payload);
+                } finally {
+                    trafficRecordStageMetricsPort.recordStageLatency(STAGE_ORCHESTRATE, elapsedSinceNs(orchestrateStartNs));
+                }
 
-                // Mongo 완료 로그 저장을 먼저 수행한다.
-                // - 신규 저장(true) 또는 중복 저장(false)은 모두 idempotent 성공으로 간주한다.
-                // - 저장 예외가 발생하면 ACK를 하지 않아 재전달로 복구한다.
+                // 완료 로그 저장 시점에 함께 남길 지연 시간(ms) 값을 계산한다.
                 // latency는 레코드 처리 시작 시점부터 done-log 저장 직전까지의 ms를 사용한다.
                 long latency = Math.max(0L, System.currentTimeMillis() - consumeStartTimeMs);
 
-                // "저장 성공 후 ACK" 규칙을 보장하기 위해 영속화 이후에만 ACK한다.
-                trafficStreamInfraService.acknowledge(record.getId());
+                // 현재 구현은 ACK를 먼저 호출한 뒤 done-log를 저장한다.
+                // 이 순서는 기존 동작 호환성을 유지하기 위한 것으로, 실패 복구 전략 논의와 별개로 둔다.
+                acknowledgeWithMetrics(record.getId());
 
-                boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload, result, recordId, latency);
+                boolean saved;
+                long mongoSaveStartNs = System.nanoTime();
+                try {
+                    saved = trafficDeductDoneLogService.saveIfAbsent(payload, result, recordId, latency);
+                } finally {
+                    trafficRecordStageMetricsPort.recordStageLatency(STAGE_MONGO_SAVE, elapsedSinceNs(mongoSaveStartNs));
+                }
 
-                // ACK까지 성공한 뒤 in-flight 키를 정리한다.
+                // 정상 경로에서는 즉시 release하고, finally 블록에서 한 번 더 안전하게 정리한다.
                 trafficInFlightDedupeService.release(payload.getTraceId());
 
                 trafficGeneratorMetrics.incrementProcessed();
+                resultTag = RESULT_SUCCESS;
 
                 LocalDateTime loggedAt = LocalDateTime.now();
                 String logEventName = saved ? "traffic_stream_record_done" : "traffic_stream_record_done_duplicate";
@@ -395,13 +446,34 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 }
                 MDC.remove(TRACE_ID_MDC_KEY);
             }
-        } catch (JsonProcessingException e) {
-            long latency = System.currentTimeMillis() - consumeStartTimeMs;
-            log.error("MQ message schema invalid recordId={} latency={}", recordId, e, latency);
-            // 스키마 불일치/JSON 파손은 재처리해도 복구가 어려우므로 DLQ로 분기한다.
-            trafficStreamInfraService.writeDlq(payloadJson, "payload 역직렬화 실패", recordId);
-            trafficStreamInfraService.acknowledge(record.getId());
+        } finally {
+            // 전체 소요시간은 stage(tag=total)와 독립 total metric에 동시에 반영한다.
+            // 분석 시 두 지표를 교차 확인하면 stage 집계 누락 여부를 쉽게 검증할 수 있다.
+            long totalLatencyMs = elapsedSinceNs(handleStartNs);
+            trafficRecordStageMetricsPort.recordStageLatency(STAGE_TOTAL, totalLatencyMs);
+            trafficRecordStageMetricsPort.recordTotalLatency(totalLatencyMs);
+            trafficRecordStageMetricsPort.incrementResult(resultTag);
         }
+    }
+
+    /**
+     * ACK 호출의 소요시간을 단계 메트릭(stage=ack)으로 기록합니다.
+     */
+    private void acknowledgeWithMetrics(RecordId recordId) {
+        long ackStartNs = System.nanoTime();
+        try {
+            trafficStreamInfraService.acknowledge(recordId);
+        } finally {
+            trafficRecordStageMetricsPort.recordStageLatency(STAGE_ACK, elapsedSinceNs(ackStartNs));
+        }
+    }
+
+    /**
+     * System.nanoTime 기반 경과 시간을 밀리초로 계산합니다.
+     */
+    private long elapsedSinceNs(long startNs) {
+        long elapsedNs = Math.max(0L, System.nanoTime() - startNs);
+        return TimeUnit.NANOSECONDS.toMillis(elapsedNs);
     }
 
     private String buildValidationFailureReason(List<Violation> violations) {
