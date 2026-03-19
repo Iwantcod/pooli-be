@@ -161,17 +161,22 @@ class DataServiceImplTest {
     }
 
     @Test
-    @DisplayName("앱 데이터 사용량: 권한 비활성 또는 비공개면 isPublic=false 반환")
-    void getAppDataUsage_permissionDisabled_returnsPrivate() {
+    @DisplayName("앱 데이터 사용량: 권한 비활성이면 비공개 설정이어도 공개 반환")
+    void getAppDataUsage_permissionDisabled_returnsUsage() {
         AuthUserDetails principal = principalWithLineId(2L);
+        List<AppDataUsageResDto.AppUsageDto> apps = List.of(
+            AppDataUsageResDto.AppUsageDto.builder().appName("A").usedAmount(100L).build(),
+            AppDataUsageResDto.AppUsageDto.builder().appName("B").usedAmount(300L).build()
+        );
         when(permissionLineMapper.isPermissionEnabledByTitle(1L)).thenReturn(false);
         when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.of(familyLine(false)));
+        when(dataMapper.findAppDataUsageByLineIdAndMonth(1L, 202603)).thenReturn(apps);
 
         AppDataUsageResDto result = dataService.getAppDataUsage(1L, 202603, principal);
 
-        assertThat(result.getIsPublic()).isFalse();
-        assertThat(result.getTotalUsedAmount()).isNull();
-        assertThat(result.getApps()).isNull();
+        assertThat(result.getIsPublic()).isTrue();
+        assertThat(result.getTotalUsedAmount()).isEqualTo(400L);
+        assertThat(result.getApps()).isEqualTo(apps);
     }
 
     @Test
