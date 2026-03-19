@@ -5,8 +5,6 @@ import java.util.UUID;
 
 import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
-import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,7 +33,6 @@ public class TrafficDefaultQuotaSourceAdapter implements TrafficQuotaSourcePort 
     private final TrafficRefillSourceMapper trafficRefillSourceMapper;
     private final TrafficRecentUsageBucketService trafficRecentUsageBucketService;
     private final RedisOutboxRecordService redisOutboxRecordService;
-    private final ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
 
     /**
      * 개인풀 잔량 해시에 저장할 QoS 값을 조회합니다.
@@ -117,8 +114,6 @@ public class TrafficDefaultQuotaSourceAdapter implements TrafficQuotaSourcePort 
             return buildClaimResult(normalizedRequestedAmount, dbRemainingBefore, 0L, reloadedRemaining, null, null);
         }
 
-        syncSharedMetaAfterClaim(poolType, payload, actualRefillAmount);
-
         long outboxRecordId = createRefillOutboxRecord(
                 poolType,
                 payload,
@@ -187,29 +182,6 @@ public class TrafficDefaultQuotaSourceAdapter implements TrafficQuotaSourcePort 
                 .build();
 
         return redisOutboxRecordService.createPending(OutboxEventType.REFILL, refillOutboxPayload, normalizedRefillUuid);
-    }
-
-    /**
-     * 공유풀 DB claim 성공 시 family meta 캐시의 DB 잔량을 함께 감소시킵니다.
-     */
-    private void syncSharedMetaAfterClaim(
-            TrafficPoolType poolType,
-            TrafficPayloadReqDto payload,
-            long actualRefillAmount
-    ) {
-        if (poolType != TrafficPoolType.SHARED || payload == null || payload.getFamilyId() == null || actualRefillAmount <= 0) {
-            return;
-        }
-        if (trafficBalanceStateWriteThroughServiceProvider == null) {
-            return;
-        }
-
-        TrafficBalanceStateWriteThroughService writeThroughService =
-                trafficBalanceStateWriteThroughServiceProvider.getIfAvailable();
-        if (writeThroughService == null) {
-            return;
-        }
-        writeThroughService.markSharedMetaClaimed(payload.getFamilyId(), actualRefillAmount);
     }
 
     /**

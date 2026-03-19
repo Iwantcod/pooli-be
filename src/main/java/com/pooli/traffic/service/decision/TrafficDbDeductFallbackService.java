@@ -12,7 +12,6 @@ import java.util.Optional;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.beans.factory.ObjectProvider;
 
 import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
 import com.pooli.policy.domain.dto.response.PolicyActivationSnapshotResDto;
@@ -34,7 +33,6 @@ import com.pooli.traffic.domain.enums.TrafficPoolType;
 import com.pooli.traffic.mapper.TrafficDbUsageMapper;
 import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
-import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -62,7 +60,6 @@ public class TrafficDbDeductFallbackService {
     private final RepeatBlockMapper repeatBlockMapper;
     private final TrafficRefillSourceMapper trafficRefillSourceMapper;
     private final TrafficDbUsageMapper trafficDbUsageMapper;
-    private final ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
 
     /**
      * DB fallback 정책 판정 + 차감 + 집계 갱신을 단일 트랜잭션으로 수행합니다.
@@ -246,16 +243,6 @@ public class TrafficDbDeductFallbackService {
         trafficDbUsageMapper.upsertDailyAppUsage(payload.getLineId(), payload.getAppId(), usageDate, answer);
         if (poolType == TrafficPoolType.SHARED && payload.getFamilyId() != null && payload.getFamilyId() > 0) {
             trafficDbUsageMapper.upsertFamilySharedUsageDaily(payload.getFamilyId(), payload.getLineId(), usageDate, answer);
-        }
-
-        if (poolType == TrafficPoolType.SHARED && payload.getFamilyId() != null && payload.getFamilyId() > 0 && answer > 0) {
-            if (trafficBalanceStateWriteThroughServiceProvider != null) {
-                TrafficBalanceStateWriteThroughService writeThroughService =
-                        trafficBalanceStateWriteThroughServiceProvider.getIfAvailable();
-                if (writeThroughService != null) {
-                    writeThroughService.markSharedMetaDbFallbackDeducted(payload.getFamilyId(), answer);
-                }
-            }
         }
 
         return buildResult(answer, finalStatus);

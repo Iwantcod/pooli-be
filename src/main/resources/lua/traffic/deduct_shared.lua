@@ -30,21 +30,19 @@ end
 
 local SPEED_BUCKET_TTL_SECONDS = 15
 
--- 공유 잔량이 0인 경우 QoS 보정식을 적용해 대체 차감량/상태를 계산합니다.
+-- 공유 잔량이 부족한 경우 QoS 보정식을 적용해 대체 차감량/상태를 계산합니다.
+-- QoS 경로에서도 daily/app 정책과 속도 정책을 함께 반영합니다.
 local function resolve_qos_fallback(
   target_data,
-  final_status,
+  policy_status,
   policy_app_speed_key,
   app_speed_limit_key,
   app_speed_field,
+  speed_bucket_key,
   individual_remaining_key
 )
   if not target_data or target_data <= 0 then
-    return 0, final_status
-  end
-
-  if final_status ~= "NO_BALANCE" then
-    return 0, final_status
+    return 0, policy_status
   end
 
   if not individual_remaining_key or individual_remaining_key == "" then
@@ -53,39 +51,44 @@ local function resolve_qos_fallback(
 
   local raw_qos = tonumber(redis.call("HGET", individual_remaining_key, "qos") or "0")
   local normalized_qos = math.max(0, raw_qos or 0)
-
-  local fallback_answer = normalized_qos
-  local app_speed_policy_enabled = is_policy_enabled(policy_app_speed_key)
-  if not app_speed_policy_enabled then
-    fallback_answer = math.min(fallback_answer, target_data)
-    if fallback_answer <= 0 then
-      return 0, "NO_BALANCE"
-    end
-    return fallback_answer, "QOS"
-  end
-
-  local normalized_app_speed_limit = nil
-  if app_speed_limit_key and app_speed_limit_key ~= "" then
-    local raw_app_speed_limit = tonumber(redis.call("HGET", app_speed_limit_key, app_speed_field) or "-1")
-    -- -1(또는 미존재)은 무제한이므로 QoS fallback에서 app speed cap을 적용하지 않는다.
-    if raw_app_speed_limit and raw_app_speed_limit >= 0 then
-      normalized_app_speed_limit = raw_app_speed_limit
-      fallback_answer = math.min(fallback_answer, normalized_app_speed_limit)
-    end
-  end
-
-  fallback_answer = math.min(fallback_answer, target_data)
+  local fallback_answer = math.min(normalized_qos, target_data)
 
   if fallback_answer <= 0 then
+    if policy_status and policy_status ~= "OK" then
+      return 0, policy_status
+    end
     return 0, "NO_BALANCE"
   end
 
-  if normalized_app_speed_limit ~= nil
-      and fallback_answer == normalized_app_speed_limit
-      and normalized_app_speed_limit < normalized_qos then
-    return fallback_answer, "HIT_APP_SPEED"
+  if is_policy_enabled(policy_app_speed_key) then
+    local raw_app_speed_limit = tonumber(redis.call("HGET", app_speed_limit_key, app_speed_field) or "-1")
+    -- -1(또는 미존재)은 무제한으로 간주해 speed cap을 적용하지 않는다.
+    if raw_app_speed_limit and raw_app_speed_limit >= 0 then
+      local speed_used = tonumber(redis.call("GET", speed_bucket_key) or "0")
+      local speed_remaining = math.max(0, raw_app_speed_limit - speed_used)
+      if speed_remaining <= 0 then
+        return 0, "HIT_APP_SPEED"
+      end
+
+      local before_speed_cap = fallback_answer
+      fallback_answer = math.min(fallback_answer, speed_remaining)
+      if fallback_answer <= 0 then
+        return 0, "HIT_APP_SPEED"
+      end
+
+      -- 실제로 speed cap으로 차감량이 줄어든 경우에만 HIT_APP_SPEED를 반영한다.
+      if fallback_answer < before_speed_cap then
+        if policy_status and policy_status ~= "OK" then
+          return fallback_answer, policy_status
+        end
+        return fallback_answer, "HIT_APP_SPEED"
+      end
+    end
   end
 
+  if policy_status and policy_status ~= "OK" then
+    return fallback_answer, policy_status
+  end
   return fallback_answer, "QOS"
 end
 
@@ -182,10 +185,13 @@ if current_amount < 0 then
 end
 
 local final_status = "OK"
+local qos_policy_status = "OK"
 -- app speed가 실제로 요청량을 줄였는지 추적해 차감 성공 후 상태를 확정한다.
 local app_speed_capped = false
 -- 정책 판정은 요청량 전체 기준으로 먼저 수행한다.
 local policy_capped_target = target_data
+-- QoS 경로는 daily/app 정책만 반영하고 shared monthly 정책은 제외한다.
+local qos_capped_target = target_data
 local used_qos_fallback = false
 local whitelist_bypass = whitelist_bypass_flag == 1
 
@@ -202,16 +208,21 @@ if not whitelist_bypass then
       local daily_remaining = math.max(0, daily_limit - daily_used)
       local before_daily_cap = policy_capped_target
       policy_capped_target = math.min(policy_capped_target, daily_remaining)
+      local before_daily_qos_cap = qos_capped_target
+      qos_capped_target = math.min(qos_capped_target, daily_remaining)
       if policy_capped_target <= 0 then
         return as_json(0, "HIT_DAILY_LIMIT")
       end
       if policy_capped_target < before_daily_cap then
         final_status = "HIT_DAILY_LIMIT"
       end
+      if qos_capped_target < before_daily_qos_cap then
+        qos_policy_status = "HIT_DAILY_LIMIT"
+      end
     end
   end
 
-  if policy_capped_target > 0 and is_policy_enabled(policy_shared_key) then
+  if policy_capped_target > 0 and allow_qos_fallback ~= 1 and is_policy_enabled(policy_shared_key) then
     local monthly_limit = tonumber(redis.call("HGET", monthly_shared_limit_key, "value") or "-1")
     if monthly_limit >= 0 then
       local monthly_used = tonumber(redis.call("GET", monthly_shared_usage_key) or "0")
@@ -234,11 +245,16 @@ if not whitelist_bypass then
       local app_daily_remaining = math.max(0, app_daily_limit - app_daily_used)
       local before_app_daily_cap = policy_capped_target
       policy_capped_target = math.min(policy_capped_target, app_daily_remaining)
+      local before_app_daily_qos_cap = qos_capped_target
+      qos_capped_target = math.min(qos_capped_target, app_daily_remaining)
       if policy_capped_target <= 0 then
         return as_json(0, "HIT_APP_DAILY_LIMIT")
       end
       if policy_capped_target < before_app_daily_cap then
         final_status = "HIT_APP_DAILY_LIMIT"
+      end
+      if qos_capped_target < before_app_daily_qos_cap then
+        qos_policy_status = "HIT_APP_DAILY_LIMIT"
       end
     end
   end
@@ -263,8 +279,6 @@ end
 
 local answer = math.min(current_amount, policy_capped_target)
 local insufficient_balance = current_amount < policy_capped_target
--- 잔량 비교 이전 정책 제한 여부를 기록해, answer==0일 때 QoS fallback 적용 여부를 결정한다.
-local was_policy_limited_before_balance = final_status ~= "OK" or app_speed_capped
 
 -- 정책으로 줄인 목표량 대비 잔량이 부족하면 NO_BALANCE로 리필 경로를 연다.
 if insufficient_balance then
@@ -272,26 +286,25 @@ if insufficient_balance then
 end
 
 if answer <= 0 then
-  -- 정책 제한(특히 app speed cap)이 동반된 answer==0 케이스는 QoS로 우회하지 않는다.
-  if was_policy_limited_before_balance then
-    return as_json(0, "NO_BALANCE")
-  end
-
   -- 공유 DB 리필 시도 이전에는 QOS로 즉시 우회하지 않고 NO_BALANCE를 유지한다.
   if allow_qos_fallback ~= 1 then
-    return as_json(0, "NO_BALANCE")
+    return as_json(0, final_status)
   end
 
   local qos_answer, qos_status = resolve_qos_fallback(
-    target_data,
-    final_status,
+    qos_capped_target,
+    qos_policy_status,
     policy_app_speed_key,
     app_speed_limit_key,
     app_speed_field,
+    speed_bucket_key,
     individual_remaining_key
   )
   if qos_answer <= 0 then
-    return as_json(0, qos_status)
+    if qos_status and qos_status ~= "OK" then
+      return as_json(0, qos_status)
+    end
+    return as_json(0, final_status)
   end
   answer = qos_answer
   final_status = qos_status

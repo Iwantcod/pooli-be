@@ -459,7 +459,7 @@ class TrafficHydrateRefillAdapterServiceTest {
         }
 
         @Test
-        void keepsNoBalanceWhenGateSkips() {
+        void keepsNoBalanceWhenGateSkipsByThreshold() {
             // given
             TrafficPayloadReqDto payload = createPayload();
             stubIndividualDeductKeys();
@@ -478,7 +478,7 @@ class TrafficHydrateRefillAdapterServiceTest {
                     TrafficRedisRuntimePolicy.LOCK_TTL_MS,
                     0L,
                     30L
-            )).thenReturn(TrafficRefillGateStatus.SKIP);
+            )).thenReturn(TrafficRefillGateStatus.SKIP_THRESHOLD);
 
             // when
             TrafficLuaExecutionResult result =
@@ -1088,6 +1088,87 @@ class TrafficHydrateRefillAdapterServiceTest {
                 // DB 리필 시도 이후 마지막 호출에서만 QOS fallback 허용
                 () -> assertEquals("1", allArgs.get(1).get(12))
         );
+    }
+
+    @Test
+    void sharedGateSkipDbEmptyAllowsSingleQosFallback() {
+        // given
+        TrafficPayloadReqDto payload = createPayload();
+        stubSharedDeductKeys();
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+        when(trafficRedisKeyFactory.remainingSharedAmountKey(eq(22L), any())).thenReturn("pooli:remaining_shared_amount:22:202603");
+        when(trafficRedisKeyFactory.sharedRefillLockKey(22L)).thenReturn("pooli:shared_refill_lock:22");
+        when(trafficLuaScriptInfraService.executeDeductShared(anyList(), anyList()))
+                // 1차 shared 차감: 부족 상태를 열어 refill gate 평가로 진입한다.
+                .thenReturn(luaResult(0L, TrafficLuaStatus.NO_BALANCE))
+                // gate에서 DB_EMPTY로 스킵된 뒤 QoS fallback 1회 호출
+                .thenReturn(luaResult(50L, TrafficLuaStatus.QOS));
+        when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_shared_amount:22:202603", 0L)).thenReturn(0L);
+        when(trafficQuotaSourcePort.resolveRefillPlan(TrafficPoolType.SHARED, payload))
+                .thenReturn(refillPlan(5L, 2, 10L, 50L, 15L, "RECENT_10S"));
+        when(trafficLuaScriptInfraService.executeRefillGate(
+                "pooli:shared_refill_lock:22",
+                "pooli:remaining_shared_amount:22:202603",
+                payload.getTraceId(),
+                TrafficRedisRuntimePolicy.LOCK_TTL_MS,
+                0L,
+                15L
+        )).thenReturn(TrafficRefillGateStatus.SKIP_DB_EMPTY);
+
+        // when
+        TrafficLuaExecutionResult result = trafficHydrateRefillAdapterService.executeSharedWithRecovery(payload, 50L);
+
+        // then
+        assertAll(
+                () -> assertEquals(TrafficLuaStatus.QOS, result.getStatus()),
+                () -> assertEquals(50L, result.getAnswer())
+        );
+        verify(trafficQuotaSourcePort, never()).claimRefillAmountFromDb(any(), any(), any(), anyLong(), anyString());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> argsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(trafficLuaScriptInfraService, times(2)).executeDeductShared(anyList(), argsCaptor.capture());
+        List<List<String>> allArgs = argsCaptor.getAllValues();
+        assertAll(
+                // 초기 shared 호출은 QOS fallback 비활성
+                () -> assertEquals("0", allArgs.get(0).get(12)),
+                // gate SKIP_DB_EMPTY 이후 fallback 호출에서만 QOS 허용
+                () -> assertEquals("1", allArgs.get(1).get(12))
+        );
+    }
+
+    @Test
+    void sharedGateSkipThresholdKeepsNoBalanceWithoutQosFallback() {
+        // given
+        TrafficPayloadReqDto payload = createPayload();
+        stubSharedDeductKeys();
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+        when(trafficRedisKeyFactory.remainingSharedAmountKey(eq(22L), any())).thenReturn("pooli:remaining_shared_amount:22:202603");
+        when(trafficRedisKeyFactory.sharedRefillLockKey(22L)).thenReturn("pooli:shared_refill_lock:22");
+        when(trafficLuaScriptInfraService.executeDeductShared(anyList(), anyList()))
+                .thenReturn(luaResult(0L, TrafficLuaStatus.NO_BALANCE));
+        when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_shared_amount:22:202603", 0L)).thenReturn(0L);
+        when(trafficQuotaSourcePort.resolveRefillPlan(TrafficPoolType.SHARED, payload))
+                .thenReturn(refillPlan(5L, 2, 10L, 50L, 15L, "RECENT_10S"));
+        when(trafficLuaScriptInfraService.executeRefillGate(
+                "pooli:shared_refill_lock:22",
+                "pooli:remaining_shared_amount:22:202603",
+                payload.getTraceId(),
+                TrafficRedisRuntimePolicy.LOCK_TTL_MS,
+                0L,
+                15L
+        )).thenReturn(TrafficRefillGateStatus.SKIP_THRESHOLD);
+
+        // when
+        TrafficLuaExecutionResult result = trafficHydrateRefillAdapterService.executeSharedWithRecovery(payload, 50L);
+
+        // then
+        assertAll(
+                () -> assertEquals(TrafficLuaStatus.NO_BALANCE, result.getStatus()),
+                () -> assertEquals(0L, result.getAnswer())
+        );
+        verify(trafficQuotaSourcePort, never()).claimRefillAmountFromDb(any(), any(), any(), anyLong(), anyString());
+        verify(trafficLuaScriptInfraService, times(1)).executeDeductShared(anyList(), anyList());
     }
 
     @Test
