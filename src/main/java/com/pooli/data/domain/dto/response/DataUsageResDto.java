@@ -34,5 +34,8 @@ public class DataUsageResDto {
     @Schema(description = "공유풀 데이터 총량", example = "5200")
     private Long sharedPoolTotalAmount;
 
+    @Schema(description = "공유 데이터 잔여량(메인 카드 기준)", example = "4200")
+    private Long sharedPoolRemainingAmount;
+
 
 }
