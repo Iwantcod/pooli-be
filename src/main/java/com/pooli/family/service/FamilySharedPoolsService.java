@@ -40,7 +40,10 @@ import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
 import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
+import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
 import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
+import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +64,9 @@ public class FamilySharedPoolsService {
     private final SharedPoolTransferLogRepository transferLogRepository;
     private final ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
     private final TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
+    private final ObjectProvider<TrafficRedisKeyFactory> trafficRedisKeyFactoryProvider;
+    private final ObjectProvider<TrafficRedisRuntimePolicy> trafficRedisRuntimePolicyProvider;
+    private final ObjectProvider<TrafficQuotaCacheService> trafficQuotaCacheServiceProvider;
 
     public Long getFamilyIdByLineId(Long lineId) {
         Long familyId = sharedPoolMapper.selectFamilyIdByLineId(lineId);
@@ -306,8 +312,11 @@ public class FamilySharedPoolsService {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
-        List<SharedPoolMonthlyUsageResDto.MemberUsageDto> membersUsageList =
-                sharedPoolMapper.selectFamilyMonthlySharedUsageByLine(familyId);
+        List<SharedPoolMonthlyUsageResDto.MemberUsageDto> membersUsageList = sharedPoolMapper
+                .selectFamilyMonthlySharedUsageByLine(familyId)
+                .stream()
+                .map(this::adjustMonthlySharedUsage)
+                .toList();
 
         return SharedPoolMonthlyUsageResDto.builder()
                 .sharedPoolTotalData(sharedPoolTotalData)
@@ -326,6 +335,51 @@ public class FamilySharedPoolsService {
             return sharedDataLimit;
         }
         return Math.min(Math.max(0L, actualAmount), Math.max(0L, sharedDataLimit));
+    }
+
+    private SharedPoolMonthlyUsageResDto.MemberUsageDto adjustMonthlySharedUsage(
+            SharedPoolMonthlyUsageResDto.MemberUsageDto memberUsage
+    ) {
+        long dbUsage = normalizeNonNegative(memberUsage.getMonthlySharedPoolUsage());
+        long redisUsage = readMonthlySharedUsageFromRedis(memberUsage.getLineId());
+        long adjustedUsage = Math.max(dbUsage, redisUsage);
+
+        return SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
+                .userName(memberUsage.getUserName())
+                .phoneNumber(memberUsage.getPhoneNumber())
+                .monthlySharedPoolUsage(adjustedUsage)
+                .build();
+    }
+
+    private long readMonthlySharedUsageFromRedis(Long lineId) {
+        if (lineId == null || lineId <= 0) {
+            return 0L;
+        }
+
+        TrafficRedisKeyFactory trafficRedisKeyFactory = trafficRedisKeyFactoryProvider.getIfAvailable();
+        TrafficRedisRuntimePolicy trafficRedisRuntimePolicy = trafficRedisRuntimePolicyProvider.getIfAvailable();
+        TrafficQuotaCacheService trafficQuotaCacheService = trafficQuotaCacheServiceProvider.getIfAvailable();
+        if (trafficRedisKeyFactory == null
+                || trafficRedisRuntimePolicy == null
+                || trafficQuotaCacheService == null) {
+            return 0L;
+        }
+
+        YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+        String monthlySharedUsageKey = trafficRedisKeyFactory.monthlySharedUsageKey(lineId, targetMonth);
+        try {
+            return Math.max(0L, trafficQuotaCacheService.readValueOrDefault(monthlySharedUsageKey, 0L));
+        } catch (RuntimeException e) {
+            log.warn("family_shared_monthly_usage_redis_read_failed lineId={} key={}", lineId, monthlySharedUsageKey, e);
+            return 0L;
+        }
+    }
+
+    private long normalizeNonNegative(Long value) {
+        if (value == null) {
+            return 0L;
+        }
+        return Math.max(0L, value);
     }
 
     private YearMonth parseYearMonth(Integer yearMonth) {

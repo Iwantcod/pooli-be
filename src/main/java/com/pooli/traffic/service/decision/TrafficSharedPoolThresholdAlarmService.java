@@ -16,8 +16,6 @@ import com.pooli.traffic.domain.outbox.payload.SharedPoolThresholdOutboxPayload;
 import com.pooli.traffic.mapper.TrafficSharedThresholdAlarmLogMapper;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.runtime.TrafficFamilyMetaCacheService;
-import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
-import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 import lombok.RequiredArgsConstructor;
@@ -37,8 +35,6 @@ public class TrafficSharedPoolThresholdAlarmService {
     private static final int THRESHOLD_10 = 10;
 
     private final TrafficFamilyMetaCacheService trafficFamilyMetaCacheService;
-    private final TrafficQuotaCacheService trafficQuotaCacheService;
-    private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficSharedThresholdAlarmLogMapper trafficSharedThresholdAlarmLogMapper;
     private final RedisOutboxRecordService redisOutboxRecordService;
@@ -62,10 +58,7 @@ public class TrafficSharedPoolThresholdAlarmService {
         }
 
         YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
-        String sharedRemainingKey = trafficRedisKeyFactory.remainingSharedAmountKey(familyId, targetMonth);
-        long redisRemainingData = Math.max(0L, trafficQuotaCacheService.readAmountOrDefault(sharedRemainingKey, 0L));
-        long dbRemainingData = normalizeNonNegative(familyMeta.getDbRemainingData());
-        long actualRemainingData = safeAdd(dbRemainingData, redisRemainingData);
+        long actualRemainingData = normalizeNonNegative(familyMeta.getDbRemainingData());
         int remainingPercent = clampPercent(actualRemainingData, poolTotalData);
 
         List<Integer> thresholds = resolveThresholds(familyMeta);
@@ -161,16 +154,4 @@ public class TrafficSharedPoolThresholdAlarmService {
         return value;
     }
 
-    private long safeAdd(long left, long right) {
-        if (left <= 0) {
-            return Math.max(0L, right);
-        }
-        if (right <= 0) {
-            return left;
-        }
-        if (left > Long.MAX_VALUE - right) {
-            return Long.MAX_VALUE;
-        }
-        return left + right;
-    }
 }

@@ -11,9 +11,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * DB 잔량 상태 변경을 Redis 잔량 해시(is_empty)에 즉시 반영하는 write-through 서비스입니다.
+ * 공유풀 상태 변경을 Redis 캐시에 즉시 반영하는 write-through 서비스입니다.
  *
- * <p>현재는 공유풀 충전 시점에 is_empty를 0으로 되돌리는 경로를 제공합니다.
+ * <p>현재는 공유풀 충전 시점의 is_empty 복구와, 실제 공유풀 사용량에 대한 family meta 잔량 차감을 제공합니다.
  * 트랜잭션이 존재하면 커밋 성공 이후에 반영해 DB/Redis 순서를 보장합니다.
  */
 @Slf4j
@@ -72,43 +72,18 @@ public class TrafficBalanceStateWriteThroughService {
     }
 
     /**
-     * 공유풀 DB claim 성공 후 family meta 캐시의 DB 잔량을 감소시킵니다.
+     * 공유풀 실사용량 차감 성공 후 family meta 캐시의 잔량을 감소시킵니다.
+     *
+     * <p>리필 claim은 DB->Redis 버퍼 이동이므로 총 잔량을 바꾸지 않습니다.
+     * 따라서 meta 잔량은 "실제 사용자 차감량" 기준으로만 줄어야 합니다.
      */
-    public void markSharedMetaClaimed(long familyId, long amount) {
+    public void markSharedMetaConsumed(long familyId, long amount) {
         if (familyId <= 0 || amount <= 0) {
             return;
         }
 
         executeAfterCommit(
-                "shared_meta_claim familyId=" + familyId + " amount=" + amount,
-                () -> trafficFamilyMetaCacheService.decreaseDbRemaining(familyId, amount)
-        );
-    }
-
-    /**
-     * 공유풀 DB restore 성공 후 family meta 캐시의 DB 잔량을 복구합니다.
-     */
-    public void markSharedMetaRestored(long familyId, long amount) {
-        if (familyId <= 0 || amount <= 0) {
-            return;
-        }
-
-        executeAfterCommit(
-                "shared_meta_restore familyId=" + familyId + " amount=" + amount,
-                () -> trafficFamilyMetaCacheService.increaseDbRemaining(familyId, amount)
-        );
-    }
-
-    /**
-     * DB fallback 공유풀 차감 성공 후 family meta 캐시의 DB 잔량을 감소시킵니다.
-     */
-    public void markSharedMetaDbFallbackDeducted(long familyId, long amount) {
-        if (familyId <= 0 || amount <= 0) {
-            return;
-        }
-
-        executeAfterCommit(
-                "shared_meta_db_fallback_deduct familyId=" + familyId + " amount=" + amount,
+                "shared_meta_consumed familyId=" + familyId + " amount=" + amount,
                 () -> trafficFamilyMetaCacheService.decreaseDbRemaining(familyId, amount)
         );
     }

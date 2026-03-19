@@ -6,7 +6,8 @@ package com.pooli.traffic.domain.enums;
  */
 public enum TrafficRefillGateStatus {
     FAIL,
-    SKIP,
+    SKIP_DB_EMPTY,
+    SKIP_THRESHOLD,
     OK,
     WAIT
 }

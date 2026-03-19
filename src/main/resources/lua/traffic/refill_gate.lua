@@ -1,5 +1,5 @@
 -- refill_gate.lua
--- 반환 계약: FAIL / SKIP / OK / WAIT
+-- 반환 계약: FAIL / SKIP_DB_EMPTY / SKIP_THRESHOLD / OK / WAIT
 -- KEYS[1]: lock 키
 -- KEYS[2]: 잔량 hash 키(remaining_*_amount)
 -- ARGV[1]: traceId
@@ -48,13 +48,13 @@ end
 -- 단계 3) DB 고갈 플래그 기반 스킵 분기입니다.
 -- DB 원천 잔량이 이미 고갈된 것으로 확정된 경우에는 리필을 시도하지 않습니다.
 if is_empty == 1 then
-  return "SKIP"
+  return "SKIP_DB_EMPTY"
 end
 
 -- 단계 4) 빠른 스킵 분기입니다.
 -- 현재 잔량이 임계치 이상이면 지금은 리필할 필요가 없습니다.
 if current_amount >= threshold then
-  return "SKIP"
+  return "SKIP_THRESHOLD"
 end
 
 -- 단계 5) 현재 lock 소유자를 조회합니다.

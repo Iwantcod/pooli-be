@@ -1,5 +1,6 @@
 package com.pooli.traffic.service.runtime;
 
+import java.time.YearMonth;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -15,7 +16,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * FAMILY 메타(총량/DB잔량/임계치)를 Redis에 캐시하고 write-through를 적용합니다.
+ * FAMILY 메타(총량/잔량/임계치)를 Redis에 캐시하고 write-through를 적용합니다.
+ *
+ * <p>현재 `db_remaining_data` 필드는 이름과 달리 "공유풀 총 가용 잔량(DB + Redis)" 의미로 사용합니다.
  */
 @Slf4j
 @Service
@@ -32,6 +35,8 @@ public class TrafficFamilyMetaCacheService {
     private final StringRedisTemplate cacheStringRedisTemplate;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficFamilyMetaMapper trafficFamilyMetaMapper;
+    private final TrafficQuotaCacheService trafficQuotaCacheService;
+    private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
     /**
      * 캐시를 우선 조회하고, 미스면 DB에서 hydrate 후 반환합니다.
@@ -50,7 +55,7 @@ public class TrafficFamilyMetaCacheService {
     }
 
     /**
-     * 공유풀 기여(write-through): 총량/DB잔량을 함께 증가시킵니다.
+     * 공유풀 기여(write-through): 총량/총 잔량을 함께 증가시킵니다.
      */
     public void increaseTotalAndDbRemaining(long familyId, long amount) {
         long normalizedAmount = Math.max(0L, amount);
@@ -59,8 +64,12 @@ public class TrafficFamilyMetaCacheService {
         }
 
         try {
-            ensureCached(familyId);
             String key = trafficRedisKeyFactory.familyMetaKey(familyId);
+            if (readFromCache(familyId) == null) {
+                // 캐시 미스 시점에는 DB에 최신 값이 반영된 상태이므로 hydrate만 수행하고 delta를 재적용하지 않습니다.
+                loadFromDbAndCache(familyId);
+                return;
+            }
             cacheStringRedisTemplate.opsForHash().increment(key, FIELD_POOL_TOTAL_DATA, normalizedAmount);
             cacheStringRedisTemplate.opsForHash().increment(key, FIELD_DB_REMAINING_DATA, normalizedAmount);
         } catch (RuntimeException e) {
@@ -74,7 +83,7 @@ public class TrafficFamilyMetaCacheService {
     }
 
     /**
-     * DB claim/write-through: DB 잔량을 감소시킵니다.
+     * 공유풀 실사용(write-through): 총 잔량을 감소시킵니다.
      */
     public void decreaseDbRemaining(long familyId, long amount) {
         long normalizedAmount = Math.max(0L, amount);
@@ -83,8 +92,12 @@ public class TrafficFamilyMetaCacheService {
         }
 
         try {
-            ensureCached(familyId);
             String key = trafficRedisKeyFactory.familyMetaKey(familyId);
+            if (readFromCache(familyId) == null) {
+                // 차감 이후 write-through가 들어오므로, 미스면 현재 총 잔량을 hydrate만 수행합니다.
+                loadFromDbAndCache(familyId);
+                return;
+            }
             cacheStringRedisTemplate.opsForHash().increment(key, FIELD_DB_REMAINING_DATA, -normalizedAmount);
         } catch (RuntimeException e) {
             log.warn(
@@ -97,7 +110,7 @@ public class TrafficFamilyMetaCacheService {
     }
 
     /**
-     * DB restore/write-through: DB 잔량을 증가시킵니다.
+     * 총 잔량 보정(write-through): 총 잔량을 증가시킵니다.
      */
     public void increaseDbRemaining(long familyId, long amount) {
         long normalizedAmount = Math.max(0L, amount);
@@ -106,8 +119,12 @@ public class TrafficFamilyMetaCacheService {
         }
 
         try {
-            ensureCached(familyId);
             String key = trafficRedisKeyFactory.familyMetaKey(familyId);
+            if (readFromCache(familyId) == null) {
+                // 복구 이후 write-through가 들어오므로, 미스면 현재 총 잔량을 hydrate만 수행합니다.
+                loadFromDbAndCache(familyId);
+                return;
+            }
             cacheStringRedisTemplate.opsForHash().increment(key, FIELD_DB_REMAINING_DATA, normalizedAmount);
         } catch (RuntimeException e) {
             log.warn(
@@ -183,13 +200,15 @@ public class TrafficFamilyMetaCacheService {
 
         long poolTotalData = Math.max(0L, normalizeNonNegative(fromDb.getPoolTotalData()));
         long dbRemainingData = Math.max(0L, normalizeNonNegative(fromDb.getDbRemainingData()));
+        long redisRemainingData = resolveSharedRedisRemaining(familyId);
+        long totalRemainingData = safeAdd(dbRemainingData, redisRemainingData);
         long familyThreshold = Math.max(0L, normalizeNonNegative(fromDb.getFamilyThreshold()));
         boolean thresholdActive = Boolean.TRUE.equals(fromDb.getThresholdActive());
 
         String key = trafficRedisKeyFactory.familyMetaKey(familyId);
         Map<String, String> values = new HashMap<>();
         values.put(FIELD_POOL_TOTAL_DATA, String.valueOf(poolTotalData));
-        values.put(FIELD_DB_REMAINING_DATA, String.valueOf(dbRemainingData));
+        values.put(FIELD_DB_REMAINING_DATA, String.valueOf(totalRemainingData));
         values.put(FIELD_FAMILY_THRESHOLD, String.valueOf(familyThreshold));
         values.put(FIELD_THRESHOLD_ACTIVE, thresholdActive ? "1" : "0");
         cacheStringRedisTemplate.opsForHash().putAll(key, values);
@@ -197,10 +216,16 @@ public class TrafficFamilyMetaCacheService {
         return TrafficFamilyMetaSnapshot.builder()
                 .familyId(familyId)
                 .poolTotalData(poolTotalData)
-                .dbRemainingData(dbRemainingData)
+                .dbRemainingData(totalRemainingData)
                 .familyThreshold(familyThreshold)
                 .thresholdActive(thresholdActive)
                 .build();
+    }
+
+    private long resolveSharedRedisRemaining(long familyId) {
+        YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+        String sharedRemainingKey = trafficRedisKeyFactory.remainingSharedAmountKey(familyId, targetMonth);
+        return Math.max(0L, trafficQuotaCacheService.readAmountOrDefault(sharedRemainingKey, 0L));
     }
 
     private Long normalizeNonNegative(Long value) {
@@ -208,6 +233,19 @@ public class TrafficFamilyMetaCacheService {
             return 0L;
         }
         return value;
+    }
+
+    private long safeAdd(long left, long right) {
+        if (left <= 0) {
+            return Math.max(0L, right);
+        }
+        if (right <= 0) {
+            return left;
+        }
+        if (left > Long.MAX_VALUE - right) {
+            return Long.MAX_VALUE;
+        }
+        return left + right;
     }
 
     private Long parseLong(Object value) {
