@@ -38,7 +38,6 @@ import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPoolType;
-import com.pooli.traffic.mapper.TrafficDbSpeedBucketMapper;
 import com.pooli.traffic.mapper.TrafficDbUsageMapper;
 import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
@@ -69,12 +68,6 @@ class TrafficDbDeductFallbackServiceTest {
 
     @Mock
     private TrafficDbUsageMapper trafficDbUsageMapper;
-
-    @Mock
-    private TrafficDbSpeedBucketMapper trafficDbSpeedBucketMapper;
-
-    @Mock
-    private TrafficUsageDeltaRecordService trafficUsageDeltaRecordService;
 
     @InjectMocks
     private TrafficDbDeductFallbackService trafficDbDeductFallbackService;
@@ -119,28 +112,23 @@ class TrafficDbDeductFallbackServiceTest {
     }
 
     @Test
-    @DisplayName("AppSpeed 정책 초과 시 HIT_APP_SPEED를 반환한다")
-    void returnsHitAppSpeedWhenRecentUsageReachedLimit() {
+    @DisplayName("앱 일일 제한 정책이 활성화되면 해당 제한까지 차감되고 HIT_APP_DAILY_LIMIT를 반환한다")
+    void returnsHitAppDailyLimitWhenAppDailyPolicyIsActive() {
         // given
         TrafficPayloadReqDto payload = payload();
         when(policyBackOfficeMapper.selectPolicyActivationSnapshot())
-                .thenReturn(policySnapshot(false, false, false, false, false, true, false));
+                .thenReturn(policySnapshot(false, false, false, false, true, false, false));
         when(appPolicyMapper.findEntityExistByLineIdAndAppId(11L, 33))
                 .thenReturn(Optional.of(AppPolicy.builder()
                         .lineId(11L)
                         .applicationId(33)
                         .isActive(true)
-                        .speedLimit(1)
+                        .dataLimit(30L)
                         .isWhitelist(false)
                         .build()));
         when(trafficRefillSourceMapper.selectIndividualRemainingForUpdate(11L)).thenReturn(100L);
-        when(trafficDbSpeedBucketMapper.selectRecentUsageSum(
-                eq(TrafficPoolType.INDIVIDUAL.name()),
-                eq(11L),
-                eq(33),
-                anyLong(),
-                anyLong()
-        )).thenReturn(125L);
+        when(trafficDbUsageMapper.selectDailyAppUsage(eq(11L), eq(33), any())).thenReturn(0L);
+        when(trafficRefillSourceMapper.deductIndividualRemaining(11L, 30L)).thenReturn(1);
 
         // when
         TrafficLuaExecutionResult result = trafficDbDeductFallbackService.deduct(
@@ -152,102 +140,16 @@ class TrafficDbDeductFallbackServiceTest {
 
         // then
         assertAll(
-                () -> assertEquals(TrafficLuaStatus.HIT_APP_SPEED, result.getStatus()),
-                () -> assertEquals(0L, result.getAnswer())
+                () -> assertEquals(TrafficLuaStatus.HIT_APP_DAILY_LIMIT, result.getStatus()),
+                () -> assertEquals(30L, result.getAnswer())
         );
-        verify(trafficRefillSourceMapper, never()).deductIndividualRemaining(anyLong(), anyLong());
-        verify(trafficDbUsageMapper, never()).upsertDailyTotalUsage(anyLong(), any(), anyLong());
+        verify(trafficDbUsageMapper).upsertDailyTotalUsage(eq(11L), any(), eq(30L));
+        verify(trafficDbUsageMapper).upsertDailyAppUsage(eq(11L), eq(33), any(), eq(30L));
     }
 
     @Test
-    @DisplayName("AppSpeed로 cap된 목표량보다 잔량이 작으면 부분 차감 후 NO_BALANCE를 반환한다")
-    void returnsNoBalanceWhenAppSpeedCappedButBalanceIsInsufficient() {
-        // given
-        TrafficPayloadReqDto payload = payload();
-        when(policyBackOfficeMapper.selectPolicyActivationSnapshot())
-                .thenReturn(policySnapshot(false, false, false, false, false, true, false));
-        when(appPolicyMapper.findEntityExistByLineIdAndAppId(11L, 33))
-                .thenReturn(Optional.of(AppPolicy.builder()
-                        .lineId(11L)
-                        .applicationId(33)
-                        .isActive(true)
-                        .speedLimit(1)
-                        .isWhitelist(false)
-                        .build()));
-        when(trafficRefillSourceMapper.selectIndividualRemainingForUpdate(11L)).thenReturn(50L);
-        when(trafficDbSpeedBucketMapper.selectRecentUsageSum(
-                eq(TrafficPoolType.INDIVIDUAL.name()),
-                eq(11L),
-                eq(33),
-                anyLong(),
-                anyLong()
-        )).thenReturn(65L);
-        when(trafficRefillSourceMapper.deductIndividualRemaining(11L, 50L)).thenReturn(1);
-
-        // when
-        TrafficLuaExecutionResult result = trafficDbDeductFallbackService.deduct(
-                TrafficPoolType.INDIVIDUAL,
-                payload,
-                100L,
-                TrafficDeductExecutionContext.of(payload.getTraceId())
-        );
-
-        // then
-        assertAll(
-                () -> assertEquals(TrafficLuaStatus.NO_BALANCE, result.getStatus()),
-                () -> assertEquals(50L, result.getAnswer())
-        );
-        verify(trafficRefillSourceMapper).deductIndividualRemaining(11L, 50L);
-        verify(trafficDbUsageMapper).upsertDailyTotalUsage(eq(11L), any(), eq(50L));
-        verify(trafficDbUsageMapper).upsertDailyAppUsage(eq(11L), eq(33), any(), eq(50L));
-    }
-
-    @Test
-    @DisplayName("AppSpeed로 cap되어도 차감이 성공하면 최종 상태는 HIT_APP_SPEED다")
-    void returnsHitAppSpeedWhenSpeedCapAppliedAndDeductSucceeded() {
-        // given
-        TrafficPayloadReqDto payload = payload();
-        when(policyBackOfficeMapper.selectPolicyActivationSnapshot())
-                .thenReturn(policySnapshot(false, false, false, false, false, true, false));
-        when(appPolicyMapper.findEntityExistByLineIdAndAppId(11L, 33))
-                .thenReturn(Optional.of(AppPolicy.builder()
-                        .lineId(11L)
-                        .applicationId(33)
-                        .isActive(true)
-                        .speedLimit(1)
-                        .isWhitelist(false)
-                        .build()));
-        when(trafficRefillSourceMapper.selectIndividualRemainingForUpdate(11L)).thenReturn(200L);
-        when(trafficDbSpeedBucketMapper.selectRecentUsageSum(
-                eq(TrafficPoolType.INDIVIDUAL.name()),
-                eq(11L),
-                eq(33),
-                anyLong(),
-                anyLong()
-        )).thenReturn(65L);
-        when(trafficRefillSourceMapper.deductIndividualRemaining(11L, 60L)).thenReturn(1);
-
-        // when
-        TrafficLuaExecutionResult result = trafficDbDeductFallbackService.deduct(
-                TrafficPoolType.INDIVIDUAL,
-                payload,
-                100L,
-                TrafficDeductExecutionContext.of(payload.getTraceId())
-        );
-
-        // then
-        assertAll(
-                () -> assertEquals(TrafficLuaStatus.HIT_APP_SPEED, result.getStatus()),
-                () -> assertEquals(60L, result.getAnswer())
-        );
-        verify(trafficRefillSourceMapper).deductIndividualRemaining(11L, 60L);
-        verify(trafficDbUsageMapper).upsertDailyTotalUsage(eq(11L), any(), eq(60L));
-        verify(trafficDbUsageMapper).upsertDailyAppUsage(eq(11L), eq(33), any(), eq(60L));
-    }
-
-    @Test
-    @DisplayName("DB fallback 차감 성공 시 집계와 usage delta를 함께 반영한다")
-    void updatesUsageAndRecordsDeltaWhenFallbackDeductSucceeds() {
+    @DisplayName("DB fallback 차감 성공 시 사용량 집계를 갱신한다")
+    void updatesUsageWhenFallbackDeductSucceeds() {
         // given
         TrafficPayloadReqDto payload = payload();
         when(policyBackOfficeMapper.selectPolicyActivationSnapshot())
@@ -270,77 +172,34 @@ class TrafficDbDeductFallbackServiceTest {
         );
         verify(trafficDbUsageMapper).upsertDailyTotalUsage(eq(11L), any(), eq(40L));
         verify(trafficDbUsageMapper).upsertDailyAppUsage(eq(11L), eq(33), any(), eq(40L));
-        verify(trafficDbSpeedBucketMapper).upsertUsage(
-                eq(TrafficPoolType.INDIVIDUAL.name()),
-                eq(11L),
-                eq(33),
-                anyLong(),
-                eq(40L)
-        );
-        verify(trafficUsageDeltaRecordService).record(
-                eq(payload.getTraceId()),
-                eq(TrafficPoolType.INDIVIDUAL),
-                eq(11L),
-                eq(22L),
-                eq(33),
-                eq(40L),
-                any(),
-                any()
-        );
     }
 
     @Test
-    @DisplayName("공유풀 차감이어도 앱 속도 버킷은 lineId 기준으로 조회/적재한다")
-    void sharedPoolUsesLineScopedAppSpeedBucket() {
+    @DisplayName("공유풀 fallback 차감 성공 시 가족 공유 사용량 집계를 함께 갱신한다")
+    void updatesFamilySharedUsageWhenSharedFallbackDeductSucceeds() {
         // given
         TrafficPayloadReqDto payload = payload();
         when(policyBackOfficeMapper.selectPolicyActivationSnapshot())
-                .thenReturn(policySnapshot(false, false, false, false, false, true, false));
-        when(appPolicyMapper.findEntityExistByLineIdAndAppId(11L, 33))
-                .thenReturn(Optional.of(AppPolicy.builder()
-                        .lineId(11L)
-                        .applicationId(33)
-                        .isActive(true)
-                        .speedLimit(1)
-                        .isWhitelist(false)
-                        .build()));
-        when(trafficRefillSourceMapper.selectSharedRemainingForUpdate(22L)).thenReturn(100L);
-        when(trafficDbSpeedBucketMapper.selectRecentUsageSum(
-                eq(TrafficPoolType.INDIVIDUAL.name()),
-                eq(11L),
-                eq(33),
-                anyLong(),
-                anyLong()
-        )).thenReturn(0L);
-        when(trafficRefillSourceMapper.deductSharedRemaining(22L, 40L)).thenReturn(1);
+                .thenReturn(policySnapshot(false, false, false, false, false, false, false));
+        when(trafficRefillSourceMapper.selectSharedRemainingForUpdate(22L)).thenReturn(80L);
+        when(trafficRefillSourceMapper.deductSharedRemaining(22L, 30L)).thenReturn(1);
 
         // when
         TrafficLuaExecutionResult result = trafficDbDeductFallbackService.deduct(
                 TrafficPoolType.SHARED,
                 payload,
-                40L,
+                30L,
                 TrafficDeductExecutionContext.of(payload.getTraceId())
         );
 
         // then
         assertAll(
                 () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
-                () -> assertEquals(40L, result.getAnswer())
+                () -> assertEquals(30L, result.getAnswer())
         );
-        verify(trafficDbSpeedBucketMapper).selectRecentUsageSum(
-                eq(TrafficPoolType.INDIVIDUAL.name()),
-                eq(11L),
-                eq(33),
-                anyLong(),
-                anyLong()
-        );
-        verify(trafficDbSpeedBucketMapper).upsertUsage(
-                eq(TrafficPoolType.INDIVIDUAL.name()),
-                eq(11L),
-                eq(33),
-                anyLong(),
-                eq(40L)
-        );
+        verify(trafficDbUsageMapper).upsertDailyTotalUsage(eq(11L), any(), eq(30L));
+        verify(trafficDbUsageMapper).upsertDailyAppUsage(eq(11L), eq(33), any(), eq(30L));
+        verify(trafficDbUsageMapper).upsertFamilySharedUsageDaily(eq(22L), eq(11L), any(), eq(30L));
     }
 
     private TrafficPayloadReqDto payload() {

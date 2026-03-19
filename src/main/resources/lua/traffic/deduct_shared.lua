@@ -117,6 +117,7 @@ local refill_amount = tonumber(ARGV[9] or "0")
 local refill_uuid = ARGV[10]
 local refill_idempotency_ttl_seconds = tonumber(ARGV[11] or "0")
 local refill_db_empty_flag = ARGV[12] or "0"
+local allow_qos_fallback = tonumber(ARGV[13] or "0")
 
 if not remaining_key or remaining_key == "" then
   return as_json(-1, "ERROR")
@@ -273,6 +274,11 @@ end
 if answer <= 0 then
   -- 정책 제한(특히 app speed cap)이 동반된 answer==0 케이스는 QoS로 우회하지 않는다.
   if was_policy_limited_before_balance then
+    return as_json(0, "NO_BALANCE")
+  end
+
+  -- 공유 DB 리필 시도 이전에는 QOS로 즉시 우회하지 않고 NO_BALANCE를 유지한다.
+  if allow_qos_fallback ~= 1 then
     return as_json(0, "NO_BALANCE")
   end
 

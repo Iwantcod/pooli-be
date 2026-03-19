@@ -19,6 +19,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -47,9 +48,11 @@ import org.springframework.data.redis.connection.stream.RecordId;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
 import com.pooli.monitoring.metrics.TrafficGeneratorMetrics;
+import com.pooli.monitoring.metrics.TrafficRecordStageMetricsPort;
 import com.pooli.traffic.domain.TrafficStreamFields;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
 import com.pooli.traffic.domain.enums.TrafficFinalStatus;
+import com.pooli.traffic.domain.enums.TrafficInFlightState;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
@@ -81,6 +84,9 @@ public class TrafficStreamConsumerRunnerTest {
     @Mock
     private TrafficGeneratorMetrics trafficGeneratorMetrics;
 
+    @Mock
+    private TrafficRecordStageMetricsPort trafficRecordStageMetricsPort;
+
     private TrafficStreamConsumerRunner trafficStreamConsumerRunner;
     private AppStreamsProperties appStreamsProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -111,7 +117,8 @@ public class TrafficStreamConsumerRunnerTest {
                 trafficInFlightDedupeService,
                 trafficDeductDoneLogService,
                 trafficStreamReclaimService,
-                trafficGeneratorMetrics
+                trafficGeneratorMetrics,
+                trafficRecordStageMetricsPort
         );
         MDC.clear();
     }
@@ -322,8 +329,8 @@ public class TrafficStreamConsumerRunnerTest {
         }
 
         @Test
-        @DisplayName("does not ack but releases claim when done log save fails")
-        void doesNotAckWhenDoneLogSaveFails() {
+        @DisplayName("acks first and still releases claim when done log save fails")
+        void acknowledgeFirstWhenDoneLogSaveFails() {
             String payloadJson = "{\"traceId\":\"trace-fail\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("4-0", payloadJson);
             TrafficDeductResultResDto orchestratorResult = TrafficDeductResultResDto.builder()
@@ -344,8 +351,16 @@ public class TrafficStreamConsumerRunnerTest {
 
             invokeHandleRecord(record);
 
-            verify(trafficStreamInfraService, never()).acknowledge(record.getId());
-            verify(trafficInFlightDedupeService).release("trace-fail");
+            // 현재 구현은 done-log 영속화 전에 ACK를 먼저 호출한다.
+            InOrder inOrder = inOrder(
+                    trafficStreamInfraService,
+                    trafficDeductDoneLogService,
+                    trafficInFlightDedupeService
+            );
+            inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
+            inOrder.verify(trafficDeductDoneLogService)
+                    .saveIfAbsent(any(), eq(orchestratorResult), eq("4-0"), anyLong());
+            inOrder.verify(trafficInFlightDedupeService).release("trace-fail");
         }
 
         @Test
@@ -367,44 +382,67 @@ public class TrafficStreamConsumerRunnerTest {
         }
 
         @Test
-        @DisplayName("acks when claim fails but done log already exists")
-        void acknowledgeWhenClaimFailedButAlreadyLogged() {
+        @DisplayName("acks when claim fails and dedupe state is DONE")
+        void acknowledgeWhenClaimFailedAndDedupeStateDone() {
             String payloadJson = "{\"traceId\":\"trace-claimed\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("5-0", payloadJson);
 
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
-            when(trafficDeductDoneLogService.existsByTraceId("trace-claimed"))
-                    .thenReturn(false)
-                    .thenReturn(true);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-claimed")).thenReturn(false);
             when(trafficInFlightDedupeService.tryClaim("trace-claimed")).thenReturn(false);
+            when(trafficInFlightDedupeService.findState("trace-claimed"))
+                    .thenReturn(Optional.of(TrafficInFlightState.DONE));
 
             invokeHandleRecord(record);
 
             verify(trafficStreamInfraService).acknowledge(record.getId());
+            verify(trafficDeductDoneLogService, times(1)).existsByTraceId("trace-claimed");
+            verify(trafficInFlightDedupeService).findState("trace-claimed");
             verifyNoInteractions(trafficDeductOrchestratorService);
         }
 
         @Test
-        @DisplayName("leaves record pending when claim fails and no done log exists")
-        void leaveRecordPendingWhenClaimFailedAndNotLogged() {
+        @DisplayName("leaves record pending when claim fails and dedupe state is CLAIMED")
+        void leaveRecordPendingWhenClaimFailedAndStateClaimed() {
             String payloadJson = "{\"traceId\":\"trace-pending\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("5-1", payloadJson);
 
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
-            when(trafficDeductDoneLogService.existsByTraceId("trace-pending"))
-                    .thenReturn(false)
-                    .thenReturn(false);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-pending")).thenReturn(false);
             when(trafficInFlightDedupeService.tryClaim("trace-pending")).thenReturn(false);
+            when(trafficInFlightDedupeService.findState("trace-pending"))
+                    .thenReturn(Optional.of(TrafficInFlightState.CLAIMED));
 
             invokeHandleRecord(record);
 
             verify(trafficStreamInfraService, never()).acknowledge(record.getId());
+            verify(trafficDeductDoneLogService, times(1)).existsByTraceId("trace-pending");
+            verify(trafficInFlightDedupeService).findState("trace-pending");
             verifyNoInteractions(trafficDeductOrchestratorService);
         }
 
         @Test
-        @DisplayName("persists done log before ack and releases after ack")
-        void acknowledgeOnlyAfterDoneLogSaved() {
+        @DisplayName("leaves record pending when claim fails and dedupe state is absent")
+        void leaveRecordPendingWhenClaimFailedAndStateAbsent() {
+            String payloadJson = "{\"traceId\":\"trace-state-absent\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("5-2", payloadJson);
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-state-absent")).thenReturn(false);
+            when(trafficInFlightDedupeService.tryClaim("trace-state-absent")).thenReturn(false);
+            when(trafficInFlightDedupeService.findState("trace-state-absent")).thenReturn(Optional.empty());
+
+            invokeHandleRecord(record);
+
+            verify(trafficStreamInfraService, never()).acknowledge(record.getId());
+            verify(trafficDeductDoneLogService, times(1)).existsByTraceId("trace-state-absent");
+            verify(trafficInFlightDedupeService).findState("trace-state-absent");
+            verifyNoInteractions(trafficDeductOrchestratorService);
+        }
+
+        @Test
+        @DisplayName("acks before persisting done log and then releases claim")
+        void acknowledgeBeforeDoneLogSaved() {
             String payloadJson = "{\"traceId\":\"trace-order\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("7-0", payloadJson);
             TrafficDeductResultResDto orchestratorResult = TrafficDeductResultResDto.builder()
@@ -430,10 +468,104 @@ public class TrafficStreamConsumerRunnerTest {
                     trafficStreamInfraService,
                     trafficInFlightDedupeService
             );
+            inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
+            // 현재 구현 순서: ACK -> done-log 저장 -> in-flight release
             inOrder.verify(trafficDeductDoneLogService)
                     .saveIfAbsent(any(), eq(orchestratorResult), eq("7-0"), anyLong());
-            inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
             inOrder.verify(trafficInFlightDedupeService, times(2)).release("trace-order");
+        }
+
+        @Test
+        @DisplayName("records all configured stage metrics and success result on normal completion")
+        void recordStageMetricsOnSuccess() {
+            String payloadJson = "{\"traceId\":\"trace-metrics-success\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("8-0", payloadJson);
+            TrafficDeductResultResDto orchestratorResult = TrafficDeductResultResDto.builder()
+                    .traceId("trace-metrics-success")
+                    .apiTotalData(100L)
+                    .finalStatus(TrafficFinalStatus.SUCCESS)
+                    .deductedTotalBytes(100L)
+                    .apiRemainingData(0L)
+                    .lastLuaStatus(TrafficLuaStatus.OK)
+                    .build();
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-metrics-success")).thenReturn(false);
+            when(trafficInFlightDedupeService.tryClaim("trace-metrics-success")).thenReturn(true);
+            when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), eq(orchestratorResult), eq("8-0"), anyLong()))
+                    .thenReturn(true);
+
+            invokeHandleRecord(record);
+
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("parse_validate"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("dedupe"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("orchestrate"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("mongo_save"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("ack"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("total"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordTotalLatency(anyLong());
+            verify(trafficRecordStageMetricsPort).incrementResult("success");
+        }
+
+        @Test
+        @DisplayName("records dlq result when payload validation fails")
+        void recordDlqResultWhenValidationFails() {
+            String payloadJson = "{\"traceId\":\"\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("8-1", payloadJson);
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+
+            invokeHandleRecord(record);
+
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("parse_validate"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("ack"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("total"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordTotalLatency(anyLong());
+            verify(trafficRecordStageMetricsPort).incrementResult("dlq");
+        }
+
+        @Test
+        @DisplayName("records deduped result when in-flight dedupe skips processing")
+        void recordDedupedResultWhenInFlightDedupeSkips() {
+            String payloadJson = "{\"traceId\":\"trace-metrics-deduped\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("8-2", payloadJson);
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-metrics-deduped")).thenReturn(false);
+            when(trafficInFlightDedupeService.tryClaim("trace-metrics-deduped")).thenReturn(false);
+            when(trafficInFlightDedupeService.findState("trace-metrics-deduped"))
+                    .thenReturn(Optional.of(TrafficInFlightState.CLAIMED));
+
+            invokeHandleRecord(record);
+
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("parse_validate"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("dedupe"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("total"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordTotalLatency(anyLong());
+            verify(trafficRecordStageMetricsPort).incrementResult("deduped");
+        }
+
+        @Test
+        @DisplayName("records failed result when orchestration throws")
+        void recordFailedResultWhenOrchestrationThrows() {
+            String payloadJson = "{\"traceId\":\"trace-metrics-failed\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("8-3", payloadJson);
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-metrics-failed")).thenReturn(false);
+            when(trafficInFlightDedupeService.tryClaim("trace-metrics-failed")).thenReturn(true);
+            when(trafficDeductOrchestratorService.orchestrate(any()))
+                    .thenThrow(new RuntimeException("orchestrate down"));
+
+            invokeHandleRecord(record);
+
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("parse_validate"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("dedupe"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("orchestrate"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("total"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordTotalLatency(anyLong());
+            verify(trafficRecordStageMetricsPort).incrementResult("failed");
         }
     }
 

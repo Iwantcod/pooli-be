@@ -1,5 +1,6 @@
 package com.pooli.traffic.service.runtime;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -9,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
+import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -86,6 +88,74 @@ public class TrafficInFlightDedupeServiceTest {
 
             // then
             assertFalse(claimed);
+        }
+    }
+
+    @Nested
+    @DisplayName("findState 테스트")
+    class FindStateTest {
+
+        @Test
+        @DisplayName("저장된 상태 문자열이 유효하면 enum 상태를 반환한다")
+        void returnsParsedStateWhenStoredValueIsValid() {
+            // given
+            String traceId = "trace-done";
+            String dedupeKey = "pooli:dedupe:run:trace-done";
+            when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
+            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get(dedupeKey)).thenReturn("DONE");
+
+            // when
+            Optional<TrafficInFlightState> state = trafficInFlightDedupeService.findState(traceId);
+
+            // then
+            assertTrue(state.isPresent());
+            assertEquals(TrafficInFlightState.DONE, state.get());
+        }
+
+        @Test
+        @DisplayName("traceId가 blank면 Redis를 조회하지 않고 empty를 반환한다")
+        void returnsEmptyWhenTraceIdIsBlank() {
+            // when
+            Optional<TrafficInFlightState> state = trafficInFlightDedupeService.findState(" ");
+
+            // then
+            assertTrue(state.isEmpty());
+            verify(cacheStringRedisTemplate, never()).opsForValue();
+        }
+
+        @Test
+        @DisplayName("Redis 값이 없으면 empty를 반환한다")
+        void returnsEmptyWhenStateValueMissing() {
+            // given
+            String traceId = "trace-absent";
+            String dedupeKey = "pooli:dedupe:run:trace-absent";
+            when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
+            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get(dedupeKey)).thenReturn(null);
+
+            // when
+            Optional<TrafficInFlightState> state = trafficInFlightDedupeService.findState(traceId);
+
+            // then
+            assertTrue(state.isEmpty());
+        }
+
+        @Test
+        @DisplayName("정의되지 않은 상태 문자열이면 empty를 반환한다")
+        void returnsEmptyWhenStateValueIsUnknown() {
+            // given
+            String traceId = "trace-unknown";
+            String dedupeKey = "pooli:dedupe:run:trace-unknown";
+            when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
+            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get(dedupeKey)).thenReturn("INVALID_STATE");
+
+            // when
+            Optional<TrafficInFlightState> state = trafficInFlightDedupeService.findState(traceId);
+
+            // then
+            assertTrue(state.isEmpty());
         }
     }
 
