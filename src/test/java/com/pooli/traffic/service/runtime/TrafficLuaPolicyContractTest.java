@@ -128,7 +128,7 @@ class TrafficLuaPolicyContractTest {
                 script,
                 "if answer <= 0 then",
                 "if allow_qos_fallback ~= 1 then",
-                "return as_json(0, \"NO_BALANCE\")",
+                "return as_json(0, final_status)",
                 "local qos_answer, qos_status = resolve_qos_fallback("
         );
     }
@@ -150,14 +150,60 @@ class TrafficLuaPolicyContractTest {
     }
 
     @Test
-    @DisplayName("refill gate는 is_empty 검사 후 threshold를 평가한다")
+    @DisplayName("공유 QoS fallback은 speed_remaining을 계산해 qos와 함께 최소값을 적용한다")
+    void sharedScriptUsesSpeedRemainingForQosFallback() throws IOException {
+        String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                script,
+                "local speed_used = tonumber(redis.call(\"GET\", speed_bucket_key) or \"0\")",
+                "local speed_remaining = math.max(0, raw_app_speed_limit - speed_used)",
+                "if speed_remaining <= 0 then",
+                "fallback_answer = math.min(fallback_answer, speed_remaining)"
+        );
+        assertTrue(
+                script.contains("return 0, \"HIT_APP_SPEED\""),
+                "Shared script must return HIT_APP_SPEED when speed remaining budget is exhausted."
+        );
+    }
+
+    @Test
+    @DisplayName("공유 QoS fallback 입력은 monthly 제외 cap(qos_capped_target)을 사용한다")
+    void sharedScriptUsesQosCappedTargetWithoutMonthlyLimit() throws IOException {
+        String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(
+                script.contains("local qos_capped_target = target_data"),
+                "Shared script must keep a dedicated qos cap target."
+        );
+        assertTrue(
+                script.contains("allow_qos_fallback ~= 1 and is_policy_enabled(policy_shared_key)"),
+                "Shared monthly policy must be skipped in QoS fallback call."
+        );
+        assertTrue(
+                script.contains("local qos_answer, qos_status = resolve_qos_fallback("),
+                "Shared script must call qos fallback resolver."
+        );
+        assertTrue(
+                script.contains("qos_capped_target,"),
+                "Shared script must pass qos_capped_target to qos fallback."
+        );
+    }
+
+    @Test
+    @DisplayName("refill gate는 is_empty/threshold를 원인별 SKIP 상태로 구분한다")
     void refillGateChecksDbEmptyBeforeThreshold() throws IOException {
         String script = Files.readString(REFILL_GATE_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
                 "if is_empty == 1 then",
+                "return \"SKIP_DB_EMPTY\"",
                 "if current_amount >= threshold then"
+        );
+        assertTrue(
+                script.contains("return \"SKIP_THRESHOLD\""),
+                "Refill gate must return SKIP_THRESHOLD when current amount is above threshold."
         );
     }
 
