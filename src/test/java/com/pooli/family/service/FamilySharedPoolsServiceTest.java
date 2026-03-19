@@ -10,7 +10,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
@@ -25,14 +24,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.data.domain.Sort;
-
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.family.domain.dto.mongo.SharedPoolTransferLog;
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
-import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 import com.pooli.family.domain.dto.response.FamilySharedPoolResDto;
 import com.pooli.family.domain.dto.response.SharedDataThresholdResDto;
 import com.pooli.family.domain.dto.response.SharedPoolDetailResDto;
@@ -502,16 +498,18 @@ class FamilySharedPoolsServiceTest {
                 .lineId(101L)
                 .build();
 
-        SharedPoolTransferLog contributionLog = SharedPoolTransferLog.builder()
-                .familyId(1L)
-                .lineId(101L)
+        SharedPoolHistoryItemResDto contributionItem = SharedPoolHistoryItemResDto.builder()
+                .eventType("CONTRIBUTION")
+                .title("데이터 보태기")
+                .userName("kim")
+                .occurredAt("2026-03-15")
                 .amount(5_000_000_000L)
-                .createdAt(Instant.parse("2026-03-15T05:22:00Z"))
+                .precision("DAY")
                 .build();
 
         SharedPoolHistoryItemResDto usageItem = SharedPoolHistoryItemResDto.builder()
                 .eventType("USAGE")
-                .title("\uB370\uC774\uD130 \uC0AC\uC6A9")
+                .title("데이터 사용")
                 .userName("park")
                 .occurredAt("2026-03-15")
                 .amount(1_200_000_000L)
@@ -519,29 +517,24 @@ class FamilySharedPoolsServiceTest {
                 .build();
 
         when(sharedPoolMapper.selectFamilyIdByLineId(101L)).thenReturn(1L);
-        when(familyMapper.selectFamilyMembersSimpleByLineId(101L)).thenReturn(List.of(
-                FamilyMembersSimpleResDto.builder().lineId(101L).userName("kim").build(),
-                FamilyMembersSimpleResDto.builder().lineId(201L).userName("park").build()
-        ));
         when(sharedPoolMapper.selectSharedPoolUsageHistory(
                 eq(1L),
                 eq(LocalDate.of(2026, 3, 1)),
                 eq(LocalDate.of(2026, 4, 1))
         )).thenReturn(List.of(usageItem));
-        when(transferLogRepository.findByFamilyIdAndCreatedAtBetween(
+        when(sharedPoolMapper.selectSharedPoolContributionHistory(
                 eq(1L),
-                eq(LocalDate.of(2026, 3, 1).atStartOfDay(ZoneId.systemDefault()).toInstant()),
-                eq(LocalDate.of(2026, 4, 1).atStartOfDay(ZoneId.systemDefault()).toInstant()),
-                any(Sort.class)
-        )).thenReturn(List.of(contributionLog));
+                eq(LocalDate.of(2026, 3, 1)),
+                eq(LocalDate.of(2026, 4, 1))
+        )).thenReturn(List.of(contributionItem));
 
         List<SharedPoolHistoryItemResDto> result = service.getSharedPoolHistory(principal, 202603);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).getEventType()).isEqualTo("CONTRIBUTION");
-        assertThat(result.get(0).getTitle()).isEqualTo("\uB370\uC774\uD130 \uBCF4\uD0DC\uAE30");
+        assertThat(result.get(0).getTitle()).isEqualTo("데이터 보태기");
         assertThat(result.get(0).getUserName()).isEqualTo("kim");
-        assertThat(result.get(0).getPrecision()).isEqualTo("EVENT");
+        assertThat(result.get(0).getPrecision()).isEqualTo("DAY");
         assertThat(result.get(1).getEventType()).isEqualTo("USAGE");
         assertThat(result.get(1).getPrecision()).isEqualTo("DAY");
     }

@@ -67,5 +67,11 @@ public interface FamilySharedPoolMapper {
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate
     );
+
+    List<SharedPoolHistoryItemResDto> selectSharedPoolContributionHistory(
+            @Param("familyId") Long familyId,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate
+    );
     
 }
