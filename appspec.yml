@@ -6,6 +6,7 @@ files:
     destination: /srv/pooli
   - source: deploy
     destination: /srv/pooli/deploy
+file_exists_behavior: OVERWRITE
 
 hooks:
   BeforeInstall:
