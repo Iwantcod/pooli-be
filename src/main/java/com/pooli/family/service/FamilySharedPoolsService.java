@@ -7,9 +7,11 @@ import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -23,6 +25,7 @@ import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.family.domain.dto.mongo.SharedPoolTransferLog;
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
+import com.pooli.family.domain.dto.response.FamilyMembersResDto;
 import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 import com.pooli.family.domain.dto.response.FamilySharedPoolResDto;
 import com.pooli.family.domain.dto.response.SharedDataThresholdResDto;
@@ -312,16 +315,106 @@ public class FamilySharedPoolsService {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
+        Long familyActualSharedRemaining = resolveFamilyActualSharedRemaining(familyId);
+        Long familyActualSharedUsed = calculateFamilyActualSharedUsed(sharedPoolTotalData, familyActualSharedRemaining);
+
         List<SharedPoolMonthlyUsageResDto.MemberUsageDto> membersUsageList = sharedPoolMapper
                 .selectFamilyMonthlySharedUsageByLine(familyId)
                 .stream()
                 .map(this::adjustMonthlySharedUsage)
                 .toList();
+        membersUsageList = reconcileMemberActualSharedUsage(membersUsageList, familyActualSharedUsed);
 
         return SharedPoolMonthlyUsageResDto.builder()
                 .sharedPoolTotalData(sharedPoolTotalData)
                 .membersUsageList(membersUsageList)
                 .build();
+    }
+
+    public Long resolveFamilyActualSharedRemaining(Long familyId) {
+        SharedPoolDomain domain = sharedPoolMapper.selectSharedPoolMain(familyId);
+        if (domain == null) {
+            throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
+        }
+
+        return trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
+                familyId,
+                domain.getPoolRemainingData()
+        );
+    }
+
+    public Long calculateFamilyActualSharedUsed(Long familySharedPoolTotal, Long familyActualSharedRemaining) {
+        if (familySharedPoolTotal == null || familyActualSharedRemaining == null) {
+            return null;
+        }
+
+        long normalizedTotal = Math.max(0L, familySharedPoolTotal);
+        long normalizedRemaining = Math.max(0L, familyActualSharedRemaining);
+        return Math.max(0L, normalizedTotal - normalizedRemaining);
+    }
+
+    public FamilyMembersResDto.FamilyMemberDto resolveFamilyMemberActualDisplay(Long lineId) {
+        Long familyId = getFamilyIdByLineId(lineId);
+        Integer familyIdAsInt = Math.toIntExact(familyId);
+        Long familySharedPoolTotal = sharedPoolMapper.selectFamilyPoolTotalData(familyId);
+        Long familyActualSharedRemaining = resolveFamilyActualSharedRemaining(familyId);
+        Long familyActualSharedUsed = calculateFamilyActualSharedUsed(
+                familySharedPoolTotal,
+                familyActualSharedRemaining
+        );
+
+        return familyMapper.selectFamilyMembers(familyIdAsInt, lineId).stream()
+                .filter(member -> member.getLineId() != null && Objects.equals(member.getLineId().longValue(), lineId))
+                .findFirst()
+                .map(member -> FamilyMembersResDto.FamilyMemberDto.builder()
+                        .isMe(member.getIsMe())
+                        .userId(member.getUserId())
+                        .lineId(member.getLineId())
+                        .planId(member.getPlanId())
+                        .userName(member.getUserName())
+                        .phone(member.getPhone())
+                        .planName(member.getPlanName())
+                        .remainingData(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(
+                                lineId,
+                                member.getRemainingData()
+                        ))
+                        .basicDataAmount(member.getBasicDataAmount())
+                        .role(member.getRole())
+                        .sharedPoolTotalAmount(member.getSharedPoolTotalAmount())
+                        .sharedPoolRemainingAmount(resolveDisplaySharedPoolRemainingAmount(
+                                member,
+                                familyActualSharedRemaining,
+                                familyActualSharedUsed
+                        ))
+                        .sharedLimitActive(member.getSharedLimitActive())
+                        .build())
+                .orElseThrow(() -> new ApplicationException(SharedPoolErrorCode.NOT_FAMILY_MEMBER));
+    }
+
+    public Long resolveDisplaySharedPoolRemainingAmount(
+            FamilyMembersResDto.FamilyMemberDto member,
+            Long familyActualSharedRemaining,
+            Long familyActualSharedUsed
+    ) {
+        if (familyActualSharedRemaining == null) {
+            return member.getSharedPoolRemainingAmount();
+        }
+        if (!Boolean.TRUE.equals(member.getSharedLimitActive())) {
+            return familyActualSharedRemaining;
+        }
+
+        Long policyTotalAmount = member.getSharedPoolTotalAmount();
+        if (policyTotalAmount == null) {
+            return member.getSharedPoolRemainingAmount();
+        }
+        if (policyTotalAmount == -1L) {
+            return familyActualSharedRemaining;
+        }
+
+        long normalizedFamilyRemaining = Math.max(0L, familyActualSharedRemaining);
+        long normalizedFamilyUsed = familyActualSharedUsed == null ? 0L : Math.max(0L, familyActualSharedUsed);
+        long policyRemaining = Math.max(0L, policyTotalAmount - normalizedFamilyUsed);
+        return Math.min(normalizedFamilyRemaining, policyRemaining);
     }
 
     private Long applySharedLimit(Long actualAmount, Long sharedDataLimit) {
@@ -349,6 +442,97 @@ public class FamilySharedPoolsService {
                 .phoneNumber(memberUsage.getPhoneNumber())
                 .monthlySharedPoolUsage(adjustedUsage)
                 .build();
+    }
+
+    private List<SharedPoolMonthlyUsageResDto.MemberUsageDto> reconcileMemberActualSharedUsage(
+            List<SharedPoolMonthlyUsageResDto.MemberUsageDto> membersUsageList,
+            Long familyActualSharedUsed
+    ) {
+        if (membersUsageList == null || membersUsageList.isEmpty() || familyActualSharedUsed == null) {
+            return membersUsageList;
+        }
+
+        long targetUsed = Math.max(0L, familyActualSharedUsed);
+        long currentUsed = membersUsageList.stream()
+                .map(SharedPoolMonthlyUsageResDto.MemberUsageDto::getMonthlySharedPoolUsage)
+                .mapToLong(this::normalizeNonNegative)
+                .sum();
+
+        if (currentUsed == targetUsed) {
+            return membersUsageList;
+        }
+        if (targetUsed == 0L) {
+            return membersUsageList.stream()
+                    .map(memberUsage -> SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
+                            .userName(memberUsage.getUserName())
+                            .phoneNumber(memberUsage.getPhoneNumber())
+                            .monthlySharedPoolUsage(0L)
+                            .build())
+                    .toList();
+        }
+        if (currentUsed == 0L) {
+            log.warn("family_shared_usage_reconcile_skipped_no_member_usage familyUsed={}", targetUsed);
+            return membersUsageList;
+        }
+
+        List<SharedPoolMonthlyUsageResDto.MemberUsageDto> adjustedList = new ArrayList<>(membersUsageList);
+        long difference = targetUsed - currentUsed;
+
+        if (difference > 0L) {
+            int targetIndex = 0;
+            long maxUsage = Long.MIN_VALUE;
+            for (int index = 0; index < adjustedList.size(); index++) {
+                long usage = normalizeNonNegative(adjustedList.get(index).getMonthlySharedPoolUsage());
+                if (usage > maxUsage) {
+                    maxUsage = usage;
+                    targetIndex = index;
+                }
+            }
+
+            SharedPoolMonthlyUsageResDto.MemberUsageDto targetMember = adjustedList.get(targetIndex);
+            adjustedList.set(
+                    targetIndex,
+                    SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
+                            .userName(targetMember.getUserName())
+                            .phoneNumber(targetMember.getPhoneNumber())
+                            .monthlySharedPoolUsage(
+                                    normalizeNonNegative(targetMember.getMonthlySharedPoolUsage()) + difference
+                            )
+                            .build()
+            );
+            return adjustedList;
+        }
+
+        long remainingToSubtract = Math.abs(difference);
+        while (remainingToSubtract > 0L) {
+            int targetIndex = -1;
+            long maxUsage = 0L;
+            for (int index = 0; index < adjustedList.size(); index++) {
+                long usage = normalizeNonNegative(adjustedList.get(index).getMonthlySharedPoolUsage());
+                if (usage > maxUsage) {
+                    maxUsage = usage;
+                    targetIndex = index;
+                }
+            }
+
+            if (targetIndex < 0 || maxUsage == 0L) {
+                break;
+            }
+
+            long deduction = Math.min(maxUsage, remainingToSubtract);
+            SharedPoolMonthlyUsageResDto.MemberUsageDto targetMember = adjustedList.get(targetIndex);
+            adjustedList.set(
+                    targetIndex,
+                    SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
+                            .userName(targetMember.getUserName())
+                            .phoneNumber(targetMember.getPhoneNumber())
+                            .monthlySharedPoolUsage(maxUsage - deduction)
+                            .build()
+            );
+            remainingToSubtract -= deduction;
+        }
+
+        return adjustedList;
     }
 
     private long readMonthlySharedUsageFromRedis(Long lineId) {

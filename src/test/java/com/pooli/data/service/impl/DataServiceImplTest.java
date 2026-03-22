@@ -29,7 +29,9 @@ import com.pooli.data.domain.dto.response.MonthlyDataUsageResDto;
 import com.pooli.data.domain.dto.response.MonthlyDataUsageResDto.MonthlyUsageDto;
 import com.pooli.data.error.DataErrorCode;
 import com.pooli.data.mapper.DataMapper;
+import com.pooli.family.domain.dto.response.FamilyMembersResDto;
 import com.pooli.family.domain.entity.FamilyLine;
+import com.pooli.family.service.FamilySharedPoolsService;
 import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.PermissionLineMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
@@ -46,6 +48,9 @@ class DataServiceImplTest {
 
     @Mock
     private FamilyLineMapper familyLineMapper;
+
+    @Mock
+    private FamilySharedPoolsService familySharedPoolsService;
 
     @Mock
     private StringRedisTemplate cacheStringRedisTemplate;
@@ -337,6 +342,14 @@ class DataServiceImplTest {
             .thenReturn("25");
         when(valueOperations.get("pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM"))))
             .thenReturn("30");
+        when(familySharedPoolsService.resolveFamilyMemberActualDisplay(1L)).thenReturn(
+            FamilyMembersResDto.FamilyMemberDto.builder()
+                .basicDataAmount(100L)
+                .remainingData(90L)
+                .sharedPoolTotalAmount(200L)
+                .sharedPoolRemainingAmount(170L)
+                .build()
+        );
 
         DataUsageResDto result = dataService.getDataUsage(1L, yearMonth);
 

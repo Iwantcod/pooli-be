@@ -378,6 +378,11 @@ class FamilySharedPoolsServiceTest {
 
         when(sharedPoolMapper.selectFamilyIdByLineId(101L)).thenReturn(1L);
         when(sharedPoolMapper.selectFamilyPoolTotalData(1L)).thenReturn(10_000L);
+        when(sharedPoolMapper.selectSharedPoolMain(1L)).thenReturn(
+                SharedPoolDomain.builder()
+                        .poolRemainingData(2_000L)
+                        .build()
+        );
         when(sharedPoolMapper.selectFamilyMonthlySharedUsageByLine(1L)).thenReturn(List.of(
                 SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
                         .userName("김민준")
@@ -396,6 +401,7 @@ class FamilySharedPoolsServiceTest {
         when(trafficRedisRuntimePolicyProvider.getIfAvailable()).thenReturn(trafficRedisRuntimePolicy);
         when(trafficQuotaCacheServiceProvider.getIfAvailable()).thenReturn(trafficQuotaCacheService);
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(zoneId);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 2_000L)).thenReturn(2_000L);
         when(trafficRedisKeyFactory.monthlySharedUsageKey(101L, targetMonth)).thenReturn("monthly:101");
         when(trafficRedisKeyFactory.monthlySharedUsageKey(201L, targetMonth)).thenReturn("monthly:201");
         when(trafficQuotaCacheService.readValueOrDefault("monthly:101", 0L)).thenReturn(5_000L);
@@ -418,6 +424,11 @@ class FamilySharedPoolsServiceTest {
 
         when(sharedPoolMapper.selectFamilyIdByLineId(101L)).thenReturn(1L);
         when(sharedPoolMapper.selectFamilyPoolTotalData(1L)).thenReturn(10_000L);
+        when(sharedPoolMapper.selectSharedPoolMain(1L)).thenReturn(
+                SharedPoolDomain.builder()
+                        .poolRemainingData(8_000L)
+                        .build()
+        );
         when(sharedPoolMapper.selectFamilyMonthlySharedUsageByLine(1L)).thenReturn(List.of(
                 SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
                         .userName("김민준")
@@ -427,6 +438,7 @@ class FamilySharedPoolsServiceTest {
                         .build()
         ));
         when(trafficRedisKeyFactoryProvider.getIfAvailable()).thenReturn(null);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 8_000L)).thenReturn(8_000L);
 
         SharedPoolMonthlyUsageResDto result = service.getFamilyMonthlySharedUsageTotal(principal);
 

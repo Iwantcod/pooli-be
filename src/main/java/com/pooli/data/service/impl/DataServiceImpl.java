@@ -20,7 +20,9 @@ import com.pooli.data.domain.dto.response.MonthlyDataUsageResDto.MonthlyUsageDto
 import com.pooli.data.error.DataErrorCode;
 import com.pooli.data.mapper.DataMapper;
 import com.pooli.data.service.DataService;
+import com.pooli.family.domain.dto.response.FamilyMembersResDto;
 import com.pooli.family.domain.entity.FamilyLine;
+import com.pooli.family.service.FamilySharedPoolsService;
 import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.PermissionLineMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
@@ -35,6 +37,7 @@ public class DataServiceImpl implements DataService {
 	private final DataMapper dataMapper;
     private final PermissionLineMapper permissionLineMapper;
     private final FamilyLineMapper familyLineMapper;
+    private final FamilySharedPoolsService familySharedPoolsService;
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
@@ -132,8 +135,8 @@ public class DataServiceImpl implements DataService {
 
           long personalUsedAmount = normalizeNonNegative(row.getPersonalUsedAmount());
           long sharedPoolUsedAmount = normalizeNonNegative(row.getSharedPoolUsedAmount());
-          long personalTotalAmount = isCurrentMonth ? normalizeNonNegative(row.getPersonalTotalAmount()) : 0L;
-          long sharedPoolTotalAmount = isCurrentMonth ? normalizeNonNegative(row.getSharedPoolTotalAmount()) : 0L;
+          Long personalTotalAmount = isCurrentMonth ? normalizeTotalAmount(row.getPersonalTotalAmount()) : null;
+          Long sharedPoolTotalAmount = isCurrentMonth ? normalizeTotalAmount(row.getSharedPoolTotalAmount()) : null;
 
           if (isCurrentMonth) {
               LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
@@ -155,14 +158,33 @@ public class DataServiceImpl implements DataService {
 
               sharedPoolUsedAmount = adjustedSharedUsage;
               personalUsedAmount = clampNonNegative(adjustedTotalUsage - adjustedSharedUsage);
+
+              FamilyMembersResDto.FamilyMemberDto currentDisplay =
+                      familySharedPoolsService.resolveFamilyMemberActualDisplay(lineId);
+              personalTotalAmount = normalizeTotalAmount(currentDisplay.getBasicDataAmount());
+              Long personalRemainingAmount = normalizeRemainingAmount(currentDisplay.getRemainingData());
+              sharedPoolTotalAmount = normalizeTotalAmount(currentDisplay.getSharedPoolTotalAmount());
+              Long sharedPoolRemainingAmount = normalizeRemainingAmount(currentDisplay.getSharedPoolRemainingAmount());
+
+              if (personalTotalAmount != null
+                      && personalRemainingAmount != null
+                      && personalTotalAmount >= 0L) {
+                  personalUsedAmount = clampNonNegative(personalTotalAmount - personalRemainingAmount);
+              }
+
+              if (sharedPoolTotalAmount != null
+                      && sharedPoolRemainingAmount != null
+                      && sharedPoolTotalAmount >= 0L) {
+                  sharedPoolUsedAmount = clampNonNegative(sharedPoolTotalAmount - sharedPoolRemainingAmount);
+              }
           }
 
 	      return DataUsageResDto.builder()
 	              .isCurrentMonth(isCurrentMonth)
 	              .personalUsedAmount(personalUsedAmount)
 	              .sharedPoolUsedAmount(sharedPoolUsedAmount)
-	              .personalTotalAmount(isCurrentMonth ? personalTotalAmount : null)
-	              .sharedPoolTotalAmount(isCurrentMonth ? sharedPoolTotalAmount : null)
+	              .personalTotalAmount(personalTotalAmount)
+	              .sharedPoolTotalAmount(sharedPoolTotalAmount)
 	              .build();
 	}
 	
@@ -266,6 +288,26 @@ public class DataServiceImpl implements DataService {
             return 0L;
         }
         return value;
+    }
+
+    private Long normalizeTotalAmount(Long value) {
+        if (value == null) {
+            return null;
+        }
+        if (value < 0L) {
+            return -1L;
+        }
+        return Math.max(0L, value);
+    }
+
+    private Long normalizeRemainingAmount(Long value) {
+        if (value == null) {
+            return null;
+        }
+        if (value < 0L) {
+            return -1L;
+        }
+        return Math.max(0L, value);
     }
 
     private long clampNonNegative(long value) {

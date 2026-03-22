@@ -24,6 +24,7 @@ import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 import com.pooli.family.domain.enums.FamilyRole;
 import com.pooli.family.exception.FamilyErrorCode;
 import com.pooli.family.mapper.FamilyMapper;
+import com.pooli.family.service.FamilySharedPoolsService;
 import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,6 +32,9 @@ class FamilyServiceImplTest {
 
     @Mock
     private FamilyMapper familyMapper;
+
+    @Mock
+    private FamilySharedPoolsService familySharedPoolsService;
 
     @Mock
     private TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
@@ -80,7 +84,10 @@ class FamilyServiceImplTest {
 
         when(familyMapper.selectFamilyMembersHeader(10L)).thenReturn(header);
         when(familyMapper.selectFamilyMembers(1, 10L)).thenReturn(members);
-        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 300L)).thenReturn(700L);
+        when(familySharedPoolsService.resolveFamilyActualSharedRemaining(1L)).thenReturn(700L);
+        when(familySharedPoolsService.calculateFamilyActualSharedUsed(1_000L, 700L)).thenReturn(300L);
+        when(familySharedPoolsService.resolveDisplaySharedPoolRemainingAmount(members.get(0), 700L, 300L))
+                .thenReturn(700L);
         when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L, 500L)).thenReturn(650L);
 
         FamilyMembersResDto result = familyService.getFamilyMembers(principal);
@@ -90,7 +97,7 @@ class FamilyServiceImplTest {
         assertThat(result.getSharedPoolTotalData()).isEqualTo(1_000L);
         assertThat(result.getMembers()).hasSize(1);
         assertThat(result.getMembers().get(0).getRemainingData()).isEqualTo(650L);
-        assertThat(result.getMembers().get(0).getSharedPoolRemainingAmount()).isEqualTo(200L);
+        assertThat(result.getMembers().get(0).getSharedPoolRemainingAmount()).isEqualTo(700L);
     }
 
     @Test
@@ -114,7 +121,10 @@ class FamilyServiceImplTest {
 
         when(familyMapper.selectFamilyMembersHeader(10L)).thenReturn(header);
         when(familyMapper.selectFamilyMembers(1, 10L)).thenReturn(members);
-        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 300L)).thenReturn(700L);
+        when(familySharedPoolsService.resolveFamilyActualSharedRemaining(1L)).thenReturn(700L);
+        when(familySharedPoolsService.calculateFamilyActualSharedUsed(1_000L, 700L)).thenReturn(300L);
+        when(familySharedPoolsService.resolveDisplaySharedPoolRemainingAmount(members.get(0), 700L, 300L))
+                .thenReturn(700L);
         when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L, 500L)).thenReturn(650L);
 
         FamilyMembersResDto result = familyService.getFamilyMembers(principal);
