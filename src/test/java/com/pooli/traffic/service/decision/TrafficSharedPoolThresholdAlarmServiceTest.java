@@ -10,8 +10,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.time.YearMonth;
-
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,8 +22,6 @@ import com.pooli.traffic.domain.outbox.OutboxEventType;
 import com.pooli.traffic.mapper.TrafficSharedThresholdAlarmLogMapper;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.runtime.TrafficFamilyMetaCacheService;
-import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
-import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,12 +29,6 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
 
     @Mock
     private TrafficFamilyMetaCacheService trafficFamilyMetaCacheService;
-
-    @Mock
-    private TrafficQuotaCacheService trafficQuotaCacheService;
-
-    @Mock
-    private TrafficRedisKeyFactory trafficRedisKeyFactory;
 
     @Mock
     private TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
@@ -66,9 +56,6 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
                         .thresholdActive(false)
                         .build()
         );
-        when(trafficRedisKeyFactory.remainingSharedAmountKey(eq(22L), eq(YearMonth.now(java.time.ZoneId.of("Asia/Seoul")))))
-                .thenReturn("pooli:remaining_shared_amount:22:202603");
-        when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_shared_amount:22:202603", 0L)).thenReturn(0L);
 
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(anyLong(), anyString(), anyInt()))
                 .thenReturn(0);
@@ -100,9 +87,6 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
                         .thresholdActive(true)
                         .build()
         );
-        when(trafficRedisKeyFactory.remainingSharedAmountKey(eq(22L), eq(YearMonth.now(java.time.ZoneId.of("Asia/Seoul")))))
-                .thenReturn("pooli:remaining_shared_amount:22:202603");
-        when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_shared_amount:22:202603", 0L)).thenReturn(0L);
 
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(anyLong(), anyString(), anyInt()))
                 .thenReturn(0);
@@ -130,9 +114,6 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
                         .thresholdActive(true)
                         .build()
         );
-        when(trafficRedisKeyFactory.remainingSharedAmountKey(eq(22L), eq(YearMonth.now(java.time.ZoneId.of("Asia/Seoul")))))
-                .thenReturn("pooli:remaining_shared_amount:22:202603");
-        when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_shared_amount:22:202603", 0L)).thenReturn(0L);
         // 나머지 임계치는 이번 케이스 검증 대상이 아니므로 생성되지 않게 고정한다.
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(anyLong(), anyString(), anyInt())).thenReturn(0);
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(eq(22L), anyString(), eq(30))).thenReturn(1);
@@ -164,9 +145,6 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
                         .thresholdActive(true)
                         .build()
         );
-        when(trafficRedisKeyFactory.remainingSharedAmountKey(eq(22L), eq(YearMonth.now(java.time.ZoneId.of("Asia/Seoul")))))
-                .thenReturn("pooli:remaining_shared_amount:22:202603");
-        when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_shared_amount:22:202603", 0L)).thenReturn(0L);
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(anyLong(), anyString(), anyInt())).thenReturn(0);
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(eq(22L), anyString(), eq(0))).thenReturn(1);
 

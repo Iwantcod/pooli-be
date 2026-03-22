@@ -12,7 +12,6 @@ import java.util.Optional;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.beans.factory.ObjectProvider;
 
 import com.pooli.policy.domain.dto.response.ImmediateBlockResDto;
 import com.pooli.policy.domain.dto.response.PolicyActivationSnapshotResDto;
@@ -34,7 +33,6 @@ import com.pooli.traffic.domain.enums.TrafficPoolType;
 import com.pooli.traffic.mapper.TrafficDbUsageMapper;
 import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
-import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -62,7 +60,6 @@ public class TrafficDbDeductFallbackService {
     private final RepeatBlockMapper repeatBlockMapper;
     private final TrafficRefillSourceMapper trafficRefillSourceMapper;
     private final TrafficDbUsageMapper trafficDbUsageMapper;
-    private final ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
 
     /**
      * DB fallback 정책 판정 + 차감 + 집계 갱신을 단일 트랜잭션으로 수행합니다.
@@ -96,8 +93,10 @@ public class TrafficDbDeductFallbackService {
                 return buildResult(0L, TrafficLuaStatus.BLOCKED_IMMEDIATE);
             }
 
+            DayOfWeek nowDayOfWeek = toLuaDayOfWeek(now);
+            DayOfWeek yesterdayDayOfWeek = previousLuaDayOfWeek(nowDayOfWeek);
             if (isPolicyEnabled(policyActivation, POLICY_REPEAT_BLOCK_ID)
-                    && isRepeatBlocked(payload.getLineId(), now.toLocalTime(), toLuaDayOfWeek(now))) {
+                    && isRepeatBlocked(payload.getLineId(), now.toLocalTime(), nowDayOfWeek, yesterdayDayOfWeek)) {
                 return buildResult(0L, TrafficLuaStatus.BLOCKED_REPEAT);
             }
         }
@@ -248,16 +247,6 @@ public class TrafficDbDeductFallbackService {
             trafficDbUsageMapper.upsertFamilySharedUsageDaily(payload.getFamilyId(), payload.getLineId(), usageDate, answer);
         }
 
-        if (poolType == TrafficPoolType.SHARED && payload.getFamilyId() != null && payload.getFamilyId() > 0 && answer > 0) {
-            if (trafficBalanceStateWriteThroughServiceProvider != null) {
-                TrafficBalanceStateWriteThroughService writeThroughService =
-                        trafficBalanceStateWriteThroughServiceProvider.getIfAvailable();
-                if (writeThroughService != null) {
-                    writeThroughService.markSharedMetaDbFallbackDeducted(payload.getFamilyId(), answer);
-                }
-            }
-        }
-
         return buildResult(answer, finalStatus);
     }
 
@@ -352,7 +341,12 @@ public class TrafficDbDeductFallbackService {
     /**
      * repeat block 정책의 요일/시간대 차단 여부를 확인합니다.
      */
-    private boolean isRepeatBlocked(Long lineId, LocalTime nowTime, DayOfWeek nowDayOfWeek) {
+    private boolean isRepeatBlocked(
+            Long lineId,
+            LocalTime nowTime,
+            DayOfWeek nowDayOfWeek,
+            DayOfWeek yesterdayDayOfWeek
+    ) {
         List<RepeatBlockPolicyResDto> repeatBlocks = repeatBlockMapper.selectRepeatBlocksByLineId(lineId);
         if (repeatBlocks == null || repeatBlocks.isEmpty()) {
             return false;
@@ -369,15 +363,33 @@ public class TrafficDbDeductFallbackService {
             }
 
             for (RepeatBlockDayResDto day : days) {
-                if (day == null || day.getDayOfWeek() != nowDayOfWeek) {
+                if (day == null || day.getDayOfWeek() == null) {
                     continue;
                 }
                 if (day.getStartAt() == null || day.getEndAt() == null) {
                     continue;
                 }
 
-                boolean inRange = !nowTime.isBefore(day.getStartAt()) && !nowTime.isAfter(day.getEndAt());
-                if (inRange) {
+                LocalTime startAt = day.getStartAt();
+                LocalTime endAt = day.getEndAt();
+
+                if (!startAt.isAfter(endAt)) {
+                    if (day.getDayOfWeek() != nowDayOfWeek) {
+                        continue;
+                    }
+                    boolean inRange = !nowTime.isBefore(startAt) && !nowTime.isAfter(endAt);
+                    if (inRange) {
+                        return true;
+                    }
+                    continue;
+                }
+
+                // 자정 넘김 구간(start > end)은 당일 밤 구간과 익일 새벽 구간으로 나눠 판정한다.
+                boolean isTodaySegmentBlocked = day.getDayOfWeek() == nowDayOfWeek
+                        && !nowTime.isBefore(startAt);
+                boolean isNextDaySegmentBlocked = day.getDayOfWeek() == yesterdayDayOfWeek
+                        && !nowTime.isAfter(endAt);
+                if (isTodaySegmentBlocked || isNextDaySegmentBlocked) {
                     return true;
                 }
             }
@@ -527,6 +539,18 @@ public class TrafficDbDeductFallbackService {
             case 5 -> DayOfWeek.FRI;
             default -> DayOfWeek.SAT;
         };
+    }
+
+    /**
+     * Lua day_num 체계(SUN=0) 기준으로 전일 요일을 계산합니다.
+     */
+    private DayOfWeek previousLuaDayOfWeek(DayOfWeek nowDayOfWeek) {
+        if (nowDayOfWeek == null) {
+            return null;
+        }
+        DayOfWeek[] values = DayOfWeek.values();
+        int previousIndex = (nowDayOfWeek.ordinal() + values.length - 1) % values.length;
+        return values[previousIndex];
     }
 
     private long normalizeNonNegative(Long value) {

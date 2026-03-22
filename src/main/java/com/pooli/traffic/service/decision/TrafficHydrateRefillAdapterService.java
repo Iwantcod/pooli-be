@@ -486,7 +486,7 @@ public class TrafficHydrateRefillAdapterService {
      * 이 서비스에서 가장 복잡한 흐름을 제어하며, 게이트 키퍼와 분산 락을 통해 DB 부하 및 동시성을 제어합니다.
      * 
      * [상세 로직 - '리필 오케스트레이션']
-     * 1. 리필 게이트(Refill Gate) 체크: 불필요한 DB 접근을 막기 위해 게이트 상태(OK, WAIT, SKIP)를 먼저 확인합니다.
+     * 1. 리필 게이트(Refill Gate) 체크: 불필요한 DB 접근을 막기 위해 게이트 상태(OK, WAIT, SKIP_DB_EMPTY, SKIP_THRESHOLD)를 먼저 확인합니다.
      * 2. 리필 락(Refill Lock) 획득/유지: 한 번에 하나의 프로세스만 특정 회선의 리필을 수행하도록 제어합니다.
      * 3. DB 리필 요청(claimRefillAmountFromDb): DB에서 실제 가용 데이터 잔량을 차감(Claim)합니다. 이 과정은 별도의 Outbox에 기록됩니다.
      * 4. Redis 멱등 적용(applyRefillWithIdempotency): DB에서 가져온 양만큼 Redis 잔액을 늘립니다. 
@@ -550,13 +550,46 @@ public class TrafficHydrateRefillAdapterService {
             );
 
             if (gateStatus != TrafficRefillGateStatus.OK) {
-                // OK가 아닌 경우(Wait, Skip) 리필을 진행하지 않고 현재의 NO_BALANCE 결과를 그대로 반환합니다.
+                // OK가 아닌 경우는 기본적으로 리필을 진행하지 않고 현재의 NO_BALANCE 결과를 유지합니다.
                 log.debug(
                         "traffic_refill_gate_not_ok poolType={} gateStatus={}",
                         poolType,
                         gateStatus
                 );
-                trafficRefillMetrics.increment(poolType.name(), "gate_" + gateStatus.name().toLowerCase());
+                String gateMetricResult = "gate_" + gateStatus.name().toLowerCase();
+                trafficRefillMetrics.increment(poolType.name(), gateMetricResult);
+                // 기존 대시보드 호환을 위해 상세 SKIP과 함께 집계용 gate_skip도 유지합니다.
+                if (gateStatus == TrafficRefillGateStatus.SKIP_DB_EMPTY
+                        || gateStatus == TrafficRefillGateStatus.SKIP_THRESHOLD) {
+                    trafficRefillMetrics.increment(poolType.name(), "gate_skip");
+                }
+
+                // 공유풀은 DB 고갈(SKIP_DB_EMPTY)로 리필이 닫혔을 때만 QoS fallback을 1회 허용합니다.
+                // WAIT/SKIP_THRESHOLD에서는 기존대로 즉시 NO_BALANCE를 유지합니다.
+                if (poolType == TrafficPoolType.SHARED
+                        && gateStatus == TrafficRefillGateStatus.SKIP_DB_EMPTY
+                        && retryTargetData > 0) {
+                    log.debug(
+                            "traffic_qos_fallback_on_gate_skip_db_empty poolType={} balanceKey={} residual={}",
+                            poolType,
+                            balanceKey,
+                            retryTargetData
+                    );
+                    TrafficLuaExecutionResult qosFallbackResult = retrySharedWithQosFallback(
+                            payload,
+                            balanceKey,
+                            retryTargetData,
+                            context,
+                            whitelistBypassFlag,
+                            retriedResult
+                    );
+                    return mergeSharedDbNoopQosFallbackResult(
+                            normalizedRequestedDataBytes,
+                            firstDeductedAmount,
+                            retriedResult,
+                            qosFallbackResult
+                    );
+                }
                 return retriedResult;
             }
 

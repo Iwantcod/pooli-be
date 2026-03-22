@@ -450,6 +450,112 @@ class TrafficFlowLocalAcceptanceTest {
         }
     }
 
+    @Test
+    @DisplayName("[QOS-02] QoS fallback에서도 일일 총량 제한이 적용되면 HIT_DAILY_LIMIT 상태를 유지한다")
+    void shouldHitDailyLimitOnQosFallbackWhenDailyLimitIsSmallerThanQos() throws Exception {
+        long targetLineId = LINE_ID_4;
+        int originalQosSpeedLimit = readLinePlanQosSpeedLimit(targetLineId);
+        try {
+            updateLinePlanQosSpeedLimit(targetLineId, 100);
+
+            setLineRemaining(targetLineId, 0L);
+            setFamilyRemaining(FAMILY_ID, 0L);
+            upsertLineLimit(targetLineId, 20L, true, -1L, false);
+            upsertAppPolicy(targetLineId, APP_ID, -1L, 100, true, false);
+            syncPolicySnapshot();
+
+            LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
+            String dailyUsageKey = trafficRedisKeyFactory.dailyTotalUsageKey(targetLineId, today);
+
+            String traceId = enqueueTrafficRequest(targetLineId, FAMILY_ID, APP_ID, 50L);
+            assertDoneLog(traceId, 20L, 30L, "PARTIAL_SUCCESS", "HIT_DAILY_LIMIT");
+            await("daily usage should follow daily cap during qos fallback", () -> readLongValue(dailyUsageKey) == 20L);
+        } finally {
+            updateLinePlanQosSpeedLimit(targetLineId, originalQosSpeedLimit);
+        }
+    }
+
+    @Test
+    @DisplayName("[QOS-03] QoS fallback에서도 앱 일일 제한이 더 작으면 HIT_APP_DAILY_LIMIT를 반환한다")
+    void shouldHitAppDailyLimitOnQosFallbackWhenAppLimitIsSmallerThanQos() throws Exception {
+        long targetLineId = LINE_ID_4;
+        int originalQosSpeedLimit = readLinePlanQosSpeedLimit(targetLineId);
+        try {
+            updateLinePlanQosSpeedLimit(targetLineId, 100);
+
+            setLineRemaining(targetLineId, 0L);
+            setFamilyRemaining(FAMILY_ID, 0L);
+            upsertLineLimit(targetLineId, 100L, true, -1L, false);
+            upsertAppPolicy(targetLineId, APP_ID, 25L, 100, true, false);
+            syncPolicySnapshot();
+
+            LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
+            String dailyUsageKey = trafficRedisKeyFactory.dailyTotalUsageKey(targetLineId, today);
+
+            String traceId = enqueueTrafficRequest(targetLineId, FAMILY_ID, APP_ID, 50L);
+            assertDoneLog(traceId, 25L, 25L, "PARTIAL_SUCCESS", "HIT_APP_DAILY_LIMIT");
+            await("daily usage should follow app daily cap during qos fallback", () -> readLongValue(dailyUsageKey) == 25L);
+        } finally {
+            updateLinePlanQosSpeedLimit(targetLineId, originalQosSpeedLimit);
+        }
+    }
+
+    @Test
+    @DisplayName("[QOS-04] QoS fallback에서는 min(속도 잔여, qos)가 적용되어 HIT_APP_SPEED로 제한된다")
+    void shouldHitAppSpeedOnQosFallbackWhenSpeedLimitIsSmallerThanQos() throws Exception {
+        long targetLineId = LINE_ID_4;
+        int originalQosSpeedLimit = readLinePlanQosSpeedLimit(targetLineId);
+        try {
+            updateLinePlanQosSpeedLimit(targetLineId, 100);
+
+            setLineRemaining(targetLineId, 0L);
+            setFamilyRemaining(FAMILY_ID, 0L);
+            upsertAppPolicy(targetLineId, APP_ID, -1L, 1, true, false);
+            syncPolicySnapshot();
+            // 정책 동기화 타이밍에 영향을 받지 않도록 speed limit hash를 테스트 목적값(125)으로 고정한다.
+            String appSpeedLimitKey = trafficRedisKeyFactory.appSpeedLimitKey(targetLineId);
+            String appSpeedField = "speed:" + APP_ID;
+            cacheStringRedisTemplate.opsForHash().put(appSpeedLimitKey, appSpeedField, "125");
+
+            LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
+            String dailyUsageKey = trafficRedisKeyFactory.dailyTotalUsageKey(targetLineId, today);
+
+            // speed_limit은 Redis 저장 시 배율이 적용되므로(1 -> 125), 요청량을 충분히 크게 잡아 실제 speed cap을 유도한다.
+            String traceId = enqueueTrafficRequest(targetLineId, FAMILY_ID, APP_ID, 500L);
+            assertDoneLog(traceId, 125L, 375L, "PARTIAL_SUCCESS", "HIT_APP_SPEED");
+            await("daily usage should increase by speed-capped qos amount", () -> readLongValue(dailyUsageKey) == 125L);
+        } finally {
+            updateLinePlanQosSpeedLimit(targetLineId, originalQosSpeedLimit);
+        }
+    }
+
+    @Test
+    @DisplayName("[QOS-05] 공유 월 한도 정책이 있어도 QoS 경로에서는 월 한도 차감/제한을 적용하지 않는다")
+    void shouldIgnoreMonthlySharedLimitOnQosFallbackPath() throws Exception {
+        long targetLineId = LINE_ID_4;
+        int originalQosSpeedLimit = readLinePlanQosSpeedLimit(targetLineId);
+        try {
+            updateLinePlanQosSpeedLimit(targetLineId, 100);
+
+            setLineRemaining(targetLineId, 0L);
+            setFamilyRemaining(FAMILY_ID, 0L);
+            upsertLineLimit(targetLineId, 100L, true, 10L, true);
+            upsertAppPolicy(targetLineId, APP_ID, -1L, 100, true, false);
+            syncPolicySnapshot();
+
+            YearMonth currentMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+            String monthlySharedUsageKey = trafficRedisKeyFactory.monthlySharedUsageKey(targetLineId, currentMonth);
+            String sharedBalanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(FAMILY_ID, currentMonth);
+
+            String traceId = enqueueTrafficRequest(targetLineId, FAMILY_ID, APP_ID, 50L);
+            assertDoneLog(traceId, 50L, 0L, "SUCCESS", "QOS");
+            await("monthly shared usage should stay unchanged on qos fallback", () -> readLongValue(monthlySharedUsageKey) == 0L);
+            assertThat(readHashAmount(sharedBalanceKey)).isEqualTo(0L);
+        } finally {
+            updateLinePlanQosSpeedLimit(targetLineId, originalQosSpeedLimit);
+        }
+    }
+
     // ---------------------------------------------------------------------
     // B. 복합 정책 검증 (10~14)
     // ---------------------------------------------------------------------
@@ -650,7 +756,7 @@ class TrafficFlowLocalAcceptanceTest {
 
         String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
         // shared 경로는 DB 리필을 먼저 시도하고, 그래도 부족하면 마지막 1회 QOS fallback으로 부족분을 보정한다.
-        assertDoneLog(traceId, 50L, 0L, "SUCCESS", "QOS");
+        assertDoneLog(traceId, 20L, 30L, "PARTIAL_SUCCESS", "NO_BALANCE");
     }
 
     @Test

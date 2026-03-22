@@ -340,6 +340,128 @@ class TrafficPolicyWriteThroughServiceTest {
             );
             verify(redisOutboxRecordService).markSuccess(16L);
         }
+
+        @Test
+        @DisplayName("자정 넘김 구간은 당일/익일 두 개 field로 분할 저장")
+        void splitsCrossMidnightRangeIntoTwoFields() {
+            // given
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_REPEAT_BLOCK), any(), isNull())).thenReturn(21L);
+            when(trafficRedisKeyFactory.repeatBlockKey(101L)).thenReturn("pooli:repeat_block:101");
+            when(trafficPolicyVersionedRedisService.syncRepeatBlockSnapshot(anyString(), any(), anyLong()))
+                    .thenReturn(PolicySyncResult.SUCCESS);
+
+            RepeatBlockDayResDto crossMidnightDay = RepeatBlockDayResDto.builder()
+                    .dayOfWeek(DayOfWeek.MON)
+                    .startAt(LocalTime.of(22, 0, 0))
+                    .endAt(LocalTime.of(7, 0, 0))
+                    .build();
+            RepeatBlockPolicyResDto repeatBlock = RepeatBlockPolicyResDto.builder()
+                    .repeatBlockId(88L)
+                    .lineId(101L)
+                    .isActive(true)
+                    .days(List.of(crossMidnightDay))
+                    .build();
+
+            // when
+            trafficPolicyWriteThroughService.syncRepeatBlock(101L, List.of(repeatBlock));
+
+            // then
+            verify(trafficPolicyVersionedRedisService).syncRepeatBlockSnapshot(
+                    eq("pooli:repeat_block:101"),
+                    eq(Map.of(
+                            "day:1:88:0", "79200:86399",
+                            "day:2:88:1", "0:25200"
+                    )),
+                    anyLong()
+            );
+            verify(redisOutboxRecordService).markSuccess(21L);
+        }
+
+        @Test
+        @DisplayName("분할 구간과 원본 구간이 같은 요일에 겹쳐도 각 field를 보존")
+        void keepsDerivedAndOriginalRangesOnSameDay() {
+            // given
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_REPEAT_BLOCK), any(), isNull())).thenReturn(22L);
+            when(trafficRedisKeyFactory.repeatBlockKey(101L)).thenReturn("pooli:repeat_block:101");
+            when(trafficPolicyVersionedRedisService.syncRepeatBlockSnapshot(anyString(), any(), anyLong()))
+                    .thenReturn(PolicySyncResult.SUCCESS);
+
+            RepeatBlockDayResDto mondayNight = RepeatBlockDayResDto.builder()
+                    .dayOfWeek(DayOfWeek.MON)
+                    .startAt(LocalTime.of(22, 0, 0))
+                    .endAt(LocalTime.of(7, 0, 0))
+                    .build();
+            RepeatBlockDayResDto tuesdayNight = RepeatBlockDayResDto.builder()
+                    .dayOfWeek(DayOfWeek.TUE)
+                    .startAt(LocalTime.of(22, 0, 0))
+                    .endAt(LocalTime.of(7, 0, 0))
+                    .build();
+            RepeatBlockPolicyResDto repeatBlock = RepeatBlockPolicyResDto.builder()
+                    .repeatBlockId(99L)
+                    .lineId(101L)
+                    .isActive(true)
+                    .days(List.of(mondayNight, tuesdayNight))
+                    .build();
+
+            // when
+            trafficPolicyWriteThroughService.syncRepeatBlock(101L, List.of(repeatBlock));
+
+            // then
+            verify(trafficPolicyVersionedRedisService).syncRepeatBlockSnapshot(
+                    eq("pooli:repeat_block:101"),
+                    eq(Map.of(
+                            "day:1:99:0", "79200:86399",
+                            "day:2:99:1", "0:25200",
+                            "day:2:99:0", "79200:86399",
+                            "day:3:99:1", "0:25200"
+                    )),
+                    anyLong()
+            );
+            verify(redisOutboxRecordService).markSuccess(22L);
+        }
+
+        @Test
+        @DisplayName("비활성/불완전 repeat block day 데이터는 hash 생성에서 제외")
+        void ignoresInactiveAndIncompleteRepeatBlockDays() {
+            // given
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_REPEAT_BLOCK), any(), isNull())).thenReturn(23L);
+            when(trafficRedisKeyFactory.repeatBlockKey(101L)).thenReturn("pooli:repeat_block:101");
+            when(trafficPolicyVersionedRedisService.syncRepeatBlockSnapshot(anyString(), any(), anyLong()))
+                    .thenReturn(PolicySyncResult.SUCCESS);
+
+            RepeatBlockDayResDto invalidDay = RepeatBlockDayResDto.builder()
+                    .dayOfWeek(DayOfWeek.FRI)
+                    .startAt(LocalTime.of(9, 0, 0))
+                    .endAt(null)
+                    .build();
+            RepeatBlockPolicyResDto inactiveBlock = RepeatBlockPolicyResDto.builder()
+                    .repeatBlockId(700L)
+                    .lineId(101L)
+                    .isActive(false)
+                    .days(List.of(RepeatBlockDayResDto.builder()
+                            .dayOfWeek(DayOfWeek.MON)
+                            .startAt(LocalTime.of(1, 0, 0))
+                            .endAt(LocalTime.of(2, 0, 0))
+                            .build()))
+                    .build();
+            RepeatBlockPolicyResDto activeButInvalid = RepeatBlockPolicyResDto.builder()
+                    .repeatBlockId(701L)
+                    .lineId(101L)
+                    .isActive(true)
+                    .days(List.of(invalidDay))
+                    .build();
+
+            // when
+            trafficPolicyWriteThroughService.syncRepeatBlock(101L, List.of(inactiveBlock, activeButInvalid));
+
+            // then
+            verify(trafficPolicyVersionedRedisService).syncRepeatBlockSnapshot(
+                    eq("pooli:repeat_block:101"),
+                    eq(Map.of()),
+                    anyLong()
+            );
+            verify(redisOutboxRecordService).markSuccess(23L);
+        }
     }
 
     @Nested

@@ -318,11 +318,8 @@ public class FamilySharedPoolsService {
         Long familyActualSharedRemaining = resolveFamilyActualSharedRemaining(familyId);
         Long familyActualSharedUsed = calculateFamilyActualSharedUsed(sharedPoolTotalData, familyActualSharedRemaining);
 
-        List<SharedPoolMonthlyUsageResDto.MemberUsageDto> membersUsageList = sharedPoolMapper
-                .selectFamilyMonthlySharedUsageByLine(familyId)
-                .stream()
-                .map(this::adjustMonthlySharedUsage)
-                .toList();
+        List<SharedPoolMonthlyUsageResDto.MemberUsageDto> membersUsageList =
+                loadAdjustedFamilyMonthlySharedUsageByLine(familyId);
         membersUsageList = reconcileMemberActualSharedUsage(membersUsageList, familyActualSharedUsed);
 
         return SharedPoolMonthlyUsageResDto.builder()
@@ -533,6 +530,14 @@ public class FamilySharedPoolsService {
         }
 
         return adjustedList;
+    }
+
+    private List<SharedPoolMonthlyUsageResDto.MemberUsageDto> loadAdjustedFamilyMonthlySharedUsageByLine(Long familyId) {
+        return sharedPoolMapper
+                .selectFamilyMonthlySharedUsageByLine(familyId)
+                .stream()
+                .map(this::adjustMonthlySharedUsage)
+                .toList();
     }
 
     private long readMonthlySharedUsageFromRedis(Long lineId) {

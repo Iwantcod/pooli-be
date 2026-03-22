@@ -137,6 +137,7 @@ public class DataServiceImpl implements DataService {
           long sharedPoolUsedAmount = normalizeNonNegative(row.getSharedPoolUsedAmount());
           Long personalTotalAmount = isCurrentMonth ? normalizeTotalAmount(row.getPersonalTotalAmount()) : null;
           Long sharedPoolTotalAmount = isCurrentMonth ? normalizeTotalAmount(row.getSharedPoolTotalAmount()) : null;
+          Long sharedPoolRemainingAmount = null;
 
           if (isCurrentMonth) {
               LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
@@ -164,7 +165,7 @@ public class DataServiceImpl implements DataService {
               personalTotalAmount = normalizeTotalAmount(currentDisplay.getBasicDataAmount());
               Long personalRemainingAmount = normalizeRemainingAmount(currentDisplay.getRemainingData());
               sharedPoolTotalAmount = normalizeTotalAmount(currentDisplay.getSharedPoolTotalAmount());
-              Long sharedPoolRemainingAmount = normalizeRemainingAmount(currentDisplay.getSharedPoolRemainingAmount());
+              sharedPoolRemainingAmount = normalizeRemainingAmount(currentDisplay.getSharedPoolRemainingAmount());
 
               if (personalTotalAmount != null
                       && personalRemainingAmount != null
@@ -185,6 +186,7 @@ public class DataServiceImpl implements DataService {
 	              .sharedPoolUsedAmount(sharedPoolUsedAmount)
 	              .personalTotalAmount(personalTotalAmount)
 	              .sharedPoolTotalAmount(sharedPoolTotalAmount)
+                  .sharedPoolRemainingAmount(sharedPoolRemainingAmount)
 	              .build();
 	}
 	

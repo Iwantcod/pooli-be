@@ -135,6 +135,20 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * repeat block hash 키 전체 조회에 사용하는 패턴입니다.
+     */
+    public String repeatBlockKeyPattern() {
+        return namespaced("repeat_block:*");
+    }
+
+    /**
+     * repeat block hash 키에서 lineId를 파싱할 때 사용하는 prefix입니다.
+     */
+    public String repeatBlockKeyPrefix() {
+        return namespaced("repeat_block:");
+    }
+
+    /**
       * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
      */
     public String remainingIndivAmountKey(long lineId, YearMonth targetMonth) {

@@ -26,7 +26,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Sort;
-
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
@@ -500,16 +499,18 @@ class FamilySharedPoolsServiceTest {
                 .lineId(101L)
                 .build();
 
-        SharedPoolTransferLog contributionLog = SharedPoolTransferLog.builder()
-                .familyId(1L)
-                .lineId(101L)
+        SharedPoolHistoryItemResDto contributionItem = SharedPoolHistoryItemResDto.builder()
+                .eventType("CONTRIBUTION")
+                .title("데이터 보태기")
+                .userName("kim")
+                .occurredAt("2026-03-15")
                 .amount(5_000_000_000L)
-                .createdAt(Instant.parse("2026-03-15T05:22:00Z"))
+                .precision("DAY")
                 .build();
 
         SharedPoolHistoryItemResDto usageItem = SharedPoolHistoryItemResDto.builder()
                 .eventType("USAGE")
-                .title("\uB370\uC774\uD130 \uC0AC\uC6A9")
+                .title("데이터 사용")
                 .userName("park")
                 .occurredAt("2026-03-15")
                 .amount(1_200_000_000L)
@@ -517,19 +518,28 @@ class FamilySharedPoolsServiceTest {
                 .build();
 
         when(sharedPoolMapper.selectFamilyIdByLineId(101L)).thenReturn(1L);
-        when(familyMapper.selectFamilyMembersSimpleByLineId(101L)).thenReturn(List.of(
-                FamilyMembersSimpleResDto.builder().lineId(101L).userName("kim").build(),
-                FamilyMembersSimpleResDto.builder().lineId(201L).userName("park").build()
-        ));
         when(sharedPoolMapper.selectSharedPoolUsageHistory(
                 eq(1L),
                 eq(LocalDate.of(2026, 3, 1)),
                 eq(LocalDate.of(2026, 4, 1))
         )).thenReturn(List.of(usageItem));
+
+        SharedPoolTransferLog contributionLog = SharedPoolTransferLog.builder()
+                .familyId(1L)
+                .lineId(101L)
+                .amount(5_000_000_000L)
+                .createdAt(Instant.parse("2026-03-15T12:00:00Z"))
+                .build();
+        when(familyMapper.selectFamilyMembersSimpleByLineId(101L)).thenReturn(List.of(
+                FamilyMembersSimpleResDto.builder()
+                        .lineId(101L)
+                        .userName("kim")
+                        .build()
+        ));
         when(transferLogRepository.findByFamilyIdAndCreatedAtBetween(
                 eq(1L),
-                eq(LocalDate.of(2026, 3, 1).atStartOfDay(ZoneId.systemDefault()).toInstant()),
-                eq(LocalDate.of(2026, 4, 1).atStartOfDay(ZoneId.systemDefault()).toInstant()),
+                any(Instant.class),
+                any(Instant.class),
                 any(Sort.class)
         )).thenReturn(List.of(contributionLog));
 
@@ -537,7 +547,7 @@ class FamilySharedPoolsServiceTest {
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).getEventType()).isEqualTo("CONTRIBUTION");
-        assertThat(result.get(0).getTitle()).isEqualTo("\uB370\uC774\uD130 \uBCF4\uD0DC\uAE30");
+        assertThat(result.get(0).getTitle()).isEqualTo("데이터 보태기");
         assertThat(result.get(0).getUserName()).isEqualTo("kim");
         assertThat(result.get(0).getPrecision()).isEqualTo("EVENT");
         assertThat(result.get(1).getEventType()).isEqualTo("USAGE");

@@ -119,6 +119,10 @@ public class TrafficLuaScriptInfraService {
         );
 
         try {
+            // 점진 배포 중 구버전 Lua가 "SKIP" 단일 상태를 반환할 수 있어 하위 호환 매핑을 유지합니다.
+            if ("SKIP".equals(statusText)) {
+                return TrafficRefillGateStatus.SKIP_THRESHOLD;
+            }
             return TrafficRefillGateStatus.valueOf(statusText);
         } catch (IllegalArgumentException e) {
             throw new ApplicationException(
