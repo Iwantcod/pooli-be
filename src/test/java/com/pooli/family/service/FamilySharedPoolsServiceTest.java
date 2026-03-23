@@ -10,6 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
@@ -24,11 +25,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.data.domain.Sort;
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.family.domain.dto.mongo.SharedPoolTransferLog;
 import com.pooli.family.domain.dto.request.UpdateSharedDataThresholdReqDto;
+import com.pooli.family.domain.dto.response.FamilyMembersSimpleResDto;
 import com.pooli.family.domain.dto.response.FamilySharedPoolResDto;
 import com.pooli.family.domain.dto.response.SharedDataThresholdResDto;
 import com.pooli.family.domain.dto.response.SharedPoolDetailResDto;
@@ -374,6 +377,11 @@ class FamilySharedPoolsServiceTest {
 
         when(sharedPoolMapper.selectFamilyIdByLineId(101L)).thenReturn(1L);
         when(sharedPoolMapper.selectFamilyPoolTotalData(1L)).thenReturn(10_000L);
+        when(sharedPoolMapper.selectSharedPoolMain(1L)).thenReturn(
+                SharedPoolDomain.builder()
+                        .poolRemainingData(2_000L)
+                        .build()
+        );
         when(sharedPoolMapper.selectFamilyMonthlySharedUsageByLine(1L)).thenReturn(List.of(
                 SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
                         .userName("김민준")
@@ -392,6 +400,7 @@ class FamilySharedPoolsServiceTest {
         when(trafficRedisRuntimePolicyProvider.getIfAvailable()).thenReturn(trafficRedisRuntimePolicy);
         when(trafficQuotaCacheServiceProvider.getIfAvailable()).thenReturn(trafficQuotaCacheService);
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(zoneId);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 2_000L)).thenReturn(2_000L);
         when(trafficRedisKeyFactory.monthlySharedUsageKey(101L, targetMonth)).thenReturn("monthly:101");
         when(trafficRedisKeyFactory.monthlySharedUsageKey(201L, targetMonth)).thenReturn("monthly:201");
         when(trafficQuotaCacheService.readValueOrDefault("monthly:101", 0L)).thenReturn(5_000L);
@@ -414,6 +423,11 @@ class FamilySharedPoolsServiceTest {
 
         when(sharedPoolMapper.selectFamilyIdByLineId(101L)).thenReturn(1L);
         when(sharedPoolMapper.selectFamilyPoolTotalData(1L)).thenReturn(10_000L);
+        when(sharedPoolMapper.selectSharedPoolMain(1L)).thenReturn(
+                SharedPoolDomain.builder()
+                        .poolRemainingData(8_000L)
+                        .build()
+        );
         when(sharedPoolMapper.selectFamilyMonthlySharedUsageByLine(1L)).thenReturn(List.of(
                 SharedPoolMonthlyUsageResDto.MemberUsageDto.builder()
                         .userName("김민준")
@@ -423,6 +437,7 @@ class FamilySharedPoolsServiceTest {
                         .build()
         ));
         when(trafficRedisKeyFactoryProvider.getIfAvailable()).thenReturn(null);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 8_000L)).thenReturn(8_000L);
 
         SharedPoolMonthlyUsageResDto result = service.getFamilyMonthlySharedUsageTotal(principal);
 
@@ -508,11 +523,25 @@ class FamilySharedPoolsServiceTest {
                 eq(LocalDate.of(2026, 3, 1)),
                 eq(LocalDate.of(2026, 4, 1))
         )).thenReturn(List.of(usageItem));
-        when(sharedPoolMapper.selectSharedPoolContributionHistory(
+
+        SharedPoolTransferLog contributionLog = SharedPoolTransferLog.builder()
+                .familyId(1L)
+                .lineId(101L)
+                .amount(5_000_000_000L)
+                .createdAt(Instant.parse("2026-03-15T12:00:00Z"))
+                .build();
+        when(familyMapper.selectFamilyMembersSimpleByLineId(101L)).thenReturn(List.of(
+                FamilyMembersSimpleResDto.builder()
+                        .lineId(101L)
+                        .userName("kim")
+                        .build()
+        ));
+        when(transferLogRepository.findByFamilyIdAndCreatedAtBetween(
                 eq(1L),
-                eq(LocalDate.of(2026, 3, 1)),
-                eq(LocalDate.of(2026, 4, 1))
-        )).thenReturn(List.of(contributionItem));
+                any(Instant.class),
+                any(Instant.class),
+                any(Sort.class)
+        )).thenReturn(List.of(contributionLog));
 
         List<SharedPoolHistoryItemResDto> result = service.getSharedPoolHistory(principal, 202603);
 
@@ -520,7 +549,7 @@ class FamilySharedPoolsServiceTest {
         assertThat(result.get(0).getEventType()).isEqualTo("CONTRIBUTION");
         assertThat(result.get(0).getTitle()).isEqualTo("데이터 보태기");
         assertThat(result.get(0).getUserName()).isEqualTo("kim");
-        assertThat(result.get(0).getPrecision()).isEqualTo("DAY");
+        assertThat(result.get(0).getPrecision()).isEqualTo("EVENT");
         assertThat(result.get(1).getEventType()).isEqualTo("USAGE");
         assertThat(result.get(1).getPrecision()).isEqualTo("DAY");
     }

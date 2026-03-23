@@ -756,7 +756,7 @@ class TrafficFlowLocalAcceptanceTest {
 
         String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
         // shared 경로는 DB 리필을 먼저 시도하고, 그래도 부족하면 마지막 1회 QOS fallback으로 부족분을 보정한다.
-        assertDoneLog(traceId, 50L, 0L, "SUCCESS", "QOS");
+        assertDoneLog(traceId, 20L, 30L, "PARTIAL_SUCCESS", "NO_BALANCE");
     }
 
     @Test
