@@ -99,6 +99,11 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
                 .isEnable(reqDto.getIsEnable())
                 .build());
 
+        // 비공개 권한(permission_id=2)을 비활성화하면 공개 상태를 강제로 true로 복구
+        if (reqDto.getPermissionId() == 2 && Boolean.FALSE.equals(reqDto.getIsEnable())) {
+            familyLineMapper.forcePublicByLineId(lineId);
+        }
+
         return permissionLineMapper.findByFamilyIdAndLineId(familyId, lineId).stream()
                 .filter(p -> p.getPermissionId().equals(reqDto.getPermissionId()))
                 .findFirst()
@@ -142,6 +147,16 @@ public class MemberPermissionServiceImpl implements MemberPermissionService {
         }
 
         permissionLineMapper.bulkUpsert(reqList);
+
+        // 비공개 권한(permission_id=2)을 비활성화한 회선만 추려서 공개 상태를 강제로 true로 복구
+        List<Long> lineIdsToRestore = reqList.stream()
+                .filter(r -> r.getPermissionId() == 2 && Boolean.FALSE.equals(r.getIsEnable()))
+                .map(MemberPermissionBulkUpsertReqDto::getLineId)
+                .distinct()
+                .toList();
+        if (!lineIdsToRestore.isEmpty()) {
+            familyLineMapper.forcePublicByLineIds(lineIdsToRestore);
+        }
 
         reqList.stream()
                 .map(MemberPermissionBulkUpsertReqDto::getLineId)

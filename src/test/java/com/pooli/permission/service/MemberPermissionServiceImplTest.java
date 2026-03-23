@@ -202,6 +202,45 @@ class MemberPermissionServiceImplTest {
     }
 
     @Test
+    @DisplayName("단건 변경: 비공개 권한(permission_id=2)을 비활성화하면 공개 상태가 복구된다")
+    void updateMemberPermission_privacyPermissionDisabled_restoresVisibility() {
+        AuthUserDetails admin = userWithRole(99L, "ROLE_ADMIN");
+        MemberPermissionUpsertReqDto req = updateReq(2, false);
+
+        when(familyLineMapper.findByFamilyIdAndLineId(1L, 20L))
+                .thenReturn(Optional.of(familyLine(1L, 20L, FamilyRole.MEMBER)));
+        when(permissionMapper.findById(2)).thenReturn(Optional.of(permission(2)));
+        when(permissionLineMapper.findByFamilyIdAndLineId(1L, 20L))
+                .thenReturn(List.of(memberPermission(20L, 2, false)));
+
+        MemberPermissionResDto result =
+                memberPermissionService.updateMemberPermission(1L, 20L, req, admin);
+
+        assertThat(result.getLineId()).isEqualTo(20L);
+        assertThat(result.getPermissionId()).isEqualTo(2);
+        assertThat(result.getIsEnable()).isFalse();
+
+        verify(familyLineMapper).forcePublicByLineId(20L);
+    }
+
+    @Test
+    @DisplayName("단건 변경: 비공개 권한이 아닌 다른 권한을 꺼도 공개 복구가 호출되지 않는다")
+    void updateMemberPermission_nonPrivacyPermission_doesNotRestoreVisibility() {
+        AuthUserDetails admin = userWithRole(99L, "ROLE_ADMIN");
+        MemberPermissionUpsertReqDto req = updateReq(1, false);
+
+        when(familyLineMapper.findByFamilyIdAndLineId(1L, 20L))
+                .thenReturn(Optional.of(familyLine(1L, 20L, FamilyRole.MEMBER)));
+        when(permissionMapper.findById(1)).thenReturn(Optional.of(permission(1)));
+        when(permissionLineMapper.findByFamilyIdAndLineId(1L, 20L))
+                .thenReturn(List.of(memberPermission(20L, 1, false)));
+
+        memberPermissionService.updateMemberPermission(1L, 20L, req, admin);
+
+        verify(familyLineMapper, never()).forcePublicByLineId(anyLong());
+    }
+
+    @Test
     @DisplayName("구성원 권한 변경 시 가족-회선 매핑이 없으면 PERMISSION-4404를 반환한다")
     void updateMemberPermission_familyLineMissing_throwsFamilyLineMappingNotFound() {
         AuthUserDetails admin = userWithRole(99L, "ROLE_ADMIN");
@@ -300,6 +339,52 @@ class MemberPermissionServiceImplTest {
     }
 
     @Test
+    @DisplayName("일괄 변경: 비공개 권한(permission_id=2)을 비활성화하면 해당 회선만 공개 복구된다")
+    void bulkUpdateMemberPermissions_privacyPermissionDisabled_restoresVisibility() {
+        AuthUserDetails admin = userWithRole(50L, "ROLE_ADMIN");
+        List<MemberPermissionBulkUpsertReqDto> reqList = List.of(
+                req(20L, 2, false),
+                req(30L, 1, true)
+        );
+
+        when(familyLineMapper.findByLineId(50L)).thenReturn(Optional.of(familyLine(1L, 50L, FamilyRole.OWNER)));
+        when(familyLineMapper.findByFamilyIdAndLineId(1L, 20L))
+                .thenReturn(Optional.of(familyLine(1L, 20L, FamilyRole.MEMBER)));
+        when(familyLineMapper.findByFamilyIdAndLineId(1L, 30L))
+                .thenReturn(Optional.of(familyLine(1L, 30L, FamilyRole.MEMBER)));
+        when(permissionMapper.findById(anyInt()))
+                .thenAnswer(invocation -> Optional.of(permission(invocation.getArgument(0))));
+        when(permissionLineMapper.findByFamilyId(1L)).thenReturn(List.of());
+
+        memberPermissionService.bulkUpdateMemberPermissions(50L, reqList, admin);
+
+        verify(familyLineMapper).forcePublicByLineIds(List.of(20L));
+    }
+
+    @Test
+    @DisplayName("일괄 변경: 비공개 권한이 아닌 다른 권한만 변경하면 공개 복구가 호출되지 않는다")
+    void bulkUpdateMemberPermissions_nonPrivacyPermission_doesNotRestoreVisibility() {
+        AuthUserDetails admin = userWithRole(50L, "ROLE_ADMIN");
+        List<MemberPermissionBulkUpsertReqDto> reqList = List.of(
+                req(20L, 1, false),
+                req(30L, 1, true)
+        );
+
+        when(familyLineMapper.findByLineId(50L)).thenReturn(Optional.of(familyLine(1L, 50L, FamilyRole.OWNER)));
+        when(familyLineMapper.findByFamilyIdAndLineId(1L, 20L))
+                .thenReturn(Optional.of(familyLine(1L, 20L, FamilyRole.MEMBER)));
+        when(familyLineMapper.findByFamilyIdAndLineId(1L, 30L))
+                .thenReturn(Optional.of(familyLine(1L, 30L, FamilyRole.MEMBER)));
+        when(permissionMapper.findById(anyInt()))
+                .thenAnswer(invocation -> Optional.of(permission(invocation.getArgument(0))));
+        when(permissionLineMapper.findByFamilyId(1L)).thenReturn(List.of());
+
+        memberPermissionService.bulkUpdateMemberPermissions(50L, reqList, admin);
+
+        verify(familyLineMapper, never()).forcePublicByLineIds(anyList());
+    }
+
+    @Test
     @DisplayName("일괄 변경 시 빈 목록이면 업데이트/알람 없이 현재 상태를 반환한다")
     void bulkUpdateMemberPermissions_emptyReqList_returnsCurrentState() {
         AuthUserDetails admin = userWithRole(50L, "ROLE_ADMIN");
@@ -338,7 +423,7 @@ class MemberPermissionServiceImplTest {
     }
 
     @Test
-    @DisplayName("bulk update: member line not in family returns PERMISSION-4404")
+    @DisplayName("일괄 변경 시 가족-회선 매핑이 없으면 PERMISSION-4404를 반환한다")
     void bulkUpdateMemberPermissions_familyLineMissing_throwsFamilyLineMappingNotFound() {
         AuthUserDetails admin = userWithRole(50L, "ROLE_ADMIN");
         List<MemberPermissionBulkUpsertReqDto> reqList = List.of(req(20L, 1, true));
@@ -358,7 +443,7 @@ class MemberPermissionServiceImplTest {
     }
 
     @Test
-    @DisplayName("getMemberPermissions: non-owner user returns COMMON:4302")
+    @DisplayName("구성원 권한 조회 시 OWNER가 아니면 COMMON:4302를 반환한다")
     void getMemberPermissions_nonOwner_throwsLineOwnershipForbidden() {
         AuthUserDetails member = userWithRole(10L, "ROLE_FAMILY_MEMBER");
         when(familyLineMapper.findByLineId(20L)).thenReturn(Optional.of(familyLine(1L, 20L, FamilyRole.MEMBER)));
