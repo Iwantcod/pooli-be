@@ -20,8 +20,8 @@ import com.pooli.data.domain.dto.response.MonthlyDataUsageResDto.MonthlyUsageDto
 import com.pooli.data.error.DataErrorCode;
 import com.pooli.data.mapper.DataMapper;
 import com.pooli.data.service.DataService;
-import com.pooli.family.domain.entity.FamilyLine;
 import com.pooli.family.domain.dto.response.FamilyMembersResDto;
+import com.pooli.family.domain.entity.FamilyLine;
 import com.pooli.family.service.FamilySharedPoolsService;
 import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.PermissionLineMapper;
@@ -55,18 +55,14 @@ public class DataServiceImpl implements DataService {
 		if(usages.isEmpty()) {
 			throw new ApplicationException(DataErrorCode.DATA_NOT_FOUND);
 		}
-
-        List<MonthlyUsageDto> adjustedUsages = usages.stream()
-                .map(usage -> adjustMonthlyUsage(lineId, usage))
-                .toList();
 		
 		
-		Long average = adjustedUsages.stream()
+		Long average = usages.stream()
                 .mapToLong(MonthlyDataUsageResDto.MonthlyUsageDto::getUsedAmount)
-                .sum() / adjustedUsages.size();
+                .sum() / usages.size();
 		
 		MonthlyDataUsageResDto response = MonthlyDataUsageResDto.builder()
-                .usages(adjustedUsages)
+                .usages(usages)
                 .averageAmount(average)
                 .build();
 	
@@ -83,8 +79,7 @@ public class DataServiceImpl implements DataService {
         FamilyLine familyLine = familyLineMapper.findByLineId(lineId)
                 .orElseThrow(() -> new ApplicationException(DataErrorCode.DATA_NOT_FOUND));
         
-        boolean canUsePrivacy = Boolean.TRUE.equals(permissionEnabled);
-        boolean isPublic = !canUsePrivacy || Boolean.TRUE.equals(familyLine.getIsPublic());
+        boolean isPublic = Boolean.TRUE.equals(permissionEnabled) && Boolean.TRUE.equals(familyLine.getIsPublic());
         boolean isSelf = principal.getLineId() != null && principal.getLineId().equals(lineId);
 
         if (!isPublic && !isSelf) {
@@ -166,7 +161,7 @@ public class DataServiceImpl implements DataService {
               personalUsedAmount = clampNonNegative(adjustedTotalUsage - adjustedSharedUsage);
 
               FamilyMembersResDto.FamilyMemberDto currentDisplay =
-                      familySharedPoolsService.resolveFamilyMemberMonthlySharedPoolDisplay(lineId);
+                      familySharedPoolsService.resolveFamilyMemberActualDisplay(lineId);
               personalTotalAmount = normalizeTotalAmount(currentDisplay.getBasicDataAmount());
               Long personalRemainingAmount = normalizeRemainingAmount(currentDisplay.getRemainingData());
               sharedPoolTotalAmount = normalizeTotalAmount(currentDisplay.getSharedPoolTotalAmount());
@@ -290,12 +285,19 @@ public class DataServiceImpl implements DataService {
         }
     }
 
+    private long normalizeNonNegative(Long value) {
+        if (value == null || value <= 0L) {
+            return 0L;
+        }
+        return value;
+    }
+
     private Long normalizeTotalAmount(Long value) {
         if (value == null) {
             return null;
         }
         if (value < 0L) {
-            return value;
+            return -1L;
         }
         return Math.max(0L, value);
     }
@@ -304,50 +306,10 @@ public class DataServiceImpl implements DataService {
         if (value == null) {
             return null;
         }
+        if (value < 0L) {
+            return -1L;
+        }
         return Math.max(0L, value);
-    }
-
-    private MonthlyUsageDto adjustMonthlyUsage(Long lineId, MonthlyUsageDto usage) {
-        if (usage == null || usage.getYearMonth() == null) {
-            return usage;
-        }
-
-        YearMonth usageMonth = parseMonthlyUsageYearMonth(usage.getYearMonth());
-        if (!isCurrentMonth(usageMonth)) {
-            return usage;
-        }
-
-        DataUsageResDto adjustedCurrentMonthUsage = getDataUsage(lineId, toYearMonthValue(usageMonth));
-        long adjustedTotalUsage = safeAdd(
-                adjustedCurrentMonthUsage.getPersonalUsedAmount(),
-                normalizeNonNegative(adjustedCurrentMonthUsage.getSharedPoolUsedAmount())
-        );
-
-        return MonthlyUsageDto.builder()
-                .yearMonth(usage.getYearMonth())
-                .usedAmount(adjustedTotalUsage)
-                .build();
-    }
-
-    private YearMonth parseMonthlyUsageYearMonth(String yearMonthText) {
-        String normalized = yearMonthText.replace("-", "");
-        int yearMonthValue = Integer.parseInt(normalized);
-        return YearMonth.of(yearMonthValue / 100, yearMonthValue % 100);
-    }
-
-    private boolean isCurrentMonth(YearMonth targetMonth) {
-        return YearMonth.now(trafficRedisRuntimePolicy.zoneId()).equals(targetMonth);
-    }
-
-    private int toYearMonthValue(YearMonth yearMonth) {
-        return yearMonth.getYear() * 100 + yearMonth.getMonthValue();
-    }
-
-    private long normalizeNonNegative(Long value) {
-        if (value == null || value <= 0L) {
-            return 0L;
-        }
-        return value;
     }
 
     private long clampNonNegative(long value) {

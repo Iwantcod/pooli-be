@@ -34,10 +34,10 @@ class FamilyServiceImplTest {
     private FamilyMapper familyMapper;
 
     @Mock
-    private TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
+    private FamilySharedPoolsService familySharedPoolsService;
 
     @Mock
-    private FamilySharedPoolsService familySharedPoolsService;
+    private TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
 
     @InjectMocks
     private FamilyServiceImpl familyService;
@@ -55,7 +55,7 @@ class FamilyServiceImplTest {
     }
 
     @Test
-    @DisplayName("getFamilyMembers composes monthly shared remaining values")
+    @DisplayName("getFamilyMembers composes actual remaining values")
     void getFamilyMembers_success_returnsComposedDto() {
         AuthUserDetails principal = principalWithLineId(10L);
         FamilyMembersResDto header = FamilyMembersResDto.builder()
@@ -84,7 +84,10 @@ class FamilyServiceImplTest {
 
         when(familyMapper.selectFamilyMembersHeader(10L)).thenReturn(header);
         when(familyMapper.selectFamilyMembers(1, 10L)).thenReturn(members);
-        when(familySharedPoolsService.resolveFamilyMonthlySharedPoolRemaining(1L)).thenReturn(700L);
+        when(familySharedPoolsService.resolveFamilyActualSharedRemaining(1L)).thenReturn(700L);
+        when(familySharedPoolsService.calculateFamilyActualSharedUsed(1_000L, 700L)).thenReturn(300L);
+        when(familySharedPoolsService.resolveDisplaySharedPoolRemainingAmount(members.get(0), 700L, 300L))
+                .thenReturn(700L);
         when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L, 500L)).thenReturn(650L);
 
         FamilyMembersResDto result = familyService.getFamilyMembers(principal);
@@ -98,7 +101,7 @@ class FamilyServiceImplTest {
     }
 
     @Test
-    @DisplayName("getFamilyMembers uses family monthly remaining when shared limit is inactive")
+    @DisplayName("getFamilyMembers uses actual shared remaining when shared limit is inactive")
     void getFamilyMembers_withoutSharedLimit_usesActualSharedRemaining() {
         AuthUserDetails principal = principalWithLineId(10L);
         FamilyMembersResDto header = FamilyMembersResDto.builder()
@@ -118,42 +121,15 @@ class FamilyServiceImplTest {
 
         when(familyMapper.selectFamilyMembersHeader(10L)).thenReturn(header);
         when(familyMapper.selectFamilyMembers(1, 10L)).thenReturn(members);
-        when(familySharedPoolsService.resolveFamilyMonthlySharedPoolRemaining(1L)).thenReturn(700L);
+        when(familySharedPoolsService.resolveFamilyActualSharedRemaining(1L)).thenReturn(700L);
+        when(familySharedPoolsService.calculateFamilyActualSharedUsed(1_000L, 700L)).thenReturn(300L);
+        when(familySharedPoolsService.resolveDisplaySharedPoolRemainingAmount(members.get(0), 700L, 300L))
+                .thenReturn(700L);
         when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L, 500L)).thenReturn(650L);
 
         FamilyMembersResDto result = familyService.getFamilyMembers(principal);
 
         assertThat(result.getMembers().get(0).getSharedPoolRemainingAmount()).isEqualTo(700L);
-    }
-
-    @Test
-    @DisplayName("getFamilyMembers applies member shared policy on top of family monthly remaining")
-    void getFamilyMembers_withSharedLimit_usesMinOfFamilyAndPolicyRemaining() {
-        AuthUserDetails principal = principalWithLineId(10L);
-        FamilyMembersResDto header = FamilyMembersResDto.builder()
-                .isEnable(true)
-                .familyId(1)
-                .sharedPoolTotalData(1_000L)
-                .sharedPoolRemainingData(300L)
-                .build();
-        List<FamilyMembersResDto.FamilyMemberDto> members = List.of(
-                FamilyMembersResDto.FamilyMemberDto.builder()
-                        .lineId(10)
-                        .remainingData(500L)
-                        .sharedPoolTotalAmount(400L)
-                        .sharedPoolRemainingAmount(999L)
-                        .sharedLimitActive(true)
-                        .build()
-        );
-
-        when(familyMapper.selectFamilyMembersHeader(10L)).thenReturn(header);
-        when(familyMapper.selectFamilyMembers(1, 10L)).thenReturn(members);
-        when(familySharedPoolsService.resolveFamilyMonthlySharedPoolRemaining(1L)).thenReturn(700L);
-        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L, 500L)).thenReturn(650L);
-
-        FamilyMembersResDto result = familyService.getFamilyMembers(principal);
-
-        assertThat(result.getMembers().get(0).getSharedPoolRemainingAmount()).isEqualTo(100L);
     }
 
     @Test

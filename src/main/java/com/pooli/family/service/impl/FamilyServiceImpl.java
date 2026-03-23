@@ -40,18 +40,18 @@ public class FamilyServiceImpl implements FamilyService {
         }
 
         Long familyId = header.getFamilyId() == null ? null : header.getFamilyId().longValue();
-        Long familyMonthlySharedRemaining = familyId == null
+        Long actualSharedPoolRemaining = familyId == null
                 ? null
-                : familySharedPoolsService.resolveFamilyMonthlySharedPoolRemaining(familyId);
-        Long familyMonthlySharedUsed = calculateFamilyMonthlySharedUsed(
+                : familySharedPoolsService.resolveFamilyActualSharedRemaining(familyId);
+        Long familyActualSharedUsed = familySharedPoolsService.calculateFamilyActualSharedUsed(
                 header.getSharedPoolTotalData(),
-                familyMonthlySharedRemaining
+                actualSharedPoolRemaining
         );
 
         List<FamilyMembersResDto.FamilyMemberDto> members = familyMapper
                 .selectFamilyMembers(header.getFamilyId(), principal.getLineId())
                 .stream()
-                .map(member -> enrichFamilyMember(member, familyMonthlySharedRemaining, familyMonthlySharedUsed))
+                .map(member -> enrichFamilyMember(member, actualSharedPoolRemaining, familyActualSharedUsed))
                 .toList();
 
         return FamilyMembersResDto.builder()
@@ -117,8 +117,8 @@ public class FamilyServiceImpl implements FamilyService {
 
     private FamilyMembersResDto.FamilyMemberDto enrichFamilyMember(
             FamilyMembersResDto.FamilyMemberDto member,
-            Long familyMonthlySharedRemaining,
-            Long familyMonthlySharedUsed
+            Long actualSharedPoolRemaining,
+            Long familyActualSharedUsed
     ) {
         Long lineId = member.getLineId() == null ? null : member.getLineId().longValue();
         Long actualRemainingData = trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(
@@ -138,48 +138,14 @@ public class FamilyServiceImpl implements FamilyService {
                 .basicDataAmount(member.getBasicDataAmount())
                 .role(member.getRole())
                 .sharedPoolTotalAmount(member.getSharedPoolTotalAmount())
-                .sharedPoolRemainingAmount(resolveSharedPoolRemainingAmount(
-                        member,
-                        familyMonthlySharedRemaining,
-                        familyMonthlySharedUsed
-                ))
+                .sharedPoolRemainingAmount(
+                        familySharedPoolsService.resolveDisplaySharedPoolRemainingAmount(
+                                member,
+                                actualSharedPoolRemaining,
+                                familyActualSharedUsed
+                        )
+                )
                 .sharedLimitActive(member.getSharedLimitActive())
                 .build();
-    }
-
-    private Long resolveSharedPoolRemainingAmount(
-            FamilyMembersResDto.FamilyMemberDto member,
-            Long familyMonthlySharedRemaining,
-            Long familyMonthlySharedUsed
-    ) {
-        if (familyMonthlySharedRemaining == null) {
-            return member.getSharedPoolRemainingAmount();
-        }
-        if (!Boolean.TRUE.equals(member.getSharedLimitActive())) {
-            return familyMonthlySharedRemaining;
-        }
-
-        Long policyTotalAmount = member.getSharedPoolTotalAmount();
-        if (policyTotalAmount == null) {
-            return member.getSharedPoolRemainingAmount();
-        }
-        if (policyTotalAmount == -1L) {
-            return familyMonthlySharedRemaining;
-        }
-
-        long normalizedFamilyRemaining = Math.max(0L, familyMonthlySharedRemaining);
-        long normalizedFamilyUsed = familyMonthlySharedUsed == null ? 0L : Math.max(0L, familyMonthlySharedUsed);
-        long policyRemaining = Math.max(0L, policyTotalAmount - normalizedFamilyUsed);
-        return Math.min(normalizedFamilyRemaining, policyRemaining);
-    }
-
-    private Long calculateFamilyMonthlySharedUsed(Long familySharedPoolTotal, Long familyMonthlySharedRemaining) {
-        if (familySharedPoolTotal == null || familyMonthlySharedRemaining == null) {
-            return null;
-        }
-
-        long normalizedTotal = Math.max(0L, familySharedPoolTotal);
-        long normalizedRemaining = Math.max(0L, familyMonthlySharedRemaining);
-        return Math.max(0L, normalizedTotal - normalizedRemaining);
     }
 }
