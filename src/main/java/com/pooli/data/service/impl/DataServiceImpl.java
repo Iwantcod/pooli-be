@@ -79,7 +79,8 @@ public class DataServiceImpl implements DataService {
         FamilyLine familyLine = familyLineMapper.findByLineId(lineId)
                 .orElseThrow(() -> new ApplicationException(DataErrorCode.DATA_NOT_FOUND));
         
-        boolean isPublic = Boolean.TRUE.equals(permissionEnabled) && Boolean.TRUE.equals(familyLine.getIsPublic());
+        boolean canUsePrivacy = Boolean.TRUE.equals(permissionEnabled);
+        boolean isPublic = !canUsePrivacy || Boolean.TRUE.equals(familyLine.getIsPublic());
         boolean isSelf = principal.getLineId() != null && principal.getLineId().equals(lineId);
 
         if (!isPublic && !isSelf) {
