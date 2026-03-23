@@ -21,4 +21,10 @@ public interface FamilyLineMapper {
 
     // '특정 회선이 속한 가족 그룹'에 속한 모든 회선 식별자 조회
     List<Long> findAllFamilyIdByLineId(Long lineId);
+
+    // 비공개 권한 해제 시 공개 상태를 true로 복구 (단건)
+    void forcePublicByLineId(Long lineId);
+
+    // 비공개 권한 해제 시 공개 상태를 true로 일괄 복구
+    void forcePublicByLineIds(@Param("lineIds") List<Long> lineIds);
 }
