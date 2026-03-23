@@ -41,6 +41,25 @@
         );
     </select>
 
+    <!-- 비공개 권한 해제 시 공개 상태 복구 (단건) -->
+    <update id="forcePublicByLineId">
+        UPDATE FAMILY_LINE
+        SET is_public  = TRUE,
+            updated_at = NOW()
+        WHERE line_id = #{lineId}
+    </update>
+
+    <!-- 비공개 권한 해제 시 공개 상태 일괄 복구 -->
+    <update id="forcePublicByLineIds">
+        UPDATE FAMILY_LINE
+        SET is_public  = TRUE,
+            updated_at = NOW()
+        WHERE line_id IN
+        <foreach collection="lineIds" item="lineId" open="(" separator="," close=")">
+            #{lineId}
+        </foreach>
+    </update>
+
     <!-- 역할 변경 (OWNER <-> MEMBER) -->
     <update id="updateRole">
         UPDATE FAMILY_LINE
