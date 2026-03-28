@@ -1,3 +1,5 @@
+# AWS 배포 환경에서 사용되는 Github Actions yml 파일입니다.
+
 name: springboot-ci-cd-ecr-codedeploy
 
 on:

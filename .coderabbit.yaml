@@ -1,0 +1,248 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# =============================================================================
+# CodeRabbit 설정 파일
+# 목적: 코드 리팩토링 및 성능 개선 PR에 대한 AI 코드 리뷰 지침
+# 프로젝트: Pooli (Spring Boot 3.5.10 / Java 21)
+# =============================================================================
+language: "ko-KR"
+tone_instructions: |
+  리뷰는 한국어로 작성해 주세요.
+  리팩토링 및 성능 개선에 초점을 맞추어 주세요.
+  단순한 코드 스타일 지적보다는 구조적 개선과 성능 영향을 중심으로 피드백해 주세요.
+  건설적이고 구체적인 개선 제안을 포함해 주세요.
+early_access: true
+# =============================================================================
+# 코드 리뷰 설정
+# =============================================================================
+reviews:
+  # 리뷰 프로필: assertive로 리팩토링/성능 이슈를 적극적으로 지적
+  profile: "assertive"
+  # PR 요약: 변경 사항의 고수준 요약을 walkthrough에 포함
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  # PR 제목 자동 생성 트리거
+  auto_title_placeholder: "@coderabbitai"
+  # 리뷰 상태 및 커밋 상태 표시
+  review_status: true
+  commit_status: true
+  fail_commit_status: false
+  # Walkthrough 접기 (PR 코멘트가 깔끔하게 유지됩니다)
+  collapse_walkthrough: true
+  # 변경 파일 요약, 시퀀스 다이어그램, 리뷰 노력 추정 활성화
+  changed_files_summary: true
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  # 연관 이슈/PR 분석 활성화
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  # 레이블 제안 및 자동 적용
+  suggested_labels: true
+  auto_apply_labels: false
+  labeling_instructions:
+    - label: "refactor"
+      instructions: "코드 리팩토링 관련 변경 사항이 포함된 경우 이 레이블을 제안해 주세요."
+    - label: "performance"
+      instructions: "성능 개선 관련 변경 사항이 포함된 경우 이 레이블을 제안해 주세요."
+    - label: "test"
+      instructions: "테스트 코드 추가 또는 수정이 포함된 경우 이 레이블을 제안해 주세요."
+    - label: "lua-script"
+      instructions: "Redis Lua 스크립트 변경이 포함된 경우 이 레이블을 제안해 주세요."
+    - label: "db-migration"
+      instructions: "Flyway 마이그레이션 SQL 파일 변경이 포함된 경우 이 레이블을 제안해 주세요."
+  # 리뷰어 제안 (자동 배정은 비활성화)
+  suggested_reviewers: true
+  auto_assign_reviewers: false
+  # 시 생성 비활성화 (리뷰에 집중)
+  poem: false
+  # AI 에이전트 프롬프트 활성화
+  enable_prompt_for_ai_agents: true
+  # ---------------------------------------------------------------------------
+  # 경로 필터: 리뷰에서 제외할 파일/디렉토리
+  # ---------------------------------------------------------------------------
+  path_filters:
+    - "!build/**"
+    - "!.gradle/**"
+    - "!.idea/**"
+    - "!bin/**"
+    - "!codex-logs/**"
+    - "!*.log"
+    - "!gradlew"
+    - "!gradlew.bat"
+    - "!gradle/wrapper/**"
+  # ---------------------------------------------------------------------------
+  # 경로별 리뷰 지침
+  # 각 경로 패턴에 맞는 파일에 대해 특화된 리뷰 지침을 제공합니다.
+  # ---------------------------------------------------------------------------
+  path_instructions:
+    # ----- Java 소스 코드 전체 -----
+    - path: "src/main/java/**/*.java"
+      instructions: |
+        이 프로젝트는 Spring Boot 3.5.10 + Java 21 기반입니다.
+        리팩토링/성능 개선 관점에서 다음 사항을 중점적으로 리뷰해 주세요:
+        **아키텍처 및 설계**
+        - 단일 책임 원칙(SRP) 준수 여부
+        - 계층 간 의존성 방향이 올바른지 (Controller → Service → Repository)
+        - 불필요한 결합도가 높은 코드가 있는지
+        - 인터페이스 분리가 적절한지
+        **성능**
+        - 불필요한 객체 생성이나 복사가 없는지
+        - N+1 쿼리 문제가 발생할 수 있는 구간이 없는지
+        - Redis 호출 횟수를 줄일 수 있는 지점이 있는지
+        - 스트림(Stream) 사용 시 불필요한 중간 연산이 없는지
+        - 적절한 자료구조를 사용하고 있는지
+        **코드 품질**
+        - Lombok 어노테이션 사용이 적절한지
+        - null 처리가 안전한지 (Optional 활용, @Nullable 등)
+        - 예외 처리가 일관되고 적절한지
+        - 매직 넘버나 하드코딩된 문자열이 없는지
+        - 메서드/변수 네이밍이 의도를 잘 표현하는지
+        **Spring 관련**
+        - Bean 스코프 사용이 적절한지
+        - @Transactional 범위가 최소화되어 있는지
+        - 순환 의존성이 없는지
+    # ----- 트래픽 도메인 (핵심 비즈니스 로직) -----
+    - path: "src/main/java/com/pooli/traffic/**/*.java"
+      instructions: |
+        트래픽 도메인은 이 프로젝트의 핵심 비즈니스 로직입니다.
+        특히 다음 사항을 추가로 확인해 주세요:
+        - Redis 기반 데이터 차감/충전 로직의 원자성(atomicity) 보장 여부
+        - 동시성(concurrency) 이슈가 발생할 수 있는 구간
+        - Outbox 패턴 구현의 정합성
+        - 멱등성(idempotency) 보장 여부
+        - 장애 시 데이터 정합성 복구 가능 여부
+    # ----- MyBatis 매퍼 XML -----
+    - path: "src/main/resources/mapper/**/*.xml"
+      instructions: |
+        MyBatis 매퍼 XML 리뷰 시 다음 사항을 확인해 주세요:
+        - SQL 쿼리의 인덱스 활용 여부 (WHERE, JOIN 조건)
+        - 불필요한 SELECT * 사용 여부
+        - 파라미터 바인딩 시 SQL Injection 방지 (${} 대신 #{} 사용)
+        - 동적 SQL의 가독성 및 정확성
+        - 대량 데이터 처리 시 페이징 적용 여부
+    # ----- Redis Lua 스크립트 -----
+    - path: "src/main/resources/lua/**/*.lua"
+      instructions: |
+        Redis Lua 스크립트 리뷰 시 다음 사항을 확인해 주세요:
+        - KEYS와 ARGV를 통한 파라미터 전달이 올바른지
+        - 원자적 실행이 보장되는 범위가 의도한 대로인지
+        - 에러 핸들링이 적절한지
+        - 불필요한 Redis 명령 호출이 없는지
+        - 스크립트 실행 시간이 Redis 블로킹을 유발하지 않는지
+        - 반환 값의 형식이 Java 클라이언트와 일치하는지
+    # ----- Flyway 마이그레이션 -----
+    - path: "src/main/resources/db/migration/**/*.sql"
+      instructions: |
+        Flyway 마이그레이션 SQL 리뷰 시 다음 사항을 확인해 주세요:
+        - DDL 변경이 무중단 배포(zero-downtime deploy)에 안전한지
+        - 인덱스 추가 시 ALGORITHM=INPLACE, LOCK=NONE 옵션 고려 여부
+        - 롤백 가능한 구조인지
+        - 기존 데이터 정합성에 영향을 주지 않는지
+        - 컬럼 타입 변경 시 데이터 손실 위험이 없는지
+    # ----- 테스트 코드 -----
+    - path: "src/test/java/**/*.java"
+      instructions: |
+        테스트 코드 리뷰 시 다음 사항을 확인해 주세요:
+        - Given-When-Then 또는 Arrange-Act-Assert 패턴을 따르고 있는지
+        - 테스트 이름이 테스트 의도를 명확히 표현하는지
+        - 경계값, 예외 케이스가 충분히 테스트되는지
+        - Mockito 사용 시 verify가 적절히 활용되는지
+        - 불필요한 @SpringBootTest 사용 없이 단위 테스트가 가능한 부분이 있는지
+        - 테스트 간 독립성이 보장되는지
+    # ----- 설정 파일 -----
+    - path: "src/main/resources/application*.yml"
+      instructions: |
+        애플리케이션 설정 파일 리뷰 시 다음 사항을 확인해 주세요:
+        - 민감 정보(비밀번호, API 키 등)가 하드코딩되어 있지 않은지
+        - 환경별 프로필 분리가 적절한지
+        - 커넥션 풀 사이즈, 타임아웃 등 성능 관련 설정이 적절한지
+    # ----- Dockerfile 및 배포 관련 -----
+    - path: "Dockerfile"
+      instructions: |
+        Dockerfile 리뷰 시 다음 사항을 확인해 주세요:
+        - 멀티 스테이지 빌드를 사용하여 이미지 크기를 최소화하고 있는지
+        - 불필요한 레이어가 없는지
+        - 보안 취약점이 있는 베이스 이미지를 사용하고 있지 않은지
+    # ----- build.gradle -----
+    - path: "build.gradle"
+      instructions: |
+        build.gradle 리뷰 시 다음 사항을 확인해 주세요:
+        - 의존성 버전이 호환되는지
+        - 사용하지 않는 의존성이 포함되어 있지 않은지
+        - 테스트 설정이 적절한지
+  # ---------------------------------------------------------------------------
+  # 자동 리뷰 설정
+  # ---------------------------------------------------------------------------
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    # Draft PR도 리뷰 (리팩토링 작업 중 조기 피드백 확보)
+    drafts: true
+    # 대상 브랜치 (main과 develop 브랜치로의 PR만 리뷰)
+    base_branches:
+      - "main"
+      - "develop"
+  # ---------------------------------------------------------------------------
+  # Finishing Touches (마무리 기능)
+  # ---------------------------------------------------------------------------
+  finishing_touches:
+    docstrings:
+      enabled: true
+    unit_tests:
+      enabled: true
+    simplify:
+      enabled: true
+  # ---------------------------------------------------------------------------
+  # Slop Detection (저품질 코드 감지)
+  # ---------------------------------------------------------------------------
+  slop_detection:
+    enabled: true
+  # ---------------------------------------------------------------------------
+  # 분석 도구 설정
+  # ---------------------------------------------------------------------------
+  tools:
+    # YAML 린트 활성화
+    yamllint:
+      enabled: true
+    # Dockerfile 린트 활성화
+    hadolint:
+      enabled: true
+    # 시크릿 감지 도구 활성화
+    gitleaks:
+      enabled: true
+    trufflehog:
+      enabled: true
+    # Markdown 린트 활성화
+    markdownlint:
+      enabled: true
+    # GitHub Checks 연동
+    github_checks:
+      enabled: true
+      timeout_ms: 120000
+# =============================================================================
+# 채팅 설정
+# =============================================================================
+chat:
+  auto_reply: true
+# =============================================================================
+# Knowledge Base 설정
+# =============================================================================
+knowledge_base:
+  learnings:
+    scope: "auto"
+  issues:
+    scope: "auto"
+  jira:
+    project_keys: []
+  linear:
+    team_keys: []
+  pull_requests:
+    scope: "auto"
+# =============================================================================
+# 코드 생성 설정
+# =============================================================================
+code_generation:
+  docstrings:
+    language: "ko-KR"
+    path_instructions: []
