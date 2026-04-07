@@ -238,4 +238,109 @@ Follow this format for consistency of analysis results:
 
 ---
 
+## 11. Mandatory Pre-Analysis File Exploration
+
+Before answering ANY code-related question, you MUST perform file exploration first.
+
+### 11.1 Minimum Exploration Requirement
+
+For every analysis request, you MUST:
+
+1. **Identify** the relevant files by searching the codebase (using `grep`, `find`, `cat`, etc.)
+2. **Read** the actual file contents — do NOT rely on memory, assumptions, or general knowledge
+3. **Cite** the specific files you read in your response
+
+**Zero-exploration responses are strictly prohibited.**
+If you cannot explore files due to technical limitations, explicitly state this and do NOT provide a substantive answer.
+
+### 11.2 Exploration Depth by Question Type
+
+| Question Type | Minimum Required Exploration |
+|---|---|
+| "이 클래스의 역할은?" | 해당 클래스 파일 전체 읽기 |
+| "이 기능의 흐름은?" | Controller → Service → Repository/Mapper 각 파일 읽기 |
+| "이 설정은 어떻게 작동?" | application.yml + 관련 Config 클래스 읽기 |
+| "A와 B의 관계는?" | A, B 양쪽 파일 + 서로 참조하는 지점까지 읽기 |
+| "이 메서드는 어디서 호출?" | grep/rg로 호출 지점 탐색 후 각 호출 파일 읽기 |
+
+### 11.3 Prohibited Shortcuts
+
+The following shortcuts are NEVER acceptable:
+
+- ❌ Answering based on class/method names alone without reading the implementation
+- ❌ Inferring behavior from naming conventions (e.g., "refill probably does X because of the name")
+- ❌ Using phrases like "based on the typical Spring pattern..." without verifying the actual code
+- ❌ Describing only method signatures without reading the method body
+
+---
+
+## 12. Lazy Response Anti-Pattern Detection
+
+The following are known anti-patterns that indicate lazy, unresearched responses.
+If you catch yourself producing any of these patterns, STOP and redo the analysis properly.
+
+### 12.1 Prohibited Phrases (Without Code Evidence)
+
+These phrases are RED FLAGS when used without accompanying code citations:
+
+| Prohibited Pattern | Why It's Problematic |
+|---|---|
+| "일반적으로 Spring에서는..." | 이 프로젝트의 실제 구현과 다를 수 있음 |
+| "아마 ~일 것입니다" | 추측이며, 코드를 읽으면 확인 가능 |
+| "보통 이런 패턴에서는..." | 프로젝트 특정 구현을 확인하지 않은 신호 |
+| "~로 추정됩니다" | 파일을 읽으면 추정할 필요가 없음 |
+| "공식 문서에 따르면..." | 이 프로젝트의 실제 코드가 다를 수 있음 |
+| "이름으로 보아..." | 구현체를 읽지 않고 이름만으로 판단 |
+
+### 12.2 Structural Anti-Patterns
+
+- **Echo Response**: 사용자의 질문을 그대로 바꿔 말하는 것 (분석 없음)
+- **Wikipedia Response**: 일반적인 개념 설명만 하고 이 프로젝트 코드에 대한 분석이 없는 것
+- **Skeleton Response**: 파일/클래스 목록만 나열하고 내부 동작을 설명하지 않는 것
+- **Confidence Bluff**: 확인하지 않은 내용을 단정적 어조로 서술하는 것
+
+### 12.3 Self-Correction Protocol
+
+If you detect an anti-pattern in your response:
+
+1. Delete or revise the problematic section
+2. Perform the missing file exploration
+3. Replace with evidence-based analysis
+4. If exploration is not possible, explicitly state: "해당 파일을 확인하지 못했으므로 정확한 분석을 제공할 수 없습니다."
+
+---
+
+## 13. Exploration Log Requirement
+
+### 13.1 Mandatory Exploration Summary
+
+Every analysis response MUST begin with a brief exploration log showing which files were actually read.
+
+**Format:**
+
+```
+📂 탐색한 파일:
+- `src/main/java/.../ClassName.java` (L1-L120, 전체)
+- `src/main/resources/mapper/MapperName.xml` (L30-L55, 특정 쿼리)
+- `src/main/resources/lua/script_name.lua` (L1-L45, 전체)
+```
+
+### 13.2 Purpose
+
+This log serves THREE purposes:
+
+1. **Accountability**: Forces the model to explicitly commit to what it read
+2. **Verifiability**: Allows the user to verify the analysis scope
+3. **Completeness check**: Makes obvious if critical files were missed
+
+### 13.3 Exceptions
+
+The exploration log may be omitted ONLY for:
+
+- Follow-up questions about files already explored in the same conversation
+- Questions that are purely conceptual and explicitly do not require code analysis
+- Clarification questions from the user about a previous response
+
+---
+
 End of Gemini analysis-only rules.
