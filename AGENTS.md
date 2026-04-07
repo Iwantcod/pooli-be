@@ -10,11 +10,15 @@ You MUST follow these rules.
 
 If rules conflict, follow this priority order:
 
-1. `AGENTS.md` in this repository
-2. System/developer runtime instructions
+1. System/developer runtime instructions
+2. `AGENTS.md` in this repository
 3. General model defaults and assumptions
 
-When conflict exists, do not guess. State which rule is applied.
+When conflict exists:
+- Follow the higher-priority rule.
+- Explicitly state which rule was applied.
+- Do not guess.
+- Treat conflicting lower-priority rules as non-applicable for that turn.
 
 ---
 
@@ -117,15 +121,12 @@ To preserve monthly Context7 limits:
 
 - Clarify scope BEFORE invoking Context7.
 - Batch related API requests into ONE call.
-- Do NOT invoke Context7 more than once per dependency per thread.
-
-Exception:
-
-- If the discussion transitions to a DIFFERENT dependency
-  (for example, Spring Security -> Redis -> AWS SDK),
-  a new Context7 call is allowed for that dependency.
-
-Repeated calls for the SAME dependency in the same thread are prohibited.
+- Default to ONE Context7 call per dependency per thread.
+- Additional calls for the SAME dependency are allowed only when:
+  - User requirements changed after the initial call
+  - Exact signatures or version-specific options must be re-verified
+  - Error investigation requires additional official references
+- For each additional call, briefly state the reason in one sentence.
 
 ---
 
@@ -183,12 +184,172 @@ For code written by the AI agent:
 
 ---
 
-End of strict rules.
+## 11. Execution Policy
+
+This section governs how non-trivial tasks are planned and executed.
+
+### 11.1 Plan-First Principle
+
+- Non-trivial tasks MUST start in **plan-only mode**.
+- During the planning phase, do NOT implement any code.
+- Break work into the **smallest meaningful milestones**.
+- A plan is a **candidate task list**, not permission to execute all listed steps.
+
+### 11.2 One-Milestone-Per-Turn Rule
+
+- Never implement more than **one milestone per turn**.
+- After completing one milestone, **stop and wait** for explicit user approval.
+- Do NOT automatically continue to the next milestone.
+- Even if the plan lists sequential steps, only proceed with the step the user has approved.
+
+### 11.3 Approval Gate
+
+- User approval is required before each milestone execution begins.
+- Unapproved milestones MUST NOT be executed under any circumstance.
+- If a milestone's scope grows during implementation, pause and re-decompose before continuing.
 
 ---
 
-# Additional Agent Requirement
+## 12. Self-Review Policy
 
-The user requests the following requirement:
+After implementing a milestone, the agent MUST NOT immediately report completion.
+Instead, follow this sequence: **Implement → Verify → Self-Review → Fix → Report → Wait**.
 
-- For code written by the AI agent, write comments kindly and clearly so maintainers can understand intent and flow quickly.
+### 12.1 Verification Step
+
+- Run available tests, lint checks, and type checks.
+- Verify that the build (if applicable) succeeds.
+- Confirm no regressions in directly related functionality.
+
+### 12.2 Critical Self-Review
+
+Perform a brief but honest review for:
+
+- **Duplication**: Is the new code duplicating existing patterns?
+- **Regression**: Could this change break existing behavior?
+- **Edge cases**: Are important boundary conditions handled?
+- **Over-engineering**: Is the solution unnecessarily complex for the requirement?
+
+### 12.3 Fix-Before-Report
+
+- If obvious issues are found during self-review, fix them **before** reporting to the user.
+- After fixing, re-run minimum verification to confirm the fix.
+- Only then report the milestone as complete.
+
+---
+
+## 13. Milestone Report Format
+
+After each milestone completion (post self-review), report using this standard format:
+
+```
+### Milestone Report
+
+**Changed Files**
+- List of files created, modified, or deleted
+
+**What Was Implemented**
+- Brief description of the work done in this milestone
+
+**Validations Performed**
+- Tests run, lint results, build status, manual checks
+
+**Self-Review Findings**
+- Issues found and fixed during self-review
+- Any concerns noted but deferred
+
+**Known Risks / Open Issues**
+- Remaining risks, limitations, or unresolved items
+
+**Next Milestone Candidate**
+- Suggested next step (awaiting user approval)
+```
+
+This format ensures the user can quickly assess what to review and whether to approve the next step.
+
+---
+
+## 14. Change Scope Control
+
+The purpose of milestone decomposition is to **control change scope** and maintain reviewability.
+
+### 14.1 Scope Boundaries
+
+- Do NOT modify code unrelated to the current milestone.
+- Refactoring is permitted ONLY within the current milestone's scope.
+- Do NOT introduce new dependencies unless strictly necessary for the milestone.
+
+### 14.2 Reuse Over Duplication
+
+- Prefer reusing existing project structures and patterns.
+- Avoid duplicate implementations of logic that already exists.
+
+### 14.3 Scope Escalation
+
+- If the change scope starts growing beyond the original milestone boundary, **stop implementing**.
+- Re-decompose the milestone into smaller sub-milestones.
+- Present the revised plan to the user before continuing.
+
+---
+
+## 15. Long-Running Task Management
+
+For tasks that span multiple turns or sessions, maintain an external planning document to prevent context loss.
+
+### 15.1 PLANS.md as Cross-Session State
+
+- For long-running or multi-step work, create and maintain a `PLANS.md` file under `docs/plan/`.
+- Example path: `docs/plan/PLANS.md` (create the directory if it does not exist).
+- `PLANS.md` is the **source of truth** for the current execution plan and milestone status.
+- Before continuing work in a later session, **read `docs/plan/PLANS.md` first** to restore context.
+
+### 15.2 Relationship with Thread Session Context
+
+- `PLANS.md` is the only persistent planning document across sessions.
+- Within a single thread, use the current session context as the per-conversation planning source.
+- When the thread/session context is unavailable or a new session starts, restore context from `docs/plan/PLANS.md` first.
+- If session context and `PLANS.md` differ, treat `PLANS.md` as the persistent baseline and apply user-approved updates going forward.
+
+### 15.3 Update Discipline
+
+- After each completed milestone, update `PLANS.md` with:
+  - Milestone status (planned / in-progress / completed)
+  - Change log entry for what was done
+  - Any deviations from the original plan
+- `AGENTS.md` = behavioral rules (static). `PLANS.md` = task-specific planning state (dynamic).
+
+### 15.4 Lifecycle Rule
+
+- `PLANS.md` is considered **complete** when all milestones reach `completed` status.
+- The agent MUST NOT automatically delete `PLANS.md` upon completion.
+- Instead, add a `[COMPLETED]` marker at the top of the document and notify the user.
+- Delete `PLANS.md` ONLY when the user explicitly instructs deletion.
+- This preserves the decision-making history for retrospective review.
+
+---
+
+## 16. Sequential Thinking Policy
+
+Sequential Thinking MCP is a supplementary reasoning tool. It aids structured thinking but does NOT control execution.
+
+### 16.1 Permitted Uses
+
+- **Plan decomposition**: Breaking complex tasks into milestones.
+- **Self-review enhancement**: Structuring critical review of implemented code.
+- **Decision analysis**: Evaluating trade-offs before proposing a plan.
+
+### 16.2 Execution Boundary
+
+- Sequential Thinking output is **never** authorization to execute all derived steps.
+- Even well-structured plans produced by Sequential Thinking require **explicit user approval** per milestone.
+- When Sequential Thinking output is recorded in `PLANS.md`, it remains in **draft status** until the user approves each milestone.
+
+### 16.3 Role Definition
+
+- Sequential Thinking is a **reasoning aid**, not an execution-control mechanism.
+- It complements the Execution Policy (§11) and Self-Review Policy (§12) but does not override them.
+- The approval gate (§11.3) always takes precedence over any Sequential Thinking output.
+
+---
+
+End of strict rules.
