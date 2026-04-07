@@ -41,7 +41,7 @@ out/
 .env
 .env.bak
 
-/docs/role-c-step1-validation-test-plan.md
+/docs/plan/
 
 ### 테스트 데이터 csv 및 sql 파일 ###
 scripts/test-data/output
