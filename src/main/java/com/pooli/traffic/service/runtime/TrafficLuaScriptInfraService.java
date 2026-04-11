@@ -159,6 +159,81 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * in-flight 멱등 hash를 키 미존재 시 생성합니다.
+     *
+     * @return 1이면 이번 호출에서 생성됨, 0이면 기존 키 존재
+     */
+    public long executeInFlightCreateIfAbsent(
+            String dedupeKey,
+            String processedField,
+            String processedDefaultValue,
+            String retryField,
+            String retryDefaultValue
+    ) {
+        Long rawResult = executeLongSingle(
+                TrafficLuaScriptType.IN_FLIGHT_CREATE_IF_ABSENT,
+                List.of(dedupeKey),
+                List.of(
+                        processedField,
+                        processedDefaultValue,
+                        retryField,
+                        retryDefaultValue
+                )
+        );
+        return rawResult == null ? 0L : rawResult;
+    }
+
+    /**
+     * in-flight 멱등 hash의 retryCount를 1 증가시킵니다.
+     * 키가 없으면 기본 필드를 초기화한 후 증가합니다.
+     */
+    public long executeInFlightIncrementRetryWithInit(
+            String dedupeKey,
+            String processedField,
+            String processedDefaultValue,
+            String retryField,
+            String retryDefaultValue
+    ) {
+        Long rawResult = executeLongSingle(
+                TrafficLuaScriptType.IN_FLIGHT_INCREMENT_RETRY_WITH_INIT,
+                List.of(dedupeKey),
+                List.of(
+                        processedField,
+                        processedDefaultValue,
+                        retryField,
+                        retryDefaultValue
+                )
+        );
+        return rawResult == null ? 0L : rawResult;
+    }
+
+    /**
+     * in-flight 멱등 hash의 processedData를 delta만큼 증가시킵니다.
+     * 키가 없으면 기본 필드를 초기화한 후 증가합니다.
+     */
+    public long executeInFlightIncrementProcessedWithInit(
+            String dedupeKey,
+            String processedField,
+            String processedDefaultValue,
+            String retryField,
+            String retryDefaultValue,
+            long delta
+    ) {
+        Long rawResult = executeLongSingle(
+                TrafficLuaScriptType.IN_FLIGHT_INCREMENT_PROCESSED_WITH_INIT,
+                List.of(dedupeKey),
+                List.of(
+                        processedField,
+                        processedDefaultValue,
+                        retryField,
+                        retryDefaultValue,
+                        String.valueOf(delta)
+                )
+        );
+        return rawResult == null ? 0L : rawResult;
+    }
+
+    /**
      * 미리 적재한 Lua 스크립트의 SHA를 반환합니다.
      */
     public String getPreloadedSha(TrafficLuaScriptType scriptType) {
@@ -268,19 +343,17 @@ public class TrafficLuaScriptInfraService {
      */
     private void registerScript(TrafficLuaScriptType scriptType, String scriptText) {
         switch (scriptType) {
-            case POLICY_CHECK_INDIVIDUAL, POLICY_CHECK_SHARED, DEDUCT_INDIVIDUAL, DEDUCT_SHARED -> {
+            case POLICY_CHECK_INDIVIDUAL, POLICY_CHECK_SHARED, DEDUCT_INDIVIDUAL, DEDUCT_SHARED, REFILL_GATE -> {
                 DefaultRedisScript<String> redisScript = new DefaultRedisScript<>();
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(String.class);
                 stringScriptRegistry.put(scriptType, redisScript);
             }
-            case REFILL_GATE -> {
-                DefaultRedisScript<String> redisScript = new DefaultRedisScript<>();
-                redisScript.setScriptText(scriptText);
-                redisScript.setResultType(String.class);
-                stringScriptRegistry.put(scriptType, redisScript);
-            }
-            case LOCK_HEARTBEAT, LOCK_RELEASE -> {
+            case LOCK_HEARTBEAT,
+                 LOCK_RELEASE,
+                 IN_FLIGHT_CREATE_IF_ABSENT,
+                 IN_FLIGHT_INCREMENT_RETRY_WITH_INIT,
+                 IN_FLIGHT_INCREMENT_PROCESSED_WITH_INIT -> {
                 DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(Long.class);
