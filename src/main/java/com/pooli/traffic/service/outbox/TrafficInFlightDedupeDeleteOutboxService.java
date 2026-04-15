@@ -29,10 +29,8 @@ public class TrafficInFlightDedupeDeleteOutboxService {
         }
 
         String normalizedTraceId = traceId.trim();
-        // TRAFFIC_REDIS_OUTBOX.uuid 컬럼은 멱등키로 사용하므로 traceId로 통일합니다.
-        String uuid = normalizedTraceId;
         InFlightDedupeDeleteOutboxPayload payload = InFlightDedupeDeleteOutboxPayload.builder()
-                .uuid(uuid)
+                .uuid(normalizedTraceId)
                 .sourceRecordId(sourceRecordId)
                 .requestedAtEpochMillis(System.currentTimeMillis())
                 .build();
@@ -40,7 +38,7 @@ public class TrafficInFlightDedupeDeleteOutboxService {
         return redisOutboxRecordService.createPending(
                 OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY,
                 payload,
-                uuid
+                normalizedTraceId
         );
     }
 }

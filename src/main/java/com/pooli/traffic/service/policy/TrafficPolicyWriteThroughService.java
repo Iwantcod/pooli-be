@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -66,7 +67,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_POLICY_ACTIVATION,
                 payload,
-                null,
                 "policy_activation_sync policyId=" + policyId + " isActive=" + isActive,
                 () -> syncPolicyActivationUntracked(policyId, isActive, version)
         );
@@ -95,7 +95,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_LINE_LIMIT,
                 payload,
-                null,
                 "line_limit_sync lineId=" + lineId,
                 () -> syncLineLimitUntracked(lineId, dailyLimit, isDailyActive, sharedLimit, isSharedActive, version)
         );
@@ -116,7 +115,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_IMMEDIATE_BLOCK,
                 payload,
-                null,
                 "immediate_block_sync lineId=" + lineId,
                 () -> syncImmediateBlockEndUntracked(lineId, blockEndAt, version)
         );
@@ -135,7 +133,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_REPEAT_BLOCK,
                 payload,
-                null,
                 "repeat_block_sync lineId=" + lineId,
                 () -> syncRepeatBlockUntracked(lineId, repeatBlocks, version)
         );
@@ -162,7 +159,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_APP_POLICY,
                 payload,
-                null,
                 "app_policy_sync lineId=" + lineId + " appId=" + appId + " isActive=" + isActive,
                 () -> syncAppPolicyUntracked(lineId, appId, isActive, dataLimit, speedLimit, isWhitelist, version)
         );
@@ -182,7 +178,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_APP_POLICY,
                 payload,
-                null,
                 "app_policy_evict lineId=" + lineId + " appId=" + appId,
                 () -> evictAppPolicyUntracked(lineId, appId, version)
         );
@@ -201,7 +196,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_APP_POLICY_SNAPSHOT,
                 payload,
-                null,
                 "app_policy_snapshot_sync lineId=" + lineId,
                 () -> syncAppPolicySnapshotUntracked(lineId, appPolicies, version)
         );
@@ -365,11 +359,14 @@ public class TrafficPolicyWriteThroughService {
     private void executeTrackedAfterCommit(
             OutboxEventType eventType,
             Object payload,
-            String uuid,
             String operationName,
             Supplier<PolicySyncResult> redisWriteOperation
     ) {
-        long outboxId = redisOutboxRecordService.createPending(eventType, payload, uuid);
+        long outboxId = redisOutboxRecordService.createPending(
+                eventType,
+                payload,
+                resolveRequiredTraceIdFromMdc()
+        );
         executeAfterCommit(() -> {
             PolicySyncResult syncResult = redisWriteOperation.get();
             if (isSuccessEquivalent(syncResult)) {
@@ -436,6 +433,17 @@ public class TrafficPolicyWriteThroughService {
                 WRITE_THROUGH_RETRY_MAX
         );
         return lastFailure;
+    }
+
+    /**
+     * 정책 Outbox는 요청 단위 traceId를 공통 식별자로 사용하므로 MDC 값이 없으면 생성하지 않습니다.
+     */
+    private String resolveRequiredTraceIdFromMdc() {
+        String traceId = MDC.get("traceId");
+        if (traceId == null || traceId.isBlank()) {
+            throw new IllegalArgumentException("traceId must not be blank");
+        }
+        return traceId.trim();
     }
 
     /**

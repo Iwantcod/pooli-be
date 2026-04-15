@@ -20,7 +20,7 @@ public class RedisOutboxRecord {
     private Long id;
     private OutboxEventType eventType;
     private String payload;
-    private String uuid;
+    private String traceId;
     private OutboxStatus status;
     private Integer retryCount;
     private LocalDateTime createdAt;

@@ -9,7 +9,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -36,6 +35,8 @@ import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -44,12 +45,15 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
 
 /**
  * 정책 write-through가 Outbox + CAS 규칙으로 동작하는지 검증합니다.
  */
 @ExtendWith(MockitoExtension.class)
 class TrafficPolicyWriteThroughServiceTest {
+
+    private static final String TEST_TRACE_ID = "trace-policy-test-001";
 
     @Mock
     private TrafficRedisKeyFactory trafficRedisKeyFactory;
@@ -66,6 +70,16 @@ class TrafficPolicyWriteThroughServiceTest {
     @InjectMocks
     private TrafficPolicyWriteThroughService trafficPolicyWriteThroughService;
 
+    @BeforeEach
+    void setUpMdcTraceId() {
+        MDC.put("traceId", TEST_TRACE_ID);
+    }
+
+    @AfterEach
+    void clearMdcTraceId() {
+        MDC.remove("traceId");
+    }
+
     @Nested
     @DisplayName("syncLineLimit 테스트")
     class SyncLineLimitTest {
@@ -74,7 +88,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("활성 상태에 맞춰 daily/shared limit를 Hash CAS로 갱신")
         void writesDailyAndSharedLimitValuesViaCas() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_LINE_LIMIT), any(), isNull())).thenReturn(11L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_LINE_LIMIT), any(), eq(TEST_TRACE_ID))).thenReturn(11L);
             when(trafficRedisKeyFactory.dailyTotalLimitKey(101L)).thenReturn("pooli:daily_total_limit:101");
             when(trafficRedisKeyFactory.monthlySharedLimitKey(101L)).thenReturn("pooli:monthly_shared_limit:101");
             when(trafficPolicyVersionedRedisService.syncVersionedValue(anyString(), anyString(), anyLong()))
@@ -101,7 +115,7 @@ class TrafficPolicyWriteThroughServiceTest {
                                 && linePayload.getVersion() != null
                                 && linePayload.getVersion() > 0;
                     }),
-                    isNull()
+                    eq(TEST_TRACE_ID)
             );
 
             ArgumentCaptor<Long> versionCaptor = ArgumentCaptor.forClass(Long.class);
@@ -133,7 +147,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("활성 정책이면 속도 제한값을 125배로 변환해 CAS로 반영")
         void writesSpeedLimitWithMultiplier() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_APP_POLICY), any(), isNull())).thenReturn(12L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_APP_POLICY), any(), eq(TEST_TRACE_ID))).thenReturn(12L);
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
@@ -158,7 +172,7 @@ class TrafficPolicyWriteThroughServiceTest {
                                 && appPayload.getVersion() != null
                                 && appPayload.getVersion() > 0;
                     }),
-                    isNull()
+                    eq(TEST_TRACE_ID)
             );
 
             verify(trafficPolicyVersionedRedisService).syncAppPolicySingle(
@@ -179,7 +193,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("속도 제한이 무제한(-1)이면 센티널 값을 그대로 전달")
         void keepsUnlimitedSpeedSentinel() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_APP_POLICY), any(), isNull())).thenReturn(13L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_APP_POLICY), any(), eq(TEST_TRACE_ID))).thenReturn(13L);
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
@@ -214,7 +228,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("line 단위 app 정책 스냅샷을 active 정책만으로 재작성")
         void rebuildsAppPolicySnapshotWithActivePoliciesOnly() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_APP_POLICY_SNAPSHOT), any(), isNull())).thenReturn(14L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_APP_POLICY_SNAPSHOT), any(), eq(TEST_TRACE_ID))).thenReturn(14L);
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
@@ -254,7 +268,7 @@ class TrafficPolicyWriteThroughServiceTest {
                                 && linePayload.getVersion() != null
                                 && linePayload.getVersion() > 0;
                     }),
-                    isNull()
+                    eq(TEST_TRACE_ID)
             );
 
             verify(trafficPolicyVersionedRedisService).syncAppPolicySnapshot(
@@ -273,7 +287,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("활성 정책이 없으면 빈 스냅샷으로 동기화")
         void writesEmptySnapshotWhenNoActivePolicies() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_APP_POLICY_SNAPSHOT), any(), isNull())).thenReturn(15L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_APP_POLICY_SNAPSHOT), any(), eq(TEST_TRACE_ID))).thenReturn(15L);
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
@@ -312,7 +326,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("활성 repeat block 목록을 day hash 규격으로 변환해 저장")
         void writesRepeatBlockHash() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_REPEAT_BLOCK), any(), isNull())).thenReturn(16L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_REPEAT_BLOCK), any(), eq(TEST_TRACE_ID))).thenReturn(16L);
             when(trafficRedisKeyFactory.repeatBlockKey(101L)).thenReturn("pooli:repeat_block:101");
             when(trafficPolicyVersionedRedisService.syncRepeatBlockSnapshot(anyString(), any(), anyLong()))
                     .thenReturn(PolicySyncResult.SUCCESS);
@@ -345,7 +359,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("자정 넘김 구간은 당일/익일 두 개 field로 분할 저장")
         void splitsCrossMidnightRangeIntoTwoFields() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_REPEAT_BLOCK), any(), isNull())).thenReturn(21L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_REPEAT_BLOCK), any(), eq(TEST_TRACE_ID))).thenReturn(21L);
             when(trafficRedisKeyFactory.repeatBlockKey(101L)).thenReturn("pooli:repeat_block:101");
             when(trafficPolicyVersionedRedisService.syncRepeatBlockSnapshot(anyString(), any(), anyLong()))
                     .thenReturn(PolicySyncResult.SUCCESS);
@@ -381,7 +395,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("분할 구간과 원본 구간이 같은 요일에 겹쳐도 각 field를 보존")
         void keepsDerivedAndOriginalRangesOnSameDay() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_REPEAT_BLOCK), any(), isNull())).thenReturn(22L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_REPEAT_BLOCK), any(), eq(TEST_TRACE_ID))).thenReturn(22L);
             when(trafficRedisKeyFactory.repeatBlockKey(101L)).thenReturn("pooli:repeat_block:101");
             when(trafficPolicyVersionedRedisService.syncRepeatBlockSnapshot(anyString(), any(), anyLong()))
                     .thenReturn(PolicySyncResult.SUCCESS);
@@ -424,7 +438,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("비활성/불완전 repeat block day 데이터는 hash 생성에서 제외")
         void ignoresInactiveAndIncompleteRepeatBlockDays() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_REPEAT_BLOCK), any(), isNull())).thenReturn(23L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_REPEAT_BLOCK), any(), eq(TEST_TRACE_ID))).thenReturn(23L);
             when(trafficRedisKeyFactory.repeatBlockKey(101L)).thenReturn("pooli:repeat_block:101");
             when(trafficPolicyVersionedRedisService.syncRepeatBlockSnapshot(anyString(), any(), anyLong()))
                     .thenReturn(PolicySyncResult.SUCCESS);
@@ -472,7 +486,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("첫 시도 RETRYABLE 실패면 재시도 후 성공 처리")
         void retriesAndSucceeds() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), isNull())).thenReturn(17L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), eq(TEST_TRACE_ID))).thenReturn(17L);
             when(trafficRedisKeyFactory.policyKey(1001L)).thenReturn("pooli:policy:1001");
             when(trafficPolicyVersionedRedisService.syncVersionedValue(eq("pooli:policy:1001"), eq("1"), anyLong()))
                     .thenReturn(PolicySyncResult.RETRYABLE_FAILURE)
@@ -495,7 +509,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("RETRYABLE 실패가 계속되면 FAIL로 남긴다")
         void marksFailWhenRetryableFailureExhausted() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), isNull())).thenReturn(18L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), eq(TEST_TRACE_ID))).thenReturn(18L);
             when(trafficRedisKeyFactory.policyKey(1001L)).thenReturn("pooli:policy:1001");
             when(trafficPolicyVersionedRedisService.syncVersionedValue(eq("pooli:policy:1001"), eq("1"), anyLong()))
                     .thenReturn(PolicySyncResult.RETRYABLE_FAILURE);
@@ -517,7 +531,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("즉시 차단 시간은 Asia/Seoul epoch second 문자열로 저장")
         void storesImmediateBlockAsEpochSecond() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_IMMEDIATE_BLOCK), any(), isNull())).thenReturn(19L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_IMMEDIATE_BLOCK), any(), eq(TEST_TRACE_ID))).thenReturn(19L);
             when(trafficRedisKeyFactory.immediatelyBlockEndKey(101L)).thenReturn("pooli:immediately_block_end:101");
             when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
             when(trafficPolicyVersionedRedisService.syncVersionedValue(anyString(), anyString(), anyLong()))
@@ -541,7 +555,7 @@ class TrafficPolicyWriteThroughServiceTest {
                                 && immediatePayload.getBlockEndEpochSecond() != null
                                 && immediatePayload.getBlockEndEpochSecond() == expectedEpochSecond;
                     }),
-                    isNull()
+                    eq(TEST_TRACE_ID)
             );
             verify(trafficPolicyVersionedRedisService).syncVersionedValue(
                     eq("pooli:immediately_block_end:101"),
@@ -555,7 +569,7 @@ class TrafficPolicyWriteThroughServiceTest {
         @DisplayName("connection failure는 실패로 처리해 markFail")
         void treatsConnectionFailureAsFail() {
             // given
-            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), isNull())).thenReturn(20L);
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), eq(TEST_TRACE_ID))).thenReturn(20L);
             when(trafficRedisKeyFactory.policyKey(2002L)).thenReturn("pooli:policy:2002");
             when(trafficPolicyVersionedRedisService.syncVersionedValue(eq("pooli:policy:2002"), eq("0"), anyLong()))
                     .thenReturn(PolicySyncResult.CONNECTION_FAILURE);
@@ -574,7 +588,7 @@ class TrafficPolicyWriteThroughServiceTest {
                                 && activationPayload.getPolicyId() == 2002L
                                 && Boolean.FALSE.equals(activationPayload.getActive());
                     }),
-                    isNull()
+                    eq(TEST_TRACE_ID)
             );
             verify(redisOutboxRecordService).markFail(20L);
             verify(redisOutboxRecordService, never()).markSuccess(anyLong());

@@ -3,8 +3,7 @@ package com.pooli.traffic.service.decision;
 import java.time.YearMonth;
 import java.util.UUID;
 
-import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
-import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +15,8 @@ import com.pooli.traffic.domain.enums.TrafficPoolType;
 import com.pooli.traffic.domain.outbox.OutboxEventType;
 import com.pooli.traffic.domain.outbox.payload.RefillOutboxPayload;
 import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
+import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
+import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -181,7 +182,11 @@ public class TrafficDefaultQuotaSourceAdapter implements TrafficQuotaSourcePort 
                 .claimedAtEpochMillis(System.currentTimeMillis())
                 .build();
 
-        return redisOutboxRecordService.createPending(OutboxEventType.REFILL, refillOutboxPayload, normalizedRefillUuid);
+        return redisOutboxRecordService.createPending(
+                OutboxEventType.REFILL,
+                refillOutboxPayload,
+                resolveRequiredTraceId(payload == null ? null : payload.getTraceId())
+        );
     }
 
     /**
@@ -193,6 +198,22 @@ public class TrafficDefaultQuotaSourceAdapter implements TrafficQuotaSourcePort 
             return UUID.randomUUID().toString();
         }
         return refillUuid.trim();
+    }
+
+    /**
+     * REFILL Outbox의 공통 식별자는 요청 traceId를 사용합니다.
+     * payload에 traceId가 없으면 MDC를 보조 입력으로 사용하고, 둘 다 없으면 즉시 실패시킵니다.
+     */
+    private String resolveRequiredTraceId(String payloadTraceId) {
+        if (payloadTraceId != null && !payloadTraceId.isBlank()) {
+            return payloadTraceId.trim();
+        }
+
+        String mdcTraceId = MDC.get("traceId");
+        if (mdcTraceId == null || mdcTraceId.isBlank()) {
+            throw new IllegalArgumentException("traceId must not be blank");
+        }
+        return mdcTraceId.trim();
     }
 
     /**

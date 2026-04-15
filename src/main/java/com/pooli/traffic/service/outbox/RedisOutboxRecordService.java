@@ -2,6 +2,7 @@ package com.pooli.traffic.service.outbox;
 
 import java.util.List;
 
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class RedisOutboxRecordService {
 
+    private static final String TRACE_ID_MDC_KEY = "traceId";
+
     private final RedisOutboxMapper redisOutboxMapper;
     private final ObjectMapper objectMapper;
 
@@ -33,12 +36,13 @@ public class RedisOutboxRecordService {
      *
      * @return 생성된 Outbox ID
      */
-    public long createPending(OutboxEventType eventType, Object payloadObject, String uuid) {
+    public long createPending(OutboxEventType eventType, Object payloadObject, String traceId) {
+        String normalizedTraceId = normalizeRequiredTraceId(traceId);
         String payloadJson = toJson(payloadObject);
         RedisOutboxRecord record = RedisOutboxRecord.builder()
                 .eventType(eventType)
                 .payload(payloadJson)
-                .uuid(uuid)
+                .traceId(normalizedTraceId)
                 .status(OutboxStatus.PENDING)
                 .retryCount(0)
                 .build();
@@ -138,5 +142,20 @@ public class RedisOutboxRecordService {
         } catch (JsonProcessingException e) {
             throw new ApplicationException(CommonErrorCode.INTERNAL_SERVER_ERROR, "Outbox payload 직렬화에 실패했습니다.");
         }
+    }
+
+    /**
+     * Outbox 공통 식별자(trace_id)를 정규화합니다.
+     * 빈 값이 들어오면 즉시 실패시켜 DB에 NULL/blank trace_id가 저장되지 않도록 차단합니다.
+     */
+    private String normalizeRequiredTraceId(String traceId) {
+        if (traceId == null || traceId.isBlank()) {
+            String mdcTraceId = MDC.get(TRACE_ID_MDC_KEY);
+            if (mdcTraceId == null || mdcTraceId.isBlank()) {
+                throw new IllegalArgumentException("traceId must not be blank");
+            }
+            return mdcTraceId.trim();
+        }
+        return traceId.trim();
     }
 }
