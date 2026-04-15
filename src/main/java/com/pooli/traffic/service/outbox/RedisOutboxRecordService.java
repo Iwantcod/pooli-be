@@ -94,6 +94,13 @@ public class RedisOutboxRecordService {
     }
 
     /**
+     * Outbox 레코드를 FINAL_FAIL 터미널 상태로 전이합니다.
+     */
+    public void markFinalFail(long id) {
+        redisOutboxMapper.markFinalFail(id);
+    }
+
+    /**
      * Outbox 레코드를 FAIL로 전이하고 retry_count를 1 증가시킵니다.
      */
     public void markFailWithRetryIncrement(long id) {

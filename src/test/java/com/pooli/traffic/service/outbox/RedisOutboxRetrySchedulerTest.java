@@ -2,6 +2,7 @@ package com.pooli.traffic.service.outbox;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -80,6 +81,48 @@ class RedisOutboxRetrySchedulerTest {
         verify(redisOutboxRecordService).markSuccess(101L);
         verify(trafficRefillOutboxSupportService).clearIdempotency("refill-uuid-1");
         verify(redisOutboxRecordService, never()).markFailWithRetryIncrement(101L);
+        verify(trafficRefillOutboxSupportService, never()).compensateRefillOnce(any(), any(RefillOutboxPayload.class));
+    }
+
+    @Test
+    @DisplayName("재시도 cap 초과 + REFILL은 REVERT 보상으로 종결하고 retry_count를 증가시키지 않는다")
+    void compensatesRefillWhenRetryCapExceeded() {
+        RedisOutboxRecord record = RedisOutboxRecord.builder()
+                .id(201L)
+                .eventType(OutboxEventType.REFILL)
+                .retryCount(10)
+                .build();
+        RefillOutboxPayload payload = RefillOutboxPayload.builder()
+                .uuid("refill-uuid-cap")
+                .build();
+
+        when(redisOutboxRecordService.lockRetryCandidatesAndMarkProcessing(anyInt(), anyInt(), anyInt()))
+                .thenReturn(List.of(record));
+        when(redisOutboxRecordService.readPayload(record, RefillOutboxPayload.class)).thenReturn(payload);
+
+        redisOutboxRetryScheduler.runRetryCycle();
+
+        verify(trafficRefillOutboxSupportService).compensateRefillOnce(201L, payload);
+        verify(redisOutboxRecordService, never()).markFailWithRetryIncrement(anyLong());
+        verify(redisOutboxRecordService, never()).markFinalFail(anyLong());
+    }
+
+    @Test
+    @DisplayName("재시도 cap 초과 + 비-REFILL은 FINAL_FAIL로 종결하고 retry_count를 증가시키지 않는다")
+    void marksFinalFailWhenRetryCapExceededForNonRefill() {
+        RedisOutboxRecord record = RedisOutboxRecord.builder()
+                .id(301L)
+                .eventType(OutboxEventType.SYNC_POLICY_ACTIVATION)
+                .retryCount(10)
+                .build();
+
+        when(redisOutboxRecordService.lockRetryCandidatesAndMarkProcessing(anyInt(), anyInt(), anyInt()))
+                .thenReturn(List.of(record));
+
+        redisOutboxRetryScheduler.runRetryCycle();
+
+        verify(redisOutboxRecordService).markFinalFail(301L);
+        verify(redisOutboxRecordService, never()).markFailWithRetryIncrement(anyLong());
         verify(trafficRefillOutboxSupportService, never()).compensateRefillOnce(any(), any(RefillOutboxPayload.class));
     }
 }

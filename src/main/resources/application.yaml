@@ -71,6 +71,11 @@ springdoc:
 app:
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
+  traffic:
+    outbox:
+      retry:
+        # PROCESSING 상태 레코드 stale 판정 기본값(초)
+        processing-stuck-seconds: ${TRAFFIC_OUTBOX_RETRY_PROCESSING_STUCK_SECONDS:60}
   redis:
     namespace: ${REDIS_NAMESPACE:pooli}
 

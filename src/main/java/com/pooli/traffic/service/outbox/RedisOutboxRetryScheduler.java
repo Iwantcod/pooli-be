@@ -26,15 +26,13 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class RedisOutboxRetryScheduler {
 
-    private static final int TERMINAL_RETRY_MARKER = 22;
-
     @Value("${app.traffic.outbox.retry.batch-size:100}")
     private int batchSize;
 
     @Value("${app.traffic.outbox.retry.pending-delay-seconds:60}")
     private int pendingDelaySeconds;
 
-    @Value("${app.traffic.outbox.retry.processing-stuck-seconds:150}")
+    @Value("${app.traffic.outbox.retry.processing-stuck-seconds:60}")
     private int processingStuckSeconds;
 
     @Value("${app.traffic.outbox.retry.max-retry-count:10}")
@@ -100,15 +98,9 @@ public class RedisOutboxRetryScheduler {
      * retry_count 상한 초과 레코드를 처리합니다.
      * - 재시도는 수행하지 않습니다.
      * - REFILL은 DB 반납을 1회 수행하고 REVERT 터미널 상태로 종료합니다.
-     * - 비-REFILL은 기존처럼 retry_count를 터미널 마커(22)로 고정합니다.
+     * - 비-REFILL은 FINAL_FAIL 터미널 상태로 종료합니다.
      */
     private void handleRetryCapExceeded(RedisOutboxRecord record, int retryCount) {
-        if (retryCount >= TERMINAL_RETRY_MARKER) {
-            // 이미 cap 처리를 마친 레코드는 무해하게 FAIL 유지한다.
-            redisOutboxRecordService.markFail(record.getId());
-            return;
-        }
-
         log.error(
                 "traffic_outbox_retry_cap_exceeded outboxId={} eventType={} retryCount={} reason=max_retry_exceeded",
                 record.getId(),
@@ -122,7 +114,7 @@ public class RedisOutboxRetryScheduler {
             return;
         }
 
-        redisOutboxRecordService.markFailWithRetryCount(record.getId(), TERMINAL_RETRY_MARKER);
+        redisOutboxRecordService.markFinalFail(record.getId());
     }
 
     /**

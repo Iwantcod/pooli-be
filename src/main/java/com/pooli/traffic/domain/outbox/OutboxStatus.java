@@ -8,5 +8,6 @@ public enum OutboxStatus {
     PROCESSING,
     SUCCESS,
     FAIL,
-    REVERT
+    REVERT,
+    FINAL_FAIL
 }
