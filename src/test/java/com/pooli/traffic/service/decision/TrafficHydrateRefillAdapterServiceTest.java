@@ -115,7 +115,6 @@ class TrafficHydrateRefillAdapterServiceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "hydrateLockEnabled", true);
-        ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "hydrateLockWaitMs", 0L);
         ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "redisRetryMaxAttempts", 3);
         ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "redisRetryBackoffMs", 0L);
         Mockito.lenient().when(trafficRefillOutboxSupportService.resolveIdempotencyKey(anyString()))
@@ -182,8 +181,8 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(TrafficLuaStatus.GLOBAL_POLICY_HYDRATE, result.getStatus()),
                     () -> assertEquals(0L, result.getAnswer())
             );
-            verify(trafficPolicyBootstrapService, times(10)).hydrateOnDemand();
-            verify(trafficLuaScriptInfraService, times(11)).executeDeductIndividual(anyList(), anyList());
+            verify(trafficPolicyBootstrapService, times(5)).hydrateOnDemand();
+            verify(trafficLuaScriptInfraService, times(6)).executeDeductIndividual(anyList(), anyList());
         }
 
         @Test
@@ -858,7 +857,7 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(TrafficLuaStatus.HYDRATE, result.getStatus()),
                     () -> assertEquals(0L, result.getAnswer())
             );
-            verify(trafficQuotaCacheService, times(10))
+            verify(trafficQuotaCacheService, times(5))
                     .hydrateBalance("pooli:remaining_indiv_amount:11:202603", 1_770_000_000L);
             verify(trafficLuaScriptInfraService, never())
                     .executeRefillGate(anyString(), anyString(), anyString(), anyLong(), anyLong(), anyLong());
@@ -893,10 +892,11 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(40L, result.getAnswer()),
                     () -> assertTrue(context.isRedisFallbackActivated())
             );
-            verify(trafficLuaScriptInfraService, times(3)).executeDeductIndividual(anyList(), anyList());
+            verify(trafficLuaScriptInfraService, times(4)).executeDeductIndividual(anyList(), anyList());
             verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 1);
             verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 2);
             verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 3);
+            verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 4);
             verify(trafficInFlightDedupeService).markDbFallback(payload.getTraceId());
             verify(trafficDbDeductFallbackService).deduct(TrafficPoolType.INDIVIDUAL, payload, 100L, context);
         }

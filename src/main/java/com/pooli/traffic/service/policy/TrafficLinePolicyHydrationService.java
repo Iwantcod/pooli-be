@@ -18,6 +18,7 @@ import com.pooli.policy.mapper.RepeatBlockMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.util.TrafficRetryBackoffSupport;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
@@ -38,10 +39,12 @@ import lombok.extern.slf4j.Slf4j;
 public class TrafficLinePolicyHydrationService {
 
     private static final int READY_RECHECK_MAX = 3;
-    private static final long READY_RECHECK_SLEEP_MS = 30L;
 
     @Value("${app.policy.line-hydration.ready-ttl-sec:60}")
     private long linePolicyReadyTtlSeconds = 60L;
+
+    @Value("${app.traffic.deduct.redis-retry.backoff-ms:50}")
+    private long retryBackoffMs = 50L;
 
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
@@ -161,7 +164,7 @@ public class TrafficLinePolicyHydrationService {
             if (isReady(readyKey)) {
                 return true;
             }
-            sleepBriefly();
+            sleepBriefly(attempt + 1);
         }
         return isReady(readyKey);
     }
@@ -187,9 +190,13 @@ public class TrafficLinePolicyHydrationService {
     /**
      * 짧은 대기로 busy polling을 완화합니다.
      */
-    private void sleepBriefly() {
+    private void sleepBriefly(int retryAttempt) {
+        long delayMs = TrafficRetryBackoffSupport.resolveDelayMs(retryBackoffMs, retryAttempt);
+        if (delayMs <= 0L) {
+            return;
+        }
         try {
-            Thread.sleep(READY_RECHECK_SLEEP_MS);
+            Thread.sleep(delayMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

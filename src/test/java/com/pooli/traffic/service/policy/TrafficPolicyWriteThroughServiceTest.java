@@ -46,6 +46,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.MDC;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * 정책 write-through가 Outbox + CAS 규칙으로 동작하는지 검증합니다.
@@ -73,6 +74,7 @@ class TrafficPolicyWriteThroughServiceTest {
     @BeforeEach
     void setUpMdcTraceId() {
         MDC.put("traceId", TEST_TRACE_ID);
+        ReflectionTestUtils.setField(trafficPolicyWriteThroughService, "retryBackoffMs", 0L);
     }
 
     @AfterEach
@@ -518,7 +520,7 @@ class TrafficPolicyWriteThroughServiceTest {
             trafficPolicyWriteThroughService.syncPolicyActivation(1001L, true);
 
             // then
-            verify(trafficPolicyVersionedRedisService, times(3)).syncVersionedValue(
+            verify(trafficPolicyVersionedRedisService, times(4)).syncVersionedValue(
                     eq("pooli:policy:1001"),
                     eq("1"),
                     anyLong()

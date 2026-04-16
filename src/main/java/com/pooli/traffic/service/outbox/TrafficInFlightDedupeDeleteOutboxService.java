@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import com.pooli.traffic.domain.outbox.OutboxEventType;
 import com.pooli.traffic.domain.outbox.payload.InFlightDedupeDeleteOutboxPayload;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
+import com.pooli.traffic.util.TrafficRetryBackoffSupport;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -127,9 +128,7 @@ public class TrafficInFlightDedupeDeleteOutboxService {
      */
     private boolean sleepImmediateRetryBackoff(int retryAttempt, long outboxId, String traceId) {
         // retryAttempt(1..3) => 50/100/200ms
-        long shift = Math.max(0, retryAttempt - 1);
-        long baseBackoffMs = Math.max(0L, immediateRetryBackoffMs);
-        long delayMs = baseBackoffMs << shift;
+        long delayMs = TrafficRetryBackoffSupport.resolveDelayMs(immediateRetryBackoffMs, retryAttempt);
         try {
             Thread.sleep(delayMs);
             return true;

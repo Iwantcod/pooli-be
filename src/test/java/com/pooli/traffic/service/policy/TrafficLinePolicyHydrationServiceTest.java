@@ -30,12 +30,14 @@ import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficLinePolicyHydrationServiceTest {
@@ -69,6 +71,11 @@ class TrafficLinePolicyHydrationServiceTest {
 
     @InjectMocks
     private TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(trafficLinePolicyHydrationService, "retryBackoffMs", 0L);
+    }
 
     @Nested
     @DisplayName("ensureLoaded 테스트")

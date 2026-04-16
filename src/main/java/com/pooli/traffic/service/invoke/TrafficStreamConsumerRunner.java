@@ -22,7 +22,9 @@ import com.pooli.traffic.domain.enums.TrafficFinalStatus;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.service.outbox.TrafficInFlightDedupeDeleteOutboxService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
+import com.pooli.traffic.util.TrafficRetryBackoffSupport;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.connection.stream.MapRecord;
@@ -85,6 +87,10 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     // 전역적인 소비 루프 동작 여부 플래그(start/stop 간 공유)
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean workerPressureActive = new AtomicBoolean(false);
+    private int workerPressureRetryAttempt = 0;
+
+    @Value("${app.traffic.deduct.redis-retry.backoff-ms:50}")
+    private long retryBackoffMs = 50L;
 
     private ExecutorService pollerExecutor;
     private ThreadPoolExecutor workerExecutor;
@@ -236,6 +242,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             return;
         }
 
+        workerPressureRetryAttempt = 0;
         clearWorkerPressureSignal();
 
         List<MapRecord<String, String, String>> records = trafficStreamInfraService.readBlocking(nextReadCount);
@@ -853,8 +860,10 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
      * worker 처리 여유가 생길 때까지 짧게 대기합니다.
      */
     private void pauseForWorkerCapacity() {
+        int retryAttempt = Math.max(1, workerPressureRetryAttempt + 1);
+        workerPressureRetryAttempt = retryAttempt;
         try {
-            Thread.sleep(resolvePressurePauseMs());
+            Thread.sleep(resolvePressurePauseMs(retryAttempt));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -865,9 +874,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
      *
      * @return 밀리초 단위 대기 시간
      */
-    private long resolvePressurePauseMs() {
-        long configuredBlockMs = appStreamsProperties.requireBlockMs();
-        return Math.min(250L, Math.max(25L, configuredBlockMs / 4L));
+    private long resolvePressurePauseMs(int retryAttempt) {
+        long delayMs = TrafficRetryBackoffSupport.resolveDelayMs(retryBackoffMs, retryAttempt);
+        return Math.min(250L, Math.max(0L, delayMs));
     }
 
     /**

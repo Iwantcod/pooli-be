@@ -18,6 +18,7 @@ import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.util.TrafficRetryBackoffSupport;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
@@ -47,10 +48,9 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficHydrateRefillAdapterService {
 
-    private static final int HYDRATE_RETRY_MAX = 10;
+    private static final int HYDRATE_RETRY_MAX = 5;
     private static final int REFILL_RETRY_MAX = 1;
-    private static final int DB_RETRY_MAX = 2;
-    private static final long DB_RETRY_BACKOFF_MS = 50L;
+    private static final int DB_RETRY_MAX = 3;
     private static final long POLICY_REPEAT_BLOCK_ID = 1L;
     private static final long POLICY_IMMEDIATE_BLOCK_ID = 2L;
     private static final long POLICY_LINE_LIMIT_SHARED_ID = 3L;
@@ -61,9 +61,6 @@ public class TrafficHydrateRefillAdapterService {
 
     @Value("${app.traffic.hydrate-lock.enabled:true}")
     private boolean hydrateLockEnabled;
-
-    @Value("${app.traffic.hydrate-lock.wait-ms:100}")
-    private long hydrateLockWaitMs;
 
     @Value("${app.traffic.deduct.redis-retry.max-attempts:3}")
     private int redisRetryMaxAttempts;
@@ -275,7 +272,7 @@ public class TrafficHydrateRefillAdapterService {
             if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
                 return retriedResult;
             }
-            sleepHydrateLockWait();
+            sleepHydrateRetryBackoff(retry + 1);
         }
 
         log.error(
@@ -333,7 +330,7 @@ public class TrafficHydrateRefillAdapterService {
      * 전역 정책 데이터(Global Policy)가 유실된 경우(GLOBAL_POLICY_HYDRATE 상태) 스냅샷을 다시 적재하고 차감을 재시도합니다.
      * 
      * [상세 로직]
-     * 1. HYDRATE_RETRY_MAX(10회)만큼 반복 시도합니다.
+     * 1. HYDRATE_RETRY_MAX(5회)만큼 반복 시도합니다.
      * 2. trafficPolicyBootstrapService.hydrateOnDemand() 호출을 통해 Redis에 전역 정책 데이터를 전파합니다.
      * 3. 복구 성공 여부와 상관없이 executeDeduct를 통해 차감을 재시도하여 상태 변화를 체크합니다.
      * 4. 재시도 간격(100ms)을 두어 Redis 전파 시간을 확보합니다.
@@ -381,7 +378,7 @@ public class TrafficHydrateRefillAdapterService {
             if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
                 return retriedResult; // 성공(OK)하거나 다른 상태(HYDRATE 등)로 전이된 경우 즉시 반환합니다.
             }
-            sleepHydrateLockWait(); // Redis 데이터 전파 및 동기화를 위한 짧은 대기 시간을 갖습니다.
+            sleepHydrateRetryBackoff(retry + 1); // Redis 데이터 전파 및 동기화를 위한 짧은 대기 시간을 갖습니다.
         }
 
         log.error(
@@ -400,7 +397,7 @@ public class TrafficHydrateRefillAdapterService {
      * 1. 중복 동기화를 방지하기 위해 분산 락(Hydrate Lock)을 사용합니다.
      * 2. 락 획득 시: DB 원본 데이터 로드 및 Redis 반영(applyHydrate) 후 락 해제.
      * 3. 락 획득 실패 시: 다른 노드/스레드가 동기화 중이므로 잠시 대기 후 차감 재시도.
-     * 4. 최대 10회 재시도 후에도 데이터가 없는 경우 마지막 결과(HYDRATE)를 반환합니다.
+     * 4. 최대 5회 재시도 후에도 데이터가 없는 경우 마지막 결과(HYDRATE)를 반환합니다.
      */
     private TrafficLuaExecutionResult handleHydrateIfNeeded(
             TrafficPoolType poolType,
@@ -432,7 +429,7 @@ public class TrafficHydrateRefillAdapterService {
                 }
             } else {
                 // 락 획득 실패 시, 다른 요청이 동기화를 완료할 때까지 잠시 대기합니다.
-                sleepHydrateLockWait();
+                sleepHydrateRetryBackoff(retry + 1);
             }
 
             // 동기화 시도 후 다시 차감을 통해 성공 여부나 다음 상태를 체크합니다.
@@ -956,10 +953,12 @@ public class TrafficHydrateRefillAdapterService {
             return trafficDbDeductFallbackService.deduct(poolType, payload, requestedDataBytes, context);
         }
 
-        int maxAttempts = Math.max(1, redisRetryMaxAttempts);
+        int maxRetryCount = Math.max(0, redisRetryMaxAttempts);
+        int totalAttemptCount = 1 + maxRetryCount;
         RuntimeException lastException = null;
 
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        // "초기 1회 시도 -> 실패 시 대기 -> 다음 재시도" 순서를 보장합니다.
+        for (int attempt = 1; attempt <= totalAttemptCount; attempt++) {
             try {
                 // 실제 Lua 스크립트를 호출하여 Redis 차감을 수행합니다.
                 return executeDeductLua(
@@ -988,8 +987,8 @@ public class TrafficHydrateRefillAdapterService {
                         trafficRefillOutboxSupportService.isTimeoutFailure(unwrappedException) ? "timeout" : "connection"
                 );
 
-                if (attempt < maxAttempts) {
-                    // 재시도 횟수가 남은 경우 설정된 간격(Backoff)만큼 대기합니다.
+                if (attempt <= maxRetryCount) {
+                    // 현재 시도 실패 직후 backoff 만큼 대기한 뒤 다음 시도로 넘어갑니다.
                     sleepRedisRetryBackoff(attempt);
                 }
             }
@@ -1179,21 +1178,20 @@ public class TrafficHydrateRefillAdapterService {
      * 지수 backoff(50/100/200ms)로 Redis 재시도 간격을 제어합니다.
      */
     private void sleepRedisRetryBackoff(int retryAttempt) {
-        long baseBackoffMs = Math.max(0L, redisRetryBackoffMs);
-        if (baseBackoffMs <= 0) {
+        long delayMs = TrafficRetryBackoffSupport.resolveDelayMs(redisRetryBackoffMs, retryAttempt);
+        if (delayMs <= 0L) {
             return;
-        }
-
-        long shift = Math.max(0, retryAttempt - 1);
-        long delayMs = baseBackoffMs;
-        if (shift > 0) {
-            delayMs = Math.min(Long.MAX_VALUE, baseBackoffMs << shift);
         }
 
         try {
             Thread.sleep(delayMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            log.warn(
+                    "traffic_deduct_redis_retry_sleep_interrupted retryAttempt={} delayMs={}",
+                    retryAttempt,
+                    delayMs
+            );
         }
     }
 
@@ -1293,10 +1291,10 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * hydrate 락 재시도 전에 잠시 대기합니다.
+     * hydrate 재시도 전 지수 백오프 대기를 수행합니다.
      */
-    private void sleepHydrateLockWait() {
-        long waitMs = Math.max(0L, hydrateLockWaitMs);
+    private void sleepHydrateRetryBackoff(int retryAttempt) {
+        long waitMs = TrafficRetryBackoffSupport.resolveDelayMs(redisRetryBackoffMs, retryAttempt);
         if (waitMs <= 0) {
             return;
         }
@@ -1304,6 +1302,11 @@ public class TrafficHydrateRefillAdapterService {
             Thread.sleep(waitMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            log.warn(
+                    "traffic_hydrate_retry_sleep_interrupted retryAttempt={} delayMs={}",
+                    retryAttempt,
+                    waitMs
+            );
         }
     }
 
@@ -1439,7 +1442,7 @@ public class TrafficHydrateRefillAdapterService {
      * 
      * [상세로직]
      * 1. DB 예외 발생 시 isRetryableDbException()을 통해 재시도 가능 여부 판단.
-     * 2. 재시도 가능 시 DB_RETRY_MAX(2회)만큼 일정한 백오프 시간(50ms)을 두고 재시도.
+     * 2. 재시도 가능 시 DB_RETRY_MAX(3회)만큼 지수 백오프(50/100/200ms) 후 재시도.
      * 3. 최종 실패 시 상위로 예외를 전파하여 Outbox에 FAIL 기록을 유도.
      */
     private TrafficDbRefillClaimResult claimRefillAmountFromDbWithRetry(
@@ -1450,6 +1453,7 @@ public class TrafficHydrateRefillAdapterService {
             String refillUuid
     ) {
         RuntimeException lastException = null;
+        // DB claim도 동일하게 "초기 1회 시도 -> 실패 시 대기 -> 재시도" 순서를 따릅니다.
         for (int retryCount = 0; retryCount <= DB_RETRY_MAX; retryCount++) {
             try {
                 // DB에서 실잔량을 차값하고 Outbox를 생성하는 핵심 로직을 호출합니다.
@@ -1475,7 +1479,7 @@ public class TrafficHydrateRefillAdapterService {
                         retryCount + 1,
                         DB_RETRY_MAX
                 );
-                sleepDbRetryBackoff(); // 짧은 대기 후 다시 시도합니다.
+                sleepDbRetryBackoff(retryCount + 1); // 실패 후 대기한 다음 다시 시도합니다.
             }
         }
 
@@ -1505,11 +1509,20 @@ public class TrafficHydrateRefillAdapterService {
     /**
      * DB 재시도 전 backoff 시간만큼 대기합니다.
      */
-    private void sleepDbRetryBackoff() {
+    private void sleepDbRetryBackoff(int retryAttempt) {
+        long delayMs = TrafficRetryBackoffSupport.resolveDelayMs(redisRetryBackoffMs, retryAttempt);
+        if (delayMs <= 0L) {
+            return;
+        }
         try {
-            Thread.sleep(DB_RETRY_BACKOFF_MS);
+            Thread.sleep(delayMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            log.warn(
+                    "traffic_refill_db_retry_sleep_interrupted retryAttempt={} delayMs={}",
+                    retryAttempt,
+                    delayMs
+            );
         }
     }
 }
