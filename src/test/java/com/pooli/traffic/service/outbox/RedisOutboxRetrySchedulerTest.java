@@ -125,4 +125,46 @@ class RedisOutboxRetrySchedulerTest {
         verify(redisOutboxRecordService, never()).markFailWithRetryIncrement(anyLong());
         verify(trafficRefillOutboxSupportService, never()).compensateRefillOnce(any(), any(RefillOutboxPayload.class));
     }
+
+    @Test
+    @DisplayName("DELETE_IN_FLIGHT_DEDUPE_KEY 재시도 성공 시 SUCCESS로 전이한다")
+    void marksSuccessWhenDeleteInFlightDedupeKeyRetrySucceeds() {
+        RedisOutboxRecord record = RedisOutboxRecord.builder()
+                .id(401L)
+                .eventType(OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY)
+                .retryCount(0)
+                .build();
+
+        when(redisOutboxRecordService.lockRetryCandidatesAndMarkProcessing(anyInt(), anyInt(), anyInt()))
+                .thenReturn(List.of(record));
+        when(outboxRetryStrategyRegistry.get(OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY))
+                .thenReturn(outboxEventRetryStrategy);
+        when(outboxEventRetryStrategy.execute(record)).thenReturn(OutboxRetryResult.SUCCESS);
+
+        redisOutboxRetryScheduler.runRetryCycle();
+
+        verify(redisOutboxRecordService).markSuccess(401L);
+        verify(redisOutboxRecordService, never()).markFailWithRetryIncrement(anyLong());
+    }
+
+    @Test
+    @DisplayName("DELETE_IN_FLIGHT_DEDUPE_KEY 재시도 실패 시 retry_count를 증가시키며 FAIL로 전이한다")
+    void marksFailWithRetryIncrementWhenDeleteInFlightDedupeKeyRetryFails() {
+        RedisOutboxRecord record = RedisOutboxRecord.builder()
+                .id(402L)
+                .eventType(OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY)
+                .retryCount(1)
+                .build();
+
+        when(redisOutboxRecordService.lockRetryCandidatesAndMarkProcessing(anyInt(), anyInt(), anyInt()))
+                .thenReturn(List.of(record));
+        when(outboxRetryStrategyRegistry.get(OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY))
+                .thenReturn(outboxEventRetryStrategy);
+        when(outboxEventRetryStrategy.execute(record)).thenReturn(OutboxRetryResult.FAIL);
+
+        redisOutboxRetryScheduler.runRetryCycle();
+
+        verify(redisOutboxRecordService).markFailWithRetryIncrement(402L);
+        verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+    }
 }
