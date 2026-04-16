@@ -55,7 +55,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private static final String STAGE_PARSE_VALIDATE = "parse_validate";
     private static final String STAGE_DEDUPE = "dedupe";
     private static final String STAGE_ORCHESTRATE = "orchestrate";
-    private static final String STAGE_MONGO_SAVE = "mongo_save";
+    private static final String STAGE_DONE_LOG_SAVE = "done_log_save";
     private static final String STAGE_ACK = "ack";
     private static final String STAGE_TOTAL = "total";
     private static final String RESULT_SUCCESS = "success";
@@ -73,7 +73,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final TrafficDeductOrchestratorService trafficDeductOrchestratorService;
     // in-flight dedupe 선점 서비스(traceId 기준)
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
-    // Mongo 완료 로그 서비스(traceId UNIQUE idempotency)
+    // 완료 로그 서비스(traceId UNIQUE idempotency)
     private final TrafficDeductDoneLogService trafficDeductDoneLogService;
     // pending reclaim/retry/DLQ 분기 서비스
     private final TrafficStreamReclaimService trafficStreamReclaimService;
@@ -440,7 +440,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 try {
                     saved = trafficDeductDoneLogService.saveIfAbsent(payload, cumulativeResult, recordId, latency);
                 } finally {
-                    trafficRecordStageMetricsPort.recordStageLatency(STAGE_MONGO_SAVE, elapsedSinceNs(mongoSaveStartNs));
+                    trafficRecordStageMetricsPort.recordStageLatency(STAGE_DONE_LOG_SAVE, elapsedSinceNs(mongoSaveStartNs));
                 }
 
                 trafficInFlightDedupeDeleteOutboxService.createPending(traceId, recordId);

@@ -522,7 +522,7 @@ public class TrafficStreamConsumerRunnerTest {
             verify(trafficRecordStageMetricsPort).recordStageLatency(eq("parse_validate"), anyLong());
             verify(trafficRecordStageMetricsPort).recordStageLatency(eq("dedupe"), anyLong());
             verify(trafficRecordStageMetricsPort).recordStageLatency(eq("orchestrate"), anyLong());
-            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("mongo_save"), anyLong());
+            verify(trafficRecordStageMetricsPort).recordStageLatency(eq("done_log_save"), anyLong());
             verify(trafficRecordStageMetricsPort).recordStageLatency(eq("ack"), anyLong());
             verify(trafficRecordStageMetricsPort).recordStageLatency(eq("total"), anyLong());
             verify(trafficRecordStageMetricsPort).recordTotalLatency(anyLong());

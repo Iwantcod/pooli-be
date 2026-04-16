@@ -30,9 +30,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessException;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -99,9 +96,6 @@ class TrafficFlowLocalAcceptanceTest {
 
     @Autowired
     private ObjectMapper objectMapper;
-
-    @Autowired
-    private MongoTemplate mongoTemplate;
 
     @Autowired
     @Qualifier("cacheStringRedisTemplate")
@@ -1235,8 +1229,60 @@ class TrafficFlowLocalAcceptanceTest {
     }
 
     private TrafficDeductDoneLog findDoneLog(String traceId) {
-        Query query = Query.query(Criteria.where("trace_id").is(traceId));
-        return mongoTemplate.findOne(query, TrafficDeductDoneLog.class);
+        List<TrafficDeductDoneLog> logs = jdbcTemplate.query(
+                """
+                SELECT
+                    traffic_deduct_done_id,
+                    trace_id,
+                    record_id,
+                    line_id,
+                    family_id,
+                    app_id,
+                    api_total_data,
+                    deducted_total_bytes,
+                    api_remaining_data,
+                    final_status,
+                    last_lua_status,
+                    created_at,
+                    started_at,
+                    finished_at,
+                    latency,
+                    restore_status,
+                    restore_status_updated_at,
+                    restore_retry_count,
+                    restore_last_error_message
+                FROM TRAFFIC_DEDUCT_DONE
+                WHERE trace_id = ?
+                ORDER BY traffic_deduct_done_id DESC
+                LIMIT 1
+                """,
+                (rs, rowNum) -> TrafficDeductDoneLog.builder()
+                        .trafficDeductDoneId(rs.getLong("traffic_deduct_done_id"))
+                        .traceId(rs.getString("trace_id"))
+                        .recordId(rs.getString("record_id"))
+                        .lineId(rs.getLong("line_id"))
+                        .familyId(rs.getLong("family_id"))
+                        .appId(rs.getInt("app_id"))
+                        .apiTotalData(rs.getLong("api_total_data"))
+                        .deductedTotalBytes(rs.getLong("deducted_total_bytes"))
+                        .apiRemainingData(rs.getLong("api_remaining_data"))
+                        .finalStatus(rs.getString("final_status"))
+                        .lastLuaStatus(rs.getString("last_lua_status"))
+                        .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
+                        .startedAt(rs.getTimestamp("started_at").toLocalDateTime())
+                        .finishedAt(rs.getTimestamp("finished_at").toLocalDateTime())
+                        .latency(rs.getObject("latency", Long.class))
+                        .restoreStatus(rs.getString("restore_status"))
+                        .restoreStatusUpdatedAt(rs.getTimestamp("restore_status_updated_at").toLocalDateTime())
+                        .restoreRetryCount(rs.getInt("restore_retry_count"))
+                        .restoreLastErrorMessage(rs.getString("restore_last_error_message"))
+                        .build(),
+                traceId
+        );
+        if (logs.isEmpty()) {
+            return null;
+        }
+        return logs.getFirst();
     }
 
     private TrafficDeductDoneLog awaitDoneLog(String traceId) throws Exception {

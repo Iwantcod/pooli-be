@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.traffic.mapper.TrafficDeductDoneLogMapper">
+
+    <select id="existsByTraceId" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM TRAFFIC_DEDUCT_DONE
+            WHERE trace_id = #{traceId}
+        )
+    </select>
+
+    <insert id="insert"
+            parameterType="com.pooli.traffic.domain.entity.TrafficDeductDoneLog"
+            useGeneratedKeys="true"
+            keyProperty="trafficDeductDoneId"
+            keyColumn="traffic_deduct_done_id">
+        INSERT INTO TRAFFIC_DEDUCT_DONE (
+            trace_id,
+            record_id,
+            line_id,
+            family_id,
+            app_id,
+            api_total_data,
+            deducted_total_bytes,
+            api_remaining_data,
+            final_status,
+            last_lua_status,
+            started_at,
+            finished_at,
+            latency,
+            restore_status,
+            restore_status_updated_at,
+            restore_retry_count,
+            restore_last_error_message
+        ) VALUES (
+            #{traceId},
+            #{recordId},
+            #{lineId},
+            #{familyId},
+            #{appId},
+            #{apiTotalData},
+            #{deductedTotalBytes},
+            #{apiRemainingData},
+            #{finalStatus},
+            #{lastLuaStatus},
+            #{startedAt},
+            #{finishedAt},
+            #{latency},
+            'NONE',
+            CURRENT_TIMESTAMP(6),
+            0,
+            NULL
+        )
+    </insert>
+
+</mapper>
