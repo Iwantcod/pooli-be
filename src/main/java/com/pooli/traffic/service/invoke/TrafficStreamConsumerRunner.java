@@ -240,7 +240,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
         List<MapRecord<String, String, String>> records = trafficStreamInfraService.readBlocking(nextReadCount);
         for (MapRecord<String, String, String> record : records) {
-            dispatchRecord(record);
+            dispatchRecord(record, TrafficStreamMessageSource.NEW);
         }
     }
 
@@ -250,6 +250,19 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
      * @param record 제출할 스트림 레코드
      */
     private void dispatchRecord(MapRecord<String, String, String> record) {
+        dispatchRecord(record, TrafficStreamMessageSource.NEW);
+    }
+
+    /**
+     * 단일 레코드를 worker 풀에 제출합니다.
+     *
+     * @param record 제출할 스트림 레코드
+     * @param messageSource 메시지 유입 출처
+     */
+    private void dispatchRecord(
+            MapRecord<String, String, String> record,
+            TrafficStreamMessageSource messageSource
+    ) {
         if (!running.get()) {
             log.info("traffic_stream_record_dispatch_skipped recordId={} reason=stopping", record.getId().getValue());
             return;
@@ -261,7 +274,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         }
 
         try {
-            workerExecutor.execute(() -> handleRecord(record));
+            workerExecutor.execute(() -> handleRecord(record, messageSource));
         } catch (RejectedExecutionException e) {
             signalWorkerPressure();
             log.warn(
@@ -317,7 +330,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     trafficStreamReclaimService.reclaimAndRouteExceededRetries(reclaimDispatchLimit);
 
             for (MapRecord<String, String, String> reclaimedRecord : reclaimedRecords) {
-                dispatchRecord(reclaimedRecord);
+                dispatchRecord(reclaimedRecord, TrafficStreamMessageSource.RECLAIM);
             }
         } catch (Exception e) {
             // reclaim 실패가 메인 소비 루프를 멈추게 해서는 안 되므로 로그 후 다음 주기를 기다린다.
@@ -326,11 +339,21 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     /**
-      * 입력 상태를 해석해 분기별 처리 로직을 수행합니다.
+     * 입력 상태를 해석해 분기별 처리 로직을 수행합니다.
      *
      * @param record 처리할 스트림 레코드
      */
     private void handleRecord(MapRecord<String, String, String> record) {
+        handleRecord(record, TrafficStreamMessageSource.NEW);
+    }
+
+    /**
+     * 입력 상태를 해석해 분기별 처리 로직을 수행합니다.
+     *
+     * @param record 처리할 스트림 레코드
+     * @param messageSource 메시지 유입 출처
+     */
+    private void handleRecord(MapRecord<String, String, String> record, TrafficStreamMessageSource messageSource) {
         long consumeStartTimeMs = System.currentTimeMillis();
         long handleStartNs = System.nanoTime();
         String resultTag = RESULT_FAILED;
@@ -385,7 +408,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
                 long dedupeStartNs = System.nanoTime();
                 try {
-                    if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
+                    // done log precheck는 reclaim 경로에서만 수행한다.
+                    if (messageSource == TrafficStreamMessageSource.RECLAIM
+                            && trafficDeductDoneLogService.existsByTraceId(traceId)) {
                         trafficInFlightDedupeDeleteOutboxService.createPending(traceId, recordId);
                         acknowledgeWithMetrics(record.getId());
                         log.info("traffic_stream_record_already_done recordId={}", recordId);
@@ -441,6 +466,21 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     saved = trafficDeductDoneLogService.saveIfAbsent(payload, cumulativeResult, recordId, latency);
                 } finally {
                     trafficRecordStageMetricsPort.recordStageLatency(STAGE_DONE_LOG_SAVE, elapsedSinceNs(mongoSaveStartNs));
+                }
+
+                if (!saved && messageSource == TrafficStreamMessageSource.NEW) {
+                    log.warn(
+                            "traffic_stream_duplicate_deduction_absorbed trace_id={} record_id={} source={} "
+                                    + "api_total_data={} deducted_total_bytes={} api_remaining_data={} final_status={} last_lua_status={}",
+                            payload.getTraceId(),
+                            recordId,
+                            messageSource,
+                            cumulativeResult.getApiTotalData(),
+                            cumulativeResult.getDeductedTotalBytes(),
+                            cumulativeResult.getApiRemainingData(),
+                            cumulativeResult.getFinalStatus(),
+                            cumulativeResult.getLastLuaStatus()
+                    );
                 }
 
                 trafficInFlightDedupeDeleteOutboxService.createPending(traceId, recordId);
