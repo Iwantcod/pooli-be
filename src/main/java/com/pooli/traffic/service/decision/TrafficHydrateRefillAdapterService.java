@@ -594,10 +594,10 @@ public class TrafficHydrateRefillAdapterService {
             }
 
             // [Step 2] 리필 권한(분산 락) 확인 및 유지
-            boolean lockOwned = trafficLuaScriptInfraService.executeLockHeartbeat(
+            boolean lockOwned = refreshRefillLockHeartbeat(
                     lockKey,
                     payload.getTraceId(),
-                    TrafficRedisRuntimePolicy.LOCK_TTL_MS
+                    "before_db_claim"
             );
 
             if (!lockOwned) {
@@ -669,10 +669,10 @@ public class TrafficHydrateRefillAdapterService {
                 }
 
                 // 2차 Lua 호출 직전 락 상태를 한 번 더 확인해 claim 이후 경합 구간을 줄입니다.
-                boolean lockStillOwned = trafficLuaScriptInfraService.executeLockHeartbeat(
+                boolean lockStillOwned = refreshRefillLockHeartbeat(
                         lockKey,
                         payload.getTraceId(),
-                        TrafficRedisRuntimePolicy.LOCK_TTL_MS
+                        "before_refill_retry_deduct"
                 );
                 if (!lockStillOwned) {
                     // 락 유실 시 Redis 반영을 중단하고 기록된 Outbox 레코드의 상태를 보정(보상처리)합니다.
@@ -1259,6 +1259,25 @@ public class TrafficHydrateRefillAdapterService {
             case INDIVIDUAL -> trafficRedisKeyFactory.indivHydrateLockKey(payload.getLineId());
             case SHARED -> trafficRedisKeyFactory.sharedHydrateLockKey(payload.getFamilyId());
         };
+    }
+
+    /**
+     * 외부 인프라 접근 직전에 lock heartbeat를 실행해 소유권을 재확인하고 TTL을 갱신합니다.
+     */
+    private boolean refreshRefillLockHeartbeat(String lockKey, String traceId, String boundary) {
+        boolean lockOwned = trafficLuaScriptInfraService.executeLockHeartbeat(
+                lockKey,
+                traceId,
+                TrafficRedisRuntimePolicy.LOCK_TTL_MS
+        );
+        if (!lockOwned) {
+            log.debug(
+                    "traffic_refill_lock_heartbeat_not_owned lockKey={} boundary={}",
+                    lockKey,
+                    boundary
+            );
+        }
+        return lockOwned;
     }
 
     /**

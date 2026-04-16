@@ -39,7 +39,7 @@ public class TrafficStreamReclaimService {
             return List.of();
         }
 
-        long reclaimMinIdleMs = appStreamsProperties.requireReclaimMinIdleMs();
+        long reclaimMinIdleMs = appStreamsProperties.resolveReclaimMinIdleMs();
         int maxRetry = appStreamsProperties.requireMaxRetry();
 
         List<RecordId> claimCandidates = new ArrayList<>();

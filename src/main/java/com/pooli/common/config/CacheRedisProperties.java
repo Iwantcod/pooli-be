@@ -16,6 +16,14 @@ public class CacheRedisProperties {
     private String host;
     private int port;
     private String password;
+    /**
+     * Redis TCP connect timeout(ms). 0 이하면 드라이버 기본값을 사용합니다.
+     */
+    private long connectTimeoutMs;
+    /**
+     * Redis command timeout(ms). 0 이하면 드라이버 기본값을 사용합니다.
+     */
+    private long commandTimeoutMs;
     private SentinelProperties sentinel = new SentinelProperties();
     private AofProperties aof = new AofProperties();
 
@@ -54,4 +62,3 @@ public class CacheRedisProperties {
         private boolean triggerBackgroundRewriteOnStartup;
     }
 }
-

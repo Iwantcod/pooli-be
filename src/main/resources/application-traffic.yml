@@ -10,6 +10,10 @@ spring:
     redis:
       repositories:
         enabled: false
+  datasource:
+    hikari:
+      # traffic 전용 DB 접근 timeout (5s)
+      connection-timeout: ${TRAFFIC_MYSQL_ACCESS_TIMEOUT_MS:5000}
   main:
     web-application-type: servlet
   session:
@@ -30,8 +34,18 @@ springdoc:
     enabled: false
 
 app:
+  redis:
+    cache:
+      # traffic 전용 Redis timeout override (connect/command 1s)
+      connect-timeout-ms: ${TRAFFIC_REDIS_CONNECT_TIMEOUT_MS:1000}
+      command-timeout-ms: ${TRAFFIC_REDIS_COMMAND_TIMEOUT_MS:1000}
+    streams:
+      connect-timeout-ms: ${TRAFFIC_REDIS_CONNECT_TIMEOUT_MS:1000}
+      command-timeout-ms: ${TRAFFIC_REDIS_COMMAND_TIMEOUT_MS:1000}
   streams:
     consumer-enabled: true
+    # reclaim min-idle은 최악 처리시간 * 1.5 규칙으로 계산한다.
+    reclaim-worst-processing-ms: ${TRAFFIC_STREAMS_RECLAIM_WORST_PROCESSING_MS:10000}
   traffic:
     deduct:
       redis-retry:

@@ -153,7 +153,7 @@ class TrafficStreamReclaimServiceTest {
 
         private void mockProperties(int reclaimPendingScanCount, long reclaimMinIdleMs, int maxRetry) {
             when(appStreamsProperties.requireReclaimPendingScanCount()).thenReturn(reclaimPendingScanCount);
-            when(appStreamsProperties.requireReclaimMinIdleMs()).thenReturn(reclaimMinIdleMs);
+            when(appStreamsProperties.resolveReclaimMinIdleMs()).thenReturn(reclaimMinIdleMs);
             when(appStreamsProperties.requireMaxRetry()).thenReturn(maxRetry);
         }
 

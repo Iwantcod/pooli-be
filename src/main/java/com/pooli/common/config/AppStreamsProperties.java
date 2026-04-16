@@ -22,6 +22,8 @@ import lombok.Setter;
 @ConfigurationProperties(prefix = "app.streams")
 public class AppStreamsProperties {
     private static final String UNSET_CONSUMER_NAME_TOKEN = "__unset_streams_consumer_name__";
+    private static final long RECLAIM_MIN_IDLE_MULTIPLIER_NUMERATOR = 3L;
+    private static final long RECLAIM_MIN_IDLE_MULTIPLIER_DENOMINATOR = 2L;
     private static final Set<String> INVALID_SHARED_CONSUMER_NAMES = Set.of(
             "default",
             "consumer",
@@ -45,6 +47,11 @@ public class AppStreamsProperties {
     private int reclaimPendingScanCount;
     private long reclaimIntervalMs;
     private long reclaimMinIdleMs;
+    /**
+     * reclaim 최소 유휴 시간 계산용 입력값(최악 메시지 처리시간, ms)입니다.
+     * 0 이하일 때는 reclaimMinIdleMs 설정값을 그대로 사용합니다.
+     */
+    private long reclaimWorstProcessingMs;
     private long shutdownAwaitMs;
     private int maxRetry;
     private String keyTrafficDlq;
@@ -196,6 +203,18 @@ public class AppStreamsProperties {
         return reclaimMinIdleMs;
     }
 
+    /**
+     * reclaim min-idle을 "최악 처리시간 * 1.5" 규칙으로 계산합니다.
+     * 계산 입력값이 없으면 기존 reclaim-min-idle 설정값을 사용합니다.
+     */
+    public long resolveReclaimMinIdleMs() {
+        long configuredMinIdleMs = requireReclaimMinIdleMs();
+        if (reclaimWorstProcessingMs <= 0L) {
+            return configuredMinIdleMs;
+        }
+        return calculateReclaimMinIdleFromWorstProcessing(reclaimWorstProcessingMs);
+    }
+
     public long requireShutdownAwaitMs() {
         if (shutdownAwaitMs < 0L) {
             throw invalidBootstrapConfig(
@@ -229,6 +248,30 @@ public class AppStreamsProperties {
             return null;
         }
         return value.trim();
+    }
+
+    /**
+     * 최악 처리시간 입력값을 reclaim min-idle 값으로 환산합니다.
+     * 계산 규칙은 "worstProcessingMs * 1.5"이며, 정수 ms 단위 유지를 위해 소수점은 올림합니다.
+     */
+    private long calculateReclaimMinIdleFromWorstProcessing(long worstProcessingMs) {
+        // 방어적으로 음수 입력을 0으로 보정합니다.
+        long normalizedWorstProcessingMs = Math.max(0L, worstProcessingMs);
+        if (normalizedWorstProcessingMs == 0L) {
+            return 0L;
+        }
+
+        // 곱셈 오버플로를 먼저 차단합니다.
+        // (worst * 3 / 2) 계산에서 worst*3이 범위를 넘을 수 있으므로 상한을 직접 검사합니다.
+        if (normalizedWorstProcessingMs > Long.MAX_VALUE / RECLAIM_MIN_IDLE_MULTIPLIER_NUMERATOR) {
+            return Long.MAX_VALUE;
+        }
+
+        // 1.5배 계산을 부동소수점 없이 정수 연산으로 수행합니다.
+        long multiplied = normalizedWorstProcessingMs * RECLAIM_MIN_IDLE_MULTIPLIER_NUMERATOR;
+        // 소수점 올림(ceil) 처리로 min-idle이 과소 계산되지 않도록 보정한다.
+        return (multiplied + RECLAIM_MIN_IDLE_MULTIPLIER_DENOMINATOR - 1L)
+                / RECLAIM_MIN_IDLE_MULTIPLIER_DENOMINATOR;
     }
 
     private TrafficStreamBootstrapException invalidBootstrapConfig(String propertyName, String detail) {
