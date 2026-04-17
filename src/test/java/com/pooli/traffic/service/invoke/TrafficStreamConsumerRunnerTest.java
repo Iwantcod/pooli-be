@@ -401,6 +401,83 @@ public class TrafficStreamConsumerRunnerTest {
         }
 
         @Test
+        @DisplayName("routes to reclaim retry exceeded path when retryCount reaches threshold")
+        void routeToReclaimRetryExceededPathWhenRetryCountReachesThreshold() {
+            String payloadJson = "{\"traceId\":\"trace-reclaim-exceeded\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("12-0", payloadJson);
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-reclaim-exceeded")).thenReturn(false);
+            when(trafficInFlightDedupeService.createOrGet("trace-reclaim-exceeded"))
+                    .thenReturn(existingEntryResult("trace-reclaim-exceeded", 70L));
+            when(trafficInFlightDedupeService.incrementRetryOnReclaim("trace-reclaim-exceeded")).thenReturn(6);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("12-0"), anyLong()))
+                    .thenReturn(true);
+
+            invokeHandleRecord(record, TrafficStreamMessageSource.RECLAIM);
+
+            ArgumentCaptor<TrafficDeductResultResDto> resultCaptor =
+                    ArgumentCaptor.forClass(TrafficDeductResultResDto.class);
+            ArgumentCaptor<String> dlqReasonCaptor = ArgumentCaptor.forClass(String.class);
+
+            verify(trafficDeductDoneLogService).saveIfAbsent(any(), resultCaptor.capture(), eq("12-0"), anyLong());
+            verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-reclaim-exceeded", "12-0");
+            verify(trafficStreamInfraService).writeDlq(eq(payloadJson), dlqReasonCaptor.capture(), eq("12-0"));
+            verify(trafficStreamInfraService).acknowledge(record.getId());
+            verify(trafficInFlightDedupeService).incrementRetryOnReclaim("trace-reclaim-exceeded");
+            verifyNoInteractions(trafficDeductOrchestratorService);
+
+            InOrder inOrder = inOrder(
+                    trafficDeductDoneLogService,
+                    trafficInFlightDedupeDeleteOutboxService,
+                    trafficStreamInfraService
+            );
+            inOrder.verify(trafficDeductDoneLogService)
+                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("12-0"), anyLong());
+            inOrder.verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-reclaim-exceeded", "12-0");
+            inOrder.verify(trafficStreamInfraService).writeDlq(eq(payloadJson), any(), eq("12-0"));
+            inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
+
+            TrafficDeductResultResDto savedResult = resultCaptor.getValue();
+            assertEquals(TrafficFinalStatus.RECLAIM_RETRY_EXCEEDED, savedResult.getFinalStatus());
+            assertEquals(TrafficLuaStatus.OK, savedResult.getLastLuaStatus());
+            assertEquals(70L, savedResult.getDeductedTotalBytes());
+            assertEquals(30L, savedResult.getApiRemainingData());
+            assertTrue(dlqReasonCaptor.getValue().contains("reclaim retry exceeded"));
+            verify(trafficRecordStageMetricsPort).incrementResult("dlq");
+        }
+
+        @Test
+        @DisplayName("absorbs duplicate done log and still routes reclaim retry exceeded message")
+        void absorbDuplicateDoneLogAndStillRouteReclaimRetryExceededMessage() {
+            String payloadJson = "{\"traceId\":\"trace-reclaim-dup\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("12-1", payloadJson);
+            ListAppender<ILoggingEvent> listAppender = attachAppender();
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-reclaim-dup")).thenReturn(false);
+            when(trafficInFlightDedupeService.createOrGet("trace-reclaim-dup"))
+                    .thenReturn(existingEntryResult("trace-reclaim-dup", 40L));
+            when(trafficInFlightDedupeService.incrementRetryOnReclaim("trace-reclaim-dup")).thenReturn(6);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("12-1"), anyLong()))
+                    .thenReturn(false);
+
+            invokeHandleRecord(record, TrafficStreamMessageSource.RECLAIM);
+
+            verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-reclaim-dup", "12-1");
+            verify(trafficStreamInfraService).writeDlq(eq(payloadJson), any(), eq("12-1"));
+            verify(trafficStreamInfraService).acknowledge(record.getId());
+            verifyNoInteractions(trafficDeductOrchestratorService);
+            assertTrue(
+                    listAppender.list.stream()
+                            .map(ILoggingEvent::getFormattedMessage)
+                            .anyMatch(message -> message.startsWith("traffic_stream_reclaim_retry_exceeded_duplicate_absorbed"))
+            );
+
+            detachAppender(listAppender);
+        }
+
+        @Test
         @DisplayName("leaves record pending when claim fails and dedupe state is CLAIMED")
         void leaveRecordPendingWhenClaimFailedAndStateClaimed() {
             String payloadJson = "{\"traceId\":\"trace-pending\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";

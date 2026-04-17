@@ -64,6 +64,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private static final String RESULT_FAILED = "failed";
     private static final String RESULT_DLQ = "dlq";
     private static final String RESULT_DEDUPED = "deduped";
+    private static final int RECLAIM_RETRY_EXCEEDED_THRESHOLD = 6;
 
     // Streams read/ack/DLQ 인프라 유틸
     private final TrafficStreamInfraService trafficStreamInfraService;
@@ -349,15 +350,6 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
      * 입력 상태를 해석해 분기별 처리 로직을 수행합니다.
      *
      * @param record 처리할 스트림 레코드
-     */
-    private void handleRecord(MapRecord<String, String, String> record) {
-        handleRecord(record, TrafficStreamMessageSource.NEW);
-    }
-
-    /**
-     * 입력 상태를 해석해 분기별 처리 로직을 수행합니다.
-     *
-     * @param record 처리할 스트림 레코드
      * @param messageSource 메시지 유입 출처
      */
     private void handleRecord(MapRecord<String, String, String> record, TrafficStreamMessageSource messageSource) {
@@ -430,6 +422,26 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     TrafficInFlightIdempotencyEntry entry = entryResult.entry();
                     processedDataBefore = normalizeNonNegative(entry == null ? null : entry.processedData());
                     remainingDataToProcess = clampRemaining(originalApiTotalData - processedDataBefore);
+
+                    if (messageSource == TrafficStreamMessageSource.RECLAIM) {
+                        // reclaim으로 워커가 실제 처리를 시작한 시점에 retryCount를 증가시킨다.
+                        int reclaimRetryCountAfterIncrement = trafficInFlightDedupeService.incrementRetryOnReclaim(traceId);
+                        // 증가 후 값이 상한(6) 이상이면 오케스트레이션을 건너뛰고 종결 경로로 즉시 전환한다.
+                        if (reclaimRetryCountAfterIncrement >= RECLAIM_RETRY_EXCEEDED_THRESHOLD) {
+                            handleReclaimRetryExceeded(
+                                    payload,
+                                    payloadJson,
+                                    recordId,
+                                    record.getId(),
+                                    processedDataBefore,
+                                    consumeStartTimeMs,
+                                    reclaimRetryCountAfterIncrement
+                            );
+                            // return 직전 결과 태그를 갱신해야 finally 블록에서 DLQ 결과 메트릭이 올바르게 집계된다.
+                            resultTag = RESULT_DLQ;
+                            return;
+                        }
+                    }
 
                     if (!entryResult.created()) {
                         log.info(
@@ -551,6 +563,104 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             trafficRecordStageMetricsPort.recordTotalLatency(totalLatencyMs);
             trafficRecordStageMetricsPort.incrementResult(resultTag);
         }
+    }
+
+    /**
+     * reclaim 재시도 횟수가 상한을 넘은 메시지를 종결 처리합니다.
+     * 순서는 정책에 맞춰 "Done Log 저장 -> dedupe 삭제 outbox 적재 -> DLQ 기록 -> ACK"로 유지합니다.
+     */
+    private void handleReclaimRetryExceeded(
+            TrafficPayloadReqDto payload,
+            String payloadJson,
+            String recordId,
+            RecordId streamRecordId,
+            long processedDataBefore,
+            long consumeStartTimeMs,
+            int retryCountAfterIncrement
+    ) {
+        // 1) 정책 고정값(누적 차감량/남은량/상태)으로 retry-exceeded done log 결과를 먼저 만든다.
+        TrafficDeductResultResDto retryExceededResult = buildReclaimRetryExceededResult(payload, processedDataBefore);
+        long latency = Math.max(0L, System.currentTimeMillis() - consumeStartTimeMs);
+
+        boolean saved;
+        long doneLogSaveStartNs = System.nanoTime();
+        try {
+            // 2) done log는 traceId UNIQUE이므로 duplicate는 false로 흡수된다.
+            saved = trafficDeductDoneLogService.saveIfAbsent(payload, retryExceededResult, recordId, latency);
+        } finally {
+            trafficRecordStageMetricsPort.recordStageLatency(STAGE_DONE_LOG_SAVE, elapsedSinceNs(doneLogSaveStartNs));
+        }
+
+        if (!saved) {
+            log.warn(
+                    "traffic_stream_reclaim_retry_exceeded_duplicate_absorbed trace_id={} record_id={} retry_count={} threshold={}",
+                    payload.getTraceId(),
+                    recordId,
+                    retryCountAfterIncrement,
+                    RECLAIM_RETRY_EXCEEDED_THRESHOLD
+            );
+        }
+
+        // 3) 멱등키 정리는 outbox 경로로만 진행하고, 적재 직후 즉시 삭제 시도는 outbox 서비스가 담당한다.
+        trafficInFlightDedupeDeleteOutboxService.createPending(payload.getTraceId(), recordId);
+        // 4) 재처리 한도 초과 사유를 DLQ에 남겨 후속 분석/수동 복구 기준으로 사용한다.
+        trafficStreamInfraService.writeDlq(
+                payloadJson,
+                buildReclaimRetryExceededDlqReason(retryCountAfterIncrement),
+                recordId
+        );
+        // 5) 마지막에 ACK해 동일 레코드가 재배달되지 않도록 종결한다.
+        acknowledgeWithMetrics(streamRecordId);
+
+        log.warn(
+                "traffic_stream_reclaim_retry_exceeded trace_id={} record_id={} retry_count={} threshold={} "
+                        + "api_total_data={} deducted_total_bytes={} api_remaining_data={} final_status={} last_lua_status={}",
+                payload.getTraceId(),
+                recordId,
+                retryCountAfterIncrement,
+                RECLAIM_RETRY_EXCEEDED_THRESHOLD,
+                retryExceededResult.getApiTotalData(),
+                retryExceededResult.getDeductedTotalBytes(),
+                retryExceededResult.getApiRemainingData(),
+                retryExceededResult.getFinalStatus(),
+                retryExceededResult.getLastLuaStatus()
+        );
+    }
+
+    /**
+     * reclaim retry 초과 종결용 done log 결과를 누적 기준으로 조립합니다.
+     */
+    private TrafficDeductResultResDto buildReclaimRetryExceededResult(
+            TrafficPayloadReqDto payload,
+            long processedDataBefore
+    ) {
+        // 정책상 누적 기준은 "원본 apiTotalData - 지금까지 processedData"로 계산한다.
+        long originalApiTotalData = normalizeNonNegative(payload == null ? null : payload.getApiTotalData());
+        long cumulativeDeducted = resolveCumulativeDeducted(originalApiTotalData, processedDataBefore, 0L);
+        long cumulativeRemaining = clampRemaining(originalApiTotalData - cumulativeDeducted);
+        LocalDateTime now = LocalDateTime.now();
+
+        return TrafficDeductResultResDto.builder()
+                .traceId(payload == null ? null : payload.getTraceId())
+                .apiTotalData(originalApiTotalData)
+                .deductedTotalBytes(cumulativeDeducted)
+                .apiRemainingData(cumulativeRemaining)
+                .finalStatus(TrafficFinalStatus.RECLAIM_RETRY_EXCEEDED)
+                .lastLuaStatus(TrafficLuaStatus.OK)
+                .createdAt(now)
+                .finishedAt(now)
+                .build();
+    }
+
+    /**
+     * reclaim retry 초과 DLQ 사유 문자열을 생성합니다.
+     */
+    private String buildReclaimRetryExceededDlqReason(int retryCountAfterIncrement) {
+        return String.format(
+                "reclaim retry exceeded: retryCount=%d, threshold=%d",
+                retryCountAfterIncrement,
+                RECLAIM_RETRY_EXCEEDED_THRESHOLD
+        );
     }
 
     /**
