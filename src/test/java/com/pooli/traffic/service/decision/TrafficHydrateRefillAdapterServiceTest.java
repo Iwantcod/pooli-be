@@ -2,6 +2,7 @@ package com.pooli.traffic.service.decision;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -27,6 +28,7 @@ import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
@@ -42,6 +44,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -104,6 +107,9 @@ class TrafficHydrateRefillAdapterServiceTest {
     private TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
 
     @Mock
+    private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
+
+    @Mock
     private TrafficDbDeductFallbackService trafficDbDeductFallbackService;
 
     @Mock
@@ -124,8 +130,9 @@ class TrafficHydrateRefillAdapterServiceTest {
                 .thenReturn(true);
         Mockito.lenient().when(trafficRefillOutboxSupportService.unwrapRuntimeException(any(RuntimeException.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        Mockito.lenient().when(trafficRefillOutboxSupportService.isConnectionFailure(any())).thenReturn(false);
-        Mockito.lenient().when(trafficRefillOutboxSupportService.isTimeoutFailure(any())).thenReturn(false);
+        Mockito.lenient().when(trafficRedisFailureClassifier.isConnectionFailure(any())).thenReturn(false);
+        Mockito.lenient().when(trafficRedisFailureClassifier.isTimeoutFailure(any())).thenReturn(false);
+        Mockito.lenient().when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(false);
         Mockito.lenient().when(trafficLuaScriptInfraService.executePolicyCheckIndividual(anyList(), anyList()))
                 .thenReturn(luaResult(0L, TrafficLuaStatus.OK));
         Mockito.lenient().when(trafficLuaScriptInfraService.executePolicyCheckShared(anyList(), anyList()))
@@ -380,10 +387,11 @@ class TrafficHydrateRefillAdapterServiceTest {
             when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(any())).thenReturn(1_770_000_000L);
             when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
                     .thenReturn(luaResult(0L, TrafficLuaStatus.NO_BALANCE))
-                    .thenThrow(new RuntimeException("redis timeout"))
-                    .thenThrow(new RuntimeException("redis timeout"))
-                    .thenThrow(new RuntimeException("redis timeout"));
-            when(trafficRefillOutboxSupportService.isTimeoutFailure(any())).thenReturn(true);
+                    .thenThrow(new QueryTimeoutException("redis timeout"))
+                    .thenThrow(new QueryTimeoutException("redis timeout"))
+                    .thenThrow(new QueryTimeoutException("redis timeout"));
+            when(trafficRedisFailureClassifier.isTimeoutFailure(any())).thenReturn(true);
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(true);
             when(trafficQuotaCacheService.readAmountOrDefault("pooli:remaining_indiv_amount:11:202603", 0L)).thenReturn(0L);
             when(trafficQuotaSourcePort.resolveRefillPlan(TrafficPoolType.INDIVIDUAL, payload))
                     .thenReturn(refillPlan(10L, 2, 20L, 100L, 30L, "RECENT_10S"));
@@ -408,13 +416,10 @@ class TrafficHydrateRefillAdapterServiceTest {
                     anyString()
             )).thenReturn(claimResult(100L, 1_000L, 100L, 900L));
 
-            // when
-            TrafficLuaExecutionResult result = trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L);
-
-            // then
-            assertAll(
-                    () -> assertEquals(TrafficLuaStatus.NO_BALANCE, result.getStatus()),
-                    () -> assertEquals(0L, result.getAnswer())
+            // when + then
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L)
             );
             verify(trafficDbDeductFallbackService, never()).deduct(any(), any(), anyLong(), any());
             verify(trafficInFlightDedupeService, never()).markDbFallback(anyString());
@@ -600,14 +605,10 @@ class TrafficHydrateRefillAdapterServiceTest {
                     .when(trafficLinePolicyHydrationService)
                     .ensureLoaded(11L);
 
-            // when
-            TrafficLuaExecutionResult result =
-                    trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L);
-
-            // then
-            assertAll(
-                    () -> assertEquals(TrafficLuaStatus.ERROR, result.getStatus()),
-                    () -> assertEquals(-1L, result.getAnswer())
+            // when + then
+            assertThrows(
+                    RuntimeException.class,
+                    () -> trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L)
             );
             verify(trafficLuaScriptInfraService, never()).executeDeductIndividual(anyList(), anyList());
         }
@@ -872,33 +873,23 @@ class TrafficHydrateRefillAdapterServiceTest {
             when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
             when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
             when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
-                    .thenThrow(new RuntimeException("redis timeout"));
+                    .thenThrow(new QueryTimeoutException("redis timeout"));
             when(trafficRefillOutboxSupportService.unwrapRuntimeException(any(RuntimeException.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
-            when(trafficRefillOutboxSupportService.isTimeoutFailure(any())).thenReturn(true);
-            when(trafficDbDeductFallbackService.deduct(
-                    eq(TrafficPoolType.INDIVIDUAL),
-                    eq(payload),
-                    eq(100L),
-                    eq(context)
-            )).thenReturn(luaResult(40L, TrafficLuaStatus.HIT_DAILY_LIMIT));
-
-            // when
-            TrafficLuaExecutionResult result = trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L, context);
-
-            // then
-            assertAll(
-                    () -> assertEquals(TrafficLuaStatus.HIT_DAILY_LIMIT, result.getStatus()),
-                    () -> assertEquals(40L, result.getAnswer()),
-                    () -> assertTrue(context.isRedisFallbackActivated())
+            when(trafficRedisFailureClassifier.isTimeoutFailure(any())).thenReturn(true);
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(true);
+            // when + then
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L, context)
             );
             verify(trafficLuaScriptInfraService, times(4)).executeDeductIndividual(anyList(), anyList());
             verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 1);
             verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 2);
             verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 3);
             verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 4);
-            verify(trafficInFlightDedupeService).markDbFallback(payload.getTraceId());
-            verify(trafficDbDeductFallbackService).deduct(TrafficPoolType.INDIVIDUAL, payload, 100L, context);
+            verify(trafficInFlightDedupeService, never()).markDbFallback(anyString());
+            verify(trafficDbDeductFallbackService, never()).deduct(any(), any(), anyLong(), any());
         }
     }
 
@@ -1219,6 +1210,40 @@ class TrafficHydrateRefillAdapterServiceTest {
         );
     }
 
+    @Test
+    @DisplayName("동일 traceId 컨텍스트에서는 차단성 정책 검증을 1회만 수행하고 공유 경로에서 재사용한다")
+    void reusesBlockingPolicyCheckResultAcrossIndividualAndSharedWithSameContext() {
+        // given
+        TrafficPayloadReqDto payload = createPayload();
+        TrafficDeductExecutionContext context = TrafficDeductExecutionContext.of(payload.getTraceId());
+        stubIndividualDeductKeys();
+        stubSharedDeductKeys();
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+        when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+        when(trafficRedisKeyFactory.remainingSharedAmountKey(eq(22L), any())).thenReturn("pooli:remaining_shared_amount:22:202603");
+        when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
+                .thenReturn(luaResult(10L, TrafficLuaStatus.OK));
+        when(trafficLuaScriptInfraService.executeDeductShared(anyList(), anyList()))
+                .thenReturn(luaResult(5L, TrafficLuaStatus.OK));
+
+        // when
+        TrafficLuaExecutionResult individualResult =
+                trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L, context);
+        TrafficLuaExecutionResult sharedResult =
+                trafficHydrateRefillAdapterService.executeSharedWithRecovery(payload, 50L, context);
+
+        // then
+        assertAll(
+                () -> assertEquals(TrafficLuaStatus.OK, individualResult.getStatus()),
+                () -> assertEquals(10L, individualResult.getAnswer()),
+                () -> assertEquals(TrafficLuaStatus.OK, sharedResult.getStatus()),
+                () -> assertEquals(5L, sharedResult.getAnswer())
+        );
+        verify(trafficLinePolicyHydrationService, times(1)).ensureLoaded(11L);
+        verify(trafficLuaScriptInfraService, times(1)).executePolicyCheckIndividual(anyList(), anyList());
+        verify(trafficLuaScriptInfraService, never()).executePolicyCheckShared(anyList(), anyList());
+    }
+
     private TrafficPayloadReqDto createPayload() {
         long enqueuedAt = LocalDateTime.of(2026, 3, 11, 13, 0, 0)
                 .toInstant(ZoneOffset.ofHours(9))
@@ -1242,12 +1267,15 @@ class TrafficHydrateRefillAdapterServiceTest {
         when(trafficRedisKeyFactory.immediatelyBlockEndKey(11L)).thenReturn("pooli:immediately_block_end:11");
         when(trafficRedisKeyFactory.repeatBlockKey(11L)).thenReturn("pooli:repeat_block:11");
         when(trafficRedisKeyFactory.dailyTotalLimitKey(11L)).thenReturn("pooli:daily_total_limit:11");
-        when(trafficRedisKeyFactory.dailyTotalUsageKey(eq(11L), any())).thenReturn("pooli:daily_total_usage:11:20260312");
+        Mockito.lenient().when(trafficRedisKeyFactory.dailyTotalUsageKey(eq(11L), any()))
+                .thenReturn("pooli:daily_total_usage:11:20260312");
         when(trafficRedisKeyFactory.appDataDailyLimitKey(11L)).thenReturn("pooli:app_data_daily_limit:11");
-        when(trafficRedisKeyFactory.dailyAppUsageKey(eq(11L), any())).thenReturn("pooli:daily_app_usage:11:20260312");
+        Mockito.lenient().when(trafficRedisKeyFactory.dailyAppUsageKey(eq(11L), any()))
+                .thenReturn("pooli:daily_app_usage:11:20260312");
         when(trafficRedisKeyFactory.appSpeedLimitKey(11L)).thenReturn("pooli:app_speed_limit:11");
-        when(trafficRedisKeyFactory.speedBucketIndividualAppKey(eq(11L), eq(33), anyLong()))
+        Mockito.lenient().when(trafficRedisKeyFactory.speedBucketIndividualAppKey(eq(11L), eq(33), anyLong()))
                 .thenReturn("pooli:speed_bucket:individual:11:33:1");
+        when(trafficRedisKeyFactory.dedupeRunKey("trace-001")).thenReturn("pooli:dedupe:run:trace-001");
         when(trafficRedisRuntimePolicy.resolveDailyExpireAtEpochSeconds(any())).thenReturn(1_741_800_000L);
     }
 
@@ -1255,7 +1283,8 @@ class TrafficHydrateRefillAdapterServiceTest {
         for (long policyId = 1; policyId <= 7; policyId++) {
             when(trafficRedisKeyFactory.policyKey(policyId)).thenReturn("pooli:policy:" + policyId);
         }
-        when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+        Mockito.lenient().when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any()))
+                .thenReturn("pooli:remaining_indiv_amount:11:202603");
         when(trafficRedisKeyFactory.appWhitelistKey(11L)).thenReturn("pooli:app_whitelist:11");
         when(trafficRedisKeyFactory.immediatelyBlockEndKey(11L)).thenReturn("pooli:immediately_block_end:11");
         when(trafficRedisKeyFactory.repeatBlockKey(11L)).thenReturn("pooli:repeat_block:11");
@@ -1268,6 +1297,7 @@ class TrafficHydrateRefillAdapterServiceTest {
         when(trafficRedisKeyFactory.appSpeedLimitKey(11L)).thenReturn("pooli:app_speed_limit:11");
         when(trafficRedisKeyFactory.speedBucketIndividualAppKey(eq(11L), eq(33), anyLong()))
                 .thenReturn("pooli:speed_bucket:individual:11:33:1");
+        when(trafficRedisKeyFactory.dedupeRunKey("trace-001")).thenReturn("pooli:dedupe:run:trace-001");
         when(trafficRedisRuntimePolicy.resolveDailyExpireAtEpochSeconds(any())).thenReturn(1_741_800_000L);
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(any())).thenReturn(1_742_700_000L);
     }

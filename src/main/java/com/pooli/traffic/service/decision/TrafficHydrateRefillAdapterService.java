@@ -8,6 +8,7 @@ import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
 
+import com.pooli.common.exception.ApplicationException;
 import com.pooli.monitoring.metrics.TrafficDeductFallbackMetrics;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
@@ -15,6 +16,7 @@ import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
@@ -22,6 +24,12 @@ import com.pooli.traffic.util.TrafficRetryBackoffSupport;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.ConcurrencyFailureException;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DeadlockLoserDataAccessException;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -40,7 +48,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 차감 결과에 따라 hydrate 및 refill 복구 흐름을 연결하는 어댑터 서비스입니다.
+ * 트래픽 차감의 "실행 + 복구"를 단일 흐름으로 오케스트레이션하는 어댑터 서비스입니다.
+ *
+ * <p>주요 책임:
+ * 1) 차단성 정책 검증과 정책 hydrate 보정
+ * 2) 차감 단계 Lua 실행(개인/공유)
+ * 3) 상태값(GLOBAL_POLICY_HYDRATE, HYDRATE, NO_BALANCE)별 복구 분기 제어
+ * 4) NO_BALANCE 시 refill gate/락/DB claim/outbox/재차감 연계
+ *
+ * <p>정합성 우선 규칙에 따라, 정책 검증 단계의 재시도 가능한 Redis 인프라 예외만
+ * DB fallback으로 전환하며 차감 단계의 Redis 예외는 fallback 없이 상위로 재전파합니다.
  */
 @Slf4j
 @Service
@@ -82,6 +99,7 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficDeductFallbackMetrics trafficDeductFallbackMetrics;
     private final RedisOutboxRecordService redisOutboxRecordService;
     private final TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
+    private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
     private final TrafficDbDeductFallbackService trafficDbDeductFallbackService;
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
 
@@ -137,7 +155,7 @@ public class TrafficHydrateRefillAdapterService {
      * [주요 흐름]
      * 1. 페이로드 유효성 검사
      * 2. 회선별 정책 데이터(Line Policy)가 Redis에 로드되어 있는지 확인 및 로드
-     * 3. 1차 차감 시도 (executeDeduct)
+     * 3. 차감 단계 차감 시도 (executeDeduct)
      * 4. 결과 상태에 따른 단계별 복구 시도:
      *    - GLOBAL_POLICY_HYDRATE: 전역 정책 스냅샷 복구 후 재시도
      *    - HYDRATE: DB 원본 잔량 및 QoS 정보를 Redis로 로드 후 재시도
@@ -160,31 +178,48 @@ public class TrafficHydrateRefillAdapterService {
             return errorResult();
         }
 
-        // 2. 해당 회선의 정책(Line Policy) 정보가 Redis 캐시에 올라와 있는지 확인합니다.
-        // 정책 데이터가 없으면 차감 트리거 시 정상적인 판별이 불가능하므로 동기화를 선행합니다.
-        try {
-            trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
-        } catch (RuntimeException e) {
-            log.error(
-                    "traffic_line_policy_hydration_failed lineId={}",
-                    payload.getLineId(),
-                    e
-            );
-            return errorResult();
+        // 2. traceId 범위에서 이미 차단성 정책 검증 결과가 있으면 재검증을 생략해 개인/공유 공통으로 재사용합니다.
+        TrafficLuaExecutionResult cachedPolicyCheckResult = (context == null)
+                ? null
+                : context.getBlockingPolicyCheckResult();
+        TrafficLuaExecutionResult policyCheckResult = cachedPolicyCheckResult;
+        if (cachedPolicyCheckResult == null) {
+            // 2-1. 정책 검증을 최초 1회 수행할 때만 ensureLoaded를 실행합니다.
+            try {
+                trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
+            } catch (DataAccessException | ApplicationException e) {
+                RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
+                if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)) {
+                    return activateDbFallbackForPolicyCheck(poolType, payload, requestedDataBytes, context, unwrapped);
+                }
+                throw e;
+            }
+
+            // 2-2. 차단성 정책(즉시/반복/화이트리스트) 1회 검증을 수행하고 결과를 컨텍스트에 캐시합니다.
+            try {
+                policyCheckResult = executePolicyCheckWithGlobalRecovery(poolType, payload);
+            } catch (DataAccessException | ApplicationException e) {
+                RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
+                if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)) {
+                    return activateDbFallbackForPolicyCheck(poolType, payload, requestedDataBytes, context, unwrapped);
+                }
+                throw e;
+            }
+            if (context != null) {
+                context.cacheBlockingPolicyCheckResult(policyCheckResult);
+            }
         }
 
         YearMonth targetMonth = resolveTargetMonth(payload);
         String balanceKey = resolveBalanceKey(poolType, payload, targetMonth);
 
-        // 3. 차단성 정책(즉시/반복/화이트리스트)만 1회 검증합니다.
-        // 화이트리스트 우회 여부(answer=1)를 이후 2차 차감 Lua에 전달합니다.
-        TrafficLuaExecutionResult policyCheckResult = executePolicyCheckWithGlobalRecovery(poolType, payload);
+        // 3. 1회 검증 결과(status + whitelist bypass)를 개인/공유 차감 단계에서 공통 재사용합니다.
         if (policyCheckResult.getStatus() != TrafficLuaStatus.OK) {
             return policyCheckResult;
         }
         int whitelistBypassFlag = policyCheckResult.getAnswer() > 0 ? 1 : 0;
 
-        // 4. 2차 차감을 실행합니다. Redis 연결 문제 시 설정된 횟수만큼 재시도하거나 DB 폴백으로 전환됩니다.
+        // 4. 차감 단계를 실행합니다. Redis 연결 문제는 재시도 후 상위로 재전파합니다.
         TrafficLuaExecutionResult initialResult = executeDeduct(
                 poolType,
                 payload,
@@ -192,12 +227,8 @@ public class TrafficHydrateRefillAdapterService {
                 requestedDataBytes,
                 context,
                 whitelistBypassFlag,
-                RefillLuaArguments.none(),
-                true
+                RefillLuaArguments.none()
         );
-        if (isFallbackActivated(context)) {
-            return initialResult; // 이미 DB 폴백이 활성화된 경우 추가 복구 로직 없이 반환합니다.
-        }
 
         // 5. 리턴된 상태가 GLOBAL_POLICY_HYDRATE인 경우, 유실된 전역 정책 스냅샷을 복구하고 재시도합니다.
         TrafficLuaExecutionResult afterGlobalPolicyHydrateResult = handleGlobalPolicyHydrateIfNeeded(
@@ -209,9 +240,6 @@ public class TrafficHydrateRefillAdapterService {
                 context,
                 whitelistBypassFlag
         );
-        if (isFallbackActivated(context)) {
-            return afterGlobalPolicyHydrateResult;
-        }
 
         // 6. 리턴된 상태가 HYDRATE인 경우, Redis 캐시에 잔량 정보가 없으므로 DB 원본 데이터를 로드하고 재시도합니다.
         TrafficLuaExecutionResult afterHydrateResult = handleHydrateIfNeeded(
@@ -224,12 +252,9 @@ public class TrafficHydrateRefillAdapterService {
                 context,
                 whitelistBypassFlag
         );
-        if (isFallbackActivated(context)) {
-            return afterHydrateResult;
-        }
 
         // 7. 리턴된 상태가 NO_BALANCE인 경우, DB에서 잔량을 차감(리필)하여
-        // "리필 반영 + 재차감"을 2차 Lua 1회로 같이 수행합니다.
+        // "리필 반영 + 재차감"을 재차감 Lua 1회로 같이 수행합니다.
         return handleRefillIfNeeded(
                 poolType,
                 payload,
@@ -243,7 +268,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 1차 Lua(차단성 정책 전용)를 실행하고, GLOBAL_POLICY_HYDRATE가 나오면 bootstrap 복구 후 재시도합니다.
+     * 차단성 정책 검증 Lua를 실행하고, GLOBAL_POLICY_HYDRATE가 나오면 bootstrap 복구 후 재시도합니다.
      */
     private TrafficLuaExecutionResult executePolicyCheckWithGlobalRecovery(
             TrafficPoolType poolType,
@@ -258,7 +283,7 @@ public class TrafficHydrateRefillAdapterService {
         for (int retry = 0; retry < HYDRATE_RETRY_MAX; retry++) {
             try {
                 trafficPolicyBootstrapService.hydrateOnDemand();
-            } catch (RuntimeException e) {
+            } catch (ApplicationException | DataAccessException e) {
                 log.error(
                         "traffic_policy_check_global_hydrate_failed poolType={} traceId={} retry={}",
                         poolType,
@@ -284,7 +309,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 1차 Lua(차단성 정책 전용)를 실행합니다.
+     * 차단성 정책 검증 Lua를 실행합니다.
      */
     private TrafficLuaExecutionResult executePolicyCheckLua(
             TrafficPoolType poolType,
@@ -354,7 +379,7 @@ public class TrafficHydrateRefillAdapterService {
                 // 기존 bootstrap lock 규칙을 재사용해 전역 정책 전체 스냅샷을 보정합니다.
                 // 이 과정에서 Redis에 정책 메타데이터가 없는 경우 스냅샷에서 데이터를 읽어와 채웁니다.
                 trafficPolicyBootstrapService.hydrateOnDemand();
-            } catch (RuntimeException e) {
+            } catch (ApplicationException | DataAccessException e) {
                 log.error(
                         "traffic_global_policy_hydrate_failed poolType={} traceId={} retry={}",
                         poolType,
@@ -372,8 +397,7 @@ public class TrafficHydrateRefillAdapterService {
                     requestedDataBytes,
                     context,
                     whitelistBypassFlag,
-                    RefillLuaArguments.none(),
-                    true
+                    RefillLuaArguments.none()
             );
             if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
                 return retriedResult; // 성공(OK)하거나 다른 상태(HYDRATE 등)로 전이된 경우 즉시 반환합니다.
@@ -440,8 +464,7 @@ public class TrafficHydrateRefillAdapterService {
                     requestedDataBytes,
                     context,
                     whitelistBypassFlag,
-                    RefillLuaArguments.none(),
-                    true
+                    RefillLuaArguments.none()
             );
             if (retriedResult.getStatus() != TrafficLuaStatus.HYDRATE) {
                 return retriedResult; // 데이터가 채워져 성공하거나 다른 단계로 넘어간 경우 반환합니다.
@@ -654,7 +677,7 @@ public class TrafficHydrateRefillAdapterService {
                                 whitelistBypassFlag,
                                 retriedResult
                         );
-                        // DB 리필이 실제로 적용되지 않은 경우, 1차 shared 차감분과 QOS 차감분을 함께 합산해야 한다.
+                        // DB 리필이 실제로 적용되지 않은 경우, 초기 shared 차감분과 QOS 차감분을 함께 합산해야 한다.
                         return mergeSharedDbNoopQosFallbackResult(
                                 normalizedRequestedDataBytes,
                                 firstDeductedAmount,
@@ -665,7 +688,7 @@ public class TrafficHydrateRefillAdapterService {
                     return retriedResult;
                 }
 
-                // 2차 Lua 호출 직전 락 상태를 한 번 더 확인해 claim 이후 경합 구간을 줄입니다.
+                // 재차감 Lua 호출 직전 락 상태를 한 번 더 확인해 claim 이후 경합 구간을 줄입니다.
                 boolean lockStillOwned = refreshRefillLockHeartbeat(
                         lockKey,
                         payload.getTraceId(),
@@ -714,7 +737,7 @@ public class TrafficHydrateRefillAdapterService {
                         dbRemainingAfter
                 );
 
-                // [Step 4] 리필 반영 + 재차감을 2차 Lua 1회 호출로 수행합니다.
+                // [Step 4] 리필 반영 + 재차감을 재차감 Lua 1회 호출로 수행합니다.
                 TrafficLuaExecutionResult refillRetryResult = executeDeduct(
                         poolType,
                         payload,
@@ -722,14 +745,13 @@ public class TrafficHydrateRefillAdapterService {
                         retryTargetData,
                         context,
                         whitelistBypassFlag,
-                        refillLuaArguments,
-                        false
+                        refillLuaArguments
                 );
                 markOutboxSuccessIfPresent(outboxRecordId);
                 trafficRefillOutboxSupportService.clearIdempotency(normalizedRefillUuid);
                 trafficRefillMetrics.increment(poolType.name(), "refill_applied");
 
-                // 1차에서 부분 성공한 양과 리필 후 추가 성공한 양을 합산하여 최종 결과를 도출합니다.
+                // 초기 차감에서 부분 성공한 양과 리필 후 추가 성공한 양을 합산하여 최종 결과를 도출합니다.
                 if (poolType == TrafficPoolType.SHARED && refillRetryResult.getStatus() == TrafficLuaStatus.NO_BALANCE) {
                     // 공유풀 DB 리필 이후에도 NO_BALANCE면 QOS fallback을 마지막으로 1회 시도한다.
                     long sharedRemainingData = clampRemaining(retryTargetData - normalizeNonNegative(refillRetryResult.getAnswer()));
@@ -756,13 +778,13 @@ public class TrafficHydrateRefillAdapterService {
                         refillRetryResult
                 );
                 return retriedResult;
-            } catch (RuntimeException e) {
+            } catch (ApplicationException | DataAccessException | IllegalStateException e) {
                 markOutboxFailIfPresent(outboxRecordId);
                 RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
                 String metricKey;
-                if (trafficRefillOutboxSupportService.isTimeoutFailure(unwrapped)) {
+                if (trafficRedisFailureClassifier.isTimeoutFailure(unwrapped)) {
                     metricKey = "redis_timeout";
-                } else if (trafficRefillOutboxSupportService.isConnectionFailure(unwrapped)) {
+                } else if (trafficRedisFailureClassifier.isConnectionFailure(unwrapped)) {
                     metricKey = "redis_error";
                 } else {
                     metricKey = "db_error";
@@ -777,6 +799,9 @@ public class TrafficHydrateRefillAdapterService {
                         e
                 );
                 trafficRefillMetrics.increment(poolType.name(), metricKey);
+                if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)) {
+                    throw unwrapped;
+                }
                 return retriedResult;
             } finally {
                 // 어떤 경우든 리필 시퀀스가 종료되면 획득했던 리필 락을 해제합니다.
@@ -785,6 +810,29 @@ public class TrafficHydrateRefillAdapterService {
         }
 
         return retriedResult;
+    }
+
+    /**
+     * 정책 검증 단계 retryable 인프라 예외는 DB fallback으로 전환합니다.
+     */
+    private TrafficLuaExecutionResult activateDbFallbackForPolicyCheck(
+            TrafficPoolType poolType,
+            TrafficPayloadReqDto payload,
+            long requestedDataBytes,
+            TrafficDeductExecutionContext context,
+            RuntimeException cause
+    ) {
+        TrafficDeductExecutionContext fallbackContext = prepareDbFallbackContext(context, payload, poolType);
+        trafficInFlightDedupeService.markDbFallback(resolveTraceId(fallbackContext, payload));
+        trafficDeductFallbackMetrics.incrementDbFallback(poolType.name(), "policy_check_retryable_failure");
+        log.warn(
+                "traffic_policy_check_retryable_failure_fallback_db traceId={} poolType={} requestedData={}",
+                resolveTraceId(fallbackContext, payload),
+                poolType,
+                requestedDataBytes,
+                cause
+        );
+        return trafficDbDeductFallbackService.deduct(poolType, payload, requestedDataBytes, fallbackContext);
     }
 
     /**
@@ -805,7 +853,7 @@ public class TrafficHydrateRefillAdapterService {
 
         try {
             trafficQuotaCacheService.writeDbEmptyFlag(balanceKey, true);
-        } catch (RuntimeException e) {
+        } catch (ApplicationException | DataAccessException | IllegalStateException e) {
             log.warn(
                     "traffic_refill_db_noop_empty_flag_write_failed poolType={} balanceKey={} traceId={} dbRemainingAfter={}",
                     poolType,
@@ -818,7 +866,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 1차 차감량과 리필 후 재차감량을 합쳐 최종 결과를 만듭니다.
+     * 초기 차감량과 리필 후 재차감량을 합쳐 최종 결과를 만듭니다.
      */
     private TrafficLuaExecutionResult mergeRefillRetryResult(
             long requestedDataBytes,
@@ -859,8 +907,7 @@ public class TrafficHydrateRefillAdapterService {
                 requestedDataBytes,
                 context,
                 whitelistBypassFlag,
-                RefillLuaArguments.withQosFallback(),
-                false
+                RefillLuaArguments.withQosFallback()
         );
     }
 
@@ -895,8 +942,8 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 공유풀 DB No-Op 이후 QOS fallback 결과를 1차 shared 차감분과 합산합니다.
-     * QOS fallback이 실패하면 기존 1차 결과를 그대로 유지합니다.
+     * 공유풀 DB No-Op 이후 QOS fallback 결과를 초기 shared 차감분과 합산합니다.
+     * QOS fallback이 실패하면 기존 초기 결과를 그대로 유지합니다.
      */
     private TrafficLuaExecutionResult mergeSharedDbNoopQosFallbackResult(
             long requestedDataBytes,
@@ -924,18 +971,8 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 풀 유형에 맞는 Lua 차감 스크립트를 실행합니다. 
-     * Redis 연결 장애나 타임아웃 발생 시 설정된 횟수만큼 재시도하며, 최종 실패 시 DB 폴백(fallback)으로 자동 전환합니다.
-     * 
-     * [재시도 및 폴백 전략]
-     * 1. Redis Fallback 활성화 확인: 이미 DB 폴백 상태라면 즉시 DB 차감 서비스를 호출합니다.
-     * 2. Redis 차감 시도 (executeDeductLua):
-     *    - 성공 시: 결과 즉시 반환.
-     *    - 재시도 가능 예외(연결 실패, 타임아웃) 발생 시: 지수 백오프(Exponential Backoff) 적용 후 재시도.
-     *    - 재시도 불가능 예외 발생 시: 즉시 예외를 상위로 던집니다.
-     * 3. 재시도 횟수 초과 시: 
-     *    - 현재 컨텍스트에 'Redis Fallback' 상태를 활성화합니다.
-     *    - 이후 요청부터는 Redis를 거치지 않고 바로 DB 차감 서비스(trafficDbDeductFallbackService)를 사용합니다.
+     * 풀 유형에 맞는 Lua 차감 스크립트를 실행합니다.
+     * Redis 연결 장애/타임아웃은 설정된 횟수만큼 재시도 후 상위로 재전파합니다.
      */
     private TrafficLuaExecutionResult executeDeduct(
             TrafficPoolType poolType,
@@ -944,15 +981,8 @@ public class TrafficHydrateRefillAdapterService {
             long requestedDataBytes,
             TrafficDeductExecutionContext context,
             int whitelistBypassFlag,
-            RefillLuaArguments refillLuaArguments,
-            boolean allowDbFallback
+            RefillLuaArguments refillLuaArguments
     ) {
-        // 이미 DB 폴백이 활성화된 경우 Redis를 거치지 않고 바로 DB 서비스를 호출합니다.
-        if (isFallbackActivated(context)) {
-            trafficDeductFallbackMetrics.incrementDbFallback(poolType.name(), "request_scoped");
-            return trafficDbDeductFallbackService.deduct(poolType, payload, requestedDataBytes, context);
-        }
-
         int maxRetryCount = Math.max(0, redisRetryMaxAttempts);
         int totalAttemptCount = 1 + maxRetryCount;
         RuntimeException lastException = null;
@@ -969,11 +999,10 @@ public class TrafficHydrateRefillAdapterService {
                         whitelistBypassFlag,
                         refillLuaArguments == null ? RefillLuaArguments.none() : refillLuaArguments
                 );
-            } catch (RuntimeException redisException) {
+            } catch (ApplicationException | DataAccessException redisException) {
                 // Redis 예외 발생 시 재시도 가능 여부(Timeout, Connection failure)를 확인합니다.
                 RuntimeException unwrappedException = trafficRefillOutboxSupportService.unwrapRuntimeException(redisException);
-                boolean retryable = trafficRefillOutboxSupportService.isConnectionFailure(unwrappedException)
-                        || trafficRefillOutboxSupportService.isTimeoutFailure(unwrappedException);
+                boolean retryable = trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrappedException);
                 if (!retryable) {
                     throw redisException; // 재시도 불가능한 에러(WRONGTYPE 등)는 즉시 중단합니다.
                 }
@@ -984,7 +1013,7 @@ public class TrafficHydrateRefillAdapterService {
                 trafficDeductFallbackMetrics.incrementRedisRetry(
                         poolType.name(),
                         attempt,
-                        trafficRefillOutboxSupportService.isTimeoutFailure(unwrappedException) ? "timeout" : "connection"
+                        trafficRedisFailureClassifier.isTimeoutFailure(unwrappedException) ? "timeout" : "connection"
                 );
 
                 if (attempt <= maxRetryCount) {
@@ -994,38 +1023,19 @@ public class TrafficHydrateRefillAdapterService {
             }
         }
 
-        if (!allowDbFallback) {
-            // 리필 적용 직후에는 DB claim이 이미 반영되었을 수 있으므로
-            // Redis 재시도 소진 시 DB fallback 차감을 열지 않아 이중 차감을 방지합니다.
-            log.warn(
-                    "traffic_deduct_redis_retry_exhausted_after_refill traceId={} poolType={} requestedData={} fallback=skipped",
-                    resolveTraceId(context, payload),
-                    poolType,
-                    requestedDataBytes,
-                    lastException
-            );
-            if (lastException == null) {
-                throw new IllegalStateException("traffic_deduct_redis_retry_exhausted_after_refill");
-            }
-            throw new IllegalStateException("traffic_deduct_redis_retry_exhausted_after_refill", lastException);
+        // 차감 단계 retryable 예외는 정합성 우선 규칙에 따라 DB fallback으로 전환하지 않고 상위로 재전파한다.
+        log.warn(
+                "traffic_deduct_redis_retry_exhausted traceId={} poolType={} requestedData={} fallback=disabled reason={}",
+                resolveTraceId(context, payload),
+                poolType,
+                requestedDataBytes,
+                "deduct_stage_retry_exhausted",
+                lastException
+        );
+        if (lastException == null) {
+            throw new IllegalStateException("traffic_deduct_redis_retry_exhausted");
         }
-
-        // Redis 재시도 횟수를 모두 소진한 경우 DB 폴백 모드로 전환합니다.
-        TrafficDeductExecutionContext fallbackContext =
-                prepareDbFallbackContext(context, payload, poolType);
-        trafficInFlightDedupeService.markDbFallback(resolveTraceId(fallbackContext, payload));
-        trafficDeductFallbackMetrics.incrementDbFallback(poolType.name(), "redis_retry_exhausted");
-        if (lastException != null) {
-            log.warn(
-                    "traffic_deduct_redis_retry_exhausted traceId={} poolType={} requestedData={} fallback=db",
-                    resolveTraceId(fallbackContext, payload),
-                    poolType,
-                    requestedDataBytes,
-                    lastException
-            );
-        }
-        // 최종적으로 DB 서비스를 사용하여 차감 결과를 반환합니다.
-        return trafficDbDeductFallbackService.deduct(poolType, payload, requestedDataBytes, fallbackContext);
+        throw new IllegalStateException("traffic_deduct_redis_retry_exhausted", lastException);
     }
 
     /**
@@ -1067,6 +1077,7 @@ public class TrafficHydrateRefillAdapterService {
         String appDataDailyLimitKey = trafficRedisKeyFactory.appDataDailyLimitKey(payload.getLineId());
         String dailyAppUsageKey = trafficRedisKeyFactory.dailyAppUsageKey(payload.getLineId(), targetDate);
         String appSpeedLimitKey = trafficRedisKeyFactory.appSpeedLimitKey(payload.getLineId());
+        String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(payload.getTraceId());
 
         return switch (poolType) {
             case INDIVIDUAL -> {
@@ -1081,7 +1092,7 @@ public class TrafficHydrateRefillAdapterService {
                         policyAppDataKey, policyAppSpeedKey, policyAppWhitelistKey, appWhitelistKey,
                         immediatelyBlockEndKey, repeatBlockKey, dailyTotalLimitKey, dailyTotalUsageKey,
                         appDataDailyLimitKey, dailyAppUsageKey, appSpeedLimitKey, speedBucketKey,
-                        refillLuaArguments.refillIdempotencyKey()
+                        refillLuaArguments.refillIdempotencyKey(), dedupeKey
                 );
                 List<String> args = List.of(
                         String.valueOf(requestedDataBytes), String.valueOf(payload.getAppId()),
@@ -1092,7 +1103,8 @@ public class TrafficHydrateRefillAdapterService {
                         refillLuaArguments.refillUuid(),
                         String.valueOf(refillLuaArguments.refillIdempotencyTtlSeconds()),
                         refillLuaArguments.dbEmptyFlag(),
-                        String.valueOf(refillLuaArguments.allowQosFallback())
+                        String.valueOf(refillLuaArguments.allowQosFallback()),
+                        String.valueOf(normalizeNonNegative(payload.getApiTotalData()))
                 );
                 yield trafficLuaScriptInfraService.executeDeductIndividual(keys, args);
             }
@@ -1113,7 +1125,7 @@ public class TrafficHydrateRefillAdapterService {
                         appWhitelistKey, immediatelyBlockEndKey, repeatBlockKey, dailyTotalLimitKey,
                         dailyTotalUsageKey, monthlySharedLimitKey, monthlySharedUsageKey,
                         appDataDailyLimitKey, dailyAppUsageKey, appSpeedLimitKey, speedBucketKey, individualRemainingKey,
-                        refillLuaArguments.refillIdempotencyKey()
+                        refillLuaArguments.refillIdempotencyKey(), dedupeKey
                 );
                 List<String> args = List.of(
                         String.valueOf(requestedDataBytes), String.valueOf(payload.getAppId()),
@@ -1124,7 +1136,8 @@ public class TrafficHydrateRefillAdapterService {
                         refillLuaArguments.refillUuid(),
                         String.valueOf(refillLuaArguments.refillIdempotencyTtlSeconds()),
                         refillLuaArguments.dbEmptyFlag(),
-                        String.valueOf(refillLuaArguments.allowQosFallback())
+                        String.valueOf(refillLuaArguments.allowQosFallback()),
+                        String.valueOf(normalizeNonNegative(payload.getApiTotalData()))
                 );
                 yield trafficLuaScriptInfraService.executeDeductShared(keys, args);
             }
@@ -1132,7 +1145,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 2차 Lua 호출 시 리필 적용 파라미터를 전달하기 위한 값 객체입니다.
+     * 재차감 Lua 호출 시 리필 적용 파라미터를 전달하기 위한 값 객체입니다.
      */
     private record RefillLuaArguments(
             long refillAmount,
@@ -1193,10 +1206,6 @@ public class TrafficHydrateRefillAdapterService {
                     delayMs
             );
         }
-    }
-
-    private boolean isFallbackActivated(TrafficDeductExecutionContext context) {
-        return context != null && context.isRedisFallbackActivated();
     }
 
     /**
@@ -1441,7 +1450,7 @@ public class TrafficHydrateRefillAdapterService {
      * DB 데드락이나 락 대기 시간 초과 발생 시 지정된 횟수만큼 재시도합니다.
      * 
      * [상세로직]
-     * 1. DB 예외 발생 시 isRetryableDbException()을 통해 재시도 가능 여부 판단.
+     * 1. DB 예외 발생 시 isRetryableDbException()을 통해 재시도 가능 여부를 예외 타입으로 판단.
      * 2. 재시도 가능 시 DB_RETRY_MAX(3회)만큼 지수 백오프(50/100/200ms) 후 재시도.
      * 3. 최종 실패 시 상위로 예외를 전파하여 Outbox에 FAIL 기록을 유도.
      */
@@ -1452,7 +1461,7 @@ public class TrafficHydrateRefillAdapterService {
             long requestedRefillAmount,
             String refillUuid
     ) {
-        RuntimeException lastException = null;
+        DataAccessException lastException = null;
         // DB claim도 동일하게 "초기 1회 시도 -> 실패 시 대기 -> 재시도" 순서를 따릅니다.
         for (int retryCount = 0; retryCount <= DB_RETRY_MAX; retryCount++) {
             try {
@@ -1464,9 +1473,9 @@ public class TrafficHydrateRefillAdapterService {
                         requestedRefillAmount,
                         refillUuid
                 );
-            } catch (RuntimeException e) {
+            } catch (DataAccessException e) {
                 lastException = e;
-                // 에러 메시지(Deadlock, Lock wait 등)를 분석하여 재시도 가능 여부를 확인합니다.
+                // DB 락 경합/타임아웃 계열 예외인지 타입 기준으로 재시도 가능 여부를 판단합니다.
                 boolean retryable = isRetryableDbException(e);
                 if (!retryable || retryCount >= DB_RETRY_MAX) {
                     throw e; // 재시도 대상이 아니거나 횟수 초과 시 즉시 중단합니다.
@@ -1491,15 +1500,15 @@ public class TrafficHydrateRefillAdapterService {
     /**
      * DB 예외가 재시도 가능한 종류인지 판별합니다.
      */
-    private boolean isRetryableDbException(RuntimeException exception) {
+    private boolean isRetryableDbException(DataAccessException exception) {
         Throwable current = exception;
         while (current != null) {
-            String message = current.getMessage();
-            if (message != null) {
-                String normalized = message.toLowerCase();
-                if (normalized.contains("deadlock") || normalized.contains("lock wait timeout")) {
-                    return true;
-                }
+            if (current instanceof QueryTimeoutException
+                    || current instanceof CannotAcquireLockException
+                    || current instanceof DeadlockLoserDataAccessException
+                    || current instanceof PessimisticLockingFailureException
+                    || current instanceof ConcurrencyFailureException) {
+                return true;
             }
             current = current.getCause();
         }

@@ -3,6 +3,7 @@ package com.pooli.traffic.service.decision;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -11,6 +12,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+
+import org.springframework.dao.DataAccessResourceFailureException;
 
 import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
 import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
@@ -126,7 +129,7 @@ class TrafficDeductOrchestratorServiceTest {
                     .thenReturn(luaResult(4L, TrafficLuaStatus.NO_BALANCE));
             when(trafficHydrateRefillAdapterService.executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(96L, TrafficLuaStatus.OK));
-            doThrow(new RuntimeException("alarm enqueue failed"))
+            doThrow(new IllegalStateException("alarm enqueue failed"))
                     .when(trafficSharedPoolThresholdAlarmService)
                     .checkAndEnqueueIfReached(22L);
 
@@ -156,7 +159,7 @@ class TrafficDeductOrchestratorServiceTest {
                     .thenReturn(luaResult(4L, TrafficLuaStatus.NO_BALANCE));
             when(trafficHydrateRefillAdapterService.executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class)))
                     .thenReturn(luaResult(96L, TrafficLuaStatus.OK));
-            doThrow(new RuntimeException("meta write through failed"))
+            doThrow(new DataAccessResourceFailureException("meta write through failed"))
                     .when(trafficBalanceStateWriteThroughService)
                     .markSharedMetaConsumed(22L, 96L);
 
@@ -324,10 +327,8 @@ class TrafficDeductOrchestratorServiceTest {
             when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
                     .thenThrow(new RuntimeException("adapter failed"));
 
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // then
+            // when + then
+            assertThrows(RuntimeException.class, () -> trafficDeductOrchestratorService.orchestrate(payload));
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never())
@@ -335,12 +336,6 @@ class TrafficDeductOrchestratorServiceTest {
             verifyNoInteractions(trafficRecentUsageBucketService);
             verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
             verifyNoInteractions(trafficBalanceStateWriteThroughService);
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
-                    () -> assertEquals(0L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(100L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.ERROR, result.getLastLuaStatus())
-            );
         }
     }
 

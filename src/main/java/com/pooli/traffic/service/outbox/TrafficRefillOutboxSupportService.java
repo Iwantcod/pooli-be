@@ -7,7 +7,6 @@ import java.time.format.DateTimeParseException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
-import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -182,55 +181,6 @@ public class TrafficRefillOutboxSupportService {
     public long resolveMonthlyExpireAt(RefillOutboxPayload payload) {
         YearMonth targetMonth = parseTargetMonth(payload.getTargetMonth());
         return trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth);
-    }
-
-    /**
-     * 연결 실패 계열 예외인지 판별합니다.
-     */
-    public boolean isConnectionFailure(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null) {
-            if (current instanceof RedisConnectionFailureException) {
-                return true;
-            }
-
-            String className = current.getClass().getSimpleName();
-            String message = current.getMessage();
-            if (className != null && className.toLowerCase().contains("connection")) {
-                return true;
-            }
-            if (message != null) {
-                String normalized = message.toLowerCase();
-                if (normalized.contains("connection")
-                        || normalized.contains("connect timed out")
-                        || normalized.contains("connection refused")
-                        || normalized.contains("unable to connect")) {
-                    return true;
-                }
-            }
-            current = current.getCause();
-        }
-        return false;
-    }
-
-    /**
-     * 타임아웃 계열 예외인지 판별합니다.
-     */
-    public boolean isTimeoutFailure(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null) {
-            String className = current.getClass().getSimpleName();
-            String message = current.getMessage();
-
-            if (className != null && className.toLowerCase().contains("timeout")) {
-                return true;
-            }
-            if (message != null && message.toLowerCase().contains("timeout")) {
-                return true;
-            }
-            current = current.getCause();
-        }
-        return false;
     }
 
     /**

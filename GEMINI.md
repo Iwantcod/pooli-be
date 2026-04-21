@@ -200,7 +200,31 @@ Mermaid diagrams **must** be included in the following situations:
 - **Present diagrams before textual explanations**, then supplement with detailed descriptions afterward.
 - Do not overload a single diagram with too much information. **Split into multiple diagrams** when complex.
 - Use **Korean labels** for nodes and edges to improve readability.
+  - **Exception:** Proper nouns such as **class names** and **method names** MUST remain in English to maintain technical accuracy. You may append a Korean explanation alongside the English name (e.g., `TrafficRefillService (트래픽 리필 서비스)`).
 - Labels containing special characters must be wrapped in quotes (`"..."`).
+- Diagrams **MUST be rendered with a white background**, not transparent.  
+  Always place the following init directive at the top of every Mermaid diagram block:
+  ```
+  %%{init: {"theme": "default", "themeVariables": {"background": "#ffffff"}}}%%
+  ```
+
+- **HTML Wrapping Rule (Mandatory)**: To prevent background color inversion in any viewer environment (e.g., dark mode), every Mermaid diagram block MUST be wrapped in an HTML `<div>` with an explicit white background as follows:
+
+  ```
+  <div style="background-color: #ffffff; padding: 20px;">
+
+  ```mermaid
+  %%{init: {"theme": "default", "themeVariables": {"background": "#ffffff"}}}%%
+  ... diagram code ...
+  ```
+
+  </div>
+  ```
+
+  **Critical line-break rules** (to prevent markdown parsing errors):
+  - There MUST be at least **one empty line** immediately after the opening `<div>` tag.
+  - There MUST be at least **one empty line** immediately before the closing `</div>` tag.
+  - Violating this rule will cause the Mermaid block to render as plain text.
 
 ### 9.3 Tables and Structured Information
 

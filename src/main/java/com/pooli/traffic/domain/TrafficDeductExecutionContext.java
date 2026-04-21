@@ -7,10 +7,12 @@ public class TrafficDeductExecutionContext {
 
     private final String traceId;
     private boolean redisFallbackActivated;
+    private TrafficLuaExecutionResult blockingPolicyCheckResult;
 
     private TrafficDeductExecutionContext(String traceId) {
         this.traceId = traceId;
         this.redisFallbackActivated = false;
+        this.blockingPolicyCheckResult = null;
     }
 
     /**
@@ -32,6 +34,27 @@ public class TrafficDeductExecutionContext {
      */
     public boolean isRedisFallbackActivated() {
         return redisFallbackActivated;
+    }
+
+    /**
+     * traceId 처리 범위에서 최초 1회 수행한 차단성 정책 검증 결과를 저장합니다.
+     */
+    public void cacheBlockingPolicyCheckResult(TrafficLuaExecutionResult result) {
+        this.blockingPolicyCheckResult = result;
+    }
+
+    /**
+     * 캐시된 차단성 정책 검증 결과를 반환합니다.
+     */
+    public TrafficLuaExecutionResult getBlockingPolicyCheckResult() {
+        return blockingPolicyCheckResult;
+    }
+
+    /**
+     * 차단성 정책 검증 결과가 이미 캐시되어 있는지 반환합니다.
+     */
+    public boolean hasBlockingPolicyCheckResult() {
+        return blockingPolicyCheckResult != null;
     }
 
     /**

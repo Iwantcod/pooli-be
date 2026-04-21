@@ -1,5 +1,5 @@
 -- deduct_indiv.lua
--- 2차 차감 Lua: 한도/속도/차감/usage/speed 갱신을 원자 처리한다.
+-- 차감 단계 Lua: 한도/속도/차감/usage/speed 갱신을 원자 처리한다.
 
 local function as_json(answer, status)
   return cjson.encode({ answer = answer, status = status })
@@ -29,6 +29,8 @@ local function has_missing_global_policy_key(...)
 end
 
 local SPEED_BUCKET_TTL_SECONDS = 15
+local DEDUPE_PROCESSED_FIELD = "processedData"
+local DEDUPE_RETRY_FIELD = "retryCount"
 
 -- KEYS (기존 시그니처를 최대한 유지하면서 필요한 값만 사용한다)
 local remaining_key = KEYS[1]
@@ -42,6 +44,7 @@ local daily_app_usage_key = KEYS[14]
 local app_speed_limit_key = KEYS[15]
 local speed_bucket_key = KEYS[16]
 local refill_idempotency_key = KEYS[17]
+local dedupe_key = KEYS[18]
 
 -- ARGV
 local target_data = tonumber(ARGV[1])
@@ -53,6 +56,7 @@ local refill_amount = tonumber(ARGV[8] or "0")
 local refill_uuid = ARGV[9]
 local refill_idempotency_ttl_seconds = tonumber(ARGV[10] or "0")
 local refill_db_empty_flag = ARGV[11] or "0"
+local api_total_data = tonumber(ARGV[13] or "-1")
 
 if not remaining_key or remaining_key == "" then
   return as_json(-1, "ERROR")
@@ -69,6 +73,25 @@ end
 if not daily_expire_at or daily_expire_at <= 0 then
   return as_json(-1, "ERROR")
 end
+if not dedupe_key or dedupe_key == "" then
+  return as_json(-1, "ERROR")
+end
+if not api_total_data or api_total_data < 0 then
+  return as_json(-1, "ERROR")
+end
+
+if redis.call("EXISTS", dedupe_key) == 0 then
+  redis.call("HSET", dedupe_key, DEDUPE_PROCESSED_FIELD, 0, DEDUPE_RETRY_FIELD, 0)
+end
+local processed_data = tonumber(redis.call("HGET", dedupe_key, DEDUPE_PROCESSED_FIELD) or "0")
+if not processed_data or processed_data < 0 then
+  processed_data = 0
+end
+local remaining_quota = math.max(0, api_total_data - processed_data)
+if remaining_quota <= 0 then
+  return as_json(0, "OK")
+end
+target_data = math.min(target_data, remaining_quota)
 
 if has_missing_global_policy_key(
   policy_daily_key,
@@ -199,6 +222,7 @@ redis.call("EXPIREAT", daily_app_usage_key, daily_expire_at)
 -- 앱 속도 제한용 버킷을 차감과 같은 Lua에서 즉시 갱신해 동시성 우회 가능성을 줄인다.
 redis.call("INCRBY", speed_bucket_key, answer)
 redis.call("EXPIRE", speed_bucket_key, SPEED_BUCKET_TTL_SECONDS)
+redis.call("HINCRBY", dedupe_key, DEDUPE_PROCESSED_FIELD, answer)
 
 -- 잔량 부족 없이 차감이 완료된 경우에만 app speed 제약 상태를 노출한다.
 if app_speed_capped and not insufficient_balance then

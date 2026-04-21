@@ -2,6 +2,7 @@ package com.pooli.traffic.service.invoke;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -463,16 +464,20 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     if (remainingDataToProcess <= 0L) {
                         executionResult = buildNoopExecutionResult(traceId);
                     } else {
-                        TrafficPayloadReqDto executionPayload = buildExecutionPayload(payload, remainingDataToProcess);
-                        executionResult = trafficDeductOrchestratorService.orchestrate(executionPayload);
+                        executionResult = trafficDeductOrchestratorService.orchestrate(payload);
                     }
                 } finally {
                     trafficRecordStageMetricsPort.recordStageLatency(STAGE_ORCHESTRATE, elapsedSinceNs(orchestrateStartNs));
                 }
-                TrafficDeductResultResDto cumulativeResult = buildCumulativeResult(
+                long processedDataAfter = resolveProcessedDataForDoneLog(
                         payload,
                         executionResult,
                         processedDataBefore
+                );
+                TrafficDeductResultResDto cumulativeResult = buildCumulativeResult(
+                        payload,
+                        executionResult,
+                        processedDataAfter
                 );
 
                 // 완료 로그 저장 시점에 함께 남길 지연 시간(ms) 값을 계산한다.
@@ -689,24 +694,6 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     /**
-     * 재개 처리용 실행 payload를 생성합니다.
-     *
-     * @param payload 원본 payload
-     * @param remainingDataToProcess 이번 시도에서 실제 처리할 잔여량
-     * @return 오케스트레이터 실행용 payload
-     */
-    private TrafficPayloadReqDto buildExecutionPayload(TrafficPayloadReqDto payload, long remainingDataToProcess) {
-        return TrafficPayloadReqDto.builder()
-                .traceId(payload == null ? null : payload.getTraceId())
-                .lineId(payload == null ? null : payload.getLineId())
-                .familyId(payload == null ? null : payload.getFamilyId())
-                .appId(payload == null ? null : payload.getAppId())
-                .apiTotalData(remainingDataToProcess)
-                .enqueuedAt(payload == null ? null : payload.getEnqueuedAt())
-                .build();
-    }
-
-    /**
      * 재개량이 0인 경우 오케스트레이션 호출 없이 사용할 no-op 실행 결과를 생성합니다.
      *
      * @param traceId 요청 추적 ID
@@ -727,21 +714,25 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     /**
-     * 실행 결과(이번 시도 기준)를 누적 기준 결과로 보정합니다.
+     * done log 저장 직전 누적 처리량 기준으로 최종 결과를 재조립합니다.
+     *
+     * <p>핵심 규칙:
+     * 1) `deductedTotalBytes`/`apiRemainingData`는 이번 실행 증분값이 아니라
+     *    `processedDataAfter`(Redis dedupe 누적값)를 기준으로 계산합니다.
+     * 2) `executionResult`는 마지막 Lua 상태(`lastLuaStatus`)와 시각 정보(`createdAt`/`finishedAt`) 전달에 사용합니다.
      *
      * @param originalPayload 원본 요청 payload
-     * @param executionResult 이번 시도 실행 결과
-     * @param processedDataBefore 재시도 이전 누적 처리량
-     * @return 누적 기준으로 보정된 결과
+     * @param executionResult 이번 시도 실행 결과(상태/시각 전달용)
+     * @param processedDataAfter done log 직전 Redis dedupe에 기록된 누적 처리량
+     * @return done log 저장에 사용할 누적 기준 결과
      */
     private TrafficDeductResultResDto buildCumulativeResult(
             TrafficPayloadReqDto originalPayload,
             TrafficDeductResultResDto executionResult,
-            long processedDataBefore
+            long processedDataAfter
     ) {
         long originalApiTotalData = normalizeNonNegative(originalPayload == null ? null : originalPayload.getApiTotalData());
-        long deductedThisRun = normalizeNonNegative(executionResult == null ? null : executionResult.getDeductedTotalBytes());
-        long cumulativeDeducted = resolveCumulativeDeducted(originalApiTotalData, processedDataBefore, deductedThisRun);
+        long cumulativeDeducted = resolveCumulativeDeducted(originalApiTotalData, processedDataAfter, 0L);
         long cumulativeRemaining = clampRemaining(originalApiTotalData - cumulativeDeducted);
 
         TrafficLuaStatus lastLuaStatus = executionResult == null ? null : executionResult.getLastLuaStatus();
@@ -758,6 +749,29 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 .createdAt(defaultNowIfNull(executionResult == null ? null : executionResult.getCreatedAt(), now))
                 .finishedAt(defaultNowIfNull(executionResult == null ? null : executionResult.getFinishedAt(), now))
                 .build();
+    }
+
+    /**
+     * done log 기록 직전에 누적 처리량 기준을 확정합니다.
+     *
+     * <p>우선순위:
+     * 1) Redis dedupe hash의 `processedData`를 최우선으로 사용
+     * 2) dedupe 조회 실패/미존재 시 `processedDataBefore + deductedThisRun` 계산값을 fallback으로 사용
+     */
+    private long resolveProcessedDataForDoneLog(
+            TrafficPayloadReqDto originalPayload,
+            TrafficDeductResultResDto executionResult,
+            long processedDataBefore
+    ) {
+        String traceId = originalPayload == null ? null : originalPayload.getTraceId();
+        Optional<TrafficInFlightIdempotencyEntry> dedupeEntry = trafficInFlightDedupeService.get(traceId);
+        if (dedupeEntry != null && dedupeEntry.isPresent()) {
+            return normalizeNonNegative(dedupeEntry.get().processedData());
+        }
+
+        long originalApiTotalData = normalizeNonNegative(originalPayload == null ? null : originalPayload.getApiTotalData());
+        long deductedThisRun = normalizeNonNegative(executionResult == null ? null : executionResult.getDeductedTotalBytes());
+        return resolveCumulativeDeducted(originalApiTotalData, processedDataBefore, deductedThisRun);
     }
 
     /**

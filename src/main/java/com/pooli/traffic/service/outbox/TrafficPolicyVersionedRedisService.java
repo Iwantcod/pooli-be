@@ -10,7 +10,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
-import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -18,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +38,7 @@ public class TrafficPolicyVersionedRedisService {
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
     private final ObjectMapper objectMapper;
+    private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     private RedisScript<Long> valueCasScript;
     private RedisScript<Long> repeatBlockCasScript;
@@ -145,40 +146,11 @@ public class TrafficPolicyVersionedRedisService {
             }
             return PolicySyncResult.RETRYABLE_FAILURE;
         } catch (DataAccessException e) {
-            if (isConnectionFailure(e)) {
+            if (trafficRedisFailureClassifier.isConnectionFailure(e)) {
                 return PolicySyncResult.CONNECTION_FAILURE;
             }
             return PolicySyncResult.RETRYABLE_FAILURE;
         }
-    }
-
-    /**
-     * 연결 실패 계열 예외인지 판별합니다.
-     */
-    private boolean isConnectionFailure(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null) {
-            if (current instanceof RedisConnectionFailureException) {
-                return true;
-            }
-
-            String className = current.getClass().getSimpleName();
-            String message = current.getMessage();
-            if (className != null && className.toLowerCase().contains("connection")) {
-                return true;
-            }
-            if (message != null) {
-                String normalized = message.toLowerCase();
-                if (normalized.contains("connection")
-                        || normalized.contains("connect timed out")
-                        || normalized.contains("connection refused")
-                        || normalized.contains("unable to connect")) {
-                    return true;
-                }
-            }
-            current = current.getCause();
-        }
-        return false;
     }
 
     /**

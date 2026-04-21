@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -23,6 +24,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.QueryTimeoutException;
 
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
@@ -143,6 +145,43 @@ public class TrafficDeductDoneLogServiceTest {
 
             // then
             assertFalse(saved);
+            verify(trafficDeductDoneLogMapper, times(1)).insert(any(TrafficDeductDoneLog.class));
+        }
+
+        @Test
+        @DisplayName("retryable DB 예외는 최대 3회 재시도 후 성공하면 true를 반환한다")
+        void retriesDoneLogInsertUpToThreeTimesThenSucceeds() {
+            // given
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class)))
+                    .thenThrow(new QueryTimeoutException("timeout-1"))
+                    .thenThrow(new QueryTimeoutException("timeout-2"))
+                    .thenThrow(new QueryTimeoutException("timeout-3"))
+                    .thenReturn(1);
+
+            // when
+            boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload(), result(), "1-2", 10L);
+
+            // then
+            assertTrue(saved);
+            verify(trafficDeductDoneLogMapper, times(4)).insert(any(TrafficDeductDoneLog.class));
+        }
+
+        @Test
+        @DisplayName("retryable DB 예외가 계속되면 재시도 소진 후 예외를 전파한다")
+        void rethrowsWhenRetryableDbExceptionPersists() {
+            // given
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class)))
+                    .thenThrow(new QueryTimeoutException("timeout-1"))
+                    .thenThrow(new QueryTimeoutException("timeout-2"))
+                    .thenThrow(new QueryTimeoutException("timeout-3"))
+                    .thenThrow(new QueryTimeoutException("timeout-4"));
+
+            // when & then
+            assertThrows(
+                    QueryTimeoutException.class,
+                    () -> trafficDeductDoneLogService.saveIfAbsent(payload(), result(), "1-3", 10L)
+            );
+            verify(trafficDeductDoneLogMapper, times(4)).insert(any(TrafficDeductDoneLog.class));
         }
 
         @Test
