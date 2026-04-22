@@ -48,12 +48,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 트래픽 차감의 "실행 + 복구"를 단일 흐름으로 오케스트레이션하는 어댑터 서비스입니다.
+ * 트래픽 차감의 "실행 + hydrate/refill/fallback"을 단일 흐름으로 오케스트레이션하는 어댑터 서비스입니다.
  *
  * <p>주요 책임:
  * 1) 차단성 정책 검증과 정책 hydrate 보정
  * 2) 차감 단계 Lua 실행(개인/공유)
- * 3) 상태값(GLOBAL_POLICY_HYDRATE, HYDRATE, NO_BALANCE)별 복구 분기 제어
+ * 3) 상태값(GLOBAL_POLICY_HYDRATE, HYDRATE, NO_BALANCE)별 hydrate/refill 분기와 정책 검증 fallback 제어
  * 4) NO_BALANCE 시 refill gate/락/DB claim/outbox/재차감 연계
  *
  * <p>정합성 우선 규칙에 따라, 정책 검증 단계의 재시도 가능한 Redis 인프라 예외만
@@ -104,7 +104,7 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
 
     /**
-     * 개인풀 차감과 복구 흐름을 실행합니다.
+     * 개인풀 차감의 실행 + hydrate/refill/fallback 흐름을 실행합니다.
      */
     public TrafficLuaExecutionResult executeIndividualWithRecovery(TrafficPayloadReqDto payload, long requestedDataBytes) {
         return executeIndividualWithRecovery(
@@ -115,7 +115,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 개인풀 차감과 복구 흐름을 실행합니다.
+     * 개인풀 차감의 실행 + hydrate/refill/fallback 흐름을 실행합니다.
      * 같은 traceId 처리 내 재시도/DB fallback 전환 상태를 context로 공유합니다.
      */
     public TrafficLuaExecutionResult executeIndividualWithRecovery(
@@ -127,7 +127,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 공유풀 차감과 복구 흐름을 실행합니다.
+     * 공유풀 차감의 실행 + hydrate/refill/fallback 흐름을 실행합니다.
      */
     public TrafficLuaExecutionResult executeSharedWithRecovery(TrafficPayloadReqDto payload, long requestedDataBytes) {
         return executeSharedWithRecovery(
@@ -138,7 +138,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 공유풀 차감과 복구 흐름을 실행합니다.
+     * 공유풀 차감의 실행 + hydrate/refill/fallback 흐름을 실행합니다.
      * 같은 traceId 처리 내 재시도/DB fallback 전환 상태를 context로 공유합니다.
      */
     public TrafficLuaExecutionResult executeSharedWithRecovery(
@@ -150,16 +150,16 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 풀 유형(개인/공유)에 맞는 차감, 데이터 동기화(hydrate), 리필(refill) 복구 흐름을 순차적으로 실행합니다.
+     * 풀 유형(개인/공유)에 맞는 차감 실행 뒤 hydrate/refill/fallback 흐름을 순차적으로 실행합니다.
      * 
      * [주요 흐름]
      * 1. 페이로드 유효성 검사
      * 2. 회선별 정책 데이터(Line Policy)가 Redis에 로드되어 있는지 확인 및 로드
      * 3. 차감 단계 차감 시도 (executeDeduct)
-     * 4. 결과 상태에 따른 단계별 복구 시도:
-     *    - GLOBAL_POLICY_HYDRATE: 전역 정책 스냅샷 복구 후 재시도
+     * 4. 결과 상태에 따른 단계별 hydrate/refill 시도:
+     *    - GLOBAL_POLICY_HYDRATE: 전역 정책 스냅샷 hydrate 후 재시도
      *    - HYDRATE: DB 원본 잔량 및 QoS 정보를 Redis로 로드 후 재시도
-     *    - NO_BALANCE: DB에서 추가 잔량을 확보(Refill)한 뒤 재시도
+     *    - NO_BALANCE: DB에서 추가 잔량을 확보(refill)한 뒤 재시도
      * 
      * @param poolType 차감 대상 풀 유형
      * @param payload 요청 페이로드

@@ -163,7 +163,7 @@ public class TrafficInFlightDedupeService {
 
     /**
      * Redis 재시도 진행 상태를 로그로만 남깁니다.
-     * Redis 장애 상황에서도 본 복구 흐름(retry/backoff/fallback)을 절대 방해하지 않기 위함입니다.
+     * Redis 장애 상황에서도 본 실행 + hydrate/refill/fallback 흐름(retry/backoff/fallback)을 절대 방해하지 않기 위함입니다.
      */
     public void markRedisRetry(String traceId, int retryAttempt) {
         if (traceId == null || traceId.isBlank()) {

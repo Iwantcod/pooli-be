@@ -66,7 +66,10 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * 개인풀 차감 Lua 스크립트를 실행합니다.
+     * 개인풀 차단성 정책 검증 Lua(policy_check_indiv.lua)를 실행합니다.
+     *
+     * <p>반환 의미:
+     * answer=1(화이트리스트 우회), answer=0(일반), answer=-1(입력 오류)
      */
     public TrafficLuaExecutionResult executePolicyCheckIndividual(List<String> keys, List<String> args) {
         String rawJson = executeStringSingle(TrafficLuaScriptType.POLICY_CHECK_INDIVIDUAL, keys, args);
@@ -74,7 +77,10 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * 공유풀 차단성 정책 검증 Lua 스크립트를 실행합니다.
+     * 공유풀 차단성 정책 검증 Lua(policy_check_shared.lua)를 실행합니다.
+     *
+     * <p>반환 의미:
+     * answer=1(화이트리스트 우회), answer=0(일반), answer=-1(입력 오류)
      */
     public TrafficLuaExecutionResult executePolicyCheckShared(List<String> keys, List<String> args) {
         String rawJson = executeStringSingle(TrafficLuaScriptType.POLICY_CHECK_SHARED, keys, args);

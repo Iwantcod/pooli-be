@@ -79,6 +79,8 @@ public class TrafficDeductDoneLogServiceTest {
         @Test
         @DisplayName("신규 insert가 성공하면 true를 반환한다")
         void returnsTrueWhenInserted() {
+            // given
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class))).thenReturn(1);
             long latency = 123L;
 
             // when
@@ -114,6 +116,9 @@ public class TrafficDeductDoneLogServiceTest {
         )
         @DisplayName("정책 실패 상태는 DONE 이력의 lastLuaStatus로 그대로 저장된다")
         void storesPolicyFailureStatusInDoneHistory(TrafficLuaStatus policyFailureStatus) {
+            // given
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class))).thenReturn(1);
+
             // when
             boolean saved = trafficDeductDoneLogService.saveIfAbsent(
                     payload(),
@@ -199,6 +204,20 @@ public class TrafficDeductDoneLogServiceTest {
         }
 
         @Test
+        @DisplayName("INSERT 영향 행수가 1이 아니면 예외를 전파한다")
+        void throwsWhenInsertAffectedRowsIsNotOne() {
+            // given
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class))).thenReturn(0);
+
+            // when & then
+            IllegalStateException thrown = assertThrows(
+                    IllegalStateException.class,
+                    () -> trafficDeductDoneLogService.saveIfAbsent(payload(), result(), "1-9", 10L)
+            );
+            assertTrue(thrown.getMessage().contains("traffic_done_log_insert_unexpected_row_count"));
+        }
+
+        @Test
         @DisplayName("빈 recordId는 예외를 발생시킨다")
         void throwsWhenRecordIdIsBlank() {
             assertThrows(
@@ -206,6 +225,127 @@ public class TrafficDeductDoneLogServiceTest {
                     () -> trafficDeductDoneLogService.saveIfAbsent(payload(), result(), " ", 10L)
             );
             verify(trafficDeductDoneLogMapper, never()).insert(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("saveNonRetryableFailureIfAbsent 테스트")
+    class SaveNonRetryableFailureIfAbsentTest {
+
+        @Test
+        @DisplayName("traceId 확보 non-retryable 종결 로그를 FAILED로 저장한다")
+        void savesNonRetryableFailureDoneLog() {
+            // given
+            when(trafficDeductDoneLogMapper.insertNonRetryableFailure(any(TrafficDeductDoneLog.class)))
+                    .thenReturn(1);
+
+            // when
+            boolean saved = trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
+                    payload(),
+                    "nr-1",
+                    77L,
+                    "IllegalStateException: wrong type at lua script"
+            );
+
+            // then
+            assertTrue(saved);
+            ArgumentCaptor<TrafficDeductDoneLog> captor = ArgumentCaptor.forClass(TrafficDeductDoneLog.class);
+            verify(trafficDeductDoneLogMapper).insertNonRetryableFailure(captor.capture());
+            TrafficDeductDoneLog savedLog = captor.getValue();
+            assertEquals("trace-001", savedLog.getTraceId());
+            assertEquals("nr-1", savedLog.getRecordId());
+            assertEquals(TrafficFinalStatus.FAILED.name(), savedLog.getFinalStatus());
+            assertEquals(TrafficLuaStatus.ERROR.name(), savedLog.getLastLuaStatus());
+            assertEquals(0L, savedLog.getDeductedTotalBytes());
+            assertEquals(100L, savedLog.getApiRemainingData());
+            assertEquals("IllegalStateException: wrong type at lua script", savedLog.getRestoreLastErrorMessage());
+        }
+
+        @Test
+        @DisplayName("non-retryable done log도 traceId UNIQUE 중복이면 false를 반환한다")
+        void returnsFalseWhenNonRetryableInsertDuplicateKey() {
+            // given
+            when(trafficDeductDoneLogMapper.insertNonRetryableFailure(any(TrafficDeductDoneLog.class)))
+                    .thenThrow(new DuplicateKeyException("duplicate trace_id"));
+
+            // when
+            boolean saved = trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
+                    payload(),
+                    "nr-2",
+                    50L,
+                    "IllegalArgumentException: bad payload"
+            );
+
+            // then
+            assertFalse(saved);
+            verify(trafficDeductDoneLogMapper, times(1)).insertNonRetryableFailure(any(TrafficDeductDoneLog.class));
+        }
+
+        @Test
+        @DisplayName("non-retryable done log insert도 retryable DB 예외는 재시도한다")
+        void retriesNonRetryableInsertWhenRetryableDbExceptionOccurs() {
+            // given
+            when(trafficDeductDoneLogMapper.insertNonRetryableFailure(any(TrafficDeductDoneLog.class)))
+                    .thenThrow(new QueryTimeoutException("timeout-1"))
+                    .thenThrow(new QueryTimeoutException("timeout-2"))
+                    .thenThrow(new QueryTimeoutException("timeout-3"))
+                    .thenReturn(1);
+
+            // when
+            boolean saved = trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
+                    payload(),
+                    "nr-3",
+                    88L,
+                    "TimeoutException: redis timeout"
+            );
+
+            // then
+            assertTrue(saved);
+            verify(trafficDeductDoneLogMapper, times(4)).insertNonRetryableFailure(any(TrafficDeductDoneLog.class));
+        }
+
+        @Test
+        @DisplayName("restore_last_error_message는 DB 저장 시 1000자까지만 보정한다")
+        void truncateRestoreLastErrorMessageToColumnLimit() {
+            // given
+            String overLimitMessage = "X".repeat(1005);
+            when(trafficDeductDoneLogMapper.insertNonRetryableFailure(any(TrafficDeductDoneLog.class)))
+                    .thenReturn(1);
+
+            // when
+            boolean saved = trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
+                    payload(),
+                    "nr-4",
+                    11L,
+                    overLimitMessage
+            );
+
+            // then
+            assertTrue(saved);
+            ArgumentCaptor<TrafficDeductDoneLog> captor = ArgumentCaptor.forClass(TrafficDeductDoneLog.class);
+            verify(trafficDeductDoneLogMapper).insertNonRetryableFailure(captor.capture());
+            assertEquals(1000, captor.getValue().getRestoreLastErrorMessage().length());
+            assertEquals(overLimitMessage.substring(0, 1000), captor.getValue().getRestoreLastErrorMessage());
+        }
+
+        @Test
+        @DisplayName("non-retryable INSERT 영향 행수가 1이 아니면 예외를 전파한다")
+        void throwsWhenNonRetryableInsertAffectedRowsIsNotOne() {
+            // given
+            when(trafficDeductDoneLogMapper.insertNonRetryableFailure(any(TrafficDeductDoneLog.class)))
+                    .thenReturn(0);
+
+            // when & then
+            IllegalStateException thrown = assertThrows(
+                    IllegalStateException.class,
+                    () -> trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
+                            payload(),
+                            "nr-5",
+                            11L,
+                            "IllegalArgumentException: bad payload"
+                    )
+            );
+            assertTrue(thrown.getMessage().contains("traffic_done_log_insert_unexpected_row_count"));
         }
     }
 

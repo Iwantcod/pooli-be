@@ -41,6 +41,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.MDC;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.RecordId;
 
@@ -57,6 +58,7 @@ import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
 import com.pooli.traffic.service.outbox.TrafficInFlightDedupeDeleteOutboxService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -91,6 +93,9 @@ public class TrafficStreamConsumerRunnerTest {
     @Mock
     private TrafficInFlightDedupeDeleteOutboxService trafficInFlightDedupeDeleteOutboxService;
 
+    @Mock
+    private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
+
     private TrafficStreamConsumerRunner trafficStreamConsumerRunner;
     private AppStreamsProperties appStreamsProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -122,6 +127,7 @@ public class TrafficStreamConsumerRunnerTest {
                 trafficDeductDoneLogService,
                 trafficStreamReclaimService,
                 trafficInFlightDedupeDeleteOutboxService,
+                trafficRedisFailureClassifier,
                 trafficGeneratorMetrics,
                 trafficRecordStageMetricsPort
         );
@@ -366,7 +372,7 @@ public class TrafficStreamConsumerRunnerTest {
         }
 
         @Test
-        @DisplayName("does not ack when orchestration fails")
+        @DisplayName("does not ack when orchestration fails with retryable infra error")
         void doesNotAckWhenOrchestrationFails() {
             String payloadJson = "{\"traceId\":\"trace-orchestrate-fail\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("4-1", payloadJson);
@@ -375,7 +381,8 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficInFlightDedupeService.createOrGet("trace-orchestrate-fail"))
                     .thenReturn(createdEntryResult("trace-orchestrate-fail", 0L));
             when(trafficDeductOrchestratorService.orchestrate(any()))
-                    .thenThrow(new RuntimeException("redis timeout"));
+                    .thenThrow(new QueryTimeoutException("redis timeout"));
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(true);
 
             invokeHandleRecord(record);
 
@@ -487,7 +494,8 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficInFlightDedupeService.createOrGet("trace-pending"))
                     .thenReturn(existingEntryResult("trace-pending", 0L));
             when(trafficDeductOrchestratorService.orchestrate(any()))
-                    .thenThrow(new RuntimeException("redis timeout"));
+                    .thenThrow(new QueryTimeoutException("redis timeout"));
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(true);
 
             invokeHandleRecord(record);
 
@@ -526,14 +534,50 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-overflow"))
                     .thenReturn(existingEntryResult("trace-overflow", 120L));
+            when(trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(any(), eq("5-3"), anyLong(), any()))
+                    .thenReturn(true);
 
             invokeHandleRecord(record);
 
-            verify(trafficStreamInfraService).writeDlq(eq(payloadJson), reasonCaptor.capture(), eq("5-3"));
-            verify(trafficStreamInfraService).acknowledge(record.getId());
+            InOrder inOrder = inOrder(trafficDeductDoneLogService, trafficStreamInfraService);
+            inOrder.verify(trafficDeductDoneLogService)
+                    .saveNonRetryableFailureIfAbsent(any(), eq("5-3"), anyLong(), any());
+            inOrder.verify(trafficStreamInfraService).writeDlq(eq(payloadJson), reasonCaptor.capture(), eq("5-3"));
+            inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
+
             assertTrue(reasonCaptor.getValue().contains("누적 차감량 불변식 위반"));
             verifyNoInteractions(trafficDeductOrchestratorService);
             verify(trafficInFlightDedupeDeleteOutboxService, never()).createPending(any(), any());
+        }
+
+        @Test
+        @DisplayName("acks with done log then DLQ when non-retryable exception occurs after traceId is resolved")
+        void acknowledgeWithDoneLogThenDlqWhenNonRetryableExceptionOccurs() {
+            String payloadJson = "{\"traceId\":\"trace-non-retryable\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("5-4", payloadJson);
+            ArgumentCaptor<String> dlqReasonCaptor = ArgumentCaptor.forClass(String.class);
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficInFlightDedupeService.createOrGet("trace-non-retryable"))
+                    .thenReturn(createdEntryResult("trace-non-retryable", 0L));
+            when(trafficDeductOrchestratorService.orchestrate(any()))
+                    .thenThrow(new IllegalArgumentException("wrong type in downstream data"));
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(false);
+            when(trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(any(), eq("5-4"), anyLong(), any()))
+                    .thenReturn(true);
+
+            invokeHandleRecord(record);
+
+            InOrder inOrder = inOrder(trafficDeductDoneLogService, trafficStreamInfraService);
+            inOrder.verify(trafficDeductDoneLogService)
+                    .saveNonRetryableFailureIfAbsent(any(), eq("5-4"), anyLong(), any());
+            inOrder.verify(trafficStreamInfraService).writeDlq(eq(payloadJson), dlqReasonCaptor.capture(), eq("5-4"));
+            inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
+
+            assertTrue(dlqReasonCaptor.getValue().contains("non-retryable failure"));
+            assertTrue(dlqReasonCaptor.getValue().contains("IllegalArgumentException"));
+            verify(trafficInFlightDedupeDeleteOutboxService, never()).createPending(any(), any());
+            verify(trafficRecordStageMetricsPort).incrementResult("dlq");
         }
 
         @Test
@@ -640,7 +684,7 @@ public class TrafficStreamConsumerRunnerTest {
         }
 
         @Test
-        @DisplayName("records failed result when orchestration throws")
+        @DisplayName("records failed result when orchestration throws retryable infra error")
         void recordFailedResultWhenOrchestrationThrows() {
             String payloadJson = "{\"traceId\":\"trace-metrics-failed\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("8-3", payloadJson);
@@ -649,7 +693,8 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficInFlightDedupeService.createOrGet("trace-metrics-failed"))
                     .thenReturn(createdEntryResult("trace-metrics-failed", 0L));
             when(trafficDeductOrchestratorService.orchestrate(any()))
-                    .thenThrow(new RuntimeException("orchestrate down"));
+                    .thenThrow(new QueryTimeoutException("orchestrate timeout"));
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(true);
 
             invokeHandleRecord(record);
 

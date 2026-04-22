@@ -23,6 +23,7 @@ import com.pooli.traffic.domain.enums.TrafficFinalStatus;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.service.outbox.TrafficInFlightDedupeDeleteOutboxService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.util.TrafficRetryBackoffSupport;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
@@ -83,6 +84,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final TrafficStreamReclaimService trafficStreamReclaimService;
     // in-flight dedupe key 삭제 요청 outbox 적재 서비스
     private final TrafficInFlightDedupeDeleteOutboxService trafficInFlightDedupeDeleteOutboxService;
+    // Redis 인프라 예외(timeout/connection) 분류기
+    private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
     private final TrafficGeneratorMetrics trafficGeneratorMetrics;
     private final TrafficRecordStageMetricsPort trafficRecordStageMetricsPort;
 
@@ -488,6 +491,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 long mongoSaveStartNs = System.nanoTime();
                 try {
                     saved = trafficDeductDoneLogService.saveIfAbsent(payload, cumulativeResult, recordId, latency);
+                } catch (Exception saveException) {
+                    throw new DoneLogPersistenceException("traffic_done_log_save_failed", saveException);
                 } finally {
                     trafficRecordStageMetricsPort.recordStageLatency(STAGE_DONE_LOG_SAVE, elapsedSinceNs(mongoSaveStartNs));
                 }
@@ -536,6 +541,16 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                         loggedAt,
                         latency
                 );
+            } catch (DoneLogPersistenceException e) {
+                long latency = System.currentTimeMillis() - consumeStartTimeMs;
+                // done log 저장 실패 시 ACK하면 재처리 기회를 잃으므로 pending을 유지한다.
+                log.error(
+                        "traffic_stream_record_done_log_save_failed recordId={} traceId={} latency={}",
+                        recordId,
+                        traceId,
+                        latency,
+                        e.getCause() == null ? e : e.getCause()
+                );
             } catch (CumulativeInvariantViolationException e) {
                 long latency = System.currentTimeMillis() - consumeStartTimeMs;
                 log.error(
@@ -546,17 +561,36 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                         e.getMessage(),
                         e
                 );
-                trafficStreamInfraService.writeDlq(
+                String dlqReason = "누적 차감량 불변식 위반: " + e.getMessage();
+                handleTraceAwareNonRetryableFailure(
+                        payload,
                         payloadJson,
-                        "누적 차감량 불변식 위반: " + e.getMessage(),
-                        recordId
+                        recordId,
+                        record.getId(),
+                        consumeStartTimeMs,
+                        e,
+                        dlqReason
                 );
-                acknowledgeWithMetrics(record.getId());
                 resultTag = RESULT_DLQ;
             } catch (Exception e) {
                 long latency = System.currentTimeMillis() - consumeStartTimeMs;
-                // 처리 중 시스템 예외는 ACK하지 않고 남겨 재전달/reclaim 경로에서 복구한다.
-                log.error("traffic_stream_record_handle_failed recordId={} latency={}", recordId, e, latency);
+                if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(e)) {
+                    // 처리 중 retryable 인프라 예외는 ACK하지 않고 남겨 재전달/reclaim 경로에서 복구한다.
+                    log.error("traffic_stream_record_handle_failed recordId={} latency={}", recordId, e, latency);
+                    return;
+                }
+
+                String dlqReason = buildNonRetryableDlqReason(e);
+                handleTraceAwareNonRetryableFailure(
+                        payload,
+                        payloadJson,
+                        recordId,
+                        record.getId(),
+                        consumeStartTimeMs,
+                        e,
+                        dlqReason
+                );
+                resultTag = RESULT_DLQ;
             } finally {
                 MDC.remove(TRACE_ID_MDC_KEY);
             }
@@ -666,6 +700,79 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 retryCountAfterIncrement,
                 RECLAIM_RETRY_EXCEEDED_THRESHOLD
         );
+    }
+
+    /**
+     * traceId 확보 non-retryable 예외를 done log + DLQ + ACK 순서로 종결합니다.
+     */
+    private void handleTraceAwareNonRetryableFailure(
+            TrafficPayloadReqDto payload,
+            String payloadJson,
+            String recordId,
+            RecordId streamRecordId,
+            long consumeStartTimeMs,
+            Exception exception,
+            String dlqReason
+    ) {
+        long latency = Math.max(0L, System.currentTimeMillis() - consumeStartTimeMs);
+        String summarizedErrorMessage = summarizeException(exception);
+
+        boolean saved;
+        long doneLogSaveStartNs = System.nanoTime();
+        try {
+            saved = trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
+                    payload,
+                    recordId,
+                    latency,
+                    summarizedErrorMessage
+            );
+        } finally {
+            trafficRecordStageMetricsPort.recordStageLatency(STAGE_DONE_LOG_SAVE, elapsedSinceNs(doneLogSaveStartNs));
+        }
+
+        if (!saved) {
+            log.warn(
+                    "traffic_stream_non_retryable_terminal_done_log_duplicate_absorbed trace_id={} record_id={} summary={}",
+                    payload.getTraceId(),
+                    recordId,
+                    summarizedErrorMessage
+            );
+        }
+
+        trafficStreamInfraService.writeDlq(payloadJson, dlqReason, recordId);
+        acknowledgeWithMetrics(streamRecordId);
+        log.warn(
+                "traffic_stream_non_retryable_terminated trace_id={} record_id={} dlq_reason={} summary={}",
+                payload.getTraceId(),
+                recordId,
+                dlqReason,
+                summarizedErrorMessage
+        );
+    }
+
+    /**
+     * non-retryable 예외의 DLQ 사유 문자열을 생성합니다.
+     */
+    private String buildNonRetryableDlqReason(Exception exception) {
+        return "non-retryable failure: " + summarizeException(exception);
+    }
+
+    /**
+     * 예외 타입 + 핵심 메시지 형태로 요약 문자열을 생성합니다.
+     */
+    private String summarizeException(Throwable throwable) {
+        if (throwable == null) {
+            return "UnknownException";
+        }
+
+        String exceptionName = throwable.getClass().getSimpleName();
+        String message = throwable.getMessage();
+        if (message == null || message.isBlank()) {
+            return exceptionName;
+        }
+
+        String compactMessage = message.replaceAll("\\s+", " ").trim();
+        return exceptionName + ": " + compactMessage;
     }
 
     /**
@@ -872,6 +979,15 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
          */
         private CumulativeInvariantViolationException(String message) {
             super(message);
+        }
+    }
+
+    /**
+     * done log 저장 실패를 식별하기 위한 내부 래핑 예외입니다.
+     */
+    private static final class DoneLogPersistenceException extends RuntimeException {
+        private DoneLogPersistenceException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 
