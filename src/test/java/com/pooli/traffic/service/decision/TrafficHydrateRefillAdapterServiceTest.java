@@ -133,9 +133,7 @@ class TrafficHydrateRefillAdapterServiceTest {
         Mockito.lenient().when(trafficRedisFailureClassifier.isConnectionFailure(any())).thenReturn(false);
         Mockito.lenient().when(trafficRedisFailureClassifier.isTimeoutFailure(any())).thenReturn(false);
         Mockito.lenient().when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(false);
-        Mockito.lenient().when(trafficLuaScriptInfraService.executePolicyCheckIndividual(anyList(), anyList()))
-                .thenReturn(luaResult(0L, TrafficLuaStatus.OK));
-        Mockito.lenient().when(trafficLuaScriptInfraService.executePolicyCheckShared(anyList(), anyList()))
+        Mockito.lenient().when(trafficLuaScriptInfraService.executeBlockPolicyCheck(anyList(), anyList()))
                 .thenReturn(luaResult(0L, TrafficLuaStatus.OK));
         Mockito.lenient().when(trafficDbDeductFallbackService.deduct(any(), any(), anyLong(), any()))
                 .thenReturn(luaResult(0L, TrafficLuaStatus.NO_BALANCE));
@@ -1240,8 +1238,7 @@ class TrafficHydrateRefillAdapterServiceTest {
                 () -> assertEquals(5L, sharedResult.getAnswer())
         );
         verify(trafficLinePolicyHydrationService, times(1)).ensureLoaded(11L);
-        verify(trafficLuaScriptInfraService, times(1)).executePolicyCheckIndividual(anyList(), anyList());
-        verify(trafficLuaScriptInfraService, never()).executePolicyCheckShared(anyList(), anyList());
+        verify(trafficLuaScriptInfraService, times(1)).executeBlockPolicyCheck(anyList(), anyList());
     }
 
     private TrafficPayloadReqDto createPayload() {

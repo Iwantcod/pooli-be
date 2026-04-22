@@ -15,10 +15,8 @@ import org.junit.jupiter.api.Test;
  */
 class TrafficLuaPolicyContractTest {
 
-    private static final Path POLICY_CHECK_INDIVIDUAL_SCRIPT =
-            Path.of("src/main/resources/lua/traffic/policy_check_indiv.lua");
-    private static final Path POLICY_CHECK_SHARED_SCRIPT =
-            Path.of("src/main/resources/lua/traffic/policy_check_shared.lua");
+    private static final Path BLOCK_POLICY_CHECK_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/block_policy_check.lua");
     private static final Path DEDUCT_INDIVIDUAL_SCRIPT =
             Path.of("src/main/resources/lua/traffic/deduct_indiv.lua");
     private static final Path DEDUCT_SHARED_SCRIPT =
@@ -27,22 +25,9 @@ class TrafficLuaPolicyContractTest {
             Path.of("src/main/resources/lua/traffic/refill_gate.lua");
 
     @Test
-    @DisplayName("1차 개인 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
-    void keepsPolicyCheckOrderForIndividual() throws IOException {
-        String script = Files.readString(POLICY_CHECK_INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
-
-        assertAppearsInOrder(
-                script,
-                "if is_policy_enabled(policy_whitelist_key)",
-                "if is_policy_enabled(policy_immediate_key)",
-                "if is_policy_enabled(policy_repeat_key)"
-        );
-    }
-
-    @Test
-    @DisplayName("1차 공유 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
-    void keepsPolicyCheckOrderForShared() throws IOException {
-        String script = Files.readString(POLICY_CHECK_SHARED_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("1차 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
+    void keepsPolicyCheckOrder() throws IOException {
+        String script = Files.readString(BLOCK_POLICY_CHECK_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,

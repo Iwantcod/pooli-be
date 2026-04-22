@@ -66,25 +66,14 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * 개인풀 차단성 정책 검증 Lua(policy_check_indiv.lua)를 실행합니다.
+     * 차단성 정책 검증 Lua(block_policy_check.lua)를 실행합니다.
      *
      * <p>반환 의미:
      * answer=1(화이트리스트 우회), answer=0(일반), answer=-1(입력 오류)
      */
-    public TrafficLuaExecutionResult executePolicyCheckIndividual(List<String> keys, List<String> args) {
-        String rawJson = executeStringSingle(TrafficLuaScriptType.POLICY_CHECK_INDIVIDUAL, keys, args);
-        return parseDeductResult(rawJson, TrafficLuaScriptType.POLICY_CHECK_INDIVIDUAL);
-    }
-
-    /**
-     * 공유풀 차단성 정책 검증 Lua(policy_check_shared.lua)를 실행합니다.
-     *
-     * <p>반환 의미:
-     * answer=1(화이트리스트 우회), answer=0(일반), answer=-1(입력 오류)
-     */
-    public TrafficLuaExecutionResult executePolicyCheckShared(List<String> keys, List<String> args) {
-        String rawJson = executeStringSingle(TrafficLuaScriptType.POLICY_CHECK_SHARED, keys, args);
-        return parseDeductResult(rawJson, TrafficLuaScriptType.POLICY_CHECK_SHARED);
+    public TrafficLuaExecutionResult executeBlockPolicyCheck(List<String> keys, List<String> args) {
+        String rawJson = executeStringSingle(TrafficLuaScriptType.BLOCK_POLICY_CHECK, keys, args);
+        return parseDeductResult(rawJson, TrafficLuaScriptType.BLOCK_POLICY_CHECK);
     }
 
     /**
@@ -349,7 +338,7 @@ public class TrafficLuaScriptInfraService {
      */
     private void registerScript(TrafficLuaScriptType scriptType, String scriptText) {
         switch (scriptType) {
-            case POLICY_CHECK_INDIVIDUAL, POLICY_CHECK_SHARED, DEDUCT_INDIVIDUAL, DEDUCT_SHARED, REFILL_GATE -> {
+            case BLOCK_POLICY_CHECK, DEDUCT_INDIVIDUAL, DEDUCT_SHARED, REFILL_GATE -> {
                 DefaultRedisScript<String> redisScript = new DefaultRedisScript<>();
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(String.class);

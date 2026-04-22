@@ -274,7 +274,7 @@ public class TrafficHydrateRefillAdapterService {
             TrafficPoolType poolType,
             TrafficPayloadReqDto payload
     ) {
-        TrafficLuaExecutionResult policyCheckResult = executePolicyCheckLua(poolType, payload);
+        TrafficLuaExecutionResult policyCheckResult = executePolicyCheckLua(payload);
         if (policyCheckResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
             return policyCheckResult;
         }
@@ -293,7 +293,7 @@ public class TrafficHydrateRefillAdapterService {
                 );
             }
 
-            retriedResult = executePolicyCheckLua(poolType, payload);
+            retriedResult = executePolicyCheckLua(payload);
             if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
                 return retriedResult;
             }
@@ -311,10 +311,7 @@ public class TrafficHydrateRefillAdapterService {
     /**
      * 차단성 정책 검증 Lua를 실행합니다.
      */
-    private TrafficLuaExecutionResult executePolicyCheckLua(
-            TrafficPoolType poolType,
-            TrafficPayloadReqDto payload
-    ) {
+    private TrafficLuaExecutionResult executePolicyCheckLua(TrafficPayloadReqDto payload) {
         LocalDateTime now = LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
         long nowEpochSecond = now.atZone(trafficRedisRuntimePolicy.zoneId()).toEpochSecond();
         int dayNum = now.getDayOfWeek().getValue() % 7;
@@ -342,10 +339,7 @@ public class TrafficHydrateRefillAdapterService {
                 String.valueOf(nowEpochSecond)
         );
 
-        return switch (poolType) {
-            case INDIVIDUAL -> trafficLuaScriptInfraService.executePolicyCheckIndividual(keys, args);
-            case SHARED -> trafficLuaScriptInfraService.executePolicyCheckShared(keys, args);
-        };
+        return trafficLuaScriptInfraService.executeBlockPolicyCheck(keys, args);
     }
 
     /**
