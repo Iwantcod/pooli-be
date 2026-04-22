@@ -33,10 +33,12 @@ local DEDUPE_PROCESSED_FIELD = "processedData"
 local DEDUPE_RETRY_FIELD = "retryCount"
 
 -- 공유 잔량이 부족한 경우 QoS 보정식을 적용해 대체 차감량/상태를 계산합니다.
--- QoS 경로에서도 daily/app 정책과 속도 정책을 함께 반영합니다.
+-- daily/app 정책은 호출부에서 반영된 cap(qos_capped_target)을 입력으로 받고,
+-- app speed 정책은 화이트리스트 우회가 비활성인 경우에만 여기서 적용합니다.
 local function resolve_qos_fallback(
   target_data,
   policy_status,
+  whitelist_bypass,
   policy_app_speed_key,
   app_speed_limit_key,
   app_speed_field,
@@ -62,7 +64,8 @@ local function resolve_qos_fallback(
     return 0, "NO_BALANCE"
   end
 
-  if is_policy_enabled(policy_app_speed_key) then
+  -- 화이트리스트 우회가 활성화된 요청은 QoS fallback에서도 app speed 정책을 적용하지 않는다.
+  if (not whitelist_bypass) and is_policy_enabled(policy_app_speed_key) then
     local raw_app_speed_limit = tonumber(redis.call("HGET", app_speed_limit_key, app_speed_field) or "-1")
     -- -1(또는 미존재)은 무제한으로 간주해 speed cap을 적용하지 않는다.
     if raw_app_speed_limit and raw_app_speed_limit >= 0 then
@@ -317,6 +320,7 @@ if answer <= 0 then
   local qos_answer, qos_status = resolve_qos_fallback(
     qos_capped_target,
     qos_policy_status,
+    whitelist_bypass,
     policy_app_speed_key,
     app_speed_limit_key,
     app_speed_field,

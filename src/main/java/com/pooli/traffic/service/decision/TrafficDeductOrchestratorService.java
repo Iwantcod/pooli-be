@@ -293,7 +293,7 @@ public class TrafficDeductOrchestratorService {
             }
             throw e;
         }
-        return trafficPolicyCheckLayerService.evaluate(TrafficPoolType.INDIVIDUAL, payload);
+        return trafficPolicyCheckLayerService.evaluate(payload);
     }
 
     /**

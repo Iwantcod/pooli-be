@@ -22,7 +22,6 @@ import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.TrafficPolicyCheckLayerResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
-import com.pooli.traffic.domain.enums.TrafficPoolType;
 import com.pooli.traffic.domain.enums.TrafficPolicyCheckFailureCause;
 import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
@@ -84,7 +83,7 @@ class TrafficPolicyCheckLayerServiceTest {
 
         // when
         TrafficPolicyCheckLayerResult result =
-                trafficPolicyCheckLayerService.evaluate(TrafficPoolType.INDIVIDUAL, payload);
+                trafficPolicyCheckLayerService.evaluate(payload);
 
         // then
         assertAll(
@@ -106,7 +105,7 @@ class TrafficPolicyCheckLayerServiceTest {
 
         // when
         TrafficPolicyCheckLayerResult result =
-                trafficPolicyCheckLayerService.evaluate(TrafficPoolType.SHARED, payload);
+                trafficPolicyCheckLayerService.evaluate(payload);
 
         // then
         assertAll(
@@ -130,7 +129,7 @@ class TrafficPolicyCheckLayerServiceTest {
 
         // when
         TrafficPolicyCheckLayerResult result =
-                trafficPolicyCheckLayerService.evaluate(TrafficPoolType.INDIVIDUAL, payload);
+                trafficPolicyCheckLayerService.evaluate(payload);
 
         // then
         assertAll(
@@ -155,7 +154,7 @@ class TrafficPolicyCheckLayerServiceTest {
         // when + then
         assertThrows(
                 QueryTimeoutException.class,
-                () -> trafficPolicyCheckLayerService.evaluate(TrafficPoolType.INDIVIDUAL, payload)
+                () -> trafficPolicyCheckLayerService.evaluate(payload)
         );
     }
 
@@ -168,7 +167,7 @@ class TrafficPolicyCheckLayerServiceTest {
                 .thenReturn(luaResult(0L, TrafficLuaStatus.OK));
 
         // when
-        trafficPolicyCheckLayerService.evaluate(TrafficPoolType.INDIVIDUAL, payload);
+        trafficPolicyCheckLayerService.evaluate(payload);
 
         // then
         ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass(List.class);

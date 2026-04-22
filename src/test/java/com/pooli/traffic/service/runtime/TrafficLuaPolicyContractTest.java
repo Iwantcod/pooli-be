@@ -135,10 +135,22 @@ class TrafficLuaPolicyContractTest {
     }
 
     @Test
-    @DisplayName("공유 QoS fallback은 speed_remaining을 계산해 qos와 함께 최소값을 적용한다")
-    void sharedScriptUsesSpeedRemainingForQosFallback() throws IOException {
+    @DisplayName("공유 QoS fallback의 speed 정책은 whitelist 우회가 아닐 때만 적용된다")
+    void sharedScriptAppliesSpeedPolicyForQosFallbackOnlyWhenWhitelistBypassDisabled() throws IOException {
         String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
 
+        assertTrue(
+                script.contains("if (not whitelist_bypass) and is_policy_enabled(policy_app_speed_key) then"),
+                "Shared QoS fallback must skip app speed policy when whitelist bypass is enabled."
+        );
+        assertAppearsInOrder(
+                script,
+                "local qos_answer, qos_status = resolve_qos_fallback(",
+                "qos_capped_target,",
+                "qos_policy_status,",
+                "whitelist_bypass,",
+                "policy_app_speed_key,"
+        );
         assertAppearsInOrder(
                 script,
                 "local speed_used = tonumber(redis.call(\"GET\", speed_bucket_key) or \"0\")",

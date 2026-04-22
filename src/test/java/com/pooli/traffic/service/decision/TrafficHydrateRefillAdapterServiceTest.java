@@ -11,7 +11,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -23,7 +22,6 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 
-import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
@@ -39,7 +37,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
@@ -55,12 +52,10 @@ import com.pooli.monitoring.metrics.TrafficRefillMetrics;
 import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
 import com.pooli.traffic.domain.TrafficDeductExecutionContext;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
-import com.pooli.traffic.domain.TrafficPolicyCheckLayerResult;
 import com.pooli.traffic.domain.TrafficRefillPlan;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPoolType;
-import com.pooli.traffic.domain.enums.TrafficPolicyCheckFailureCause;
 import com.pooli.traffic.domain.enums.TrafficRefillGateStatus;
 
 @ExtendWith(MockitoExtension.class)
@@ -88,9 +83,6 @@ class TrafficHydrateRefillAdapterServiceTest {
     private TrafficQuotaCacheService trafficQuotaCacheService;
 
     @Mock
-    private TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
-
-    @Mock
     private TrafficPolicyBootstrapService trafficPolicyBootstrapService;
 
     @Mock
@@ -112,13 +104,7 @@ class TrafficHydrateRefillAdapterServiceTest {
     private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     @Mock
-    private TrafficDbDeductFallbackService trafficDbDeductFallbackService;
-
-    @Mock
     private TrafficInFlightDedupeService trafficInFlightDedupeService;
-
-    @Mock
-    private TrafficPolicyCheckLayerService trafficPolicyCheckLayerService;
 
     @InjectMocks
     private TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
@@ -138,10 +124,6 @@ class TrafficHydrateRefillAdapterServiceTest {
         Mockito.lenient().when(trafficRedisFailureClassifier.isConnectionFailure(any())).thenReturn(false);
         Mockito.lenient().when(trafficRedisFailureClassifier.isTimeoutFailure(any())).thenReturn(false);
         Mockito.lenient().when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(false);
-        Mockito.lenient().when(trafficPolicyCheckLayerService.evaluate(any(), any()))
-                .thenReturn(policyCheckResult(TrafficLuaStatus.OK, false));
-        Mockito.lenient().when(trafficDbDeductFallbackService.deduct(any(), any(), anyLong(), any()))
-                .thenReturn(luaResult(0L, TrafficLuaStatus.NO_BALANCE));
     }
 
     @Nested
@@ -424,7 +406,6 @@ class TrafficHydrateRefillAdapterServiceTest {
                     IllegalStateException.class,
                     () -> trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L)
             );
-            verify(trafficDbDeductFallbackService, never()).deduct(any(), any(), anyLong(), any());
             verify(trafficInFlightDedupeService, never()).markDbFallback(anyString());
             verify(redisOutboxRecordService).markFail(701L);
         }
@@ -580,7 +561,7 @@ class TrafficHydrateRefillAdapterServiceTest {
         }
 
         @Test
-        void ensuresLinePolicyBeforeDeduct() {
+        void executesDeductWithoutCallingPolicyPrecheckLayers() {
             // given
             TrafficPayloadReqDto payload = createPayload();
             stubIndividualDeductKeys();
@@ -595,38 +576,17 @@ class TrafficHydrateRefillAdapterServiceTest {
 
             // then
             assertEquals(TrafficLuaStatus.OK, result.getStatus());
-            InOrder inOrder = inOrder(trafficLinePolicyHydrationService, trafficLuaScriptInfraService);
-            inOrder.verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
-            inOrder.verify(trafficLuaScriptInfraService).executeDeductIndividual(anyList(), anyList());
+            verify(trafficLuaScriptInfraService).executeDeductIndividual(anyList(), anyList());
         }
 
         @Test
-        void returnsErrorWhenLinePolicyHydrationFails() {
+        void doesNotUsePolicyCheckLayerOrDbFallbackInAdapter() {
             // given
             TrafficPayloadReqDto payload = createPayload();
-            doThrow(new RuntimeException("hydrate-fail"))
-                    .when(trafficLinePolicyHydrationService)
-                    .ensureLoaded(11L);
-
-            // when + then
-            assertThrows(
-                    RuntimeException.class,
-                    () -> trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L)
-            );
-            verify(trafficLuaScriptInfraService, never()).executeDeductIndividual(anyList(), anyList());
-        }
-
-        @Test
-        void activatesDbFallbackWhenPolicyCheckLayerReturnsFallbackEligible() {
-            // given
-            TrafficPayloadReqDto payload = createPayload();
-            QueryTimeoutException timeoutException = new QueryTimeoutException("policy-check-timeout");
-            when(trafficPolicyCheckLayerService.evaluate(TrafficPoolType.INDIVIDUAL, payload))
-                    .thenReturn(TrafficPolicyCheckLayerResult.retryableFailure(
-                            TrafficPolicyCheckFailureCause.POLICY_CHECK_RETRYABLE,
-                            timeoutException
-                    ));
-            when(trafficDbDeductFallbackService.deduct(eq(TrafficPoolType.INDIVIDUAL), eq(payload), eq(100L), any()))
+            stubIndividualDeductKeys();
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+            when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
                     .thenReturn(luaResult(30L, TrafficLuaStatus.OK));
 
             // when
@@ -638,10 +598,9 @@ class TrafficHydrateRefillAdapterServiceTest {
                     () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
                     () -> assertEquals(30L, result.getAnswer())
             );
-            verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
-            verify(trafficInFlightDedupeService).markDbFallback(payload.getTraceId());
-            verify(trafficDeductFallbackMetrics).incrementDbFallback("INDIVIDUAL", "policy_check_retryable_failure");
-            verify(trafficLuaScriptInfraService, never()).executeDeductIndividual(anyList(), anyList());
+            verify(trafficLuaScriptInfraService).executeDeductIndividual(anyList(), anyList());
+            verify(trafficInFlightDedupeService, never()).markDbFallback(anyString());
+            verify(trafficDeductFallbackMetrics, never()).incrementDbFallback(anyString(), anyString());
         }
 
         @Test
@@ -920,7 +879,6 @@ class TrafficHydrateRefillAdapterServiceTest {
             verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 3);
             verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 4);
             verify(trafficInFlightDedupeService, never()).markDbFallback(anyString());
-            verify(trafficDbDeductFallbackService, never()).deduct(any(), any(), anyLong(), any());
         }
     }
 
@@ -1270,8 +1228,8 @@ class TrafficHydrateRefillAdapterServiceTest {
                 () -> assertEquals(TrafficLuaStatus.OK, sharedResult.getStatus()),
                 () -> assertEquals(5L, sharedResult.getAnswer())
         );
-        verify(trafficLinePolicyHydrationService, times(1)).ensureLoaded(11L);
-        verify(trafficPolicyCheckLayerService, times(1)).evaluate(any(), eq(payload));
+        verify(trafficLuaScriptInfraService, times(1)).executeDeductIndividual(anyList(), anyList());
+        verify(trafficLuaScriptInfraService, times(1)).executeDeductShared(anyList(), anyList());
     }
 
     private TrafficPayloadReqDto createPayload() {
@@ -1337,12 +1295,6 @@ class TrafficHydrateRefillAdapterServiceTest {
                 .answer(answer)
                 .status(status)
                 .build();
-    }
-
-    private TrafficPolicyCheckLayerResult policyCheckResult(TrafficLuaStatus status, boolean whitelistBypass) {
-        return TrafficPolicyCheckLayerResult.fromLuaResult(
-                luaResult(whitelistBypass ? 1L : 0L, status)
-        );
     }
 
     private TrafficDbRefillClaimResult claimResult(

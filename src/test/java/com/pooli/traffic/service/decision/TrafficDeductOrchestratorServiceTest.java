@@ -89,7 +89,7 @@ class TrafficDeductOrchestratorServiceTest {
 
         @BeforeEach
         void setUp() {
-            lenient().when(trafficPolicyCheckLayerService.evaluate(eq(TrafficPoolType.INDIVIDUAL), any(TrafficPayloadReqDto.class)))
+            lenient().when(trafficPolicyCheckLayerService.evaluate(any(TrafficPayloadReqDto.class)))
                     .thenReturn(policyCheckFromLua(0L, TrafficLuaStatus.OK));
         }
 
@@ -382,7 +382,7 @@ class TrafficDeductOrchestratorServiceTest {
         void blocksBeforeDeductWhenPolicyCheckBlocked() {
             // given
             TrafficPayloadReqDto payload = payload(100L);
-            when(trafficPolicyCheckLayerService.evaluate(eq(TrafficPoolType.INDIVIDUAL), eq(payload)))
+            when(trafficPolicyCheckLayerService.evaluate(eq(payload)))
                     .thenReturn(policyCheckFromLua(0L, TrafficLuaStatus.BLOCKED_IMMEDIATE));
 
             // when
@@ -390,7 +390,7 @@ class TrafficDeductOrchestratorServiceTest {
 
             // then
             verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
-            verify(trafficPolicyCheckLayerService).evaluate(eq(TrafficPoolType.INDIVIDUAL), eq(payload));
+            verify(trafficPolicyCheckLayerService).evaluate(eq(payload));
             verifyNoInteractions(trafficHydrateRefillAdapterService);
             verifyNoInteractions(trafficDbDeductFallbackService);
             verifyNoInteractions(trafficRecentUsageBucketService);
@@ -409,7 +409,7 @@ class TrafficDeductOrchestratorServiceTest {
             // given
             TrafficPayloadReqDto payload = payload(100L);
             RuntimeException policyFailure = new RuntimeException("policy check redis timeout");
-            when(trafficPolicyCheckLayerService.evaluate(eq(TrafficPoolType.INDIVIDUAL), eq(payload)))
+            when(trafficPolicyCheckLayerService.evaluate(eq(payload)))
                     .thenReturn(TrafficPolicyCheckLayerResult.retryableFailure(
                             TrafficPolicyCheckFailureCause.POLICY_CHECK_RETRYABLE,
                             policyFailure
@@ -432,7 +432,7 @@ class TrafficDeductOrchestratorServiceTest {
 
             // then
             verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
-            verify(trafficPolicyCheckLayerService).evaluate(eq(TrafficPoolType.INDIVIDUAL), eq(payload));
+            verify(trafficPolicyCheckLayerService).evaluate(eq(payload));
             verifyNoInteractions(trafficHydrateRefillAdapterService);
             verify(trafficDbDeductFallbackService).deduct(
                     eq(TrafficPoolType.INDIVIDUAL),

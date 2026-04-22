@@ -12,7 +12,6 @@ import com.pooli.common.exception.ApplicationException;
 import com.pooli.monitoring.metrics.TrafficDeductFallbackMetrics;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
-import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
@@ -38,7 +37,6 @@ import com.pooli.monitoring.metrics.TrafficRefillMetrics;
 import com.pooli.traffic.domain.TrafficDeductExecutionContext;
 import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
-import com.pooli.traffic.domain.TrafficPolicyCheckLayerResult;
 import com.pooli.traffic.domain.TrafficRefillPlan;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
@@ -49,16 +47,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 트래픽 차감의 "실행 + hydrate/refill/fallback"을 단일 흐름으로 오케스트레이션하는 어댑터 서비스입니다.
+ * 트래픽 차감의 "deduct + hydrate + refill" 단계를 단일 흐름으로 오케스트레이션하는 어댑터 서비스입니다.
  *
  * <p>주요 책임:
- * 1) 차단성 정책 검증과 정책 hydrate 보정
- * 2) 차감 단계 Lua 실행(개인/공유)
- * 3) 상태값(GLOBAL_POLICY_HYDRATE, HYDRATE, NO_BALANCE)별 hydrate/refill 분기와 정책 검증 fallback 제어
- * 4) NO_BALANCE 시 refill gate/락/DB claim/outbox/재차감 연계
+ * 1) 차감 단계 Lua 실행(개인/공유)
+ * 2) 상태값(GLOBAL_POLICY_HYDRATE, HYDRATE, NO_BALANCE)별 hydrate/refill 분기
+ * 3) NO_BALANCE 시 refill gate/락/DB claim/outbox/재차감 연계
  *
- * <p>정합성 우선 규칙에 따라, 정책 검증 단계의 재시도 가능한 Redis 인프라 예외만
- * DB fallback으로 전환하며 차감 단계의 Redis 예외는 fallback 없이 상위로 재전파합니다.
+ * <p>차단성 정책 검증/정책 단계 fallback 전환은 오케스트레이터가 담당하며,
+ * 본 어댑터는 전달받은 실행 컨텍스트(예: whitelist bypass 플래그)만 소비합니다.
  */
 @Slf4j
 @Service
@@ -93,7 +90,6 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficQuotaSourcePort trafficQuotaSourcePort;
     private final TrafficQuotaCacheService trafficQuotaCacheService;
-    private final TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
     private final TrafficPolicyBootstrapService trafficPolicyBootstrapService;
     private final TrafficHydrateMetrics trafficHydrateMetrics;
     private final TrafficRefillMetrics trafficRefillMetrics;
@@ -101,9 +97,7 @@ public class TrafficHydrateRefillAdapterService {
     private final RedisOutboxRecordService redisOutboxRecordService;
     private final TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
-    private final TrafficDbDeductFallbackService trafficDbDeductFallbackService;
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
-    private final TrafficPolicyCheckLayerService trafficPolicyCheckLayerService;
 
     /**
      * 개인풀 차감의 실행 + hydrate/refill/fallback 흐름을 실행합니다.
@@ -152,13 +146,12 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 풀 유형(개인/공유)에 맞는 차감 실행 뒤 hydrate/refill/fallback 흐름을 순차적으로 실행합니다.
+     * 풀 유형(개인/공유)에 맞는 차감 실행 뒤 hydrate/refill 흐름을 순차적으로 실행합니다.
      * 
      * [주요 흐름]
      * 1. 페이로드 유효성 검사
-     * 2. 회선별 정책 데이터(Line Policy)가 Redis에 로드되어 있는지 확인 및 로드
-     * 3. 차감 단계 차감 시도 (executeDeduct)
-     * 4. 결과 상태에 따른 단계별 hydrate/refill 시도:
+     * 2. 차감 단계 차감 시도 (executeDeduct)
+     * 3. 결과 상태에 따른 단계별 hydrate/refill 시도:
      *    - GLOBAL_POLICY_HYDRATE: 전역 정책 스냅샷 hydrate 후 재시도
      *    - HYDRATE: DB 원본 잔량 및 QoS 정보를 Redis로 로드 후 재시도
      *    - NO_BALANCE: DB에서 추가 잔량을 확보(refill)한 뒤 재시도
@@ -166,7 +159,7 @@ public class TrafficHydrateRefillAdapterService {
      * @param poolType 차감 대상 풀 유형
      * @param payload 요청 페이로드
      * @param requestedDataBytes 요청된 데이터 양 (byte)
-     * @param context 재시도 및 폴백 상태를 관리하는 컨텍스트
+     * @param context 재시도 및 traceId 범위 실행 상태를 전달하는 컨텍스트
      * @return 최종 Lua 실행 결과
      */
     private TrafficLuaExecutionResult executeWithRecovery(
@@ -180,51 +173,12 @@ public class TrafficHydrateRefillAdapterService {
             return errorResult();
         }
 
-        // 2. traceId 범위에서 이미 차단성 정책 검증 결과가 있으면 재검증을 생략해 개인/공유 공통으로 재사용합니다.
-        TrafficLuaExecutionResult cachedPolicyCheckResult = (context == null)
-                ? null
-                : context.getBlockingPolicyCheckResult();
-        TrafficPolicyCheckLayerResult policyCheckLayerResult = (cachedPolicyCheckResult == null)
-                ? null
-                : TrafficPolicyCheckLayerResult.fromLuaResult(cachedPolicyCheckResult);
-        if (cachedPolicyCheckResult == null) {
-            // 2-1. 정책 검증을 최초 1회 수행할 때만 ensureLoaded를 실행합니다.
-            try {
-                trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
-            } catch (DataAccessException | ApplicationException e) {
-                RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
-                if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)) {
-                    return activateDbFallbackForPolicyCheck(poolType, payload, requestedDataBytes, context, unwrapped);
-                }
-                throw e;
-            }
-
-            // 2-2. 차단성 정책(즉시/반복/화이트리스트) 1회 검증을 수행하고 fallback 판정 결과를 받습니다.
-            policyCheckLayerResult = trafficPolicyCheckLayerService.evaluate(poolType, payload);
-            if (policyCheckLayerResult.isFallbackEligible()) {
-                return activateDbFallbackForPolicyCheck(
-                        poolType,
-                        payload,
-                        requestedDataBytes,
-                        context,
-                        policyCheckLayerResult.getFailure()
-                );
-            }
-            if (context != null) {
-                context.cacheBlockingPolicyCheckResult(policyCheckLayerResult.toLuaExecutionResult());
-            }
-        }
-
         YearMonth targetMonth = resolveTargetMonth(payload);
         String balanceKey = resolveBalanceKey(poolType, payload, targetMonth);
+        // 오케스트레이터 선검증 결과(whitelist bypass 플래그)가 있으면 소비하고, 없으면 기본값 0을 사용합니다.
+        int whitelistBypassFlag = resolveWhitelistBypassFlag(context);
 
-        // 3. 1회 검증 결과(status + whitelist bypass)를 개인/공유 차감 단계에서 공통 재사용합니다.
-        if (policyCheckLayerResult.getStatus() != TrafficLuaStatus.OK) {
-            return policyCheckLayerResult.toLuaExecutionResult();
-        }
-        int whitelistBypassFlag = policyCheckLayerResult.getWhitelistBypass();
-
-        // 4. 차감 단계를 실행합니다. Redis 연결 문제는 재시도 후 상위로 재전파합니다.
+        // 2. 차감 단계를 실행합니다. Redis 연결 문제는 재시도 후 상위로 재전파합니다.
         TrafficLuaExecutionResult initialResult = executeDeduct(
                 poolType,
                 payload,
@@ -235,7 +189,7 @@ public class TrafficHydrateRefillAdapterService {
                 RefillLuaArguments.none()
         );
 
-        // 5. 리턴된 상태가 GLOBAL_POLICY_HYDRATE인 경우, 유실된 전역 정책 스냅샷을 복구하고 재시도합니다.
+        // 3. 리턴된 상태가 GLOBAL_POLICY_HYDRATE인 경우, 유실된 전역 정책 스냅샷을 복구하고 재시도합니다.
         TrafficLuaExecutionResult afterGlobalPolicyHydrateResult = handleGlobalPolicyHydrateIfNeeded(
                 poolType,
                 payload,
@@ -246,7 +200,7 @@ public class TrafficHydrateRefillAdapterService {
                 whitelistBypassFlag
         );
 
-        // 6. 리턴된 상태가 HYDRATE인 경우, Redis 캐시에 잔량 정보가 없으므로 DB 원본 데이터를 로드하고 재시도합니다.
+        // 4. 리턴된 상태가 HYDRATE인 경우, Redis 캐시에 잔량 정보가 없으므로 DB 원본 데이터를 로드하고 재시도합니다.
         TrafficLuaExecutionResult afterHydrateResult = handleHydrateIfNeeded(
                 poolType,
                 payload,
@@ -258,7 +212,7 @@ public class TrafficHydrateRefillAdapterService {
                 whitelistBypassFlag
         );
 
-        // 7. 리턴된 상태가 NO_BALANCE인 경우, DB에서 잔량을 차감(리필)하여
+        // 5. 리턴된 상태가 NO_BALANCE인 경우, DB에서 잔량을 차감(리필)하여
         // "리필 반영 + 재차감"을 재차감 Lua 1회로 같이 수행합니다.
         return handleRefillIfNeeded(
                 poolType,
@@ -270,6 +224,44 @@ public class TrafficHydrateRefillAdapterService {
                 context,
                 whitelistBypassFlag
         );
+    }
+
+    /**
+     * 오케스트레이터가 기록한 정책 검증 결과에서 whitelist bypass 플래그를 추출합니다.
+     * 컨텍스트가 비어 있거나 결과가 없으면 기본값 0(우회 비활성)을 반환합니다.
+     *
+     * <p>
+     * ==== 반환값 정의 ====
+     * <p>
+     *  0: 화이트리스트 우회 비활성<br>
+     *   - 컨텍스트 없음<br>
+     *   - 정책 검증 결과 없음<br>
+     *   - 정책 검증 상태가 OK가 아님(차단/오류)<br>
+     *   - 정책 결과 answer가 0 이하
+     * </p>
+     * <p>
+     *  1: 화이트리스트 우회 활성<br>
+     *   - 정책 검증 상태가 OK이고 정책 결과 answer가 1 이상
+     * </p>
+     * </p>
+     * <p>
+     * ==== 의미 ====<br>
+     * - 0: 차감 Lua가 일반 정책 검증 경로를 사용합니다.<br>
+     * - 1: 차감 Lua에 whitelist bypass 인자를 전달해 정책 우회 경로를 사용합니다.
+     * </p>
+     */
+    private int resolveWhitelistBypassFlag(TrafficDeductExecutionContext context) {
+        if (context == null) {
+            return 0;
+        }
+        TrafficLuaExecutionResult cachedPolicyCheckResult = context.getBlockingPolicyCheckResult();
+        if (cachedPolicyCheckResult == null) {
+            return 0;
+        }
+        if (cachedPolicyCheckResult.getStatus() != TrafficLuaStatus.OK) {
+            return 0;
+        }
+        return normalizeNonNegative(cachedPolicyCheckResult.getAnswer()) > 0 ? 1 : 0;
     }
 
     /**
@@ -737,29 +729,6 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     * 정책 검증 단계 retryable 인프라 예외는 DB fallback으로 전환합니다.
-     */
-    private TrafficLuaExecutionResult activateDbFallbackForPolicyCheck(
-            TrafficPoolType poolType,
-            TrafficPayloadReqDto payload,
-            long requestedDataBytes,
-            TrafficDeductExecutionContext context,
-            RuntimeException cause
-    ) {
-        TrafficDeductExecutionContext fallbackContext = prepareDbFallbackContext(context, payload, poolType);
-        trafficInFlightDedupeService.markDbFallback(resolveTraceId(fallbackContext, payload));
-        trafficDeductFallbackMetrics.incrementDbFallback(poolType.name(), "policy_check_retryable_failure");
-        log.warn(
-                "traffic_policy_check_retryable_failure_fallback_db traceId={} poolType={} requestedData={}",
-                resolveTraceId(fallbackContext, payload),
-                poolType,
-                requestedDataBytes,
-                cause
-        );
-        return trafficDbDeductFallbackService.deduct(poolType, payload, requestedDataBytes, fallbackContext);
-    }
-
-    /**
      * DB claim이 No-Op일 때 DB 고갈 상태를 Redis is_empty 플래그에 반영합니다.
      *
      * <p>dbRemainingAfter가 0 이하로 확정된 경우에만 is_empty=1을 기록하고,
@@ -1130,23 +1099,6 @@ public class TrafficHydrateRefillAdapterService {
                     delayMs
             );
         }
-    }
-
-    /**
-     * DB fallback 직전 컨텍스트를 정규화합니다.
-     * context가 비어 있으면 traceId 기준 최소 컨텍스트를 생성해 사용합니다.
-     */
-    private TrafficDeductExecutionContext prepareDbFallbackContext(
-            TrafficDeductExecutionContext context,
-            TrafficPayloadReqDto payload,
-            TrafficPoolType poolType
-    ) {
-        String traceId = resolveTraceId(context, payload);
-        if (context == null) {
-            log.warn("traffic_deduct_fallback_context_missing traceId={} poolType={}", traceId, poolType);
-            return TrafficDeductExecutionContext.of(traceId);
-        }
-        return context;
     }
 
     private String resolveTraceId(TrafficDeductExecutionContext context, TrafficPayloadReqDto payload) {

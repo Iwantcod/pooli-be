@@ -8,7 +8,6 @@ import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.TrafficPolicyCheckLayerResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
-import com.pooli.traffic.domain.enums.TrafficPoolType;
 import com.pooli.traffic.domain.enums.TrafficPolicyCheckFailureCause;
 import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
@@ -60,12 +59,9 @@ public class TrafficPolicyCheckLayerService {
     /**
      * 차단성 정책(즉시/반복/화이트리스트)을 검증하고 fallback 판정 계약을 반환합니다.
      */
-    public TrafficPolicyCheckLayerResult evaluate(
-            TrafficPoolType poolType,
-            TrafficPayloadReqDto payload
-    ) {
+    public TrafficPolicyCheckLayerResult evaluate(TrafficPayloadReqDto payload) {
         try {
-            TrafficLuaExecutionResult luaResult = executePolicyCheckWithGlobalRecovery(poolType, payload);
+            TrafficLuaExecutionResult luaResult = executePolicyCheckWithGlobalRecovery(payload);
             return TrafficPolicyCheckLayerResult.fromLuaResult(luaResult);
         } catch (ApplicationException | DataAccessException e) {
             RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
@@ -82,10 +78,7 @@ public class TrafficPolicyCheckLayerService {
     /**
      * 정책 검증 Lua를 실행하고, GLOBAL_POLICY_HYDRATE 상태면 전역 정책 스냅샷 보정 후 재시도합니다.
      */
-    private TrafficLuaExecutionResult executePolicyCheckWithGlobalRecovery(
-            TrafficPoolType poolType,
-            TrafficPayloadReqDto payload
-    ) {
+    private TrafficLuaExecutionResult executePolicyCheckWithGlobalRecovery(TrafficPayloadReqDto payload) {
         TrafficLuaExecutionResult policyCheckResult = executePolicyCheckLua(payload);
         if (policyCheckResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
             return policyCheckResult;
@@ -97,8 +90,7 @@ public class TrafficPolicyCheckLayerService {
                 trafficPolicyBootstrapService.hydrateOnDemand();
             } catch (ApplicationException | DataAccessException e) {
                 log.error(
-                        "traffic_policy_check_global_hydrate_failed poolType={} traceId={} retry={}",
-                        poolType,
+                        "traffic_policy_check_global_hydrate_failed traceId={} retry={}",
                         payload == null ? null : payload.getTraceId(),
                         retry + 1,
                         e
@@ -113,8 +105,7 @@ public class TrafficPolicyCheckLayerService {
         }
 
         log.error(
-                "traffic_policy_check_global_hydrate_retry_exhausted poolType={} traceId={}",
-                poolType,
+                "traffic_policy_check_global_hydrate_retry_exhausted traceId={}",
                 payload == null ? null : payload.getTraceId()
         );
         return retriedResult;
