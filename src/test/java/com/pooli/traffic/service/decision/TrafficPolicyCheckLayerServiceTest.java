@@ -89,7 +89,7 @@ class TrafficPolicyCheckLayerServiceTest {
         // then
         assertAll(
                 () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
-                () -> assertTrue(result.isWhitelistBypass()),
+                () -> assertEquals(1, result.getWhitelistBypass()),
                 () -> assertFalse(result.isFallbackEligible()),
                 () -> assertEquals(TrafficPolicyCheckFailureCause.NONE, result.getFailureCause())
         );
@@ -111,7 +111,7 @@ class TrafficPolicyCheckLayerServiceTest {
         // then
         assertAll(
                 () -> assertEquals(TrafficLuaStatus.BLOCKED_REPEAT, result.getStatus()),
-                () -> assertFalse(result.isWhitelistBypass()),
+                () -> assertEquals(0, result.getWhitelistBypass()),
                 () -> assertFalse(result.isFallbackEligible()),
                 () -> assertEquals(TrafficPolicyCheckFailureCause.NONE, result.getFailureCause())
         );
@@ -135,7 +135,7 @@ class TrafficPolicyCheckLayerServiceTest {
         // then
         assertAll(
                 () -> assertEquals(TrafficLuaStatus.ERROR, result.getStatus()),
-                () -> assertFalse(result.isWhitelistBypass()),
+                () -> assertEquals(0, result.getWhitelistBypass()),
                 () -> assertTrue(result.isFallbackEligible()),
                 () -> assertEquals(TrafficPolicyCheckFailureCause.POLICY_CHECK_RETRYABLE, result.getFailureCause()),
                 () -> assertSame(timeoutException, result.getFailure())

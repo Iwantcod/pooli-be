@@ -1134,7 +1134,7 @@ public class TrafficHydrateRefillAdapterService {
 
     /**
      * DB fallback 직전 컨텍스트를 정규화합니다.
-     * context가 비어 있으면 traceId 기준 최소 컨텍스트를 만들어 fallback 전환 상태를 남깁니다.
+     * context가 비어 있으면 traceId 기준 최소 컨텍스트를 생성해 사용합니다.
      */
     private TrafficDeductExecutionContext prepareDbFallbackContext(
             TrafficDeductExecutionContext context,
@@ -1144,11 +1144,8 @@ public class TrafficHydrateRefillAdapterService {
         String traceId = resolveTraceId(context, payload);
         if (context == null) {
             log.warn("traffic_deduct_fallback_context_missing traceId={} poolType={}", traceId, poolType);
-            TrafficDeductExecutionContext createdContext = TrafficDeductExecutionContext.of(traceId);
-            createdContext.activateRedisFallback();
-            return createdContext;
+            return TrafficDeductExecutionContext.of(traceId);
         }
-        context.activateRedisFallback();
         return context;
     }
 
