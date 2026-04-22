@@ -38,6 +38,7 @@ import com.pooli.monitoring.metrics.TrafficRefillMetrics;
 import com.pooli.traffic.domain.TrafficDeductExecutionContext;
 import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
+import com.pooli.traffic.domain.TrafficPolicyCheckLayerResult;
 import com.pooli.traffic.domain.TrafficRefillPlan;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
@@ -102,6 +103,7 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
     private final TrafficDbDeductFallbackService trafficDbDeductFallbackService;
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
+    private final TrafficPolicyCheckLayerService trafficPolicyCheckLayerService;
 
     /**
      * 개인풀 차감의 실행 + hydrate/refill/fallback 흐름을 실행합니다.
@@ -182,7 +184,9 @@ public class TrafficHydrateRefillAdapterService {
         TrafficLuaExecutionResult cachedPolicyCheckResult = (context == null)
                 ? null
                 : context.getBlockingPolicyCheckResult();
-        TrafficLuaExecutionResult policyCheckResult = cachedPolicyCheckResult;
+        TrafficPolicyCheckLayerResult policyCheckLayerResult = (cachedPolicyCheckResult == null)
+                ? null
+                : TrafficPolicyCheckLayerResult.fromLuaResult(cachedPolicyCheckResult);
         if (cachedPolicyCheckResult == null) {
             // 2-1. 정책 검증을 최초 1회 수행할 때만 ensureLoaded를 실행합니다.
             try {
@@ -195,18 +199,19 @@ public class TrafficHydrateRefillAdapterService {
                 throw e;
             }
 
-            // 2-2. 차단성 정책(즉시/반복/화이트리스트) 1회 검증을 수행하고 결과를 컨텍스트에 캐시합니다.
-            try {
-                policyCheckResult = executePolicyCheckWithGlobalRecovery(poolType, payload);
-            } catch (DataAccessException | ApplicationException e) {
-                RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
-                if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)) {
-                    return activateDbFallbackForPolicyCheck(poolType, payload, requestedDataBytes, context, unwrapped);
-                }
-                throw e;
+            // 2-2. 차단성 정책(즉시/반복/화이트리스트) 1회 검증을 수행하고 fallback 판정 결과를 받습니다.
+            policyCheckLayerResult = trafficPolicyCheckLayerService.evaluate(poolType, payload);
+            if (policyCheckLayerResult.isFallbackEligible()) {
+                return activateDbFallbackForPolicyCheck(
+                        poolType,
+                        payload,
+                        requestedDataBytes,
+                        context,
+                        policyCheckLayerResult.getFailure()
+                );
             }
             if (context != null) {
-                context.cacheBlockingPolicyCheckResult(policyCheckResult);
+                context.cacheBlockingPolicyCheckResult(policyCheckLayerResult.toLuaExecutionResult());
             }
         }
 
@@ -214,10 +219,10 @@ public class TrafficHydrateRefillAdapterService {
         String balanceKey = resolveBalanceKey(poolType, payload, targetMonth);
 
         // 3. 1회 검증 결과(status + whitelist bypass)를 개인/공유 차감 단계에서 공통 재사용합니다.
-        if (policyCheckResult.getStatus() != TrafficLuaStatus.OK) {
-            return policyCheckResult;
+        if (policyCheckLayerResult.getStatus() != TrafficLuaStatus.OK) {
+            return policyCheckLayerResult.toLuaExecutionResult();
         }
-        int whitelistBypassFlag = policyCheckResult.getAnswer() > 0 ? 1 : 0;
+        int whitelistBypassFlag = policyCheckLayerResult.getWhitelistBypass();
 
         // 4. 차감 단계를 실행합니다. Redis 연결 문제는 재시도 후 상위로 재전파합니다.
         TrafficLuaExecutionResult initialResult = executeDeduct(
@@ -265,81 +270,6 @@ public class TrafficHydrateRefillAdapterService {
                 context,
                 whitelistBypassFlag
         );
-    }
-
-    /**
-     * 차단성 정책 검증 Lua를 실행하고, GLOBAL_POLICY_HYDRATE가 나오면 bootstrap 복구 후 재시도합니다.
-     */
-    private TrafficLuaExecutionResult executePolicyCheckWithGlobalRecovery(
-            TrafficPoolType poolType,
-            TrafficPayloadReqDto payload
-    ) {
-        TrafficLuaExecutionResult policyCheckResult = executePolicyCheckLua(payload);
-        if (policyCheckResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
-            return policyCheckResult;
-        }
-
-        TrafficLuaExecutionResult retriedResult = policyCheckResult;
-        for (int retry = 0; retry < HYDRATE_RETRY_MAX; retry++) {
-            try {
-                trafficPolicyBootstrapService.hydrateOnDemand();
-            } catch (ApplicationException | DataAccessException e) {
-                log.error(
-                        "traffic_policy_check_global_hydrate_failed poolType={} traceId={} retry={}",
-                        poolType,
-                        payload == null ? null : payload.getTraceId(),
-                        retry + 1,
-                        e
-                );
-            }
-
-            retriedResult = executePolicyCheckLua(payload);
-            if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
-                return retriedResult;
-            }
-            sleepHydrateRetryBackoff(retry + 1);
-        }
-
-        log.error(
-                "traffic_policy_check_global_hydrate_retry_exhausted poolType={} traceId={}",
-                poolType,
-                payload == null ? null : payload.getTraceId()
-        );
-        return retriedResult;
-    }
-
-    /**
-     * 차단성 정책 검증 Lua를 실행합니다.
-     */
-    private TrafficLuaExecutionResult executePolicyCheckLua(TrafficPayloadReqDto payload) {
-        LocalDateTime now = LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
-        long nowEpochSecond = now.atZone(trafficRedisRuntimePolicy.zoneId()).toEpochSecond();
-        int dayNum = now.getDayOfWeek().getValue() % 7;
-        int secOfDay = now.toLocalTime().toSecondOfDay();
-
-        String policyRepeatKey = trafficRedisKeyFactory.policyKey(POLICY_REPEAT_BLOCK_ID);
-        String policyImmediateKey = trafficRedisKeyFactory.policyKey(POLICY_IMMEDIATE_BLOCK_ID);
-        String policyAppWhitelistKey = trafficRedisKeyFactory.policyKey(POLICY_APP_WHITELIST_ID);
-        String appWhitelistKey = trafficRedisKeyFactory.appWhitelistKey(payload.getLineId());
-        String immediatelyBlockEndKey = trafficRedisKeyFactory.immediatelyBlockEndKey(payload.getLineId());
-        String repeatBlockKey = trafficRedisKeyFactory.repeatBlockKey(payload.getLineId());
-
-        List<String> keys = List.of(
-                policyRepeatKey,
-                policyImmediateKey,
-                policyAppWhitelistKey,
-                appWhitelistKey,
-                immediatelyBlockEndKey,
-                repeatBlockKey
-        );
-        List<String> args = List.of(
-                String.valueOf(payload.getAppId()),
-                String.valueOf(dayNum),
-                String.valueOf(secOfDay),
-                String.valueOf(nowEpochSecond)
-        );
-
-        return trafficLuaScriptInfraService.executeBlockPolicyCheck(keys, args);
     }
 
     /**
