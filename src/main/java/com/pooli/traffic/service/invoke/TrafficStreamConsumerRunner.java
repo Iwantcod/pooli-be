@@ -969,29 +969,6 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     /**
-     * 누적 결과 불변식 위반을 표현하는 내부 런타임 예외입니다.
-     */
-    private static final class CumulativeInvariantViolationException extends RuntimeException {
-        /**
-         * 예외 메시지를 생성합니다.
-         *
-         * @param message 위반 상세 메시지
-         */
-        private CumulativeInvariantViolationException(String message) {
-            super(message);
-        }
-    }
-
-    /**
-     * done log 저장 실패를 식별하기 위한 내부 래핑 예외입니다.
-     */
-    private static final class DoneLogPersistenceException extends RuntimeException {
-        private DoneLogPersistenceException(String message, Throwable cause) {
-            super(message, cause);
-        }
-    }
-
-    /**
      * 유효성 검증 위반 목록을 단일 로그/사유 문자열로 직렬화합니다.
      *
      * @param violations 위반 목록

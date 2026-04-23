@@ -132,12 +132,17 @@ class TrafficPolicyCheckLayerServiceTest {
                 trafficPolicyCheckLayerService.evaluate(payload);
 
         // then
+        TrafficStageFailureException stageFailure =
+                (TrafficStageFailureException) result.getFailure();
         assertAll(
                 () -> assertEquals(TrafficLuaStatus.ERROR, result.getStatus()),
                 () -> assertEquals(0, result.getWhitelistBypass()),
                 () -> assertTrue(result.isFallbackEligible()),
                 () -> assertEquals(TrafficPolicyCheckFailureCause.POLICY_CHECK_RETRYABLE, result.getFailureCause()),
-                () -> assertSame(timeoutException, result.getFailure())
+                () -> assertTrue(result.getFailure() instanceof TrafficStageFailureException),
+                () -> assertEquals(TrafficFailureStage.POLICY_CHECK, stageFailure.getStage()),
+                () -> assertTrue(stageFailure.isRetryableInfrastructureFailure()),
+                () -> assertSame(timeoutException, stageFailure.getCause())
         );
     }
 
@@ -152,9 +157,15 @@ class TrafficPolicyCheckLayerServiceTest {
         when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(timeoutException)).thenReturn(false);
 
         // when + then
-        assertThrows(
-                QueryTimeoutException.class,
+        TrafficStageFailureException stageFailure = assertThrows(
+                TrafficStageFailureException.class,
                 () -> trafficPolicyCheckLayerService.evaluate(payload)
+        );
+        assertAll(
+                () -> assertEquals(TrafficFailureStage.POLICY_CHECK, stageFailure.getStage()),
+                () -> assertFalse(stageFailure.isRetryableInfrastructureFailure()),
+                () -> assertEquals("traffic_policy_check_redis_non_retryable_failure", stageFailure.getMessage()),
+                () -> assertSame(timeoutException, stageFailure.getCause())
         );
     }
 

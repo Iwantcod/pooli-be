@@ -402,9 +402,15 @@ class TrafficHydrateRefillAdapterServiceTest {
             )).thenReturn(claimResult(100L, 1_000L, 100L, 900L));
 
             // when + then
-            assertThrows(
-                    IllegalStateException.class,
+            TrafficStageFailureException stageFailure = assertThrows(
+                    TrafficStageFailureException.class,
                     () -> trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L)
+            );
+            assertAll(
+                    () -> assertEquals(TrafficFailureStage.REFILL, stageFailure.getStage()),
+                    () -> assertTrue(stageFailure.isRetryableInfrastructureFailure()),
+                    () -> assertEquals("traffic_refill_redis_retry_exhausted", stageFailure.getMessage()),
+                    () -> assertTrue(stageFailure.getCause() instanceof QueryTimeoutException)
             );
             verify(trafficInFlightDedupeService, never()).markDbFallback(anyString());
             verify(redisOutboxRecordService).markFail(701L);
@@ -855,7 +861,50 @@ class TrafficHydrateRefillAdapterServiceTest {
         }
 
         @Test
-        void switchesToDbFallbackAfterRedisRetryExhausted() {
+        void propagatesHydrateStageExceptionWhenRedisRetryExhaustedDuringHydrateRetryDeduct() {
+            // given
+            TrafficPayloadReqDto payload = createPayload();
+            stubIndividualDeductKeys();
+            TrafficDeductExecutionContext context = TrafficDeductExecutionContext.of(payload.getTraceId());
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any())).thenReturn("pooli:remaining_indiv_amount:11:202603");
+            when(trafficRedisKeyFactory.indivHydrateLockKey(11L)).thenReturn("pooli:indiv_hydrate_lock:11");
+            when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(any())).thenReturn(1_770_000_000L);
+            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.setIfAbsent(
+                    "pooli:indiv_hydrate_lock:11",
+                    payload.getTraceId(),
+                    java.time.Duration.ofMillis(TrafficRedisRuntimePolicy.LOCK_TTL_MS)
+            )).thenReturn(true);
+            when(trafficLuaScriptInfraService.executeDeductIndividual(anyList(), anyList()))
+                    .thenReturn(luaResult(0L, TrafficLuaStatus.HYDRATE))
+                    .thenThrow(new QueryTimeoutException("redis timeout"))
+                    .thenThrow(new QueryTimeoutException("redis timeout"))
+                    .thenThrow(new QueryTimeoutException("redis timeout"))
+                    .thenThrow(new QueryTimeoutException("redis timeout"));
+            when(trafficRedisFailureClassifier.isTimeoutFailure(any())).thenReturn(true);
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(true);
+
+            // when + then
+            TrafficStageFailureException stageFailure = assertThrows(
+                    TrafficStageFailureException.class,
+                    () -> trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L, context)
+            );
+            assertAll(
+                    () -> assertEquals(TrafficFailureStage.HYDRATE, stageFailure.getStage()),
+                    () -> assertTrue(stageFailure.isRetryableInfrastructureFailure()),
+                    () -> assertEquals("traffic_hydrate_redis_retry_exhausted", stageFailure.getMessage()),
+                    () -> assertTrue(stageFailure.getCause() instanceof QueryTimeoutException)
+            );
+            verify(trafficLuaScriptInfraService, times(5)).executeDeductIndividual(anyList(), anyList());
+            verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 1);
+            verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 2);
+            verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 3);
+            verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 4);
+        }
+
+        @Test
+        void propagatesDeductStageExceptionWhenRedisRetryExhausted() {
             // given
             TrafficPayloadReqDto payload = createPayload();
             stubIndividualDeductKeys();
@@ -869,9 +918,15 @@ class TrafficHydrateRefillAdapterServiceTest {
             when(trafficRedisFailureClassifier.isTimeoutFailure(any())).thenReturn(true);
             when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(true);
             // when + then
-            assertThrows(
-                    IllegalStateException.class,
+            TrafficStageFailureException stageFailure = assertThrows(
+                    TrafficStageFailureException.class,
                     () -> trafficHydrateRefillAdapterService.executeIndividualWithRecovery(payload, 100L, context)
+            );
+            assertAll(
+                    () -> assertEquals(TrafficFailureStage.DEDUCT, stageFailure.getStage()),
+                    () -> assertTrue(stageFailure.isRetryableInfrastructureFailure()),
+                    () -> assertEquals("traffic_deduct_redis_retry_exhausted", stageFailure.getMessage()),
+                    () -> assertTrue(stageFailure.getCause() instanceof QueryTimeoutException)
             );
             verify(trafficLuaScriptInfraService, times(4)).executeDeductIndividual(anyList(), anyList());
             verify(trafficInFlightDedupeService).markRedisRetry(payload.getTraceId(), 1);

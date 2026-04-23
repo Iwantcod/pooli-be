@@ -186,6 +186,7 @@ public class TrafficHydrateRefillAdapterService {
                 requestedDataBytes,
                 context,
                 whitelistBypassFlag,
+                TrafficFailureStage.DEDUCT,
                 RefillLuaArguments.none()
         );
 
@@ -297,7 +298,7 @@ public class TrafficHydrateRefillAdapterService {
                 trafficPolicyBootstrapService.hydrateOnDemand();
             } catch (ApplicationException | DataAccessException e) {
                 log.error(
-                        "traffic_global_policy_hydrate_failed poolType={} traceId={} retry={}",
+                        "traffic_hydrate_global_policy_failed poolType={} traceId={} retry={}",
                         poolType,
                         payload.getTraceId(),
                         retry + 1,
@@ -313,6 +314,7 @@ public class TrafficHydrateRefillAdapterService {
                     requestedDataBytes,
                     context,
                     whitelistBypassFlag,
+                    TrafficFailureStage.HYDRATE,
                     RefillLuaArguments.none()
             );
             if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
@@ -322,7 +324,7 @@ public class TrafficHydrateRefillAdapterService {
         }
 
         log.error(
-                "traffic_global_policy_hydrate_retry_exhausted poolType={} traceId={} balanceKey={}",
+                "traffic_hydrate_global_policy_retry_exhausted poolType={} traceId={} balanceKey={}",
                 poolType,
                 payload.getTraceId(),
                 balanceKey
@@ -380,6 +382,7 @@ public class TrafficHydrateRefillAdapterService {
                     requestedDataBytes,
                     context,
                     whitelistBypassFlag,
+                    TrafficFailureStage.HYDRATE,
                     RefillLuaArguments.none()
             );
             if (retriedResult.getStatus() != TrafficLuaStatus.HYDRATE) {
@@ -661,6 +664,7 @@ public class TrafficHydrateRefillAdapterService {
                         retryTargetData,
                         context,
                         whitelistBypassFlag,
+                        TrafficFailureStage.REFILL,
                         refillLuaArguments
                 );
                 markOutboxSuccessIfPresent(outboxRecordId);
@@ -800,6 +804,7 @@ public class TrafficHydrateRefillAdapterService {
                 requestedDataBytes,
                 context,
                 whitelistBypassFlag,
+                TrafficFailureStage.REFILL,
                 RefillLuaArguments.withQosFallback()
         );
     }
@@ -874,11 +879,13 @@ public class TrafficHydrateRefillAdapterService {
             long requestedDataBytes,
             TrafficDeductExecutionContext context,
             int whitelistBypassFlag,
+            TrafficFailureStage failureStage,
             RefillLuaArguments refillLuaArguments
     ) {
         int maxRetryCount = Math.max(0, redisRetryMaxAttempts);
         int totalAttemptCount = 1 + maxRetryCount;
         RuntimeException lastException = null;
+        String traceId = resolveTraceId(context, payload);
 
         // "초기 1회 시도 -> 실패 시 대기 -> 다음 재시도" 순서를 보장합니다.
         for (int attempt = 1; attempt <= totalAttemptCount; attempt++) {
@@ -897,12 +904,22 @@ public class TrafficHydrateRefillAdapterService {
                 RuntimeException unwrappedException = trafficRefillOutboxSupportService.unwrapRuntimeException(redisException);
                 boolean retryable = trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrappedException);
                 if (!retryable) {
-                    throw redisException; // 재시도 불가능한 에러(WRONGTYPE 등)는 즉시 중단합니다.
+                    TrafficStageFailureException stageFailure =
+                            TrafficStageFailureException.nonRetryableFailure(failureStage, redisException);
+                    log.error(
+                            "{} traceId={} poolType={} requestedData={}",
+                            failureStage.nonRetryableFailureLogKey(),
+                            traceId,
+                            poolType,
+                            requestedDataBytes,
+                            stageFailure
+                    );
+                    throw stageFailure; // 재시도 불가능한 에러(WRONGTYPE 등)는 즉시 중단합니다.
                 }
 
                 lastException = unwrappedException;
                 // 메트릭 및 중복 제거 서비스에 재시도 상태를 기록합니다.
-                trafficInFlightDedupeService.markRedisRetry(resolveTraceId(context, payload), attempt);
+                trafficInFlightDedupeService.markRedisRetry(traceId, attempt);
                 trafficDeductFallbackMetrics.incrementRedisRetry(
                         poolType.name(),
                         attempt,
@@ -916,19 +933,17 @@ public class TrafficHydrateRefillAdapterService {
             }
         }
 
-        // 차감 단계 retryable 예외는 정합성 우선 규칙에 따라 DB fallback으로 전환하지 않고 상위로 재전파한다.
+        // 현재 단계 retryable 예외는 정합성 우선 규칙에 따라 DB fallback으로 전환하지 않고 상위로 재전파한다.
         log.warn(
-                "traffic_deduct_redis_retry_exhausted traceId={} poolType={} requestedData={} fallback=disabled reason={}",
-                resolveTraceId(context, payload),
+                "{} traceId={} poolType={} requestedData={} fallback=disabled reason={}",
+                failureStage.retryExhaustedLogKey(),
+                traceId,
                 poolType,
                 requestedDataBytes,
-                "deduct_stage_retry_exhausted",
+                failureStage.stageKey() + "_stage_retry_exhausted",
                 lastException
         );
-        if (lastException == null) {
-            throw new IllegalStateException("traffic_deduct_redis_retry_exhausted");
-        }
-        throw new IllegalStateException("traffic_deduct_redis_retry_exhausted", lastException);
+        throw TrafficStageFailureException.retryExhausted(failureStage, lastException);
     }
 
     /**

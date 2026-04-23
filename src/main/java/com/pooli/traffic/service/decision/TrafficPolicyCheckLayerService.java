@@ -60,18 +60,37 @@ public class TrafficPolicyCheckLayerService {
      * 차단성 정책(즉시/반복/화이트리스트)을 검증하고 fallback 판정 계약을 반환합니다.
      */
     public TrafficPolicyCheckLayerResult evaluate(TrafficPayloadReqDto payload) {
+        TrafficFailureStage failureStage = TrafficFailureStage.POLICY_CHECK;
         try {
             TrafficLuaExecutionResult luaResult = executePolicyCheckWithGlobalRecovery(payload);
             return TrafficPolicyCheckLayerResult.fromLuaResult(luaResult);
         } catch (ApplicationException | DataAccessException e) {
             RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
             if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)) {
+                TrafficStageFailureException stageFailure =
+                        TrafficStageFailureException.retryableFailure(failureStage, unwrapped);
+                log.warn(
+                        "{} traceId={} failureCause={}",
+                        failureStage.retryableFailureLogKey(),
+                        payload == null ? null : payload.getTraceId(),
+                        TrafficPolicyCheckFailureCause.POLICY_CHECK_RETRYABLE,
+                        stageFailure
+                );
                 return TrafficPolicyCheckLayerResult.retryableFailure(
                         TrafficPolicyCheckFailureCause.POLICY_CHECK_RETRYABLE,
-                        unwrapped
+                        stageFailure
                 );
             }
-            throw e;
+            TrafficStageFailureException stageFailure =
+                    TrafficStageFailureException.nonRetryableFailure(failureStage, e);
+            log.error(
+                    "{} traceId={} failureCause={}",
+                    failureStage.nonRetryableFailureLogKey(),
+                    payload == null ? null : payload.getTraceId(),
+                    TrafficPolicyCheckFailureCause.POLICY_CHECK_NON_RETRYABLE,
+                    stageFailure
+            );
+            throw stageFailure;
         }
     }
 

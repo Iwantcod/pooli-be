@@ -281,14 +281,24 @@ public class TrafficDeductOrchestratorService {
      * 선행 정책 검증(ensureLoaded + policy check)을 수행하고 결과 계약으로 반환합니다.
      */
     private TrafficPolicyCheckLayerResult evaluateBlockingPolicyCheck(TrafficPayloadReqDto payload) {
+        TrafficFailureStage failureStage = TrafficFailureStage.POLICY_CHECK;
         try {
             trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
         } catch (DataAccessException | ApplicationException e) {
             RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
             if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)) {
+                TrafficStageFailureException stageFailure =
+                        TrafficStageFailureException.retryableFailure(failureStage, unwrapped);
+                log.warn(
+                        "{} traceId={} failureCause={}",
+                        failureStage.retryableFailureLogKey(),
+                        payload == null ? null : payload.getTraceId(),
+                        TrafficPolicyCheckFailureCause.ENSURE_LOADED_RETRYABLE,
+                        stageFailure
+                );
                 return TrafficPolicyCheckLayerResult.retryableFailure(
                         TrafficPolicyCheckFailureCause.ENSURE_LOADED_RETRYABLE,
-                        unwrapped
+                        stageFailure
                 );
             }
             throw e;
