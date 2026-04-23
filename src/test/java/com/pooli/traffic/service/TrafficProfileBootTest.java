@@ -42,6 +42,7 @@ import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.outbox.strategy.OutboxRetryStrategyRegistry;
 import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
@@ -201,6 +202,7 @@ class TrafficProfileBootTest {
                 .withBean(TrafficInFlightDedupeService.class, () -> mock(TrafficInFlightDedupeService.class))
                 .withBean(TrafficDeductDoneLogService.class, () -> mock(TrafficDeductDoneLogService.class))
                 .withBean(TrafficRedisKeyFactory.class, () -> mock(TrafficRedisKeyFactory.class))
+                .withBean(TrafficRedisFailureClassifier.class, () -> mock(TrafficRedisFailureClassifier.class))
                 .withBean(TrafficGeneratorMetrics.class, () -> mock(TrafficGeneratorMetrics.class))
                 .withBean(TrafficRequestMetrics.class, () -> mock(TrafficRequestMetrics.class))
                 .withBean(TrafficPolicyVersionedRedisService.class, () -> mock(TrafficPolicyVersionedRedisService.class))

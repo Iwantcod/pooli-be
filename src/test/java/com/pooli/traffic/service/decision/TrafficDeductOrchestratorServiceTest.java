@@ -3,6 +3,7 @@ package com.pooli.traffic.service.decision;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.any;
@@ -16,6 +17,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.QueryTimeoutException;
 
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
@@ -104,10 +106,15 @@ class TrafficDeductOrchestratorServiceTest {
             TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
 
             // then
+            verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
+            verify(trafficPolicyCheckLayerService).evaluate(eq(payload));
             verify(trafficHydrateRefillAdapterService)
                     .executeIndividualWithRecovery(eq(payload), eq(103L), any(TrafficDeductExecutionContext.class));
             verify(trafficHydrateRefillAdapterService, never())
                     .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
+            verifyNoInteractions(trafficDbDeductFallbackService);
+            verifyNoInteractions(trafficDeductFallbackMetrics);
+            verifyNoInteractions(trafficInFlightDedupeService);
             verify(trafficRecentUsageBucketService).recordUsage(
                     com.pooli.traffic.domain.enums.TrafficPoolType.INDIVIDUAL,
                     payload,
@@ -496,6 +503,65 @@ class TrafficDeductOrchestratorServiceTest {
                     () -> assertEquals(0L, result.getApiRemainingData()),
                     () -> assertEquals(TrafficLuaStatus.OK, result.getLastLuaStatus())
             );
+        }
+
+        @Test
+        void rethrowsWhenPolicyCheckStageFailureIsNonRetryable() {
+            // given
+            TrafficPayloadReqDto payload = payload(100L);
+            TrafficStageFailureException stageFailure =
+                    TrafficStageFailureException.nonRetryableFailure(
+                            TrafficFailureStage.POLICY_CHECK,
+                            new QueryTimeoutException("policy check redis down")
+                    );
+            when(trafficPolicyCheckLayerService.evaluate(eq(payload))).thenThrow(stageFailure);
+
+            // when + then
+            TrafficStageFailureException thrown = assertThrows(
+                    TrafficStageFailureException.class,
+                    () -> trafficDeductOrchestratorService.orchestrate(payload)
+            );
+            assertAll(
+                    () -> assertSame(stageFailure, thrown),
+                    () -> assertEquals(TrafficFailureStage.POLICY_CHECK, thrown.getStage())
+            );
+            verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
+            verify(trafficPolicyCheckLayerService).evaluate(eq(payload));
+            verifyNoInteractions(trafficHydrateRefillAdapterService);
+            verifyNoInteractions(trafficDbDeductFallbackService);
+            verifyNoInteractions(trafficDeductFallbackMetrics);
+            verifyNoInteractions(trafficInFlightDedupeService);
+        }
+
+        @Test
+        void rethrowsWhenDeductStageRedisFailureOccursAfterPolicyCheck() {
+            // given
+            TrafficPayloadReqDto payload = payload(100L);
+            QueryTimeoutException timeoutException = new QueryTimeoutException("deduct redis down");
+            TrafficStageFailureException stageFailure =
+                    TrafficStageFailureException.retryableFailure(
+                            TrafficFailureStage.DEDUCT,
+                            timeoutException
+                    );
+            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
+                    .thenThrow(stageFailure);
+
+            // when + then
+            TrafficStageFailureException thrown = assertThrows(
+                    TrafficStageFailureException.class,
+                    () -> trafficDeductOrchestratorService.orchestrate(payload)
+            );
+            assertAll(
+                    () -> assertSame(stageFailure, thrown),
+                    () -> assertEquals(TrafficFailureStage.DEDUCT, thrown.getStage())
+            );
+            verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
+            verify(trafficPolicyCheckLayerService).evaluate(eq(payload));
+            verify(trafficHydrateRefillAdapterService)
+                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
+            verifyNoInteractions(trafficDbDeductFallbackService);
+            verifyNoInteractions(trafficDeductFallbackMetrics);
+            verifyNoInteractions(trafficInFlightDedupeService);
         }
 
         @Test

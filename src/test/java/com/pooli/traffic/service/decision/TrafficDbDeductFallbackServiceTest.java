@@ -119,7 +119,7 @@ class TrafficDbDeductFallbackServiceTest {
     }
 
     @Test
-    @DisplayName("앱 일일 제한 정책이 활성화되면 해당 제한까지 차감되고 HIT_APP_DAILY_LIMIT를 반환한다")
+    @DisplayName("DB fallback은 비차단 정책을 적용하지 않고 요청량 기준으로 차감한다")
     void returnsHitAppDailyLimitWhenAppDailyPolicyIsActive() {
         // given
         TrafficPayloadReqDto payload = payload();
@@ -134,8 +134,7 @@ class TrafficDbDeductFallbackServiceTest {
                         .isWhitelist(false)
                         .build()));
         when(trafficRefillSourceMapper.selectIndividualRemainingForUpdate(11L)).thenReturn(100L);
-        when(trafficDbUsageMapper.selectDailyAppUsage(eq(11L), eq(33), any())).thenReturn(0L);
-        when(trafficRefillSourceMapper.deductIndividualRemaining(11L, 30L)).thenReturn(1);
+        when(trafficRefillSourceMapper.deductIndividualRemaining(11L, 50L)).thenReturn(1);
 
         // when
         TrafficLuaExecutionResult result = trafficDbDeductFallbackService.deduct(
@@ -147,15 +146,15 @@ class TrafficDbDeductFallbackServiceTest {
 
         // then
         assertAll(
-                () -> assertEquals(TrafficLuaStatus.HIT_APP_DAILY_LIMIT, result.getStatus()),
-                () -> assertEquals(30L, result.getAnswer())
+                () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
+                () -> assertEquals(50L, result.getAnswer())
         );
-        verify(trafficDbUsageMapper).upsertDailyTotalUsage(eq(11L), any(), eq(30L));
-        verify(trafficDbUsageMapper).upsertDailyAppUsage(eq(11L), eq(33), any(), eq(30L));
+        verify(trafficDbUsageMapper, never()).upsertDailyTotalUsage(anyLong(), any(), anyLong());
+        verify(trafficDbUsageMapper, never()).upsertDailyAppUsage(anyLong(), anyInt(), any(), anyLong());
     }
 
     @Test
-    @DisplayName("DB fallback 차감 성공 시 사용량 집계를 갱신한다")
+    @DisplayName("DB fallback 차감 성공 시 사용량 집계는 갱신하지 않는다")
     void updatesUsageWhenFallbackDeductSucceeds() {
         // given
         TrafficPayloadReqDto payload = payload();
@@ -177,12 +176,12 @@ class TrafficDbDeductFallbackServiceTest {
                 () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
                 () -> assertEquals(40L, result.getAnswer())
         );
-        verify(trafficDbUsageMapper).upsertDailyTotalUsage(eq(11L), any(), eq(40L));
-        verify(trafficDbUsageMapper).upsertDailyAppUsage(eq(11L), eq(33), any(), eq(40L));
+        verify(trafficDbUsageMapper, never()).upsertDailyTotalUsage(anyLong(), any(), anyLong());
+        verify(trafficDbUsageMapper, never()).upsertDailyAppUsage(anyLong(), anyInt(), any(), anyLong());
     }
 
     @Test
-    @DisplayName("공유풀 fallback 차감 성공 시 가족 공유 사용량 집계를 함께 갱신한다")
+    @DisplayName("공유풀 fallback 차감 성공 시에도 사용량 집계는 갱신하지 않는다")
     void updatesFamilySharedUsageWhenSharedFallbackDeductSucceeds() {
         // given
         TrafficPayloadReqDto payload = payload();
@@ -204,9 +203,9 @@ class TrafficDbDeductFallbackServiceTest {
                 () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
                 () -> assertEquals(30L, result.getAnswer())
         );
-        verify(trafficDbUsageMapper).upsertDailyTotalUsage(eq(11L), any(), eq(30L));
-        verify(trafficDbUsageMapper).upsertDailyAppUsage(eq(11L), eq(33), any(), eq(30L));
-        verify(trafficDbUsageMapper).upsertFamilySharedUsageDaily(eq(22L), eq(11L), any(), eq(30L));
+        verify(trafficDbUsageMapper, never()).upsertDailyTotalUsage(anyLong(), any(), anyLong());
+        verify(trafficDbUsageMapper, never()).upsertDailyAppUsage(anyLong(), anyInt(), any(), anyLong());
+        verify(trafficDbUsageMapper, never()).upsertFamilySharedUsageDaily(anyLong(), anyLong(), any(), anyLong());
     }
 
     @Test

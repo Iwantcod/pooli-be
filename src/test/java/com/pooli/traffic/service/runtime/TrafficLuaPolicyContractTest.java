@@ -17,6 +17,8 @@ class TrafficLuaPolicyContractTest {
 
     private static final Path BLOCK_POLICY_CHECK_SCRIPT =
             Path.of("src/main/resources/lua/traffic/block_policy_check.lua");
+    private static final Path LUA_SCRIPT_TYPE_SOURCE =
+            Path.of("src/main/java/com/pooli/traffic/domain/enums/TrafficLuaScriptType.java");
     private static final Path DEDUCT_INDIVIDUAL_SCRIPT =
             Path.of("src/main/resources/lua/traffic/deduct_indiv.lua");
     private static final Path DEDUCT_SHARED_SCRIPT =
@@ -34,6 +36,52 @@ class TrafficLuaPolicyContractTest {
                 "if is_policy_enabled(policy_whitelist_key)",
                 "if is_policy_enabled(policy_immediate_key)",
                 "if is_policy_enabled(policy_repeat_key)"
+        );
+    }
+
+    @Test
+    @DisplayName("정책검증 Lua 타입은 통합 스크립트 하나로 고정한다")
+    void keepsSinglePolicyCheckScriptType() throws IOException {
+        String enumSource = Files.readString(LUA_SCRIPT_TYPE_SOURCE, StandardCharsets.UTF_8);
+
+        assertTrue(
+                enumSource.contains("BLOCK_POLICY_CHECK(\"block_policy_check\", \"lua/traffic/block_policy_check.lua\")"),
+                "Lua script type must include unified BLOCK_POLICY_CHECK mapping."
+        );
+        assertTrue(
+                !enumSource.contains("POLICY_CHECK_INDIV"),
+                "Legacy individual policy-check script type must not be reintroduced."
+        );
+        assertTrue(
+                !enumSource.contains("POLICY_CHECK_SHARED"),
+                "Legacy shared policy-check script type must not be reintroduced."
+        );
+    }
+
+    @Test
+    @DisplayName("통합 policy-check Lua는 pool 구분 없이 동일 상태 계약을 반환한다")
+    void keepsUnifiedPolicyCheckStatusContract() throws IOException {
+        String script = Files.readString(BLOCK_POLICY_CHECK_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(
+                script.contains("\"GLOBAL_POLICY_HYDRATE\""),
+                "Unified policy-check script must return GLOBAL_POLICY_HYDRATE."
+        );
+        assertTrue(
+                script.contains("\"BLOCKED_IMMEDIATE\""),
+                "Unified policy-check script must return BLOCKED_IMMEDIATE."
+        );
+        assertTrue(
+                script.contains("\"BLOCKED_REPEAT\""),
+                "Unified policy-check script must return BLOCKED_REPEAT."
+        );
+        assertTrue(
+                script.contains("return as_json(1, \"OK\")"),
+                "Unified policy-check script must keep whitelist bypass OK path."
+        );
+        assertTrue(
+                script.contains("return as_json(0, \"OK\")"),
+                "Unified policy-check script must keep non-whitelist OK path."
         );
     }
 
