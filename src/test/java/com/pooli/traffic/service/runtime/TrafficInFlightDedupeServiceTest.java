@@ -196,35 +196,6 @@ class TrafficInFlightDedupeServiceTest {
     }
 
     @Test
-    @DisplayName("호환 메서드 tryClaim/findState/release는 신규 hash 로직을 따른다")
-    void legacyCompatibilityMethodsFollowHashLogic() {
-        String traceId = "trace-legacy";
-        String dedupeKey = "pooli:dedupe:run:trace-legacy";
-        when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
-        when(trafficLuaScriptInfraService.executeInFlightCreateIfAbsent(
-                dedupeKey,
-                "processedData",
-                "0",
-                "retryCount",
-                "0"
-        ))
-                .thenReturn(1L);
-        when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(cacheStringRedisTemplate.hasKey(dedupeKey)).thenReturn(true);
-        when(hashOperations.get(dedupeKey, "processedData")).thenReturn("0");
-        when(hashOperations.get(dedupeKey, "retryCount")).thenReturn("0");
-
-        boolean claimed = trafficInFlightDedupeService.tryClaim(traceId);
-        Optional<TrafficInFlightState> state = trafficInFlightDedupeService.findState(traceId);
-        trafficInFlightDedupeService.release(traceId);
-
-        assertTrue(claimed);
-        assertTrue(state.isPresent());
-        assertEquals(TrafficInFlightState.CLAIMED, state.get());
-        verify(cacheStringRedisTemplate).delete(dedupeKey);
-    }
-
-    @Test
     @DisplayName("Redis 재시도와 DB fallback 상태는 로그로만 남긴다")
     void marksRetryAndFallbackAsLogOnly() {
         String traceId = "trace-log-only";

@@ -135,33 +135,6 @@ public class TrafficInFlightDedupeService {
     }
 
     /**
-     * 이전 문자열 상태 기반 호출부와의 호환을 위해 유지하는 메서드입니다.
-     * 신규 경로에서는 createOrGet/get/addProcessedDataAtomically/delete를 사용해야 합니다.
-     */
-    @Deprecated
-    public boolean tryClaim(String traceId) {
-        return createOrGet(traceId).created();
-    }
-
-    /**
-     * 이전 문자열 상태 기반 호출부와의 호환을 위해 유지하는 메서드입니다.
-     * hash 스키마 전환 후에는 CLAIMED 상태만 의미를 보존합니다.
-     */
-    @Deprecated
-    public Optional<TrafficInFlightState> findState(String traceId) {
-        return get(traceId).map(ignored -> TrafficInFlightState.CLAIMED);
-    }
-
-    /**
-     * 이전 문자열 상태 기반 호출부와의 호환을 위해 유지하는 메서드입니다.
-     * 신규 규칙에서는 완료 시 hash 삭제가 기본 동작입니다.
-     */
-    @Deprecated
-    public void release(String traceId) {
-        delete(traceId);
-    }
-
-    /**
      * Redis 재시도 진행 상태를 로그로만 남깁니다.
      * Redis 장애 상황에서도 본 실행 + hydrate/refill/fallback 흐름(retry/backoff/fallback)을 절대 방해하지 않기 위함입니다.
      */
