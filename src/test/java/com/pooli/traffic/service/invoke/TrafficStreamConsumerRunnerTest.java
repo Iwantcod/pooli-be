@@ -174,11 +174,11 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-001"))
                     .thenReturn(createdEntryResult("trace-001", 0L));
-            when(trafficDeductOrchestratorService.orchestrate(any())).thenAnswer(invocation -> {
+            when(trafficDeductOrchestratorService.orchestrate(any(), anyString(), anyLong(), anyBoolean())).thenAnswer(invocation -> {
                 mdcTraceIdAtOrchestrator.set(MDC.get("traceId"));
                 return orchestratorResult;
             });
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("1-0"), anyLong()))
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("1-0"), anyLong(), eq(false)))
                     .thenReturn(true);
 
             invokeHandleRecord(record);
@@ -187,7 +187,7 @@ public class TrafficStreamConsumerRunnerTest {
             assertEquals("trace-001", mdcTraceIdAtOrchestrator.get());
             assertNull(MDC.get("traceId"));
             verify(trafficDeductDoneLogService)
-                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("1-0"), latencyCaptor.capture());
+                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("1-0"), latencyCaptor.capture(), eq(false));
             assertTrue(latencyCaptor.getValue() >= 0L);
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-001", "1-0");
@@ -284,8 +284,8 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-dup"))
                     .thenReturn(createdEntryResult("trace-dup", 0L));
-            when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("3-0"), anyLong()))
+            when(trafficDeductOrchestratorService.orchestrate(any(), anyString(), anyLong(), anyBoolean())).thenReturn(orchestratorResult);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("3-0"), anyLong(), eq(false)))
                     .thenReturn(false);
 
             invokeHandleRecord(record);
@@ -324,8 +324,8 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-blocked"))
                     .thenReturn(createdEntryResult("trace-blocked", 0L));
-            when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("6-0"), anyLong()))
+            when(trafficDeductOrchestratorService.orchestrate(any(), anyString(), anyLong(), anyBoolean())).thenReturn(orchestratorResult);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("6-0"), anyLong(), eq(false)))
                     .thenReturn(true);
 
             invokeHandleRecord(record);
@@ -362,8 +362,8 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-fail"))
                     .thenReturn(createdEntryResult("trace-fail", 0L));
-            when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("4-0"), anyLong()))
+            when(trafficDeductOrchestratorService.orchestrate(any(), anyString(), anyLong(), anyBoolean())).thenReturn(orchestratorResult);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("4-0"), anyLong(), eq(false)))
                     .thenThrow(new RuntimeException("mongo down"));
 
             invokeHandleRecord(record);
@@ -380,7 +380,7 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-orchestrate-fail"))
                     .thenReturn(createdEntryResult("trace-orchestrate-fail", 0L));
-            when(trafficDeductOrchestratorService.orchestrate(any()))
+            when(trafficDeductOrchestratorService.orchestrate(any(), anyString(), anyLong(), anyBoolean()))
                     .thenThrow(new QueryTimeoutException("redis timeout"));
             when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(true);
 
@@ -418,7 +418,7 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficInFlightDedupeService.createOrGet("trace-reclaim-exceeded"))
                     .thenReturn(existingEntryResult("trace-reclaim-exceeded", 70L));
             when(trafficInFlightDedupeService.incrementRetryOnReclaim("trace-reclaim-exceeded")).thenReturn(6);
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("12-0"), anyLong()))
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("12-0"), anyLong(), eq(false)))
                     .thenReturn(true);
 
             invokeHandleRecord(record, TrafficStreamMessageSource.RECLAIM);
@@ -466,7 +466,7 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficInFlightDedupeService.createOrGet("trace-reclaim-dup"))
                     .thenReturn(existingEntryResult("trace-reclaim-dup", 40L));
             when(trafficInFlightDedupeService.incrementRetryOnReclaim("trace-reclaim-dup")).thenReturn(6);
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("12-1"), anyLong()))
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("12-1"), anyLong(), eq(false)))
                     .thenReturn(false);
 
             invokeHandleRecord(record, TrafficStreamMessageSource.RECLAIM);
@@ -493,7 +493,7 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-pending"))
                     .thenReturn(existingEntryResult("trace-pending", 0L));
-            when(trafficDeductOrchestratorService.orchestrate(any()))
+            when(trafficDeductOrchestratorService.orchestrate(any(), anyString(), anyLong(), anyBoolean()))
                     .thenThrow(new QueryTimeoutException("redis timeout"));
             when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(true);
 
@@ -513,7 +513,7 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-state-absent"))
                     .thenReturn(existingEntryResult("trace-state-absent", 100L));
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("5-2"), anyLong()))
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("5-2"), anyLong(), eq(false)))
                     .thenReturn(true);
 
             invokeHandleRecord(record);
@@ -560,7 +560,7 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-non-retryable"))
                     .thenReturn(createdEntryResult("trace-non-retryable", 0L));
-            when(trafficDeductOrchestratorService.orchestrate(any()))
+            when(trafficDeductOrchestratorService.orchestrate(any(), anyString(), anyLong(), anyBoolean()))
                     .thenThrow(new IllegalArgumentException("wrong type in downstream data"));
             when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(false);
             when(trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(any(), eq("5-4"), anyLong(), any()))
@@ -597,8 +597,8 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-order"))
                     .thenReturn(createdEntryResult("trace-order", 0L));
-            when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("7-0"), anyLong()))
+            when(trafficDeductOrchestratorService.orchestrate(any(), anyString(), anyLong(), anyBoolean())).thenReturn(orchestratorResult);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("7-0"), anyLong(), eq(false)))
                     .thenReturn(true);
 
             invokeHandleRecord(record);
@@ -631,8 +631,8 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-metrics-success"))
                     .thenReturn(createdEntryResult("trace-metrics-success", 0L));
-            when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("8-0"), anyLong()))
+            when(trafficDeductOrchestratorService.orchestrate(any(), anyString(), anyLong(), anyBoolean())).thenReturn(orchestratorResult);
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("8-0"), anyLong(), eq(false)))
                     .thenReturn(true);
 
             invokeHandleRecord(record);
@@ -692,7 +692,7 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-metrics-failed"))
                     .thenReturn(createdEntryResult("trace-metrics-failed", 0L));
-            when(trafficDeductOrchestratorService.orchestrate(any()))
+            when(trafficDeductOrchestratorService.orchestrate(any(), anyString(), anyLong(), anyBoolean()))
                     .thenThrow(new QueryTimeoutException("orchestrate timeout"));
             when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(true);
 
@@ -715,7 +715,7 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-new-source"))
                     .thenReturn(existingEntryResult("trace-new-source", 100L));
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("8-4"), anyLong()))
+            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("8-4"), anyLong(), eq(false)))
                     .thenReturn(true);
 
             invokeHandleRecord(record, TrafficStreamMessageSource.NEW);

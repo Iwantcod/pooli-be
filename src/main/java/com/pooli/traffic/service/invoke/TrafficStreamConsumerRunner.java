@@ -488,13 +488,13 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 long latency = Math.max(0L, System.currentTimeMillis() - consumeStartTimeMs);
 
                 boolean saved;
-                long mongoSaveStartNs = System.nanoTime();
+                long mysqlSaveStartNs = System.nanoTime();
                 try {
                     saved = trafficDeductDoneLogService.saveIfAbsent(payload, cumulativeResult, recordId, latency);
                 } catch (Exception saveException) {
                     throw new DoneLogPersistenceException("traffic_done_log_save_failed", saveException);
                 } finally {
-                    trafficRecordStageMetricsPort.recordStageLatency(STAGE_DONE_LOG_SAVE, elapsedSinceNs(mongoSaveStartNs));
+                    trafficRecordStageMetricsPort.recordStageLatency(STAGE_DONE_LOG_SAVE, elapsedSinceNs(mysqlSaveStartNs));
                 }
 
                 if (!saved && messageSource == TrafficStreamMessageSource.NEW) {
