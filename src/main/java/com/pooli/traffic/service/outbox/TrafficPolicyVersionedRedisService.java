@@ -132,17 +132,41 @@ public class TrafficPolicyVersionedRedisService {
      * 공통 CAS Lua 실행 래퍼입니다.
      */
     private PolicySyncResult executeCas(RedisScript<Long> script, List<String> keys, String... args) {
-        TrafficRedisCasRetryExecutionResult retryExecutionResult =
-                trafficRedisCasRetryInvoker.execute(script, keys, (Object[]) args);
+        try {
+            TrafficRedisCasRetryExecutionResult retryExecutionResult =
+                    trafficRedisCasRetryInvoker.execute(script, keys, (Object[]) args);
+            return mapRetryExecutionResult(retryExecutionResult);
+        } catch (DataAccessException e) {
+            // Retry 프록시가 적용되지 않는 예외 경로에서도 기존 CONNECTION/RETRYABLE 분류 계약을 보장합니다.
+            return mapDataAccessException(e);
+        }
+    }
+
+    /**
+     * Retry 실행 결과를 기존 PolicySyncResult 계약으로 변환합니다.
+     */
+    private PolicySyncResult mapRetryExecutionResult(TrafficRedisCasRetryExecutionResult retryExecutionResult) {
         DataAccessException lastFailure = retryExecutionResult.lastFailure();
         if (lastFailure != null) {
-            if (trafficRedisFailureClassifier.isConnectionFailure(lastFailure)) {
-                return PolicySyncResult.CONNECTION_FAILURE;
-            }
-            return PolicySyncResult.RETRYABLE_FAILURE;
+            return mapDataAccessException(lastFailure);
         }
+        return mapRawResult(retryExecutionResult.rawResult());
+    }
 
-        Long rawResult = retryExecutionResult.rawResult();
+    /**
+     * Redis DataAccessException을 CONNECTION/RETRYABLE 경계로 분류합니다.
+     */
+    private PolicySyncResult mapDataAccessException(DataAccessException exception) {
+        if (trafficRedisFailureClassifier.isConnectionFailure(exception)) {
+            return PolicySyncResult.CONNECTION_FAILURE;
+        }
+        return PolicySyncResult.RETRYABLE_FAILURE;
+    }
+
+    /**
+     * CAS Lua raw result를 기존 상태 계약으로 매핑합니다.
+     */
+    private PolicySyncResult mapRawResult(Long rawResult) {
         if (rawResult == null) {
             return PolicySyncResult.RETRYABLE_FAILURE;
         }
