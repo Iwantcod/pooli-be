@@ -20,6 +20,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
+import com.pooli.common.config.TrafficRetryConfig;
 import com.pooli.monitoring.metrics.TrafficGeneratorMetrics;
 import com.pooli.monitoring.metrics.TrafficRecordStageMetricsLocal;
 import com.pooli.monitoring.metrics.TrafficRecordStageMetricsNoOp;
@@ -61,6 +62,7 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficController.class);
                         assertThat(context).hasSingleBean(TrafficRequestEnqueueService.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
+                        assertThat(context).doesNotHaveBean(TrafficRetryConfig.class);
                         assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
                         assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
                                 .isInstanceOf(TrafficRecordStageMetricsNoOp.class);
@@ -85,6 +87,7 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficStreamReclaimService.class);
                         assertThat(context).hasSingleBean(RedisOutboxRetryScheduler.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
+                        assertThat(context).hasSingleBean(TrafficRetryConfig.class);
                         assertThat(context).hasSingleBean(TrafficSchedulingConfig.class);
                         assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
                         assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
@@ -104,6 +107,7 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficStreamReclaimService.class);
                         assertThat(context).hasSingleBean(RedisOutboxRetryScheduler.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
+                        assertThat(context).doesNotHaveBean(TrafficRetryConfig.class);
                         assertThat(context).hasSingleBean(TrafficSchedulingConfig.class);
                         assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
                         assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
@@ -190,6 +194,7 @@ class TrafficProfileBootTest {
                         TrafficRecordStageMetricsLocal.class,
                         TrafficRecordStageMetricsNoOp.class,
                         TrafficSchedulingConfig.class,
+                        TrafficRetryConfig.class,
                         TestBeans.class
                 )
                 .withBean(AppStreamsProperties.class, () -> appStreamsProperties)
