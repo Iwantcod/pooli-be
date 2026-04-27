@@ -46,7 +46,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.MDC;
-import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * 정책 write-through가 Outbox + CAS 규칙으로 동작하는지 검증합니다.
@@ -74,7 +73,6 @@ class TrafficPolicyWriteThroughServiceTest {
     @BeforeEach
     void setUpMdcTraceId() {
         MDC.put("traceId", TEST_TRACE_ID);
-        ReflectionTestUtils.setField(trafficPolicyWriteThroughService, "retryBackoffMs", 0L);
     }
 
     @AfterEach
@@ -485,20 +483,19 @@ class TrafficPolicyWriteThroughServiceTest {
     class RetryTest {
 
         @Test
-        @DisplayName("첫 시도 RETRYABLE 실패면 재시도 후 성공 처리")
-        void retriesAndSucceeds() {
+        @DisplayName("retry adapter의 최종 결과가 SUCCESS면 markSuccess 처리")
+        void marksSuccessWhenRetryAdapterReturnsSuccess() {
             // given
             when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), eq(TEST_TRACE_ID))).thenReturn(17L);
             when(trafficRedisKeyFactory.policyKey(1001L)).thenReturn("pooli:policy:1001");
             when(trafficPolicyVersionedRedisService.syncVersionedValue(eq("pooli:policy:1001"), eq("1"), anyLong()))
-                    .thenReturn(PolicySyncResult.RETRYABLE_FAILURE)
                     .thenReturn(PolicySyncResult.SUCCESS);
 
             // when
             trafficPolicyWriteThroughService.syncPolicyActivation(1001L, true);
 
             // then
-            verify(trafficPolicyVersionedRedisService, times(2)).syncVersionedValue(
+            verify(trafficPolicyVersionedRedisService, times(1)).syncVersionedValue(
                     eq("pooli:policy:1001"),
                     eq("1"),
                     anyLong()
@@ -508,8 +505,8 @@ class TrafficPolicyWriteThroughServiceTest {
         }
 
         @Test
-        @DisplayName("RETRYABLE 실패가 계속되면 FAIL로 남긴다")
-        void marksFailWhenRetryableFailureExhausted() {
+        @DisplayName("retry adapter의 최종 결과가 RETRYABLE이면 FAIL로 남긴다")
+        void marksFailWhenRetryAdapterReturnsRetryableFailure() {
             // given
             when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), eq(TEST_TRACE_ID))).thenReturn(18L);
             when(trafficRedisKeyFactory.policyKey(1001L)).thenReturn("pooli:policy:1001");
@@ -520,7 +517,7 @@ class TrafficPolicyWriteThroughServiceTest {
             trafficPolicyWriteThroughService.syncPolicyActivation(1001L, true);
 
             // then
-            verify(trafficPolicyVersionedRedisService, times(4)).syncVersionedValue(
+            verify(trafficPolicyVersionedRedisService, times(1)).syncVersionedValue(
                     eq("pooli:policy:1001"),
                     eq("1"),
                     anyLong()

@@ -29,7 +29,6 @@ import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
-import com.pooli.traffic.util.TrafficRetryBackoffSupport;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,13 +43,12 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficPolicyWriteThroughService {
 
-    private static final int WRITE_THROUGH_IMMEDIATE_RETRY_MAX = 3;
     private static final int APP_SPEED_LIMIT_UPLOAD_MULTIPLIER = 125;
     private static final int END_OF_DAY_SECOND = 86_399;
     private static final int START_OF_DAY_SECOND = 0;
 
-    @Value("${app.traffic.deduct.redis-retry.backoff-ms:50}")
-    private long retryBackoffMs = 50L;
+    @Value("${app.traffic.deduct.redis-retry.max-attempts:3}")
+    private int redisRetryMaxAttempts = 3;
 
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
@@ -405,59 +403,31 @@ public class TrafficPolicyWriteThroughService {
      * <p>
      * 실행 순서:
      * 1) 초기 1회 실행
-     * 2) 실패(RETRYABLE/CONNECTION)면 backoff 후 즉시 재시도
-     * 3) 재시도 최대 횟수까지 반복 후 최종 실패 반환
+     * 2) Redis 접근부(@Retryable)의 결과를 수신해 최종 상태를 정리
      */
     private PolicySyncResult executeWithRetry(String operationName, Supplier<PolicySyncResult> redisWriteOperation) {
-        // 총 시도 횟수 = 초기 시도 1회 + 즉시 재시도 최대 횟수(3회)
-        int totalAttemptCount = 1 + WRITE_THROUGH_IMMEDIATE_RETRY_MAX;
-        // 첫 실행은 대기 없이 바로 시도합니다.
-        PolicySyncResult syncResult = executeWriteOperation(operationName, redisWriteOperation, 1, totalAttemptCount);
-        if (isRetryComplete(syncResult)) {
-            return syncResult;
-        }
-
-        PolicySyncResult lastFailure = syncResult;
-        // 재시도 루프에서는 "실패 -> 대기 -> 다음 시도" 순서를 보장합니다.
-        for (int retryAttempt = 1; retryAttempt <= WRITE_THROUGH_IMMEDIATE_RETRY_MAX; retryAttempt++) {
-            int attemptNumber = retryAttempt + 1;
-            log.warn(
-                    "traffic_policy_write_through_retry operation={} retryAttempt={}/{} attempt={}/{}",
-                    operationName,
-                    retryAttempt,
-                    WRITE_THROUGH_IMMEDIATE_RETRY_MAX,
-                    attemptNumber,
-                    totalAttemptCount
-            );
-            if (!sleepBackoff(retryAttempt, operationName)) {
-                // 인터럽트가 발생하면 재시도를 중단하고 마지막 실패 결과를 반환합니다.
-                return lastFailure;
-            }
-
-            syncResult = executeWriteOperation(operationName, redisWriteOperation, attemptNumber, totalAttemptCount);
-            if (isRetryComplete(syncResult)) {
-                return syncResult;
-            }
-            lastFailure = syncResult;
-        }
-
-        log.error(
-                "traffic_policy_write_through_retry_exhausted operation={} attempts={}",
+        PolicySyncResult syncResult = executeWriteOperation(
                 operationName,
-                totalAttemptCount
+                redisWriteOperation,
+                1
         );
-        return lastFailure;
+        if (!isRetryComplete(syncResult)) {
+            log.error(
+                    "traffic_policy_write_through_retry_exhausted operation={}",
+                    operationName
+            );
+        }
+        return syncResult;
     }
 
     /**
      * 단일 write-through 실행 결과를 반환합니다.
-     * 런타임 예외는 RETRYABLE_FAILURE로 정규화해 상위 재시도 루프에서 처리합니다.
+     * 런타임 예외는 RETRYABLE_FAILURE로 정규화해 상위 실패 처리에서 동일 정책으로 다룹니다.
      */
     private PolicySyncResult executeWriteOperation(
             String operationName,
             Supplier<PolicySyncResult> redisWriteOperation,
-            int attemptNumber,
-            int totalAttemptCount
+            int attemptNumber
     ) {
         try {
             return redisWriteOperation.get();
@@ -466,7 +436,6 @@ public class TrafficPolicyWriteThroughService {
                     "traffic_policy_write_through_exception operation={} attempt={}/{}",
                     operationName,
                     attemptNumber,
-                    totalAttemptCount,
                     e
             );
             return PolicySyncResult.RETRYABLE_FAILURE;
@@ -617,24 +586,5 @@ public class TrafficPolicyWriteThroughService {
      */
     private long nowEpochMillis() {
         return System.currentTimeMillis();
-    }
-
-    /**
-     * 재시도 간 짧은 백오프를 수행합니다.
-     */
-    private boolean sleepBackoff(int retryAttempt, String operationName) {
-        long delayMs = TrafficRetryBackoffSupport.resolveDelayMs(retryBackoffMs, retryAttempt);
-        try {
-            Thread.sleep(delayMs);
-            return true;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn(
-                    "traffic_policy_write_through_retry_interrupted operation={} retryAttempt={}",
-                    operationName,
-                    retryAttempt
-            );
-            return false;
-        }
     }
 }

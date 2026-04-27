@@ -6,17 +6,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pooli.traffic.service.retry.TrafficRedisCasRetryInvoker;
+import com.pooli.traffic.service.retry.TrafficRedisCasRetryExecutionResult;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 
 import jakarta.annotation.PostConstruct;
@@ -35,10 +35,9 @@ public class TrafficPolicyVersionedRedisService {
     private static final String APP_POLICY_SINGLE_CAS_SCRIPT_RESOURCE = "lua/traffic/app_policy_single_cas.lua";
     private static final String APP_POLICY_SNAPSHOT_CAS_SCRIPT_RESOURCE = "lua/traffic/app_policy_snapshot_cas.lua";
 
-    @Qualifier("cacheStringRedisTemplate")
-    private final StringRedisTemplate cacheStringRedisTemplate;
     private final ObjectMapper objectMapper;
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
+    private final TrafficRedisCasRetryInvoker trafficRedisCasRetryInvoker;
 
     private RedisScript<Long> valueCasScript;
     private RedisScript<Long> repeatBlockCasScript;
@@ -133,24 +132,27 @@ public class TrafficPolicyVersionedRedisService {
      * 공통 CAS Lua 실행 래퍼입니다.
      */
     private PolicySyncResult executeCas(RedisScript<Long> script, List<String> keys, String... args) {
-        try {
-            Long rawResult = cacheStringRedisTemplate.execute(script, keys, (Object[]) args);
-            if (rawResult == null) {
-                return PolicySyncResult.RETRYABLE_FAILURE;
-            }
-            if (rawResult == 1L) {
-                return PolicySyncResult.SUCCESS;
-            }
-            if (rawResult == 0L) {
-                return PolicySyncResult.STALE_REJECTED;
-            }
-            return PolicySyncResult.RETRYABLE_FAILURE;
-        } catch (DataAccessException e) {
-            if (trafficRedisFailureClassifier.isConnectionFailure(e)) {
+        TrafficRedisCasRetryExecutionResult retryExecutionResult =
+                trafficRedisCasRetryInvoker.execute(script, keys, (Object[]) args);
+        DataAccessException lastFailure = retryExecutionResult.lastFailure();
+        if (lastFailure != null) {
+            if (trafficRedisFailureClassifier.isConnectionFailure(lastFailure)) {
                 return PolicySyncResult.CONNECTION_FAILURE;
             }
             return PolicySyncResult.RETRYABLE_FAILURE;
         }
+
+        Long rawResult = retryExecutionResult.rawResult();
+        if (rawResult == null) {
+            return PolicySyncResult.RETRYABLE_FAILURE;
+        }
+        if (rawResult == 1L) {
+            return PolicySyncResult.SUCCESS;
+        }
+        if (rawResult == 0L) {
+            return PolicySyncResult.STALE_REJECTED;
+        }
+        return PolicySyncResult.RETRYABLE_FAILURE;
     }
 
     /**

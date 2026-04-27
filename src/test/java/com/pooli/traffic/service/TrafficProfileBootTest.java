@@ -62,7 +62,7 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficController.class);
                         assertThat(context).hasSingleBean(TrafficRequestEnqueueService.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
-                        assertThat(context).doesNotHaveBean(TrafficRetryConfig.class);
+                        assertThat(context).hasSingleBean(TrafficRetryConfig.class);
                         assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
                         assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
                                 .isInstanceOf(TrafficRecordStageMetricsNoOp.class);
@@ -107,7 +107,7 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficStreamReclaimService.class);
                         assertThat(context).hasSingleBean(RedisOutboxRetryScheduler.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
-                        assertThat(context).doesNotHaveBean(TrafficRetryConfig.class);
+                        assertThat(context).hasSingleBean(TrafficRetryConfig.class);
                         assertThat(context).hasSingleBean(TrafficSchedulingConfig.class);
                         assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
                         assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
