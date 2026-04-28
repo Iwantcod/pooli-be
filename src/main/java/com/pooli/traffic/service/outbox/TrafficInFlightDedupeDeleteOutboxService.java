@@ -2,12 +2,11 @@ package com.pooli.traffic.service.outbox;
 
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Value;
 
 import com.pooli.traffic.domain.outbox.OutboxEventType;
 import com.pooli.traffic.domain.outbox.payload.InFlightDedupeDeleteOutboxPayload;
-import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
-import com.pooli.traffic.util.TrafficRetryBackoffSupport;
+import com.pooli.traffic.service.retry.TrafficInFlightDedupeDeleteRetryExecutionResult;
+import com.pooli.traffic.service.retry.TrafficInFlightDedupeDeleteRetryInvoker;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,13 +20,8 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficInFlightDedupeDeleteOutboxService {
 
-    private static final int MAX_IMMEDIATE_RETRY_COUNT = 3;
-
-    @Value("${app.traffic.deduct.redis-retry.backoff-ms:50}")
-    private long immediateRetryBackoffMs = 50L;
-
     private final RedisOutboxRecordService redisOutboxRecordService;
-    private final TrafficInFlightDedupeService trafficInFlightDedupeService;
+    private final TrafficInFlightDedupeDeleteRetryInvoker trafficInFlightDedupeDeleteRetryInvoker;
 
     /**
      * traceId 기준 dedupe key 삭제 요청 Outbox를 PENDING 상태로 생성합니다.
@@ -39,109 +33,61 @@ public class TrafficInFlightDedupeDeleteOutboxService {
      * @return 생성된 Outbox ID
      */
     public long createPending(String traceId, String sourceRecordId) {
+        // [1] outbox 공통 식별자(traceId) 유효성 검증: blank는 즉시 차단합니다.
         if (traceId == null || traceId.isBlank()) {
             throw new IllegalArgumentException("traceId must not be blank");
         }
 
+        // [2] traceId를 trim 정규화해 payload/DB 저장/로그에서 동일 식별자를 사용합니다.
         String normalizedTraceId = traceId.trim();
+
+        // [3] 삭제 요청 이벤트 payload를 구성합니다.
         InFlightDedupeDeleteOutboxPayload payload = InFlightDedupeDeleteOutboxPayload.builder()
                 .uuid(normalizedTraceId)
                 .sourceRecordId(sourceRecordId)
                 .requestedAtEpochMillis(System.currentTimeMillis())
                 .build();
 
+        // [4] Outbox PENDING 레코드를 먼저 저장해 스케줄러 재시도 기반의 복구 경로를 확보합니다.
         long outboxId = redisOutboxRecordService.createPending(
                 OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY,
                 payload,
                 normalizedTraceId
         );
 
-        boolean deleteSucceeded = attemptDeleteImmediately(normalizedTraceId, outboxId);
-        if (deleteSucceeded) {
-            redisOutboxRecordService.markSuccess(outboxId);
-        } else {
-            // 즉시 재시도 실패는 FAIL로만 전이하고 retry_count는 증가시키지 않는다.
-            redisOutboxRecordService.markFail(outboxId);
-        }
-        return outboxId;
-    }
+        // [5] 즉시 삭제는 Retry 어댑터에 위임합니다. (초기 1회 + 재시도 최대 3회)
+        TrafficInFlightDedupeDeleteRetryExecutionResult retryExecutionResult =
+                trafficInFlightDedupeDeleteRetryInvoker.delete(normalizedTraceId);
 
-    private boolean attemptDeleteImmediately(String traceId, long outboxId) {
-        try {
-            // 1) 첫 시도를 즉시 수행한다. 이미 삭제된 키도 멱등 성공으로 취급한다.
-            trafficInFlightDedupeService.delete(traceId);
-            return true;
-        } catch (RuntimeException firstFailure) {
-            // 2) 첫 시도 실패 시 사유를 남기고 즉시 재시도 루프로 진입한다.
-            log.warn(
-                    "traffic_inflight_dedupe_delete_initial_attempt_failed outboxId={} traceId={} reason={}",
-                    outboxId,
-                    traceId,
-                    classifyReason(firstFailure)
-            );
-        }
-
-        for (int retryAttempt = 1; retryAttempt <= MAX_IMMEDIATE_RETRY_COUNT; retryAttempt++) {
-            // 3) 재시도 전 지수 백오프(50/100/200ms)로 짧게 대기한다.
-            if (!sleepImmediateRetryBackoff(retryAttempt, outboxId, traceId)) {
-                // 인터럽트가 들어오면 재시도를 중단하고 실패로 종료한다.
-                return false;
-            }
-            try {
-                // 4) 재시도 중 하나라도 성공하면 즉시 성공 처리한다.
-                trafficInFlightDedupeService.delete(traceId);
+        // [6] 즉시 삭제 성공 시 SUCCESS로 전이합니다.
+        //     성공 전 실패가 있었다면 복구 로그를 남겨 운영 추적성을 확보합니다.
+        if (retryExecutionResult.succeeded()) {
+            if (retryExecutionResult.failedAttemptCount() > 0) {
                 log.info(
                         "traffic_inflight_dedupe_delete_immediate_retry_recovered outboxId={} traceId={} retryAttempt={}",
                         outboxId,
-                        traceId,
-                        retryAttempt
-                );
-                return true;
-            } catch (RuntimeException e) {
-                if (retryAttempt == MAX_IMMEDIATE_RETRY_COUNT) {
-                    // 5) 재시도 3회까지 모두 실패하면 즉시 재시도 구간을 실패로 종료한다.
-                    log.warn(
-                            "traffic_inflight_dedupe_delete_immediate_retry_exhausted outboxId={} traceId={} maxRetryCount={} reason={}",
-                            outboxId,
-                            traceId,
-                            MAX_IMMEDIATE_RETRY_COUNT,
-                            classifyReason(e),
-                            e
-                    );
-                    return false;
-                }
-                // 다음 재시도를 위해 현재 실패를 기록한다.
-                log.warn(
-                        "traffic_inflight_dedupe_delete_immediate_retry_failed outboxId={} traceId={} retryAttempt={} reason={}",
-                        outboxId,
-                        traceId,
-                        retryAttempt,
-                        classifyReason(e)
+                        normalizedTraceId,
+                        retryExecutionResult.failedAttemptCount()
                 );
             }
-        }
-        return false;
-    }
-
-    /**
-     * 즉시 재시도 간격을 지수 백오프로 제어합니다. (50/100/200ms)
-     */
-    private boolean sleepImmediateRetryBackoff(int retryAttempt, long outboxId, String traceId) {
-        // retryAttempt(1..3) => 50/100/200ms
-        long delayMs = TrafficRetryBackoffSupport.resolveDelayMs(immediateRetryBackoffMs, retryAttempt);
-        try {
-            Thread.sleep(delayMs);
-            return true;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            redisOutboxRecordService.markSuccess(outboxId);
+        } else {
+            // [7] 즉시 재시도 소진 시 FAIL로만 전이하고 retry_count는 증가시키지 않습니다.
+            //     이후 재처리는 Outbox 스케줄러 표준 경로가 담당합니다.
+            RuntimeException lastFailure = retryExecutionResult.lastFailure();
             log.warn(
-                    "traffic_inflight_dedupe_delete_immediate_retry_interrupted outboxId={} traceId={} retryAttempt={}",
+                    "traffic_inflight_dedupe_delete_immediate_retry_exhausted outboxId={} traceId={} maxRetryCount={} reason={}",
                     outboxId,
-                    traceId,
-                    retryAttempt
+                    normalizedTraceId,
+                    Math.max(0, retryExecutionResult.attemptCount() - 1),
+                    classifyReason(lastFailure),
+                    lastFailure
             );
-            return false;
+            // 즉시 재시도 실패는 FAIL로만 전이하고 retry_count는 증가시키지 않는다.
+            redisOutboxRecordService.markFail(outboxId);
         }
+        // [8] 호출부(consumer)는 outboxId를 사용해 처리 순서 검증/추적을 이어갑니다.
+        return outboxId;
     }
 
     private String classifyReason(RuntimeException exception) {

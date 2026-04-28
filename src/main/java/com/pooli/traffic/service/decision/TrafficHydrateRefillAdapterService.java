@@ -12,6 +12,8 @@ import com.pooli.common.exception.ApplicationException;
 import com.pooli.monitoring.metrics.TrafficDeductFallbackMetrics;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
+import com.pooli.traffic.service.retry.TrafficDeductLuaRetryExecutionResult;
+import com.pooli.traffic.service.retry.TrafficDeductLuaRetryInvoker;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
@@ -77,9 +79,6 @@ public class TrafficHydrateRefillAdapterService {
     @Value("${app.traffic.hydrate-lock.enabled:true}")
     private boolean hydrateLockEnabled;
 
-    @Value("${app.traffic.deduct.redis-retry.max-attempts:3}")
-    private int redisRetryMaxAttempts;
-
     @Value("${app.traffic.deduct.redis-retry.backoff-ms:50}")
     private long redisRetryBackoffMs;
 
@@ -98,6 +97,7 @@ public class TrafficHydrateRefillAdapterService {
     private final TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
+    private final TrafficDeductLuaRetryInvoker trafficDeductLuaRetryInvoker;
 
     /**
      * 개인풀 차감의 실행 + hydrate/refill/fallback 흐름을 실행합니다.
@@ -882,58 +882,69 @@ public class TrafficHydrateRefillAdapterService {
             TrafficFailureStage failureStage,
             RefillLuaArguments refillLuaArguments
     ) {
-        int maxRetryCount = Math.max(0, redisRetryMaxAttempts);
-        int totalAttemptCount = 1 + maxRetryCount;
-        RuntimeException lastException = null;
+        // [1] 로깅/메트릭 상관관계를 맞추기 위해 traceId를 먼저 확정합니다.
         String traceId = resolveTraceId(context, payload);
 
-        // "초기 1회 시도 -> 실패 시 대기 -> 다음 재시도" 순서를 보장합니다.
-        for (int attempt = 1; attempt <= totalAttemptCount; attempt++) {
-            try {
-                // 실제 Lua 스크립트를 호출하여 Redis 차감을 수행합니다.
-                return executeDeductLua(
+        // [2] 실제 Redis Lua 호출은 retry 어댑터 경계로 위임합니다.
+        //     - retryable 인프라 예외는 @Retryable 규칙에 따라 즉시 재시도
+        //     - non-retryable 예외는 결과 DTO로 즉시 반환
+        TrafficDeductLuaRetryExecutionResult retryExecutionResult = trafficDeductLuaRetryInvoker.execute(
+                () -> executeDeductLua(
                         poolType,
                         payload,
                         balanceKey,
                         requestedDataBytes,
                         whitelistBypassFlag,
                         refillLuaArguments == null ? RefillLuaArguments.none() : refillLuaArguments
-                );
-            } catch (ApplicationException | DataAccessException redisException) {
-                // Redis 예외 발생 시 재시도 가능 여부(Timeout, Connection failure)를 확인합니다.
-                RuntimeException unwrappedException = trafficRefillOutboxSupportService.unwrapRuntimeException(redisException);
-                boolean retryable = trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrappedException);
-                if (!retryable) {
-                    TrafficStageFailureException stageFailure =
-                            TrafficStageFailureException.nonRetryableFailure(failureStage, redisException);
-                    log.error(
-                            "{} traceId={} poolType={} requestedData={}",
-                            failureStage.nonRetryableFailureLogKey(),
-                            traceId,
-                            poolType,
-                            requestedDataBytes,
-                            stageFailure
-                    );
-                    throw stageFailure; // 재시도 불가능한 에러(WRONGTYPE 등)는 즉시 중단합니다.
-                }
+                )
+        );
 
-                lastException = unwrappedException;
-                // 메트릭 및 중복 제거 서비스에 재시도 상태를 기록합니다.
-                trafficInFlightDedupeService.markRedisRetry(traceId, attempt);
-                trafficDeductFallbackMetrics.incrementRedisRetry(
-                        poolType.name(),
-                        attempt,
-                        trafficRedisFailureClassifier.isTimeoutFailure(unwrappedException) ? "timeout" : "connection"
-                );
-
-                if (attempt <= maxRetryCount) {
-                    // 현재 시도 실패 직후 backoff 만큼 대기한 뒤 다음 시도로 넘어갑니다.
-                    sleepRedisRetryBackoff(attempt);
-                }
-            }
+        // [3] 최종 성공 결과라면, 성공 전 발생했던 retryable 실패 횟수를 메트릭/마킹에 반영한 뒤 Lua 결과를 반환합니다.
+        if (retryExecutionResult.hasSuccessResult()) {
+            recordRetryableFailureAttempts(
+                    traceId,
+                    poolType,
+                    retryExecutionResult.failedAttemptCount(),
+                    retryExecutionResult.lastRetryableFailure()
+            );
+            return retryExecutionResult.luaResult();
         }
 
-        // 현재 단계 retryable 예외는 정합성 우선 규칙에 따라 DB fallback으로 전환하지 않고 상위로 재전파한다.
+        // [4] non-retryable 실패면 retryable 실패 이력만 보조 기록하고, 단계 예외로 변환해 즉시 중단합니다.
+        if (!retryExecutionResult.retryableInfrastructureFailure()) {
+            recordRetryableFailureAttempts(
+                    traceId,
+                    poolType,
+                    retryExecutionResult.failedAttemptCount(),
+                    retryExecutionResult.lastRetryableFailure()
+            );
+            TrafficStageFailureException stageFailure =
+                    TrafficStageFailureException.nonRetryableFailure(
+                            failureStage,
+                            retryExecutionResult.terminalFailure()
+                    );
+            log.error(
+                    "{} traceId={} poolType={} requestedData={}",
+                    failureStage.nonRetryableFailureLogKey(),
+                    traceId,
+                    poolType,
+                    requestedDataBytes,
+                    stageFailure
+            );
+            throw stageFailure;
+        }
+
+        // [5] retryable 실패 소진 케이스는 기존 정책대로
+        //     "메트릭/마킹 기록 -> retry_exhausted 로그 -> 단계 예외 재전파" 순서로 처리합니다.
+        RuntimeException lastException = retryExecutionResult.lastRetryableFailure();
+        recordRetryableFailureAttempts(
+                traceId,
+                poolType,
+                retryExecutionResult.failedAttemptCount(),
+                lastException
+        );
+
+        // [6] 정합성 우선 규칙: deduct/hydrate/refill 단계 retryable 소진은 DB fallback으로 전환하지 않고 상위로 재전파합니다.
         log.warn(
                 "{} traceId={} poolType={} requestedData={} fallback=disabled reason={}",
                 failureStage.retryExhaustedLogKey(),
@@ -944,6 +955,28 @@ public class TrafficHydrateRefillAdapterService {
                 lastException
         );
         throw TrafficStageFailureException.retryExhausted(failureStage, lastException);
+    }
+
+    /**
+     * retryable Redis 실패 횟수만큼 dedupe 상태/메트릭을 누적 기록합니다.
+     * 예외 타입이 중간에 바뀌더라도 기존 계약과 동일하게 실패 횟수 누적을 우선 보장합니다.
+     */
+    private void recordRetryableFailureAttempts(
+            String traceId,
+            TrafficPoolType poolType,
+            int failedAttemptCount,
+            RuntimeException lastFailure
+    ) {
+        int normalizedFailedAttemptCount = Math.max(0, failedAttemptCount);
+        if (normalizedFailedAttemptCount <= 0) {
+            return;
+        }
+
+        String reason = trafficRedisFailureClassifier.isTimeoutFailure(lastFailure) ? "timeout" : "connection";
+        for (int attempt = 1; attempt <= normalizedFailedAttemptCount; attempt++) {
+            trafficInFlightDedupeService.markRedisRetry(traceId, attempt);
+            trafficDeductFallbackMetrics.incrementRedisRetry(poolType.name(), attempt, reason);
+        }
     }
 
     /**
@@ -1091,27 +1124,6 @@ public class TrafficHydrateRefillAdapterService {
                     Math.max(0L, refillIdempotencyTtlSeconds),
                     dbEmpty ? "1" : "0",
                     0
-            );
-        }
-    }
-
-    /**
-     * 지수 backoff(50/100/200ms)로 Redis 재시도 간격을 제어합니다.
-     */
-    private void sleepRedisRetryBackoff(int retryAttempt) {
-        long delayMs = TrafficRetryBackoffSupport.resolveDelayMs(redisRetryBackoffMs, retryAttempt);
-        if (delayMs <= 0L) {
-            return;
-        }
-
-        try {
-            Thread.sleep(delayMs);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn(
-                    "traffic_deduct_redis_retry_sleep_interrupted retryAttempt={} delayMs={}",
-                    retryAttempt,
-                    delayMs
             );
         }
     }

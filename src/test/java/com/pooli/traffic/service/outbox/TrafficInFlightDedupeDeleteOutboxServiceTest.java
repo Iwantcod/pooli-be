@@ -5,9 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -19,7 +17,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.pooli.traffic.domain.outbox.OutboxEventType;
-import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
+import com.pooli.traffic.service.retry.TrafficInFlightDedupeDeleteRetryExecutionResult;
+import com.pooli.traffic.service.retry.TrafficInFlightDedupeDeleteRetryInvoker;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficInFlightDedupeDeleteOutboxServiceTest {
@@ -28,7 +27,7 @@ class TrafficInFlightDedupeDeleteOutboxServiceTest {
     private RedisOutboxRecordService redisOutboxRecordService;
 
     @Mock
-    private TrafficInFlightDedupeService trafficInFlightDedupeService;
+    private TrafficInFlightDedupeDeleteRetryInvoker trafficInFlightDedupeDeleteRetryInvoker;
 
     @InjectMocks
     private TrafficInFlightDedupeDeleteOutboxService trafficInFlightDedupeDeleteOutboxService;
@@ -38,11 +37,13 @@ class TrafficInFlightDedupeDeleteOutboxServiceTest {
     void markSuccessWhenImmediateDeleteSucceeds() {
         when(redisOutboxRecordService.createPending(eq(OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY), any(), eq("trace-001")))
                 .thenReturn(101L);
+        when(trafficInFlightDedupeDeleteRetryInvoker.delete("trace-001"))
+                .thenReturn(TrafficInFlightDedupeDeleteRetryExecutionResult.success(1, null));
 
         long outboxId = trafficInFlightDedupeDeleteOutboxService.createPending("trace-001", "1-0");
 
         assertEquals(101L, outboxId);
-        verify(trafficInFlightDedupeService, times(1)).delete("trace-001");
+        verify(trafficInFlightDedupeDeleteRetryInvoker).delete("trace-001");
         verify(redisOutboxRecordService).markSuccess(101L);
         verify(redisOutboxRecordService, never()).markFail(anyLong());
     }
@@ -52,16 +53,16 @@ class TrafficInFlightDedupeDeleteOutboxServiceTest {
     void markSuccessWhenImmediateDeleteRecoversAfterFailures() {
         when(redisOutboxRecordService.createPending(eq(OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY), any(), eq("trace-002")))
                 .thenReturn(102L);
-        doThrow(new RuntimeException("redis timeout"))
-                .doThrow(new RuntimeException("redis timeout"))
-                .doNothing()
-                .when(trafficInFlightDedupeService)
-                .delete("trace-002");
+        when(trafficInFlightDedupeDeleteRetryInvoker.delete("trace-002"))
+                .thenReturn(TrafficInFlightDedupeDeleteRetryExecutionResult.success(
+                        3,
+                        new RuntimeException("redis timeout")
+                ));
 
         long outboxId = trafficInFlightDedupeDeleteOutboxService.createPending("trace-002", "2-0");
 
         assertEquals(102L, outboxId);
-        verify(trafficInFlightDedupeService, times(3)).delete("trace-002");
+        verify(trafficInFlightDedupeDeleteRetryInvoker).delete("trace-002");
         verify(redisOutboxRecordService).markSuccess(102L);
         verify(redisOutboxRecordService, never()).markFail(anyLong());
     }
@@ -71,14 +72,16 @@ class TrafficInFlightDedupeDeleteOutboxServiceTest {
     void markFailWhenImmediateDeleteExhausted() {
         when(redisOutboxRecordService.createPending(eq(OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY), any(), eq("trace-003")))
                 .thenReturn(103L);
-        doThrow(new RuntimeException("redis timeout"))
-                .when(trafficInFlightDedupeService)
-                .delete("trace-003");
+        when(trafficInFlightDedupeDeleteRetryInvoker.delete("trace-003"))
+                .thenReturn(TrafficInFlightDedupeDeleteRetryExecutionResult.failure(
+                        new RuntimeException("redis timeout"),
+                        4
+                ));
 
         long outboxId = trafficInFlightDedupeDeleteOutboxService.createPending("trace-003", "3-0");
 
         assertEquals(103L, outboxId);
-        verify(trafficInFlightDedupeService, times(4)).delete("trace-003");
+        verify(trafficInFlightDedupeDeleteRetryInvoker).delete("trace-003");
         verify(redisOutboxRecordService).markFail(103L);
         verify(redisOutboxRecordService, never()).markSuccess(anyLong());
         verify(redisOutboxRecordService, never()).markFailWithRetryIncrement(anyLong());
@@ -93,6 +96,6 @@ class TrafficInFlightDedupeDeleteOutboxServiceTest {
         );
 
         verify(redisOutboxRecordService, never()).createPending(any(), any(), any());
-        verify(trafficInFlightDedupeService, never()).delete(any());
+        verify(trafficInFlightDedupeDeleteRetryInvoker, never()).delete(any());
     }
 }

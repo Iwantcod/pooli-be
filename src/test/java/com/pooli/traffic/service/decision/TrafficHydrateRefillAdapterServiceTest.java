@@ -26,6 +26,9 @@ import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
+import com.pooli.traffic.service.retry.TrafficDeductLuaRetryExecutionResult;
+import com.pooli.traffic.service.retry.TrafficDeductLuaRetryInvoker;
+import com.pooli.traffic.service.retry.TrafficDeductLuaRetryOperation;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
@@ -106,13 +109,15 @@ class TrafficHydrateRefillAdapterServiceTest {
     @Mock
     private TrafficInFlightDedupeService trafficInFlightDedupeService;
 
+    @Mock
+    private TrafficDeductLuaRetryInvoker trafficDeductLuaRetryInvoker;
+
     @InjectMocks
     private TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
 
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "hydrateLockEnabled", true);
-        ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "redisRetryMaxAttempts", 3);
         ReflectionTestUtils.setField(trafficHydrateRefillAdapterService, "redisRetryBackoffMs", 0L);
         Mockito.lenient().when(trafficRefillOutboxSupportService.resolveIdempotencyKey(anyString()))
                 .thenAnswer(invocation -> "pooli:refill:idempotency:" + invocation.getArgument(0, String.class));
@@ -124,6 +129,33 @@ class TrafficHydrateRefillAdapterServiceTest {
         Mockito.lenient().when(trafficRedisFailureClassifier.isConnectionFailure(any())).thenReturn(false);
         Mockito.lenient().when(trafficRedisFailureClassifier.isTimeoutFailure(any())).thenReturn(false);
         Mockito.lenient().when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(false);
+        Mockito.lenient().when(trafficDeductLuaRetryInvoker.execute(any()))
+                .thenAnswer(invocation -> {
+                    TrafficDeductLuaRetryOperation operation =
+                            invocation.getArgument(0, TrafficDeductLuaRetryOperation.class);
+                    RuntimeException lastRetryableFailure = null;
+                    for (int attempt = 1; attempt <= 4; attempt++) {
+                        try {
+                            return TrafficDeductLuaRetryExecutionResult.success(
+                                    operation.execute(),
+                                    attempt,
+                                    lastRetryableFailure
+                            );
+                        } catch (RuntimeException exception) {
+                            RuntimeException unwrappedException =
+                                    trafficRefillOutboxSupportService.unwrapRuntimeException(exception);
+                            if (!trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrappedException)) {
+                                return TrafficDeductLuaRetryExecutionResult.nonRetryableFailure(
+                                        unwrappedException,
+                                        attempt,
+                                        lastRetryableFailure
+                                );
+                            }
+                            lastRetryableFailure = unwrappedException;
+                        }
+                    }
+                    return TrafficDeductLuaRetryExecutionResult.retryableFailure(lastRetryableFailure, 4);
+                });
     }
 
     @Nested
