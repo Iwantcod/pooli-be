@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
-import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -369,7 +368,7 @@ public class TrafficPolicyWriteThroughService {
         long outboxId = redisOutboxRecordService.createPending(
                 eventType,
                 payload,
-                resolveRequiredTraceIdFromMdc()
+                null
         );
         executeAfterCommit(() -> {
             PolicySyncResult syncResult = redisWriteOperation.get();
@@ -465,17 +464,6 @@ public class TrafficPolicyWriteThroughService {
     private boolean isRetryComplete(PolicySyncResult syncResult) {
         return syncResult != PolicySyncResult.RETRYABLE_FAILURE
                 && syncResult != PolicySyncResult.CONNECTION_FAILURE;
-    }
-
-    /**
-     * 정책 Outbox는 요청 단위 traceId를 공통 식별자로 사용하므로 MDC 값이 없으면 생성하지 않습니다.
-     */
-    private String resolveRequiredTraceIdFromMdc() {
-        String traceId = MDC.get("traceId");
-        if (traceId == null || traceId.isBlank()) {
-            throw new IllegalArgumentException("traceId must not be blank");
-        }
-        return traceId.trim();
     }
 
     /**
