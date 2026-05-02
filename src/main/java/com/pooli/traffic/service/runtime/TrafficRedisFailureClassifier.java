@@ -17,7 +17,7 @@ import io.lettuce.core.RedisConnectionException;
  * 문자열 contains 기반 판별은 사용하지 않습니다.
  */
 @Component
-@Profile({"local", "traffic"})
+@Profile({"local", "api", "traffic"})
 public class TrafficRedisFailureClassifier {
 
     public boolean isRetryableInfrastructureFailure(Throwable throwable) {

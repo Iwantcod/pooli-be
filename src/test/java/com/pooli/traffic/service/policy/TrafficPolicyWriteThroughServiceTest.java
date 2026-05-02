@@ -2,6 +2,7 @@ package com.pooli.traffic.service.policy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -33,6 +34,7 @@ import com.pooli.traffic.domain.outbox.payload.PolicyActivationOutboxPayload;
 import com.pooli.traffic.service.outbox.PolicySyncResult;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import org.junit.jupiter.api.AfterEach;
@@ -66,6 +68,9 @@ class TrafficPolicyWriteThroughServiceTest {
 
     @Mock
     private RedisOutboxRecordService redisOutboxRecordService;
+
+    @Mock
+    private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     @InjectMocks
     private TrafficPolicyWriteThroughService trafficPolicyWriteThroughService;
@@ -590,6 +595,67 @@ class TrafficPolicyWriteThroughServiceTest {
                     eq(TEST_TRACE_ID)
             );
             verify(redisOutboxRecordService).markFail(20L);
+            verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+        }
+
+        @Test
+        @DisplayName("RuntimeException이 retryable + connection이면 CONNECTION_FAILURE로 변환해 markFail")
+        void mapsConnectionRuntimeExceptionToConnectionFailure() {
+            // given
+            RuntimeException connectionException = new RuntimeException("redis connection down");
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), eq(TEST_TRACE_ID))).thenReturn(24L);
+            when(trafficRedisKeyFactory.policyKey(3003L)).thenReturn("pooli:policy:3003");
+            when(trafficPolicyVersionedRedisService.syncVersionedValue(eq("pooli:policy:3003"), eq("1"), anyLong()))
+                    .thenThrow(connectionException);
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(connectionException)).thenReturn(true);
+            when(trafficRedisFailureClassifier.isConnectionFailure(connectionException)).thenReturn(true);
+
+            // when
+            trafficPolicyWriteThroughService.syncPolicyActivation(3003L, true);
+
+            // then
+            verify(redisOutboxRecordService).markFail(24L);
+            verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+        }
+
+        @Test
+        @DisplayName("RuntimeException이 retryable + non-connection이면 RETRYABLE_FAILURE로 변환해 markFail")
+        void mapsRetryableRuntimeExceptionToRetryableFailure() {
+            // given
+            RuntimeException timeoutException = new RuntimeException("redis timeout");
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), eq(TEST_TRACE_ID))).thenReturn(25L);
+            when(trafficRedisKeyFactory.policyKey(3004L)).thenReturn("pooli:policy:3004");
+            when(trafficPolicyVersionedRedisService.syncVersionedValue(eq("pooli:policy:3004"), eq("0"), anyLong()))
+                    .thenThrow(timeoutException);
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(timeoutException)).thenReturn(true);
+            when(trafficRedisFailureClassifier.isConnectionFailure(timeoutException)).thenReturn(false);
+
+            // when
+            trafficPolicyWriteThroughService.syncPolicyActivation(3004L, false);
+
+            // then
+            verify(redisOutboxRecordService).markFail(25L);
+            verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+        }
+
+        @Test
+        @DisplayName("RuntimeException이 non-retryable이면 예외를 전파하고 Outbox 상태를 갱신하지 않는다")
+        void rethrowsNonRetryableRuntimeException() {
+            // given
+            RuntimeException nonRetryable = new RuntimeException("serialization failed");
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), eq(TEST_TRACE_ID))).thenReturn(26L);
+            when(trafficRedisKeyFactory.policyKey(3005L)).thenReturn("pooli:policy:3005");
+            when(trafficPolicyVersionedRedisService.syncVersionedValue(eq("pooli:policy:3005"), eq("1"), anyLong()))
+                    .thenThrow(nonRetryable);
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(nonRetryable)).thenReturn(false);
+
+            // when & then
+            RuntimeException thrown = assertThrows(
+                    RuntimeException.class,
+                    () -> trafficPolicyWriteThroughService.syncPolicyActivation(3005L, true)
+            );
+            assertEquals(nonRetryable, thrown);
+            verify(redisOutboxRecordService, never()).markFail(anyLong());
             verify(redisOutboxRecordService, never()).markSuccess(anyLong());
         }
     }

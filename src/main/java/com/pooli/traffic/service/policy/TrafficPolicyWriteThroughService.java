@@ -27,6 +27,7 @@ import com.pooli.traffic.domain.outbox.payload.PolicyActivationOutboxPayload;
 import com.pooli.traffic.service.outbox.PolicySyncResult;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
@@ -54,6 +55,7 @@ public class TrafficPolicyWriteThroughService {
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficPolicyVersionedRedisService trafficPolicyVersionedRedisService;
     private final RedisOutboxRecordService redisOutboxRecordService;
+    private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     /**
      * 정책 활성화 상태를 Redis policy 키에 동기화합니다.
@@ -432,13 +434,27 @@ public class TrafficPolicyWriteThroughService {
         try {
             return redisWriteOperation.get();
         } catch (RuntimeException e) {
+            if (!trafficRedisFailureClassifier.isRetryableInfrastructureFailure(e)) {
+                log.error(
+                        "traffic_policy_write_through_non_retryable_exception operation={} attempt={}",
+                        operationName,
+                        attemptNumber,
+                        e
+                );
+                throw e;
+            }
+
+            PolicySyncResult failureResult = trafficRedisFailureClassifier.isConnectionFailure(e)
+                    ? PolicySyncResult.CONNECTION_FAILURE
+                    : PolicySyncResult.RETRYABLE_FAILURE;
             log.warn(
-                    "traffic_policy_write_through_exception operation={} attempt={}/{}",
+                    "traffic_policy_write_through_exception operation={} attempt={} mappedResult={}",
                     operationName,
                     attemptNumber,
+                    failureResult,
                     e
             );
-            return PolicySyncResult.RETRYABLE_FAILURE;
+            return failureResult;
         }
     }
 
