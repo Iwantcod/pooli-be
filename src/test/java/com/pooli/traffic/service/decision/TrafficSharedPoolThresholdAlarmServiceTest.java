@@ -11,11 +11,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
 
 import com.pooli.traffic.domain.TrafficFamilyMetaSnapshot;
 import com.pooli.traffic.domain.outbox.OutboxEventType;
@@ -26,6 +29,8 @@ import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficSharedPoolThresholdAlarmServiceTest {
+
+    private static final String TEST_TRACE_ID = "trace-threshold-test-001";
 
     @Mock
     private TrafficFamilyMetaCacheService trafficFamilyMetaCacheService;
@@ -41,6 +46,16 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
 
     @InjectMocks
     private TrafficSharedPoolThresholdAlarmService trafficSharedPoolThresholdAlarmService;
+
+    @BeforeEach
+    void setUpMdcTraceId() {
+        MDC.put("traceId", TEST_TRACE_ID);
+    }
+
+    @AfterEach
+    void clearMdcTraceId() {
+        MDC.remove("traceId");
+    }
 
     @Test
     @DisplayName("잔량 퍼센트가 50% 이하이면 50% 임계치 Outbox를 생성한다")
@@ -69,7 +84,7 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
         verify(redisOutboxRecordService, times(1)).createPending(
                 eq(OutboxEventType.SHARED_POOL_THRESHOLD_REACHED),
                 any(),
-                any()
+                eq(TEST_TRACE_ID)
         );
     }
 
@@ -127,7 +142,7 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
         verify(redisOutboxRecordService, times(1)).createPending(
                 eq(OutboxEventType.SHARED_POOL_THRESHOLD_REACHED),
                 any(),
-                any()
+                eq(TEST_TRACE_ID)
         );
     }
 
@@ -157,7 +172,7 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
         verify(redisOutboxRecordService, times(1)).createPending(
                 eq(OutboxEventType.SHARED_POOL_THRESHOLD_REACHED),
                 any(),
-                any()
+                eq(TEST_TRACE_ID)
         );
     }
 }

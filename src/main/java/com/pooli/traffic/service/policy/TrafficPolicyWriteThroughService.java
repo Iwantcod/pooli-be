@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -25,6 +26,7 @@ import com.pooli.traffic.domain.outbox.payload.PolicyActivationOutboxPayload;
 import com.pooli.traffic.service.outbox.PolicySyncResult;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
@@ -41,16 +43,18 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficPolicyWriteThroughService {
 
-    private static final int WRITE_THROUGH_RETRY_MAX = 3;
-    private static final long WRITE_THROUGH_RETRY_BACKOFF_MS = 50L;
     private static final int APP_SPEED_LIMIT_UPLOAD_MULTIPLIER = 125;
     private static final int END_OF_DAY_SECOND = 86_399;
     private static final int START_OF_DAY_SECOND = 0;
+
+    @Value("${app.traffic.deduct.redis-retry.max-attempts:3}")
+    private int redisRetryMaxAttempts = 3;
 
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficPolicyVersionedRedisService trafficPolicyVersionedRedisService;
     private final RedisOutboxRecordService redisOutboxRecordService;
+    private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     /**
      * 정책 활성화 상태를 Redis policy 키에 동기화합니다.
@@ -66,7 +70,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_POLICY_ACTIVATION,
                 payload,
-                null,
                 "policy_activation_sync policyId=" + policyId + " isActive=" + isActive,
                 () -> syncPolicyActivationUntracked(policyId, isActive, version)
         );
@@ -95,7 +98,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_LINE_LIMIT,
                 payload,
-                null,
                 "line_limit_sync lineId=" + lineId,
                 () -> syncLineLimitUntracked(lineId, dailyLimit, isDailyActive, sharedLimit, isSharedActive, version)
         );
@@ -116,7 +118,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_IMMEDIATE_BLOCK,
                 payload,
-                null,
                 "immediate_block_sync lineId=" + lineId,
                 () -> syncImmediateBlockEndUntracked(lineId, blockEndAt, version)
         );
@@ -135,7 +136,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_REPEAT_BLOCK,
                 payload,
-                null,
                 "repeat_block_sync lineId=" + lineId,
                 () -> syncRepeatBlockUntracked(lineId, repeatBlocks, version)
         );
@@ -162,7 +162,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_APP_POLICY,
                 payload,
-                null,
                 "app_policy_sync lineId=" + lineId + " appId=" + appId + " isActive=" + isActive,
                 () -> syncAppPolicyUntracked(lineId, appId, isActive, dataLimit, speedLimit, isWhitelist, version)
         );
@@ -182,7 +181,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_APP_POLICY,
                 payload,
-                null,
                 "app_policy_evict lineId=" + lineId + " appId=" + appId,
                 () -> evictAppPolicyUntracked(lineId, appId, version)
         );
@@ -201,7 +199,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_APP_POLICY_SNAPSHOT,
                 payload,
-                null,
                 "app_policy_snapshot_sync lineId=" + lineId,
                 () -> syncAppPolicySnapshotUntracked(lineId, appPolicies, version)
         );
@@ -365,11 +362,14 @@ public class TrafficPolicyWriteThroughService {
     private void executeTrackedAfterCommit(
             OutboxEventType eventType,
             Object payload,
-            String uuid,
             String operationName,
             Supplier<PolicySyncResult> redisWriteOperation
     ) {
-        long outboxId = redisOutboxRecordService.createPending(eventType, payload, uuid);
+        long outboxId = redisOutboxRecordService.createPending(
+                eventType,
+                payload,
+                null
+        );
         executeAfterCommit(() -> {
             PolicySyncResult syncResult = redisWriteOperation.get();
             if (isSuccessEquivalent(syncResult)) {
@@ -401,41 +401,69 @@ public class TrafficPolicyWriteThroughService {
 
     /**
      * Redis write-through를 재시도 정책과 함께 실행합니다.
+     * <p>
+     * 실행 순서:
+     * 1) 초기 1회 실행
+     * 2) Redis 접근부(@Retryable)의 결과를 수신해 최종 상태를 정리
      */
     private PolicySyncResult executeWithRetry(String operationName, Supplier<PolicySyncResult> redisWriteOperation) {
-        PolicySyncResult lastFailure = PolicySyncResult.RETRYABLE_FAILURE;
-        for (int attempt = 1; attempt <= WRITE_THROUGH_RETRY_MAX; attempt++) {
-            PolicySyncResult syncResult;
-            try {
-                syncResult = redisWriteOperation.get();
-            } catch (RuntimeException e) {
-                syncResult = PolicySyncResult.RETRYABLE_FAILURE;
-                log.warn("traffic_policy_write_through_exception operation={} attempt={}/{}", operationName, attempt, WRITE_THROUGH_RETRY_MAX, e);
-            }
-
-            if (syncResult != PolicySyncResult.RETRYABLE_FAILURE
-                    && syncResult != PolicySyncResult.CONNECTION_FAILURE) {
-                return syncResult;
-            }
-            lastFailure = syncResult;
-
-            if (attempt < WRITE_THROUGH_RETRY_MAX) {
-                log.warn(
-                        "traffic_policy_write_through_retry operation={} attempt={}/{}",
-                        operationName,
-                        attempt,
-                        WRITE_THROUGH_RETRY_MAX
-                );
-                sleepBackoff();
-            }
-        }
-
-        log.error(
-                "traffic_policy_write_through_retry_exhausted operation={} attempts={}",
+        PolicySyncResult syncResult = executeWriteOperation(
                 operationName,
-                WRITE_THROUGH_RETRY_MAX
+                redisWriteOperation,
+                1
         );
-        return lastFailure;
+        if (!isRetryComplete(syncResult)) {
+            log.error(
+                    "traffic_policy_write_through_retry_exhausted operation={}",
+                    operationName
+            );
+        }
+        return syncResult;
+    }
+
+    /**
+     * 단일 write-through 실행 결과를 반환합니다.
+     * 런타임 예외는 RETRYABLE_FAILURE로 정규화해 상위 실패 처리에서 동일 정책으로 다룹니다.
+     */
+    private PolicySyncResult executeWriteOperation(
+            String operationName,
+            Supplier<PolicySyncResult> redisWriteOperation,
+            int attemptNumber
+    ) {
+        try {
+            return redisWriteOperation.get();
+        } catch (RuntimeException e) {
+            if (!trafficRedisFailureClassifier.isRetryableInfrastructureFailure(e)) {
+                log.error(
+                        "traffic_policy_write_through_non_retryable_exception operation={} attempt={}",
+                        operationName,
+                        attemptNumber,
+                        e
+                );
+                throw e;
+            }
+
+            PolicySyncResult failureResult = trafficRedisFailureClassifier.isConnectionFailure(e)
+                    ? PolicySyncResult.CONNECTION_FAILURE
+                    : PolicySyncResult.RETRYABLE_FAILURE;
+            log.warn(
+                    "traffic_policy_write_through_exception operation={} attempt={} mappedResult={}",
+                    operationName,
+                    attemptNumber,
+                    failureResult,
+                    e
+            );
+            return failureResult;
+        }
+    }
+
+    /**
+     * 재시도 루프를 종료할 결과인지 판별합니다.
+     * RETRYABLE/CONNECTION 실패가 아니면 성공 계열(SUCCESS/STALE_REJECTED 등)로 간주합니다.
+     */
+    private boolean isRetryComplete(PolicySyncResult syncResult) {
+        return syncResult != PolicySyncResult.RETRYABLE_FAILURE
+                && syncResult != PolicySyncResult.CONNECTION_FAILURE;
     }
 
     /**
@@ -562,16 +590,5 @@ public class TrafficPolicyWriteThroughService {
      */
     private long nowEpochMillis() {
         return System.currentTimeMillis();
-    }
-
-    /**
-     * 재시도 간 짧은 백오프를 수행합니다.
-     */
-    private void sleepBackoff() {
-        try {
-            Thread.sleep(WRITE_THROUGH_RETRY_BACKOFF_MS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 }

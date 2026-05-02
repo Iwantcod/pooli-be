@@ -1,4 +1,4 @@
--- policy_check_indiv.lua
+-- block_policy_check.lua
 -- 차단성 정책(즉시/반복/화이트리스트)만 검증한다.
 -- 반환 계약: {"answer": 1|0, "status": "..."}
 -- answer=1: 화이트리스트 우회 활성

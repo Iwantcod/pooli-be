@@ -323,7 +323,8 @@ For tasks that span multiple turns or sessions, maintain an external planning do
 - `PLANS.md` is considered **complete** when all milestones reach `completed` status.
 - The agent MUST NOT automatically delete `PLANS.md` upon completion.
 - Instead, add a `[COMPLETED]` marker at the top of the document and notify the user.
-- Delete `PLANS.md` ONLY when the user explicitly instructs deletion.
+- After marking completion, move the file to `docs/plan/completed/[한글로 작성된 작업 간단요약].md` to preserve history.
+- The archived file in `docs/plan/completed/` MUST NOT be deleted unless the user explicitly instructs deletion.
 - This preserves the decision-making history for retrospective review.
 
 ---

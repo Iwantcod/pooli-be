@@ -43,6 +43,11 @@ public interface RedisOutboxMapper {
     int markFail(@Param("id") Long id);
 
     /**
+     * 레코드를 FINAL_FAIL 터미널 상태로 전이합니다.
+     */
+    int markFinalFail(@Param("id") Long id);
+
+    /**
      * 레코드를 FAIL 상태로 전이하고 재시도 횟수를 1 증가시킵니다.
      */
     int markFailWithRetryIncrement(@Param("id") Long id);
@@ -57,7 +62,7 @@ public interface RedisOutboxMapper {
 
     /**
      * REFILL 레코드를 REVERT로 CAS 전이합니다.
-     * 이미 터미널 상태(SUCCESS/REVERT)면 0을 반환합니다.
+     * 이미 터미널 상태(SUCCESS/REVERT/FINAL_FAIL)면 0을 반환합니다.
      */
     int markRevertIfCompensable(@Param("id") Long id);
 }

@@ -13,9 +13,7 @@ import org.springframework.stereotype.Service;
 import com.pooli.common.config.AppStreamsProperties;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
-@Slf4j
 @Service
 @Profile({"local", "traffic"})
 @RequiredArgsConstructor
@@ -39,17 +37,11 @@ public class TrafficStreamReclaimService {
             return List.of();
         }
 
-        long reclaimMinIdleMs = appStreamsProperties.requireReclaimMinIdleMs();
-        int maxRetry = appStreamsProperties.requireMaxRetry();
+        long reclaimMinIdleMs = appStreamsProperties.resolveReclaimMinIdleMs();
 
         List<RecordId> claimCandidates = new ArrayList<>();
         for (PendingMessage pendingMessage : pendingMessages) {
             if (!isIdleEnoughForReclaim(pendingMessage, reclaimMinIdleMs)) {
-                continue;
-            }
-
-            if (hasExceededRetryLimit(pendingMessage, maxRetry)) {
-                moveToDlqAndAcknowledge(pendingMessage, maxRetry);
                 continue;
             }
 
@@ -71,32 +63,5 @@ public class TrafficStreamReclaimService {
         Duration elapsedSinceLastDelivery = pendingMessage.getElapsedTimeSinceLastDelivery();
         long elapsedMs = elapsedSinceLastDelivery == null ? 0L : elapsedSinceLastDelivery.toMillis();
         return elapsedMs >= reclaimMinIdleMs;
-    }
-
-    private boolean hasExceededRetryLimit(PendingMessage pendingMessage, int maxRetry) {
-        return pendingMessage.getTotalDeliveryCount() > maxRetry;
-    }
-
-    private void moveToDlqAndAcknowledge(PendingMessage pendingMessage, int maxRetry) {
-        String sourceRecordId = pendingMessage.getIdAsString();
-        MapRecord<String, String, String> sourceRecord =
-                trafficStreamInfraService.readRecordById(pendingMessage.getId());
-        String payload = sourceRecord == null ? null : trafficStreamInfraService.extractPayload(sourceRecord);
-
-        String reason = String.format(
-                "max retry exceeded: deliveryCount=%d, maxRetry=%d",
-                pendingMessage.getTotalDeliveryCount(),
-                maxRetry
-        );
-
-        trafficStreamInfraService.writeDlq(payload, reason, sourceRecordId);
-        trafficStreamInfraService.acknowledge(pendingMessage.getId());
-
-        log.warn(
-                "traffic_stream_record_moved_to_dlq recordId={} deliveryCount={} maxRetry={}",
-                sourceRecordId,
-                pendingMessage.getTotalDeliveryCount(),
-                maxRetry
-        );
     }
 }

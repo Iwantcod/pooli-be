@@ -6,18 +6,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
-import org.springframework.data.redis.RedisConnectionFailureException;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pooli.traffic.service.retry.TrafficRedisCasRetryInvoker;
+import com.pooli.traffic.service.retry.TrafficRedisCasRetryExecutionResult;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -35,9 +35,9 @@ public class TrafficPolicyVersionedRedisService {
     private static final String APP_POLICY_SINGLE_CAS_SCRIPT_RESOURCE = "lua/traffic/app_policy_single_cas.lua";
     private static final String APP_POLICY_SNAPSHOT_CAS_SCRIPT_RESOURCE = "lua/traffic/app_policy_snapshot_cas.lua";
 
-    @Qualifier("cacheStringRedisTemplate")
-    private final StringRedisTemplate cacheStringRedisTemplate;
     private final ObjectMapper objectMapper;
+    private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
+    private final TrafficRedisCasRetryInvoker trafficRedisCasRetryInvoker;
 
     private RedisScript<Long> valueCasScript;
     private RedisScript<Long> repeatBlockCasScript;
@@ -133,52 +133,50 @@ public class TrafficPolicyVersionedRedisService {
      */
     private PolicySyncResult executeCas(RedisScript<Long> script, List<String> keys, String... args) {
         try {
-            Long rawResult = cacheStringRedisTemplate.execute(script, keys, (Object[]) args);
-            if (rawResult == null) {
-                return PolicySyncResult.RETRYABLE_FAILURE;
-            }
-            if (rawResult == 1L) {
-                return PolicySyncResult.SUCCESS;
-            }
-            if (rawResult == 0L) {
-                return PolicySyncResult.STALE_REJECTED;
-            }
-            return PolicySyncResult.RETRYABLE_FAILURE;
+            TrafficRedisCasRetryExecutionResult retryExecutionResult =
+                    trafficRedisCasRetryInvoker.execute(script, keys, (Object[]) args);
+            return mapRetryExecutionResult(retryExecutionResult);
         } catch (DataAccessException e) {
-            if (isConnectionFailure(e)) {
-                return PolicySyncResult.CONNECTION_FAILURE;
-            }
-            return PolicySyncResult.RETRYABLE_FAILURE;
+            // Retry 프록시가 적용되지 않는 예외 경로에서도 기존 CONNECTION/RETRYABLE 분류 계약을 보장합니다.
+            return mapDataAccessException(e);
         }
     }
 
     /**
-     * 연결 실패 계열 예외인지 판별합니다.
+     * Retry 실행 결과를 기존 PolicySyncResult 계약으로 변환합니다.
      */
-    private boolean isConnectionFailure(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null) {
-            if (current instanceof RedisConnectionFailureException) {
-                return true;
-            }
-
-            String className = current.getClass().getSimpleName();
-            String message = current.getMessage();
-            if (className != null && className.toLowerCase().contains("connection")) {
-                return true;
-            }
-            if (message != null) {
-                String normalized = message.toLowerCase();
-                if (normalized.contains("connection")
-                        || normalized.contains("connect timed out")
-                        || normalized.contains("connection refused")
-                        || normalized.contains("unable to connect")) {
-                    return true;
-                }
-            }
-            current = current.getCause();
+    private PolicySyncResult mapRetryExecutionResult(TrafficRedisCasRetryExecutionResult retryExecutionResult) {
+        DataAccessException lastFailure = retryExecutionResult.lastFailure();
+        if (lastFailure != null) {
+            return mapDataAccessException(lastFailure);
         }
-        return false;
+        return mapRawResult(retryExecutionResult.rawResult());
+    }
+
+    /**
+     * Redis DataAccessException을 CONNECTION/RETRYABLE 경계로 분류합니다.
+     */
+    private PolicySyncResult mapDataAccessException(DataAccessException exception) {
+        if (trafficRedisFailureClassifier.isConnectionFailure(exception)) {
+            return PolicySyncResult.CONNECTION_FAILURE;
+        }
+        return PolicySyncResult.RETRYABLE_FAILURE;
+    }
+
+    /**
+     * CAS Lua raw result를 기존 상태 계약으로 매핑합니다.
+     */
+    private PolicySyncResult mapRawResult(Long rawResult) {
+        if (rawResult == null) {
+            return PolicySyncResult.RETRYABLE_FAILURE;
+        }
+        if (rawResult == 1L) {
+            return PolicySyncResult.SUCCESS;
+        }
+        if (rawResult == 0L) {
+            return PolicySyncResult.STALE_REJECTED;
+        }
+        return PolicySyncResult.RETRYABLE_FAILURE;
     }
 
     /**

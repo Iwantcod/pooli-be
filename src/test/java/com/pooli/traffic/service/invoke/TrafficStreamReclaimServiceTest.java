@@ -5,9 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -62,37 +60,33 @@ class TrafficStreamReclaimServiceTest {
         }
 
         @Test
-        @DisplayName("routes exceeded retry pending message to DLQ and ACK")
-        void routesExceededRetryMessageToDlq() {
-            mockProperties(100, 15_000L, 5);
-            PendingMessage exceeded = pendingMessage("1-0", 6L, 20_000L);
-            MapRecord<String, String, String> sourceRecord = MapRecord
+        @DisplayName("does not route by delivery count and still claims reclaim candidates")
+        void doesNotRouteByDeliveryCountAndStillClaimsCandidates() {
+            mockProperties(100, 15_000L);
+            PendingMessage highDeliveryCount = pendingMessage("1-0", 6L, 20_000L);
+            MapRecord<String, String, String> claimedRecord = MapRecord
                     .<String, String, String>create("traffic:deduct:request", Map.of(TrafficStreamFields.PAYLOAD, "{\"traceId\":\"t-1\"}"))
                     .withId(RecordId.of("1-0"));
 
-            when(trafficStreamInfraService.readPendingMessages(100L)).thenReturn(List.of(exceeded));
-            when(trafficStreamInfraService.readRecordById(any(RecordId.class))).thenReturn(sourceRecord);
-            when(trafficStreamInfraService.extractPayload(sourceRecord)).thenReturn("{\"traceId\":\"t-1\"}");
+            when(trafficStreamInfraService.readPendingMessages(100L)).thenReturn(List.of(highDeliveryCount));
+            when(trafficStreamInfraService.claimPending(List.of(RecordId.of("1-0")), 15_000L))
+                    .thenReturn(List.of(claimedRecord));
 
             List<MapRecord<String, String, String>> reclaimed =
                     trafficStreamReclaimService.reclaimAndRouteExceededRetries(3);
 
-            assertTrue(reclaimed.isEmpty());
-            verify(trafficStreamInfraService).writeDlq(
-                    eq("{\"traceId\":\"t-1\"}"),
-                    eq("max retry exceeded: deliveryCount=6, maxRetry=5"),
-                    eq("1-0")
-            );
-            verify(trafficStreamInfraService).acknowledge(
+            assertEquals(1, reclaimed.size());
+            verify(trafficStreamInfraService).claimPending(List.of(RecordId.of("1-0")), 15_000L);
+            verify(trafficStreamInfraService, never()).writeDlq(any(), any(), any());
+            verify(trafficStreamInfraService, never()).acknowledge(
                     argThat(recordId -> recordId != null && "1-0".equals(recordId.getValue()))
             );
-            verify(trafficStreamInfraService, never()).claimPending(anyList(), eq(15_000L));
         }
 
         @Test
         @DisplayName("claims only up to remaining reclaim dispatch limit")
         void claimsOnlyUpToDispatchLimit() {
-            mockProperties(100, 15_000L, 5);
+            mockProperties(100, 15_000L);
             PendingMessage first = pendingMessage("2-0", 2L, 18_000L);
             PendingMessage second = pendingMessage("2-1", 3L, 19_000L);
             PendingMessage third = pendingMessage("2-2", 1L, 20_000L);
@@ -110,7 +104,7 @@ class TrafficStreamReclaimServiceTest {
             assertEquals(1, reclaimed.size());
             assertEquals("2-0", reclaimed.get(0).getId().getValue());
             verify(trafficStreamInfraService).claimPending(List.of(RecordId.of("2-0"), RecordId.of("2-1")), 15_000L);
-            verify(trafficStreamInfraService, never()).writeDlq(any(), anyString(), anyString());
+            verify(trafficStreamInfraService, never()).writeDlq(any(), any(), any());
         }
 
         @Test
@@ -128,7 +122,7 @@ class TrafficStreamReclaimServiceTest {
         @Test
         @DisplayName("skips pending message when min idle is not reached")
         void skipsPendingMessageWhenIdleNotEnough() {
-            mockProperties(100, 15_000L, 5);
+            mockProperties(100, 15_000L);
             PendingMessage tooFresh = pendingMessage("3-0", 1L, 5_000L);
 
             when(trafficStreamInfraService.readPendingMessages(100L)).thenReturn(List.of(tooFresh));
@@ -138,7 +132,7 @@ class TrafficStreamReclaimServiceTest {
 
             assertTrue(reclaimed.isEmpty());
             verify(trafficStreamInfraService, never()).claimPending(anyList(), anyLong());
-            verify(trafficStreamInfraService, never()).writeDlq(any(), anyString(), anyString());
+            verify(trafficStreamInfraService, never()).writeDlq(any(), any(), any());
         }
 
         @Test
@@ -151,10 +145,9 @@ class TrafficStreamReclaimServiceTest {
             verify(trafficStreamInfraService, never()).readPendingMessages(anyLong());
         }
 
-        private void mockProperties(int reclaimPendingScanCount, long reclaimMinIdleMs, int maxRetry) {
+        private void mockProperties(int reclaimPendingScanCount, long reclaimMinIdleMs) {
             when(appStreamsProperties.requireReclaimPendingScanCount()).thenReturn(reclaimPendingScanCount);
-            when(appStreamsProperties.requireReclaimMinIdleMs()).thenReturn(reclaimMinIdleMs);
-            when(appStreamsProperties.requireMaxRetry()).thenReturn(maxRetry);
+            when(appStreamsProperties.resolveReclaimMinIdleMs()).thenReturn(reclaimMinIdleMs);
         }
 
         private PendingMessage pendingMessage(String recordId, long deliveryCount, long elapsedMs) {

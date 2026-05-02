@@ -1,0 +1,5 @@
+-- TRAFFIC_DEDUCT_DONE.created_at을 레코드 생성 시점으로 통일하기 위해
+-- DB 기본값을 현재 시각으로 설정합니다.
+
+ALTER TABLE TRAFFIC_DEDUCT_DONE
+    MODIFY COLUMN created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6);

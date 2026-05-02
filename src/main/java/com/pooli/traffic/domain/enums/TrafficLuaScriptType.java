@@ -10,13 +10,21 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum TrafficLuaScriptType {
-    POLICY_CHECK_INDIVIDUAL("policy_check_indiv", "lua/traffic/policy_check_indiv.lua"),
-    POLICY_CHECK_SHARED("policy_check_shared", "lua/traffic/policy_check_shared.lua"),
+    BLOCK_POLICY_CHECK("block_policy_check", "lua/traffic/block_policy_check.lua"),
     DEDUCT_INDIVIDUAL("deduct_indiv", "lua/traffic/deduct_indiv.lua"),
     DEDUCT_SHARED("deduct_shared", "lua/traffic/deduct_shared.lua"),
     REFILL_GATE("refill_gate", "lua/traffic/refill_gate.lua"),
     LOCK_HEARTBEAT("lock_heartbeat", "lua/traffic/lock_heartbeat.lua"),
-    LOCK_RELEASE("lock_release", "lua/traffic/lock_release.lua");
+    LOCK_RELEASE("lock_release", "lua/traffic/lock_release.lua"),
+    IN_FLIGHT_CREATE_IF_ABSENT("in_flight_create_if_absent", "lua/traffic/in_flight_create_if_absent.lua"),
+    IN_FLIGHT_INCREMENT_RETRY_WITH_INIT(
+            "in_flight_increment_retry_with_init",
+            "lua/traffic/in_flight_increment_retry_with_init.lua"
+    ),
+    IN_FLIGHT_INCREMENT_PROCESSED_WITH_INIT(
+            "in_flight_increment_processed_with_init",
+            "lua/traffic/in_flight_increment_processed_with_init.lua"
+    );
 
     private final String scriptName;
     private final String resourcePath;

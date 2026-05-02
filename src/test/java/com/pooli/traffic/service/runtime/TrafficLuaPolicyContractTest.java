@@ -15,10 +15,10 @@ import org.junit.jupiter.api.Test;
  */
 class TrafficLuaPolicyContractTest {
 
-    private static final Path POLICY_CHECK_INDIVIDUAL_SCRIPT =
-            Path.of("src/main/resources/lua/traffic/policy_check_indiv.lua");
-    private static final Path POLICY_CHECK_SHARED_SCRIPT =
-            Path.of("src/main/resources/lua/traffic/policy_check_shared.lua");
+    private static final Path BLOCK_POLICY_CHECK_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/block_policy_check.lua");
+    private static final Path LUA_SCRIPT_TYPE_SOURCE =
+            Path.of("src/main/java/com/pooli/traffic/domain/enums/TrafficLuaScriptType.java");
     private static final Path DEDUCT_INDIVIDUAL_SCRIPT =
             Path.of("src/main/resources/lua/traffic/deduct_indiv.lua");
     private static final Path DEDUCT_SHARED_SCRIPT =
@@ -27,9 +27,9 @@ class TrafficLuaPolicyContractTest {
             Path.of("src/main/resources/lua/traffic/refill_gate.lua");
 
     @Test
-    @DisplayName("1차 개인 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
-    void keepsPolicyCheckOrderForIndividual() throws IOException {
-        String script = Files.readString(POLICY_CHECK_INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("1차 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
+    void keepsPolicyCheckOrder() throws IOException {
+        String script = Files.readString(BLOCK_POLICY_CHECK_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
@@ -40,15 +40,48 @@ class TrafficLuaPolicyContractTest {
     }
 
     @Test
-    @DisplayName("1차 공유 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
-    void keepsPolicyCheckOrderForShared() throws IOException {
-        String script = Files.readString(POLICY_CHECK_SHARED_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("정책검증 Lua 타입은 통합 스크립트 하나로 고정한다")
+    void keepsSinglePolicyCheckScriptType() throws IOException {
+        String enumSource = Files.readString(LUA_SCRIPT_TYPE_SOURCE, StandardCharsets.UTF_8);
 
-        assertAppearsInOrder(
-                script,
-                "if is_policy_enabled(policy_whitelist_key)",
-                "if is_policy_enabled(policy_immediate_key)",
-                "if is_policy_enabled(policy_repeat_key)"
+        assertTrue(
+                enumSource.contains("BLOCK_POLICY_CHECK(\"block_policy_check\", \"lua/traffic/block_policy_check.lua\")"),
+                "Lua script type must include unified BLOCK_POLICY_CHECK mapping."
+        );
+        assertTrue(
+                !enumSource.contains("POLICY_CHECK_INDIV"),
+                "Legacy individual policy-check script type must not be reintroduced."
+        );
+        assertTrue(
+                !enumSource.contains("POLICY_CHECK_SHARED"),
+                "Legacy shared policy-check script type must not be reintroduced."
+        );
+    }
+
+    @Test
+    @DisplayName("통합 policy-check Lua는 pool 구분 없이 동일 상태 계약을 반환한다")
+    void keepsUnifiedPolicyCheckStatusContract() throws IOException {
+        String script = Files.readString(BLOCK_POLICY_CHECK_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(
+                script.contains("\"GLOBAL_POLICY_HYDRATE\""),
+                "Unified policy-check script must return GLOBAL_POLICY_HYDRATE."
+        );
+        assertTrue(
+                script.contains("\"BLOCKED_IMMEDIATE\""),
+                "Unified policy-check script must return BLOCKED_IMMEDIATE."
+        );
+        assertTrue(
+                script.contains("\"BLOCKED_REPEAT\""),
+                "Unified policy-check script must return BLOCKED_REPEAT."
+        );
+        assertTrue(
+                script.contains("return as_json(1, \"OK\")"),
+                "Unified policy-check script must keep whitelist bypass OK path."
+        );
+        assertTrue(
+                script.contains("return as_json(0, \"OK\")"),
+                "Unified policy-check script must keep non-whitelist OK path."
         );
     }
 
@@ -150,10 +183,22 @@ class TrafficLuaPolicyContractTest {
     }
 
     @Test
-    @DisplayName("공유 QoS fallback은 speed_remaining을 계산해 qos와 함께 최소값을 적용한다")
-    void sharedScriptUsesSpeedRemainingForQosFallback() throws IOException {
+    @DisplayName("공유 QoS fallback의 speed 정책은 whitelist 우회가 아닐 때만 적용된다")
+    void sharedScriptAppliesSpeedPolicyForQosFallbackOnlyWhenWhitelistBypassDisabled() throws IOException {
         String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
 
+        assertTrue(
+                script.contains("if (not whitelist_bypass) and is_policy_enabled(policy_app_speed_key) then"),
+                "Shared QoS fallback must skip app speed policy when whitelist bypass is enabled."
+        );
+        assertAppearsInOrder(
+                script,
+                "local qos_answer, qos_status = resolve_qos_fallback(",
+                "qos_capped_target,",
+                "qos_policy_status,",
+                "whitelist_bypass,",
+                "policy_app_speed_key,"
+        );
         assertAppearsInOrder(
                 script,
                 "local speed_used = tonumber(redis.call(\"GET\", speed_bucket_key) or \"0\")",

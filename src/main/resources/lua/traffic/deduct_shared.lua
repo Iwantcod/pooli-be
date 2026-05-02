@@ -1,5 +1,5 @@
 -- deduct_shared.lua
--- 2차 차감 Lua: 한도/속도/차감/usage/speed 갱신을 원자 처리한다.
+-- 차감 단계 Lua: 한도/속도/차감/usage/speed 갱신을 원자 처리한다.
 
 local function as_json(answer, status)
   return cjson.encode({ answer = answer, status = status })
@@ -29,12 +29,16 @@ local function has_missing_global_policy_key(...)
 end
 
 local SPEED_BUCKET_TTL_SECONDS = 15
+local DEDUPE_PROCESSED_FIELD = "processedData"
+local DEDUPE_RETRY_FIELD = "retryCount"
 
 -- 공유 잔량이 부족한 경우 QoS 보정식을 적용해 대체 차감량/상태를 계산합니다.
--- QoS 경로에서도 daily/app 정책과 속도 정책을 함께 반영합니다.
+-- daily/app 정책은 호출부에서 반영된 cap(qos_capped_target)을 입력으로 받고,
+-- app speed 정책은 화이트리스트 우회가 비활성인 경우에만 여기서 적용합니다.
 local function resolve_qos_fallback(
   target_data,
   policy_status,
+  whitelist_bypass,
   policy_app_speed_key,
   app_speed_limit_key,
   app_speed_field,
@@ -60,7 +64,8 @@ local function resolve_qos_fallback(
     return 0, "NO_BALANCE"
   end
 
-  if is_policy_enabled(policy_app_speed_key) then
+  -- 화이트리스트 우회가 활성화된 요청은 QoS fallback에서도 app speed 정책을 적용하지 않는다.
+  if (not whitelist_bypass) and is_policy_enabled(policy_app_speed_key) then
     local raw_app_speed_limit = tonumber(redis.call("HGET", app_speed_limit_key, app_speed_field) or "-1")
     -- -1(또는 미존재)은 무제한으로 간주해 speed cap을 적용하지 않는다.
     if raw_app_speed_limit and raw_app_speed_limit >= 0 then
@@ -108,6 +113,7 @@ local app_speed_limit_key = KEYS[18]
 local speed_bucket_key = KEYS[19]
 local individual_remaining_key = KEYS[20]
 local refill_idempotency_key = KEYS[21]
+local dedupe_key = KEYS[22]
 
 -- ARGV
 local target_data = tonumber(ARGV[1])
@@ -121,6 +127,7 @@ local refill_uuid = ARGV[10]
 local refill_idempotency_ttl_seconds = tonumber(ARGV[11] or "0")
 local refill_db_empty_flag = ARGV[12] or "0"
 local allow_qos_fallback = tonumber(ARGV[13] or "0")
+local api_total_data = tonumber(ARGV[14] or "-1")
 
 if not remaining_key or remaining_key == "" then
   return as_json(-1, "ERROR")
@@ -140,6 +147,25 @@ end
 if not monthly_expire_at or monthly_expire_at <= 0 then
   return as_json(-1, "ERROR")
 end
+if not dedupe_key or dedupe_key == "" then
+  return as_json(-1, "ERROR")
+end
+if not api_total_data or api_total_data < 0 then
+  return as_json(-1, "ERROR")
+end
+
+if redis.call("EXISTS", dedupe_key) == 0 then
+  redis.call("HSET", dedupe_key, DEDUPE_PROCESSED_FIELD, 0, DEDUPE_RETRY_FIELD, 0)
+end
+local processed_data = tonumber(redis.call("HGET", dedupe_key, DEDUPE_PROCESSED_FIELD) or "0")
+if not processed_data or processed_data < 0 then
+  processed_data = 0
+end
+local remaining_quota = math.max(0, api_total_data - processed_data)
+if remaining_quota <= 0 then
+  return as_json(0, "OK")
+end
+target_data = math.min(target_data, remaining_quota)
 
 if has_missing_global_policy_key(
   policy_shared_key,
@@ -294,6 +320,7 @@ if answer <= 0 then
   local qos_answer, qos_status = resolve_qos_fallback(
     qos_capped_target,
     qos_policy_status,
+    whitelist_bypass,
     policy_app_speed_key,
     app_speed_limit_key,
     app_speed_field,
@@ -324,6 +351,7 @@ end
 
 redis.call("INCRBY", speed_bucket_key, answer)
 redis.call("EXPIRE", speed_bucket_key, SPEED_BUCKET_TTL_SECONDS)
+redis.call("HINCRBY", dedupe_key, DEDUPE_PROCESSED_FIELD, answer)
 
 -- 잔량 부족 없이 차감이 완료된 경우에만 app speed 제한 상태를 최종 상태로 확정한다.
 if app_speed_capped and not insufficient_balance then

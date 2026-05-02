@@ -13,7 +13,7 @@
         INSERT INTO TRAFFIC_REDIS_OUTBOX (
             event_type,
             payload,
-            uuid,
+            trace_id,
             status,
             retry_count,
             created_at,
@@ -21,7 +21,7 @@
         ) VALUES (
             #{eventType},
             #{payload},
-            #{uuid},
+            #{traceId},
             #{status},
             #{retryCount},
             NOW(6),
@@ -35,7 +35,7 @@
             id,
             event_type,
             payload,
-            uuid,
+            trace_id,
             status,
             retry_count,
             created_at,
@@ -62,7 +62,7 @@
         SET status = 'PROCESSING',
             status_updated_at = NOW(6)
         WHERE id = #{id}
-          AND status &lt;&gt; 'REVERT'
+          AND status NOT IN ('REVERT', 'FINAL_FAIL')
     </update>
 
     <update id="markSuccess">
@@ -70,7 +70,7 @@
         SET status = 'SUCCESS',
             status_updated_at = NOW(6)
         WHERE id = #{id}
-          AND status &lt;&gt; 'REVERT'
+          AND status NOT IN ('REVERT', 'FINAL_FAIL')
     </update>
 
     <update id="markFail">
@@ -78,7 +78,15 @@
         SET status = 'FAIL',
             status_updated_at = NOW(6)
         WHERE id = #{id}
-          AND status &lt;&gt; 'REVERT'
+          AND status NOT IN ('REVERT', 'FINAL_FAIL')
+    </update>
+
+    <update id="markFinalFail">
+        UPDATE TRAFFIC_REDIS_OUTBOX
+        SET status = 'FINAL_FAIL',
+            status_updated_at = NOW(6)
+        WHERE id = #{id}
+          AND status NOT IN ('REVERT', 'FINAL_FAIL')
     </update>
 
     <update id="markFailWithRetryIncrement">
@@ -87,7 +95,7 @@
             retry_count = retry_count + 1,
             status_updated_at = NOW(6)
         WHERE id = #{id}
-          AND status &lt;&gt; 'REVERT'
+          AND status NOT IN ('REVERT', 'FINAL_FAIL')
     </update>
 
     <update id="markFailWithRetryCount">
@@ -96,7 +104,7 @@
             retry_count = #{retryCount},
             status_updated_at = NOW(6)
         WHERE id = #{id}
-          AND status &lt;&gt; 'REVERT'
+          AND status NOT IN ('REVERT', 'FINAL_FAIL')
     </update>
 
     <update id="markRevertIfCompensable">

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
@@ -111,7 +112,7 @@ public class TrafficSharedPoolThresholdAlarmService {
         redisOutboxRecordService.createPending(
                 OutboxEventType.SHARED_POOL_THRESHOLD_REACHED,
                 payload,
-                uuid
+                resolveRequiredTraceIdFromMdc()
         );
 
         log.info(
@@ -152,6 +153,17 @@ public class TrafficSharedPoolThresholdAlarmService {
             return 0L;
         }
         return value;
+    }
+
+    /**
+     * 임계치 Outbox는 소비 중인 요청의 traceId를 공통 식별자로 기록합니다.
+     */
+    private String resolveRequiredTraceIdFromMdc() {
+        String traceId = MDC.get("traceId");
+        if (traceId == null || traceId.isBlank()) {
+            throw new IllegalArgumentException("traceId must not be blank");
+        }
+        return traceId.trim();
     }
 
 }
