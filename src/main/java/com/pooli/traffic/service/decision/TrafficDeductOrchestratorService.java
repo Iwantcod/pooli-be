@@ -59,7 +59,8 @@ public class TrafficDeductOrchestratorService {
         // 메시지 기준 목표 차감량(apiTotalData)과 누적 차감량 상태를 초기화합니다.
         long apiTotalData = normalizeNonNegative(payload == null ? null : payload.getApiTotalData());
         long apiRemainingData = apiTotalData;
-        long deductedTotalBytes = 0L;
+        long deductedIndividualBytes = 0L;
+        long deductedSharedBytes = 0L;
         TrafficLuaStatus lastLuaStatus = null;
         // 개인/공유 차감 재시도 경로에서 traceId 단위 상태를 공유하기 위한 컨텍스트를 준비합니다.
         TrafficDeductExecutionContext deductExecutionContext = TrafficDeductExecutionContext.of(
@@ -104,6 +105,7 @@ public class TrafficDeductOrchestratorService {
                         payload,
                         apiTotalData,
                         0L,
+                        0L,
                         apiRemainingData,
                         policyCheckResult.getStatus(),
                         startedAt
@@ -125,7 +127,7 @@ public class TrafficDeductOrchestratorService {
             lastLuaStatus = individualResult.getStatus();
 
             long indivDeducted = normalizeNonNegative(individualResult.getAnswer());
-            deductedTotalBytes += indivDeducted;
+            deductedIndividualBytes += indivDeducted;
             apiRemainingData = clampRemaining(apiRemainingData - indivDeducted);
             // 리필 계획 계산을 위해 최근 사용량 버킷을 개인풀 기준으로 기록합니다.
             trafficRecentUsageBucketService.recordUsage(TrafficPoolType.INDIVIDUAL, payload, indivDeducted);
@@ -156,7 +158,7 @@ public class TrafficDeductOrchestratorService {
                 lastLuaStatus = sharedResult.getStatus();
 
                 long sharedDeducted = normalizeNonNegative(sharedResult.getAnswer());
-                deductedTotalBytes += sharedDeducted;
+                deductedSharedBytes += sharedDeducted;
                 apiRemainingData = clampRemaining(apiRemainingData - sharedDeducted);
                 // 공유풀 사용량도 동일하게 버킷에 기록해 다음 리필 계획 계산에 반영합니다.
                 trafficRecentUsageBucketService.recordUsage(TrafficPoolType.SHARED, payload, sharedDeducted);
@@ -171,7 +173,8 @@ public class TrafficDeductOrchestratorService {
         return buildOrchestrateResult(
                 payload,
                 apiTotalData,
-                deductedTotalBytes,
+                deductedIndividualBytes,
+                deductedSharedBytes,
                 apiRemainingData,
                 lastLuaStatus,
                 startedAt
@@ -227,10 +230,20 @@ public class TrafficDeductOrchestratorService {
     /**
      * 입력값과 정책을 바탕으로 최종 사용 값을 계산해 반환합니다.
      */
-    private TrafficFinalStatus resolveFinalStatus(long apiRemainingData, TrafficLuaStatus lastLuaStatus) {
+    private TrafficFinalStatus resolveFinalStatus(
+            long apiTotalData,
+            long deductedIndividualBytes,
+            long deductedSharedBytes,
+            long apiRemainingData,
+            TrafficLuaStatus lastLuaStatus
+    ) {
         // Lua ERROR는 시스템 오류로 간주하여 즉시 FAILED를 반환합니다.
         if (lastLuaStatus == TrafficLuaStatus.ERROR) {
             return TrafficFinalStatus.FAILED;
+        }
+        long deductedTotalBytes = Math.max(0L, deductedIndividualBytes) + Math.max(0L, deductedSharedBytes);
+        if (deductedTotalBytes <= 0L && apiRemainingData == apiTotalData) {
+            return TrafficFinalStatus.NOT_DEDUCTED;
         }
         // 남은 요청량이 없으면 전체 요청량 처리 완료로 SUCCESS입니다.
         if (apiRemainingData <= 0) {
@@ -358,7 +371,8 @@ public class TrafficDeductOrchestratorService {
     private TrafficDeductResultResDto buildOrchestrateResult(
             TrafficPayloadReqDto payload,
             long apiTotalData,
-            long deductedTotalBytes,
+            long deductedIndividualBytes,
+            long deductedSharedBytes,
             long apiRemainingData,
             TrafficLuaStatus lastLuaStatus,
             LocalDateTime startedAt
@@ -366,9 +380,16 @@ public class TrafficDeductOrchestratorService {
         return TrafficDeductResultResDto.builder()
                 .traceId(payload == null ? null : payload.getTraceId())
                 .apiTotalData(apiTotalData)
-                .deductedTotalBytes(deductedTotalBytes)
+                .deductedIndividualBytes(deductedIndividualBytes)
+                .deductedSharedBytes(deductedSharedBytes)
                 .apiRemainingData(apiRemainingData)
-                .finalStatus(resolveFinalStatus(apiRemainingData, lastLuaStatus))
+                .finalStatus(resolveFinalStatus(
+                        apiTotalData,
+                        deductedIndividualBytes,
+                        deductedSharedBytes,
+                        apiRemainingData,
+                        lastLuaStatus
+                ))
                 .lastLuaStatus(lastLuaStatus)
                 .createdAt(startedAt)
                 .finishedAt(LocalDateTime.now())

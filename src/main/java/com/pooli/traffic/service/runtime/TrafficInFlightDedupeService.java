@@ -17,7 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * traceId 기준 in-flight 멱등 hash를 관리하는 서비스입니다.
- * 멱등키는 Redis hash(`processedData`, `retryCount`)로 저장하며 TTL을 사용하지 않습니다.
+ * 멱등키는 Redis hash(`processed_individual_data`, `processed_shared_data`, `retry_count`)로 저장하며 TTL을 사용하지 않습니다.
  */
 @Slf4j
 @Service
@@ -25,8 +25,9 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficInFlightDedupeService {
 
-    private static final String FIELD_PROCESSED_DATA = "processedData";
-    private static final String FIELD_RETRY_COUNT = "retryCount";
+    private static final String FIELD_PROCESSED_INDIVIDUAL_DATA = "processed_individual_data";
+    private static final String FIELD_PROCESSED_SHARED_DATA = "processed_shared_data";
+    private static final String FIELD_RETRY_COUNT = "retry_count";
     private static final String DEFAULT_ZERO = "0";
 
     @Qualifier("cacheStringRedisTemplate")
@@ -36,7 +37,7 @@ public class TrafficInFlightDedupeService {
 
     /**
      * traceId의 in-flight 멱등 hash를 생성하거나 기존 값을 조회합니다.
-     * - 키가 없으면 processedData=0, retryCount=0으로 생성합니다.
+     * - 키가 없으면 processed_individual_data=0, processed_shared_data=0, retry_count=0으로 생성합니다.
      * - 키가 있으면 기존 필드를 정규화해 반환합니다.
      */
     public TrafficInFlightIdempotencyEntryResult createOrGet(String traceId) {
@@ -44,8 +45,8 @@ public class TrafficInFlightDedupeService {
 
         long createdResult = trafficLuaScriptInfraService.executeInFlightCreateIfAbsent(
                 dedupeKey,
-                FIELD_PROCESSED_DATA,
-                DEFAULT_ZERO,
+                FIELD_PROCESSED_INDIVIDUAL_DATA,
+                FIELD_PROCESSED_SHARED_DATA,
                 FIELD_RETRY_COUNT,
                 DEFAULT_ZERO
         );
@@ -53,16 +54,23 @@ public class TrafficInFlightDedupeService {
         if (created) {
             return new TrafficInFlightIdempotencyEntryResult(
                     true,
-                    TrafficInFlightIdempotencyEntry.of(dedupeKey, 0L, 0)
+                    TrafficInFlightIdempotencyEntry.of(dedupeKey, 0L, 0L, 0)
             );
         }
 
-        long processedData = parseNonNegativeLong(hashOps().get(dedupeKey, FIELD_PROCESSED_DATA));
+        long processedIndividualData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_INDIVIDUAL_DATA),
+                FIELD_PROCESSED_INDIVIDUAL_DATA
+        );
+        long processedSharedData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_SHARED_DATA),
+                FIELD_PROCESSED_SHARED_DATA
+        );
         int retryCount = parseNonNegativeInt(hashOps().get(dedupeKey, FIELD_RETRY_COUNT));
 
         return new TrafficInFlightIdempotencyEntryResult(
                 false,
-                TrafficInFlightIdempotencyEntry.of(dedupeKey, processedData, retryCount)
+                TrafficInFlightIdempotencyEntry.of(dedupeKey, processedIndividualData, processedSharedData, retryCount)
         );
     }
 
@@ -79,10 +87,22 @@ public class TrafficInFlightDedupeService {
             return Optional.empty();
         }
 
-        long processedData = parseNonNegativeLong(hashOps().get(dedupeKey, FIELD_PROCESSED_DATA));
+        long processedIndividualData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_INDIVIDUAL_DATA),
+                FIELD_PROCESSED_INDIVIDUAL_DATA
+        );
+        long processedSharedData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_SHARED_DATA),
+                FIELD_PROCESSED_SHARED_DATA
+        );
         int retryCount = parseNonNegativeInt(hashOps().get(dedupeKey, FIELD_RETRY_COUNT));
 
-        return Optional.of(TrafficInFlightIdempotencyEntry.of(dedupeKey, processedData, retryCount));
+        return Optional.of(TrafficInFlightIdempotencyEntry.of(
+                dedupeKey,
+                processedIndividualData,
+                processedSharedData,
+                retryCount
+        ));
     }
 
     /**
@@ -93,8 +113,8 @@ public class TrafficInFlightDedupeService {
         String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
         long incremented = trafficLuaScriptInfraService.executeInFlightIncrementRetryWithInit(
                 dedupeKey,
-                FIELD_PROCESSED_DATA,
-                DEFAULT_ZERO,
+                FIELD_PROCESSED_INDIVIDUAL_DATA,
+                FIELD_PROCESSED_SHARED_DATA,
                 FIELD_RETRY_COUNT,
                 DEFAULT_ZERO
         );
@@ -103,7 +123,7 @@ public class TrafficInFlightDedupeService {
     }
 
     /**
-     * 차감량을 processedData에 원자적으로 합산하고 증가 후 값을 반환합니다.
+     * 개인풀 차감량을 processed_individual_data에 원자적으로 합산하고 증가 후 값을 반환합니다.
      */
     public long addProcessedDataAtomically(String traceId, long delta) {
         if (delta < 0L) {
@@ -113,10 +133,11 @@ public class TrafficInFlightDedupeService {
         String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
         long incremented = trafficLuaScriptInfraService.executeInFlightIncrementProcessedWithInit(
                 dedupeKey,
-                FIELD_PROCESSED_DATA,
-                DEFAULT_ZERO,
+                FIELD_PROCESSED_INDIVIDUAL_DATA,
+                FIELD_PROCESSED_SHARED_DATA,
                 FIELD_RETRY_COUNT,
                 DEFAULT_ZERO,
+                FIELD_PROCESSED_INDIVIDUAL_DATA,
                 delta
         );
         long safeValue = Math.max(0L, incremented);
@@ -164,7 +185,7 @@ public class TrafficInFlightDedupeService {
         return cacheStringRedisTemplate.opsForHash();
     }
 
-    private long parseNonNegativeLong(Object rawValue) {
+    private long parseNonNegativeLong(Object rawValue, String fieldName) {
         if (rawValue == null) {
             return 0L;
         }
@@ -172,7 +193,7 @@ public class TrafficInFlightDedupeService {
         try {
             return Math.max(0L, Long.parseLong(String.valueOf(rawValue).trim()));
         } catch (NumberFormatException e) {
-            log.warn("traffic_dedupe_hash_field_parse_failed field={} rawValue={}", FIELD_PROCESSED_DATA, rawValue);
+            log.warn("traffic_dedupe_hash_field_parse_failed field={} rawValue={}", fieldName, rawValue);
             return 0L;
         }
     }

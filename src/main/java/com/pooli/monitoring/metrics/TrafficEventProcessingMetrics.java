@@ -51,6 +51,7 @@ public class TrafficEventProcessingMetrics {
             case SUCCESS -> "success";
             // reclaim 재시도 한도 초과는 부분 성공이 아니라 종결 실패(DLQ 라우팅)로 집계한다.
             case PARTIAL_SUCCESS -> "partial";
+            case NOT_DEDUCTED -> "not_deducted";
             case RECLAIM_RETRY_EXCEEDED, FAILED -> "failed";
         };
     }

@@ -29,8 +29,9 @@ local function has_missing_global_policy_key(...)
 end
 
 local SPEED_BUCKET_TTL_SECONDS = 15
-local DEDUPE_PROCESSED_FIELD = "processedData"
-local DEDUPE_RETRY_FIELD = "retryCount"
+local DEDUPE_PROCESSED_INDIVIDUAL_FIELD = "processed_individual_data"
+local DEDUPE_PROCESSED_SHARED_FIELD = "processed_shared_data"
+local DEDUPE_RETRY_FIELD = "retry_count"
 
 -- KEYS (기존 시그니처를 최대한 유지하면서 필요한 값만 사용한다)
 local remaining_key = KEYS[1]
@@ -81,12 +82,23 @@ if not api_total_data or api_total_data < 0 then
 end
 
 if redis.call("EXISTS", dedupe_key) == 0 then
-  redis.call("HSET", dedupe_key, DEDUPE_PROCESSED_FIELD, 0, DEDUPE_RETRY_FIELD, 0)
+  redis.call(
+    "HSET",
+    dedupe_key,
+    DEDUPE_PROCESSED_INDIVIDUAL_FIELD, 0,
+    DEDUPE_PROCESSED_SHARED_FIELD, 0,
+    DEDUPE_RETRY_FIELD, 0
+  )
 end
-local processed_data = tonumber(redis.call("HGET", dedupe_key, DEDUPE_PROCESSED_FIELD) or "0")
-if not processed_data or processed_data < 0 then
-  processed_data = 0
+local processed_individual = tonumber(redis.call("HGET", dedupe_key, DEDUPE_PROCESSED_INDIVIDUAL_FIELD) or "0")
+if not processed_individual or processed_individual < 0 then
+  processed_individual = 0
 end
+local processed_shared = tonumber(redis.call("HGET", dedupe_key, DEDUPE_PROCESSED_SHARED_FIELD) or "0")
+if not processed_shared or processed_shared < 0 then
+  processed_shared = 0
+end
+local processed_data = processed_individual + processed_shared
 local remaining_quota = math.max(0, api_total_data - processed_data)
 if remaining_quota <= 0 then
   return as_json(0, "OK")
@@ -222,7 +234,7 @@ redis.call("EXPIREAT", daily_app_usage_key, daily_expire_at)
 -- 앱 속도 제한용 버킷을 차감과 같은 Lua에서 즉시 갱신해 동시성 우회 가능성을 줄인다.
 redis.call("INCRBY", speed_bucket_key, answer)
 redis.call("EXPIRE", speed_bucket_key, SPEED_BUCKET_TTL_SECONDS)
-redis.call("HINCRBY", dedupe_key, DEDUPE_PROCESSED_FIELD, answer)
+redis.call("HINCRBY", dedupe_key, DEDUPE_PROCESSED_INDIVIDUAL_FIELD, answer)
 
 -- 잔량 부족 없이 차감이 완료된 경우에만 app speed 제약 상태를 노출한다.
 if app_speed_capped and not insufficient_balance then

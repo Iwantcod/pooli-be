@@ -6,6 +6,7 @@ package com.pooli.traffic.domain.enums;
 public enum TrafficFinalStatus {
     SUCCESS,
     PARTIAL_SUCCESS,
+    NOT_DEDUCTED,
     RECLAIM_RETRY_EXCEEDED,
     FAILED
 }

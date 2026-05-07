@@ -160,19 +160,19 @@ public class TrafficLuaScriptInfraService {
      */
     public long executeInFlightCreateIfAbsent(
             String dedupeKey,
-            String processedField,
-            String processedDefaultValue,
+            String processedIndividualField,
+            String processedSharedField,
             String retryField,
-            String retryDefaultValue
+            String defaultValue
     ) {
         Long rawResult = executeLongSingle(
                 TrafficLuaScriptType.IN_FLIGHT_CREATE_IF_ABSENT,
                 List.of(dedupeKey),
                 List.of(
-                        processedField,
-                        processedDefaultValue,
+                        processedIndividualField,
+                        processedSharedField,
                         retryField,
-                        retryDefaultValue
+                        defaultValue
                 )
         );
         return rawResult == null ? 0L : rawResult;
@@ -184,19 +184,19 @@ public class TrafficLuaScriptInfraService {
      */
     public long executeInFlightIncrementRetryWithInit(
             String dedupeKey,
-            String processedField,
-            String processedDefaultValue,
+            String processedIndividualField,
+            String processedSharedField,
             String retryField,
-            String retryDefaultValue
+            String defaultValue
     ) {
         Long rawResult = executeLongSingle(
                 TrafficLuaScriptType.IN_FLIGHT_INCREMENT_RETRY_WITH_INIT,
                 List.of(dedupeKey),
                 List.of(
-                        processedField,
-                        processedDefaultValue,
+                        processedIndividualField,
+                        processedSharedField,
                         retryField,
-                        retryDefaultValue
+                        defaultValue
                 )
         );
         return rawResult == null ? 0L : rawResult;
@@ -208,20 +208,22 @@ public class TrafficLuaScriptInfraService {
      */
     public long executeInFlightIncrementProcessedWithInit(
             String dedupeKey,
-            String processedField,
-            String processedDefaultValue,
+            String processedIndividualField,
+            String processedSharedField,
             String retryField,
-            String retryDefaultValue,
+            String defaultValue,
+            String targetProcessedField,
             long delta
     ) {
         Long rawResult = executeLongSingle(
                 TrafficLuaScriptType.IN_FLIGHT_INCREMENT_PROCESSED_WITH_INIT,
                 List.of(dedupeKey),
                 List.of(
-                        processedField,
-                        processedDefaultValue,
+                        processedIndividualField,
+                        processedSharedField,
                         retryField,
-                        retryDefaultValue,
+                        defaultValue,
+                        targetProcessedField,
                         String.valueOf(delta)
                 )
         );

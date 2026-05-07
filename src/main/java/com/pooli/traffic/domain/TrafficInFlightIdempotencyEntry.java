@@ -5,17 +5,25 @@ package com.pooli.traffic.domain;
  */
 public record TrafficInFlightIdempotencyEntry(
         String key,
-        long processedData,
+        long processedIndividualData,
+        long processedSharedData,
         int retryCount
 ) {
 
     public static TrafficInFlightIdempotencyEntry of(
             String key,
-            long processedData,
+            long processedIndividualData,
+            long processedSharedData,
             int retryCount
     ) {
-        long safeProcessedData = Math.max(0L, processedData);
+        long safeProcessedIndividualData = Math.max(0L, processedIndividualData);
+        long safeProcessedSharedData = Math.max(0L, processedSharedData);
         int safeRetryCount = Math.max(0, retryCount);
-        return new TrafficInFlightIdempotencyEntry(key, safeProcessedData, safeRetryCount);
+        return new TrafficInFlightIdempotencyEntry(
+                key,
+                safeProcessedIndividualData,
+                safeProcessedSharedData,
+                safeRetryCount
+        );
     }
 }

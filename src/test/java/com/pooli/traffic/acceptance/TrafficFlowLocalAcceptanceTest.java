@@ -1239,7 +1239,8 @@ class TrafficFlowLocalAcceptanceTest {
                     family_id,
                     app_id,
                     api_total_data,
-                    deducted_total_bytes,
+                    deducted_individual_bytes,
+                    deducted_shared_bytes,
                     api_remaining_data,
                     final_status,
                     last_lua_status,
@@ -1264,7 +1265,8 @@ class TrafficFlowLocalAcceptanceTest {
                         .familyId(rs.getLong("family_id"))
                         .appId(rs.getInt("app_id"))
                         .apiTotalData(rs.getLong("api_total_data"))
-                        .deductedTotalBytes(rs.getLong("deducted_total_bytes"))
+                        .deductedIndividualBytes(rs.getLong("deducted_individual_bytes"))
+                        .deductedSharedBytes(rs.getLong("deducted_shared_bytes"))
                         .apiRemainingData(rs.getLong("api_remaining_data"))
                         .finalStatus(rs.getString("final_status"))
                         .lastLuaStatus(rs.getString("last_lua_status"))
