@@ -22,6 +22,7 @@ public class TrafficDeductResultResDto {
     private final Long apiTotalData;
     private final Long deductedIndividualBytes;
     private final Long deductedSharedBytes;
+    private final Long deductedQosBytes;
     private final Long apiRemainingData;
     private final TrafficFinalStatus finalStatus;
     private final TrafficLuaStatus lastLuaStatus;
@@ -29,10 +30,12 @@ public class TrafficDeductResultResDto {
     private final LocalDateTime finishedAt;
 
     /**
-     * `deductedTotalBytes` 저장 필드는 두지 않고, 개인/공유 분리 필드 합산값을 파생 반환합니다.
+     * `deductedTotalBytes` 저장 필드는 두지 않고, 개인/공유/QoS 분리 필드 합산값을 파생 반환합니다.
      */
     public Long getDeductedTotalBytes() {
-        return safeNonNegative(deductedIndividualBytes) + safeNonNegative(deductedSharedBytes);
+        return safeNonNegative(deductedIndividualBytes)
+                + safeNonNegative(deductedSharedBytes)
+                + safeNonNegative(deductedQosBytes);
     }
 
     private long safeNonNegative(Long value) {

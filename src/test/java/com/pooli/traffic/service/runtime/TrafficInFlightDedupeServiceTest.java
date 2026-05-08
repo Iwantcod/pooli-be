@@ -57,6 +57,7 @@ class TrafficInFlightDedupeServiceTest {
                     dedupeKey,
                     "processed_individual_data",
                     "processed_shared_data",
+                    "processed_qos_data",
                     "retry_count",
                     "0"
             ))
@@ -67,6 +68,7 @@ class TrafficInFlightDedupeServiceTest {
             assertTrue(result.created());
             assertEquals(0L, result.entry().processedIndividualData());
             assertEquals(0L, result.entry().processedSharedData());
+            assertEquals(0L, result.entry().processedQosData());
             assertEquals(0, result.entry().retryCount());
         }
 
@@ -80,6 +82,7 @@ class TrafficInFlightDedupeServiceTest {
                     dedupeKey,
                     "processed_individual_data",
                     "processed_shared_data",
+                    "processed_qos_data",
                     "retry_count",
                     "0"
             ))
@@ -87,6 +90,7 @@ class TrafficInFlightDedupeServiceTest {
             when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
             when(hashOperations.get(dedupeKey, "processed_individual_data")).thenReturn("120");
             when(hashOperations.get(dedupeKey, "processed_shared_data")).thenReturn("30");
+            when(hashOperations.get(dedupeKey, "processed_qos_data")).thenReturn("10");
             when(hashOperations.get(dedupeKey, "retry_count")).thenReturn("3");
 
             TrafficInFlightIdempotencyEntryResult result = trafficInFlightDedupeService.createOrGet(traceId);
@@ -94,6 +98,7 @@ class TrafficInFlightDedupeServiceTest {
             assertFalse(result.created());
             assertEquals(120L, result.entry().processedIndividualData());
             assertEquals(30L, result.entry().processedSharedData());
+            assertEquals(10L, result.entry().processedQosData());
             assertEquals(3, result.entry().retryCount());
         }
     }
@@ -126,6 +131,7 @@ class TrafficInFlightDedupeServiceTest {
             when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
             when(hashOperations.get(dedupeKey, "processed_individual_data")).thenReturn("50");
             when(hashOperations.get(dedupeKey, "processed_shared_data")).thenReturn("20");
+            when(hashOperations.get(dedupeKey, "processed_qos_data")).thenReturn("5");
             when(hashOperations.get(dedupeKey, "retry_count")).thenReturn("2");
 
             Optional<TrafficInFlightIdempotencyEntry> result = trafficInFlightDedupeService.get(traceId);
@@ -133,6 +139,7 @@ class TrafficInFlightDedupeServiceTest {
             assertTrue(result.isPresent());
             assertEquals(50L, result.get().processedIndividualData());
             assertEquals(20L, result.get().processedSharedData());
+            assertEquals(5L, result.get().processedQosData());
             assertEquals(2, result.get().retryCount());
         }
     }
@@ -147,6 +154,7 @@ class TrafficInFlightDedupeServiceTest {
                 dedupeKey,
                 "processed_individual_data",
                 "processed_shared_data",
+                "processed_qos_data",
                 "retry_count",
                 "0"
         ))
@@ -167,6 +175,7 @@ class TrafficInFlightDedupeServiceTest {
                 dedupeKey,
                 "processed_individual_data",
                 "processed_shared_data",
+                "processed_qos_data",
                 "retry_count",
                 "0",
                 "processed_individual_data",

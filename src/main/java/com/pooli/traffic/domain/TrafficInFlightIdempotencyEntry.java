@@ -7,6 +7,7 @@ public record TrafficInFlightIdempotencyEntry(
         String key,
         long processedIndividualData,
         long processedSharedData,
+        long processedQosData,
         int retryCount
 ) {
 
@@ -14,15 +15,18 @@ public record TrafficInFlightIdempotencyEntry(
             String key,
             long processedIndividualData,
             long processedSharedData,
+            long processedQosData,
             int retryCount
     ) {
         long safeProcessedIndividualData = Math.max(0L, processedIndividualData);
         long safeProcessedSharedData = Math.max(0L, processedSharedData);
+        long safeProcessedQosData = Math.max(0L, processedQosData);
         int safeRetryCount = Math.max(0, retryCount);
         return new TrafficInFlightIdempotencyEntry(
                 key,
                 safeProcessedIndividualData,
                 safeProcessedSharedData,
+                safeProcessedQosData,
                 safeRetryCount
         );
     }

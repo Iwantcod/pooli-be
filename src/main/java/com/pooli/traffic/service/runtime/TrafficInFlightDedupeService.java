@@ -17,7 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * traceId 기준 in-flight 멱등 hash를 관리하는 서비스입니다.
- * 멱등키는 Redis hash(`processed_individual_data`, `processed_shared_data`, `retry_count`)로 저장하며 TTL을 사용하지 않습니다.
+ * 멱등키는 Redis hash(`processed_individual_data`, `processed_shared_data`, `processed_qos_data`, `retry_count`)로 저장하며 TTL을 사용하지 않습니다.
  */
 @Slf4j
 @Service
@@ -27,6 +27,7 @@ public class TrafficInFlightDedupeService {
 
     private static final String FIELD_PROCESSED_INDIVIDUAL_DATA = "processed_individual_data";
     private static final String FIELD_PROCESSED_SHARED_DATA = "processed_shared_data";
+    private static final String FIELD_PROCESSED_QOS_DATA = "processed_qos_data";
     private static final String FIELD_RETRY_COUNT = "retry_count";
     private static final String DEFAULT_ZERO = "0";
 
@@ -37,7 +38,7 @@ public class TrafficInFlightDedupeService {
 
     /**
      * traceId의 in-flight 멱등 hash를 생성하거나 기존 값을 조회합니다.
-     * - 키가 없으면 processed_individual_data=0, processed_shared_data=0, retry_count=0으로 생성합니다.
+     * - 키가 없으면 processed_individual_data=0, processed_shared_data=0, processed_qos_data=0, retry_count=0으로 생성합니다.
      * - 키가 있으면 기존 필드를 정규화해 반환합니다.
      */
     public TrafficInFlightIdempotencyEntryResult createOrGet(String traceId) {
@@ -47,6 +48,7 @@ public class TrafficInFlightDedupeService {
                 dedupeKey,
                 FIELD_PROCESSED_INDIVIDUAL_DATA,
                 FIELD_PROCESSED_SHARED_DATA,
+                FIELD_PROCESSED_QOS_DATA,
                 FIELD_RETRY_COUNT,
                 DEFAULT_ZERO
         );
@@ -54,7 +56,7 @@ public class TrafficInFlightDedupeService {
         if (created) {
             return new TrafficInFlightIdempotencyEntryResult(
                     true,
-                    TrafficInFlightIdempotencyEntry.of(dedupeKey, 0L, 0L, 0)
+                    TrafficInFlightIdempotencyEntry.of(dedupeKey, 0L, 0L, 0L, 0)
             );
         }
 
@@ -66,11 +68,21 @@ public class TrafficInFlightDedupeService {
                 hashOps().get(dedupeKey, FIELD_PROCESSED_SHARED_DATA),
                 FIELD_PROCESSED_SHARED_DATA
         );
+        long processedQosData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_QOS_DATA),
+                FIELD_PROCESSED_QOS_DATA
+        );
         int retryCount = parseNonNegativeInt(hashOps().get(dedupeKey, FIELD_RETRY_COUNT));
 
         return new TrafficInFlightIdempotencyEntryResult(
                 false,
-                TrafficInFlightIdempotencyEntry.of(dedupeKey, processedIndividualData, processedSharedData, retryCount)
+                TrafficInFlightIdempotencyEntry.of(
+                        dedupeKey,
+                        processedIndividualData,
+                        processedSharedData,
+                        processedQosData,
+                        retryCount
+                )
         );
     }
 
@@ -95,12 +107,17 @@ public class TrafficInFlightDedupeService {
                 hashOps().get(dedupeKey, FIELD_PROCESSED_SHARED_DATA),
                 FIELD_PROCESSED_SHARED_DATA
         );
+        long processedQosData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_QOS_DATA),
+                FIELD_PROCESSED_QOS_DATA
+        );
         int retryCount = parseNonNegativeInt(hashOps().get(dedupeKey, FIELD_RETRY_COUNT));
 
         return Optional.of(TrafficInFlightIdempotencyEntry.of(
                 dedupeKey,
                 processedIndividualData,
                 processedSharedData,
+                processedQosData,
                 retryCount
         ));
     }
@@ -115,6 +132,7 @@ public class TrafficInFlightDedupeService {
                 dedupeKey,
                 FIELD_PROCESSED_INDIVIDUAL_DATA,
                 FIELD_PROCESSED_SHARED_DATA,
+                FIELD_PROCESSED_QOS_DATA,
                 FIELD_RETRY_COUNT,
                 DEFAULT_ZERO
         );
@@ -135,6 +153,7 @@ public class TrafficInFlightDedupeService {
                 dedupeKey,
                 FIELD_PROCESSED_INDIVIDUAL_DATA,
                 FIELD_PROCESSED_SHARED_DATA,
+                FIELD_PROCESSED_QOS_DATA,
                 FIELD_RETRY_COUNT,
                 DEFAULT_ZERO,
                 FIELD_PROCESSED_INDIVIDUAL_DATA,

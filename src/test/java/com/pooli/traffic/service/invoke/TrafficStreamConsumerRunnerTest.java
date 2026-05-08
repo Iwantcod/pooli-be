@@ -921,14 +921,14 @@ public class TrafficStreamConsumerRunnerTest {
     private TrafficInFlightIdempotencyEntryResult createdEntryResult(String traceId, long processedData) {
         return new TrafficInFlightIdempotencyEntryResult(
                 true,
-                TrafficInFlightIdempotencyEntry.of("dedupe:run:" + traceId, processedData, 0L, 0)
+                TrafficInFlightIdempotencyEntry.of("dedupe:run:" + traceId, processedData, 0L, 0L, 0)
         );
     }
 
     private TrafficInFlightIdempotencyEntryResult existingEntryResult(String traceId, long processedData) {
         return new TrafficInFlightIdempotencyEntryResult(
                 false,
-                TrafficInFlightIdempotencyEntry.of("dedupe:run:" + traceId, processedData, 0L, 0)
+                TrafficInFlightIdempotencyEntry.of("dedupe:run:" + traceId, processedData, 0L, 0L, 0)
         );
     }
 

@@ -5,7 +5,7 @@
 --
 -- 플로우:
 -- 1) KEYS[1] 존재 여부 확인
--- 2) 미존재면 HSET(processed_individual_data=0, processed_shared_data=0, retry_count=0)으로 기본값 초기화
+-- 2) 미존재면 HSET(processed_individual_data=0, processed_shared_data=0, processed_qos_data=0, retry_count=0)으로 기본값 초기화
 -- 3) HINCRBY retryCount 1 수행
 -- 4) 증가 후 retryCount를 반환
 --
@@ -15,9 +15,10 @@
 -- KEYS[1]: dedupe key
 -- ARGV[1]: processed_individual_data field name
 -- ARGV[2]: processed_shared_data field name
--- ARGV[3]: retry_count field name
--- ARGV[4]: initial value
+-- ARGV[3]: processed_qos_data field name
+-- ARGV[4]: retry_count field name
+-- ARGV[5]: initial value
 if redis.call('EXISTS', KEYS[1]) == 0 then
-  redis.call('HSET', KEYS[1], ARGV[1], ARGV[4], ARGV[2], ARGV[4], ARGV[3], ARGV[4])
+  redis.call('HSET', KEYS[1], ARGV[1], ARGV[5], ARGV[2], ARGV[5], ARGV[3], ARGV[5], ARGV[4], ARGV[5])
 end
-return redis.call('HINCRBY', KEYS[1], ARGV[3], 1)
+return redis.call('HINCRBY', KEYS[1], ARGV[4], 1)

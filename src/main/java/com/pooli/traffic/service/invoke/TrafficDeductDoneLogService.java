@@ -23,6 +23,7 @@ import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import com.pooli.traffic.util.TrafficRetryBackoffSupport;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 트래픽 차감 완료 로그를 MySQL에 저장하고 중복(traceId) 여부를 조회하는 서비스입니다.
@@ -30,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 @Service
 @Profile({"local", "traffic"})
 @RequiredArgsConstructor
+@Slf4j
 public class TrafficDeductDoneLogService {
 
     private static final int DONE_LOG_DB_RETRY_MAX = 3;
@@ -56,9 +58,16 @@ public class TrafficDeductDoneLogService {
     public boolean saveIfAbsent(
             @NonNull TrafficPayloadReqDto payload,
             @NonNull TrafficDeductResultResDto result,
-            @NonNull String recordId,
+            String recordId,
             Long latency
     ) {
+        if (recordId == null || recordId.isBlank()) {
+            log.warn(
+                    "traffic_done_log_record_id_missing traceId={} recordIdBlank={}",
+                    payload.getTraceId(),
+                    recordId != null
+            );
+        }
         if(latency == null || latency <= 0) {
             latency = 0L;
         }
@@ -66,6 +75,7 @@ public class TrafficDeductDoneLogService {
         LocalDateTime startedAt = defaultNowIfNull(result.getCreatedAt());
         long deductedIndividualBytes = normalizeNonNegative(result.getDeductedIndividualBytes());
         long deductedSharedBytes = normalizeNonNegative(result.getDeductedSharedBytes());
+        long deductedQosBytes = normalizeNonNegative(result.getDeductedQosBytes());
         TrafficDeductDoneLog doneLog = TrafficDeductDoneLog.builder()
                 .traceId(payload.getTraceId())
                 .recordId(recordId)
@@ -76,6 +86,7 @@ public class TrafficDeductDoneLogService {
                 .apiTotalData(result.getApiTotalData())
                 .deductedIndividualBytes(deductedIndividualBytes)
                 .deductedSharedBytes(deductedSharedBytes)
+                .deductedQosBytes(deductedQosBytes)
                 .apiRemainingData(result.getApiRemainingData())
                 .finalStatus(result.getFinalStatus() == null ? null : result.getFinalStatus().name())
                 .lastLuaStatus(result.getLastLuaStatus() == null ? null : result.getLastLuaStatus().name())

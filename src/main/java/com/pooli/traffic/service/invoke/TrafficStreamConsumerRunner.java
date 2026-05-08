@@ -411,6 +411,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 long originalApiTotalData = normalizeNonNegative(payload.getApiTotalData());
                 long processedIndividualDataBefore = 0L;
                 long processedSharedDataBefore = 0L;
+                long processedQosDataBefore = 0L;
                 long processedTotalDataBefore = 0L;
                 long remainingDataToProcess = originalApiTotalData;
 
@@ -432,7 +433,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     TrafficInFlightIdempotencyEntry entry = entryResult.entry();
                     processedIndividualDataBefore = normalizeNonNegative(entry == null ? null : entry.processedIndividualData());
                     processedSharedDataBefore = normalizeNonNegative(entry == null ? null : entry.processedSharedData());
-                    processedTotalDataBefore = processedIndividualDataBefore + processedSharedDataBefore;
+                    processedQosDataBefore = normalizeNonNegative(entry == null ? null : entry.processedQosData());
+                    processedTotalDataBefore = processedIndividualDataBefore + processedSharedDataBefore + processedQosDataBefore;
                     remainingDataToProcess = clampRemaining(originalApiTotalData - processedTotalDataBefore);
 
                     if (messageSource == TrafficStreamMessageSource.RECLAIM) {
@@ -484,7 +486,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                         payload,
                         executionResult,
                         processedIndividualDataBefore,
-                        processedSharedDataBefore
+                        processedSharedDataBefore,
+                        processedQosDataBefore
                 );
 
                 // 완료 로그 저장 시점에 함께 남길 지연 시간(ms) 값을 계산한다.
@@ -741,6 +744,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 .apiTotalData(0L)
                 .deductedIndividualBytes(0L)
                 .deductedSharedBytes(0L)
+                .deductedQosBytes(0L)
                 .apiRemainingData(0L)
                 .finalStatus(TrafficFinalStatus.SUCCESS)
                 .lastLuaStatus(TrafficLuaStatus.OK)
@@ -764,18 +768,21 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
      * @param executionResult 이번 시도 실행 결과(상태/시각 전달용)
      * @param processedIndividualDataBefore 이번 시도 전 개인풀 누적 처리량
      * @param processedSharedDataBefore 이번 시도 전 공유풀 누적 처리량
+     * @param processedQosDataBefore 이번 시도 전 QoS 누적 처리량
      * @return done log 저장에 사용할 누적 기준 결과
      */
     private TrafficDeductResultResDto buildCumulativeResult(
             TrafficPayloadReqDto originalPayload,
             TrafficDeductResultResDto executionResult,
             long processedIndividualDataBefore,
-            long processedSharedDataBefore
+            long processedSharedDataBefore,
+            long processedQosDataBefore
     ) {
         long originalApiTotalData = normalizeNonNegative(originalPayload == null ? null : originalPayload.getApiTotalData());
         String traceId = originalPayload == null ? null : originalPayload.getTraceId();
         long cumulativeIndividual;
         long cumulativeShared;
+        long cumulativeQos;
 
         // done log 직전 기준값은 Redis dedupe 누적량을 우선 사용한다.
         Optional<TrafficInFlightIdempotencyEntry> dedupeEntry = trafficInFlightDedupeService.get(traceId);
@@ -783,6 +790,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             TrafficInFlightIdempotencyEntry entry = dedupeEntry.get();
             cumulativeIndividual = normalizeNonNegative(entry.processedIndividualData());
             cumulativeShared = normalizeNonNegative(entry.processedSharedData());
+            cumulativeQos = normalizeNonNegative(entry.processedQosData());
         } else {
             // dedupe 조회 결과가 비어 있으면: 직전 누적값 + 이번 실행 증분값으로 누적량을 복원한다.
             long deductedIndividualThisRun = normalizeNonNegative(
@@ -791,13 +799,17 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
             long deductedSharedThisRun = normalizeNonNegative(
                     executionResult == null ? null : executionResult.getDeductedSharedBytes()
             );
+            long deductedQosThisRun = normalizeNonNegative(
+                    executionResult == null ? null : executionResult.getDeductedQosBytes()
+            );
             cumulativeIndividual = normalizeNonNegative(processedIndividualDataBefore) + deductedIndividualThisRun;
             cumulativeShared = normalizeNonNegative(processedSharedDataBefore) + deductedSharedThisRun;
+            cumulativeQos = normalizeNonNegative(processedQosDataBefore) + deductedQosThisRun;
         }
 
         long cumulativeDeducted = resolveCumulativeDeducted(
                 originalApiTotalData,
-                cumulativeIndividual + cumulativeShared,
+                cumulativeIndividual + cumulativeShared + cumulativeQos,
                 0L
         );
         long cumulativeRemaining = clampRemaining(originalApiTotalData - cumulativeDeducted);
@@ -817,6 +829,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 .apiTotalData(originalApiTotalData)
                 .deductedIndividualBytes(cumulativeIndividual)
                 .deductedSharedBytes(cumulativeShared)
+                .deductedQosBytes(cumulativeQos)
                 .apiRemainingData(cumulativeRemaining)
                 .finalStatus(finalStatus)
                 .lastLuaStatus(lastLuaStatus)

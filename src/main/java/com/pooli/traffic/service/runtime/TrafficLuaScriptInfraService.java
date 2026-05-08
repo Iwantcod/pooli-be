@@ -20,6 +20,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.dto.response.TrafficLuaDeductResDto;
 import com.pooli.traffic.domain.enums.TrafficLuaScriptType;
@@ -93,6 +94,14 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * 개인+공유+QoS 단일 차감 Lua 스크립트를 실행합니다.
+     */
+    public TrafficLuaDeductExecutionResult executeDeductUnified(List<String> keys, List<String> args) {
+        String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_UNIFIED, keys, args);
+        return parseUnifiedDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_UNIFIED);
+    }
+
+    /**
      * 리필 가능 여부를 판단하는 gate Lua 스크립트를 실행합니다.
      */
     public TrafficRefillGateStatus executeRefillGate(
@@ -162,6 +171,7 @@ public class TrafficLuaScriptInfraService {
             String dedupeKey,
             String processedIndividualField,
             String processedSharedField,
+            String processedQosField,
             String retryField,
             String defaultValue
     ) {
@@ -171,6 +181,7 @@ public class TrafficLuaScriptInfraService {
                 List.of(
                         processedIndividualField,
                         processedSharedField,
+                        processedQosField,
                         retryField,
                         defaultValue
                 )
@@ -186,6 +197,7 @@ public class TrafficLuaScriptInfraService {
             String dedupeKey,
             String processedIndividualField,
             String processedSharedField,
+            String processedQosField,
             String retryField,
             String defaultValue
     ) {
@@ -195,6 +207,7 @@ public class TrafficLuaScriptInfraService {
                 List.of(
                         processedIndividualField,
                         processedSharedField,
+                        processedQosField,
                         retryField,
                         defaultValue
                 )
@@ -210,6 +223,7 @@ public class TrafficLuaScriptInfraService {
             String dedupeKey,
             String processedIndividualField,
             String processedSharedField,
+            String processedQosField,
             String retryField,
             String defaultValue,
             String targetProcessedField,
@@ -221,6 +235,7 @@ public class TrafficLuaScriptInfraService {
                 List.of(
                         processedIndividualField,
                         processedSharedField,
+                        processedQosField,
                         retryField,
                         defaultValue,
                         targetProcessedField,
@@ -308,6 +323,40 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * 단일 차감 Lua 결과 JSON을 파싱하고 유효성을 검증합니다.
+     */
+    private TrafficLuaDeductExecutionResult parseUnifiedDeductResult(String rawJson, TrafficLuaScriptType scriptType) {
+        if (rawJson == null || rawJson.isBlank()) {
+            throw new ApplicationException(
+                    CommonErrorCode.INTERNAL_SERVER_ERROR,
+                    "Lua deduct result is empty. script=" + scriptType.getScriptName()
+            );
+        }
+
+        try {
+            TrafficLuaDeductResDto parsedResult = objectMapper.readValue(rawJson, TrafficLuaDeductResDto.class);
+            if (parsedResult.getStatus() == null) {
+                throw new ApplicationException(
+                        CommonErrorCode.INTERNAL_SERVER_ERROR,
+                        "Lua deduct status is missing. script=" + scriptType.getScriptName()
+                );
+            }
+
+            return TrafficLuaDeductExecutionResult.builder()
+                    .indivDeducted(parsedResult.getIndivDeducted())
+                    .sharedDeducted(parsedResult.getSharedDeducted())
+                    .qosDeducted(parsedResult.getQosDeducted())
+                    .status(parsedResult.getStatus())
+                    .build();
+        } catch (JsonProcessingException e) {
+            throw new ApplicationException(
+                    CommonErrorCode.INTERNAL_SERVER_ERROR,
+                    "Failed to parse Lua JSON result. script=" + scriptType.getScriptName()
+            );
+        }
+    }
+
+    /**
      * 문자열 반환용 Lua 스크립트가 등록되어 있는지 확인합니다.
      */
     private RedisScript<String> requireStringScript(TrafficLuaScriptType scriptType) {
@@ -340,7 +389,7 @@ public class TrafficLuaScriptInfraService {
      */
     private void registerScript(TrafficLuaScriptType scriptType, String scriptText) {
         switch (scriptType) {
-            case BLOCK_POLICY_CHECK, DEDUCT_INDIVIDUAL, DEDUCT_SHARED, REFILL_GATE -> {
+            case BLOCK_POLICY_CHECK, DEDUCT_UNIFIED, DEDUCT_INDIVIDUAL, DEDUCT_SHARED, REFILL_GATE -> {
                 DefaultRedisScript<String> redisScript = new DefaultRedisScript<>();
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(String.class);

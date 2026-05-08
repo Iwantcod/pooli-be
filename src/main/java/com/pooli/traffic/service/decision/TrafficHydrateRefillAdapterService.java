@@ -37,6 +37,7 @@ import org.springframework.stereotype.Service;
 import com.pooli.monitoring.metrics.TrafficHydrateMetrics;
 import com.pooli.monitoring.metrics.TrafficRefillMetrics;
 import com.pooli.traffic.domain.TrafficDeductExecutionContext;
+import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
 import com.pooli.traffic.domain.TrafficDbRefillClaimResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.TrafficRefillPlan;
@@ -81,6 +82,9 @@ public class TrafficHydrateRefillAdapterService {
 
     @Value("${app.traffic.deduct.redis-retry.backoff-ms:50}")
     private long redisRetryBackoffMs;
+
+    @Value("${app.traffic.deduct.redis-retry.max-attempts:3}")
+    private int redisRetryMaxAttempts;
 
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
@@ -143,6 +147,163 @@ public class TrafficHydrateRefillAdapterService {
             TrafficDeductExecutionContext context
     ) {
         return executeWithRecovery(TrafficPoolType.SHARED, payload, requestedDataBytes, context);
+    }
+
+    /**
+     * 개인풀 -> 공유풀 -> QoS 단일 Lua 차감의 실행 + hydrate 흐름을 실행합니다.
+     *
+     * <p>통합 Lua는 이미 개인풀, 공유풀, QoS를 모두 같은 원자 구간에서 시도합니다.
+     * 따라서 `NO_BALANCE`는 추가 애플리케이션 fallback 진입 신호가 아니라,
+     * 현재 요청에서 Redis 잔량과 QoS 정책으로 더 처리할 수 없다는 최종 차감 상태입니다.
+     */
+    public TrafficLuaDeductExecutionResult executeUnifiedWithRecovery(
+            TrafficPayloadReqDto payload,
+            long requestedDataBytes,
+            TrafficDeductExecutionContext context
+    ) {
+        // [1] 통합 Lua는 개인/공유 키를 모두 사용하므로 두 풀의 필수 payload 값을 함께 검증합니다.
+        if (!isPayloadValidForPool(TrafficPoolType.INDIVIDUAL, payload)
+                || !isPayloadValidForPool(TrafficPoolType.SHARED, payload)) {
+            return unifiedErrorResult();
+        }
+
+        // [2] enqueuedAt 기준 사용 월로 개인/공유 잔량 키를 확정합니다.
+        YearMonth targetMonth = resolveTargetMonth(payload);
+        String individualBalanceKey = resolveBalanceKey(TrafficPoolType.INDIVIDUAL, payload, targetMonth);
+        String sharedBalanceKey = resolveBalanceKey(TrafficPoolType.SHARED, payload, targetMonth);
+        int whitelistBypassFlag = resolveWhitelistBypassFlag(context);
+
+        // [3] 통합 Lua를 1차 실행합니다. Redis retryable 장애는 executeUnifiedDeduct 내부에서 재시도합니다.
+        TrafficLuaDeductExecutionResult initialResult = executeUnifiedDeduct(
+                payload,
+                individualBalanceKey,
+                sharedBalanceKey,
+                requestedDataBytes,
+                whitelistBypassFlag,
+                TrafficFailureStage.DEDUCT
+        );
+
+        // [4] 전역 정책 스냅샷이 누락된 경우 정책 bootstrap 후 같은 통합 Lua를 재시도합니다.
+        TrafficLuaDeductExecutionResult afterGlobalPolicyHydrateResult = handleUnifiedGlobalPolicyHydrateIfNeeded(
+                payload,
+                individualBalanceKey,
+                sharedBalanceKey,
+                requestedDataBytes,
+                initialResult,
+                whitelistBypassFlag
+        );
+
+        // [5] 월별 잔량/QoS 캐시가 누락된 경우 hydrate 후 같은 통합 Lua를 재시도합니다.
+        //     Refill은 수행하지 않으므로 이 단계 이후의 NO_BALANCE는 그대로 호출자에게 반환됩니다.
+        return handleUnifiedHydrateIfNeeded(
+                payload,
+                targetMonth,
+                individualBalanceKey,
+                sharedBalanceKey,
+                requestedDataBytes,
+                afterGlobalPolicyHydrateResult,
+                whitelistBypassFlag
+        );
+    }
+
+    /**
+     * 통합 Lua에서 GLOBAL_POLICY_HYDRATE가 반환되면 전역 정책 스냅샷을 다시 적재하고 재시도합니다.
+     */
+    private TrafficLuaDeductExecutionResult handleUnifiedGlobalPolicyHydrateIfNeeded(
+            TrafficPayloadReqDto payload,
+            String individualBalanceKey,
+            String sharedBalanceKey,
+            long requestedDataBytes,
+            TrafficLuaDeductExecutionResult currentResult,
+            int whitelistBypassFlag
+    ) {
+        if (currentResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
+            return currentResult;
+        }
+
+        TrafficLuaDeductExecutionResult retriedResult = currentResult;
+        for (int retry = 0; retry < HYDRATE_RETRY_MAX; retry++) {
+            try {
+                // [1] Redis에 유실된 전역 정책 활성화 스냅샷을 DB 기준으로 복구합니다.
+                trafficPolicyBootstrapService.hydrateOnDemand();
+            } catch (ApplicationException | DataAccessException e) {
+                log.error(
+                        "traffic_hydrate_global_policy_failed poolType=UNIFIED traceId={} retry={}",
+                        payload.getTraceId(),
+                        retry + 1,
+                        e
+                );
+            }
+
+            // [2] 정책 스냅샷 복구 직후 동일 요청량과 동일 키로 통합 Lua를 다시 실행합니다.
+            retriedResult = executeUnifiedDeduct(
+                    payload,
+                    individualBalanceKey,
+                    sharedBalanceKey,
+                    requestedDataBytes,
+                    whitelistBypassFlag,
+                    TrafficFailureStage.HYDRATE
+            );
+            if (retriedResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE) {
+                return retriedResult;
+            }
+            // [3] 아직 정책 스냅샷이 보이지 않으면 Redis 전파/경합을 고려해 짧게 대기합니다.
+            sleepHydrateRetryBackoff(retry + 1);
+        }
+
+        log.error(
+                "traffic_hydrate_global_policy_retry_exhausted poolType=UNIFIED traceId={} individualBalanceKey={} sharedBalanceKey={}",
+                payload.getTraceId(),
+                individualBalanceKey,
+                sharedBalanceKey
+        );
+        return retriedResult;
+    }
+
+    /**
+     * 통합 Lua에서 HYDRATE가 반환되면 개인/공유 잔량 캐시를 보정한 뒤 재시도합니다.
+     */
+    private TrafficLuaDeductExecutionResult handleUnifiedHydrateIfNeeded(
+            TrafficPayloadReqDto payload,
+            YearMonth targetMonth,
+            String individualBalanceKey,
+            String sharedBalanceKey,
+            long requestedDataBytes,
+            TrafficLuaDeductExecutionResult currentResult,
+            int whitelistBypassFlag
+    ) {
+        if (currentResult.getStatus() != TrafficLuaStatus.HYDRATE) {
+            return currentResult;
+        }
+
+        TrafficLuaDeductExecutionResult retriedResult = currentResult;
+        for (int retry = 0; retry < HYDRATE_RETRY_MAX; retry++) {
+            // [1] 개인 잔량, 공유 잔량, 개인 QoS 정보를 Redis에 적재합니다.
+            applyUnifiedHydrate(payload, targetMonth, individualBalanceKey, sharedBalanceKey);
+
+            // [2] 적재된 캐시로 동일 통합 Lua를 다시 실행합니다.
+            retriedResult = executeUnifiedDeduct(
+                    payload,
+                    individualBalanceKey,
+                    sharedBalanceKey,
+                    requestedDataBytes,
+                    whitelistBypassFlag,
+                    TrafficFailureStage.HYDRATE
+            );
+            if (retriedResult.getStatus() != TrafficLuaStatus.HYDRATE) {
+                return retriedResult;
+            }
+            // [3] 다른 워커가 hydrate lock을 보유했거나 Redis 반영이 지연된 경우를 고려해 대기합니다.
+            sleepHydrateRetryBackoff(retry + 1);
+        }
+
+        log.error(
+                "traffic_hydrate_retry_exhausted poolType=UNIFIED traceId={} individualBalanceKey={} sharedBalanceKey={}",
+                payload.getTraceId(),
+                individualBalanceKey,
+                sharedBalanceKey
+        );
+        return retriedResult;
     }
 
     /**
@@ -415,6 +576,61 @@ public class TrafficHydrateRefillAdapterService {
             trafficQuotaCacheService.putQos(balanceKey, qosSpeedLimit);
         }
         trafficHydrateMetrics.incrementHydrate(poolType);
+    }
+
+    /**
+     * 통합 Lua 재시도 전 개인/공유 잔량 캐시를 보정합니다.
+     *
+     * <p>통합 Lua는 개인 잔량, 공유 잔량, 개인 QoS 정보를 한 번에 참조합니다.
+     * 따라서 HYDRATE 응답이 오면 두 풀을 모두 보정한 뒤 동일 Lua를 다시 실행합니다.
+     */
+    private void applyUnifiedHydrate(
+            TrafficPayloadReqDto payload,
+            YearMonth targetMonth,
+            String individualBalanceKey,
+            String sharedBalanceKey
+    ) {
+        applyHydrateWithOptionalLock(
+                TrafficPoolType.INDIVIDUAL,
+                payload,
+                targetMonth,
+                individualBalanceKey,
+                resolveHydrateLockKey(TrafficPoolType.INDIVIDUAL, payload)
+        );
+        applyHydrateWithOptionalLock(
+                TrafficPoolType.SHARED,
+                payload,
+                targetMonth,
+                sharedBalanceKey,
+                resolveHydrateLockKey(TrafficPoolType.SHARED, payload)
+        );
+    }
+
+    /**
+     * `app.traffic.hydrate-lock.enabled` 설정에 따라 단일 풀 캐시 보정을 수행합니다.
+     *
+     * <p>설정값이 true이면 같은 회선/가족의 hydrate를 한 워커만 수행하도록 Redis lock을 사용합니다.
+     * false이면 로컬/테스트 환경처럼 중복 hydrate를 허용하고 즉시 DB 원본을 Redis에 적재합니다.
+     */
+    private void applyHydrateWithOptionalLock(
+            TrafficPoolType poolType,
+            TrafficPayloadReqDto payload,
+            YearMonth targetMonth,
+            String balanceKey,
+            String hydrateLockKey
+    ) {
+        if (!hydrateLockEnabled) {
+            applyHydrate(poolType, payload, targetMonth, balanceKey);
+            return;
+        }
+        if (!tryAcquireHydrateLock(hydrateLockKey, payload.getTraceId())) {
+            return;
+        }
+        try {
+            applyHydrate(poolType, payload, targetMonth, balanceKey);
+        } finally {
+            trafficLuaScriptInfraService.executeLockRelease(hydrateLockKey, payload.getTraceId());
+        }
     }
 
     /**
@@ -958,6 +1174,174 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * 통합 Redis Lua 차감 스크립트를 호출하기 위한 키와 인자를 준비합니다.
+     *
+     * <p>절차:
+     * 1) usage 집계 기준일은 `enqueuedAt`으로, 속도 버킷 기준 시각은 현재 시각으로 계산합니다.
+     * 2) 통합 Lua가 참조할 개인/공유 잔량 키, 정책 키, 사용량 키, speed bucket, dedupe key를 구성합니다.
+     * 3) 요청량, 앱 ID, 만료 시각, whitelist 우회 여부, 원본 apiTotalData를 인자로 전달합니다.
+     * 4) Redis Lua 실행 결과를 출처별 차감량 DTO로 반환합니다.
+     */
+    private TrafficLuaDeductExecutionResult executeUnifiedDeductLua(
+            TrafficPayloadReqDto payload,
+            String individualBalanceKey,
+            String sharedBalanceKey,
+            long requestedDataBytes,
+            int whitelistBypassFlag
+    ) {
+        // [1] 사용량 집계 키는 이벤트 발생일(enqueuedAt)을 기준으로 잡습니다.
+        //     속도 버킷만 실시간 제어 목적이므로 현재 epoch second를 사용합니다.
+        LocalDateTime now = LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
+        LocalDate targetDate = resolveTargetDate(payload);
+        YearMonth targetUsageMonth = YearMonth.from(targetDate);
+        long nowEpochSecond = now.atZone(trafficRedisRuntimePolicy.zoneId()).toEpochSecond();
+        long dailyExpireAt = trafficRedisRuntimePolicy.resolveDailyExpireAtEpochSeconds(targetDate);
+        long monthlyExpireAt = trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetUsageMonth);
+
+        // [2] 전역 정책 활성화 여부를 확인하기 위한 policy key를 구성합니다.
+        String policyLineLimitSharedKey = trafficRedisKeyFactory.policyKey(POLICY_LINE_LIMIT_SHARED_ID);
+        String policyLineLimitDailyKey = trafficRedisKeyFactory.policyKey(POLICY_LINE_LIMIT_DAILY_ID);
+        String policyAppDataKey = trafficRedisKeyFactory.policyKey(POLICY_APP_DATA_ID);
+        String policyAppSpeedKey = trafficRedisKeyFactory.policyKey(POLICY_APP_SPEED_ID);
+
+        // [3] 정책 제한값, 누적 사용량, 앱 속도 버킷, 멱등 hash key를 구성합니다.
+        String dailyTotalLimitKey = trafficRedisKeyFactory.dailyTotalLimitKey(payload.getLineId());
+        String dailyTotalUsageKey = trafficRedisKeyFactory.dailyTotalUsageKey(payload.getLineId(), targetDate);
+        String monthlySharedLimitKey = trafficRedisKeyFactory.monthlySharedLimitKey(payload.getLineId());
+        String monthlySharedUsageKey = trafficRedisKeyFactory.monthlySharedUsageKey(payload.getLineId(), targetUsageMonth);
+        String appDataDailyLimitKey = trafficRedisKeyFactory.appDataDailyLimitKey(payload.getLineId());
+        String dailyAppUsageKey = trafficRedisKeyFactory.dailyAppUsageKey(payload.getLineId(), targetDate);
+        String appSpeedLimitKey = trafficRedisKeyFactory.appSpeedLimitKey(payload.getLineId());
+        String speedBucketKey = trafficRedisKeyFactory.speedBucketIndividualAppKey(
+                payload.getLineId(),
+                payload.getAppId(),
+                nowEpochSecond
+        );
+        String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(payload.getTraceId());
+
+        // [4] Lua의 KEYS 순서와 deduct_unified.lua의 KEYS 인덱스는 1:1 계약입니다.
+        List<String> keys = List.of(
+                individualBalanceKey,
+                sharedBalanceKey,
+                policyLineLimitSharedKey,
+                policyLineLimitDailyKey,
+                policyAppDataKey,
+                policyAppSpeedKey,
+                dailyTotalLimitKey,
+                dailyTotalUsageKey,
+                monthlySharedLimitKey,
+                monthlySharedUsageKey,
+                appDataDailyLimitKey,
+                dailyAppUsageKey,
+                appSpeedLimitKey,
+                speedBucketKey,
+                dedupeKey
+        );
+        // [5] Lua의 ARGV 순서와 deduct_unified.lua의 ARGV 인덱스는 1:1 계약입니다.
+        List<String> args = List.of(
+                String.valueOf(requestedDataBytes),
+                String.valueOf(payload.getAppId()),
+                String.valueOf(nowEpochSecond),
+                String.valueOf(dailyExpireAt),
+                String.valueOf(monthlyExpireAt),
+                String.valueOf(whitelistBypassFlag),
+                String.valueOf(normalizeNonNegative(payload.getApiTotalData()))
+        );
+        // [6] Redis 원자 구간에서 개인/공유/QoS 차감과 usage/dedupe 갱신을 함께 수행합니다.
+        return trafficLuaScriptInfraService.executeDeductUnified(keys, args);
+    }
+
+    /**
+     * 통합 Lua Redis 접근부에 기존 deduct 단계와 같은 retryable 인프라 재시도 규칙을 적용합니다.
+     *
+     * <p>절차:
+     * 1) 설정된 최대 재시도 횟수만큼 통합 Lua 실행을 반복합니다.
+     * 2) 성공하면 이전 retryable 실패 횟수를 dedupe 상태/메트릭에 반영하고 결과를 반환합니다.
+     * 3) non-retryable 실패는 단계 예외로 변환해 즉시 상위로 전파합니다.
+     * 4) retryable 실패가 남은 시도 내에서 발생하면 backoff 후 재시도합니다.
+     * 5) retryable 실패가 소진되면 DB fallback 없이 단계 retry exhausted 예외를 전파합니다.
+     */
+    private TrafficLuaDeductExecutionResult executeUnifiedDeduct(
+            TrafficPayloadReqDto payload,
+            String individualBalanceKey,
+            String sharedBalanceKey,
+            long requestedDataBytes,
+            int whitelistBypassFlag,
+            TrafficFailureStage failureStage
+    ) {
+        String traceId = payload == null ? null : payload.getTraceId();
+        RuntimeException lastRetryableFailure = null;
+        int maxAttempts = Math.max(1, redisRetryMaxAttempts + 1);
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                // [1] 실제 통합 Lua를 실행합니다.
+                TrafficLuaDeductExecutionResult result = executeUnifiedDeductLua(
+                        payload,
+                        individualBalanceKey,
+                        sharedBalanceKey,
+                        requestedDataBytes,
+                        whitelistBypassFlag
+                );
+                // [2] 성공 전 retryable 실패가 있었다면 traceId 단위 상태와 메트릭에만 기록합니다.
+                recordRetryableFailureAttempts(
+                        traceId,
+                        TrafficPoolType.INDIVIDUAL,
+                        attempt - 1,
+                        lastRetryableFailure
+                );
+                return result;
+            } catch (ApplicationException | DataAccessException exception) {
+                // [3] Spring/애플리케이션 예외 래핑을 벗겨 Redis 인프라 장애 여부를 타입 기준으로 판정합니다.
+                RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(exception);
+                if (!trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)) {
+                    // [4] non-retryable 실패는 재시도하지 않고 현재 단계의 terminal failure로 전파합니다.
+                    recordRetryableFailureAttempts(
+                            traceId,
+                            TrafficPoolType.INDIVIDUAL,
+                            attempt - 1,
+                            lastRetryableFailure
+                    );
+                    TrafficStageFailureException stageFailure =
+                            TrafficStageFailureException.nonRetryableFailure(failureStage, unwrapped);
+                    log.error(
+                            "{} traceId={} poolType=UNIFIED requestedData={}",
+                            failureStage.nonRetryableFailureLogKey(),
+                            traceId,
+                            requestedDataBytes,
+                            stageFailure
+                    );
+                    throw stageFailure;
+                }
+
+                lastRetryableFailure = unwrapped;
+                if (attempt >= maxAttempts) {
+                    // [5] retryable 실패를 모두 소진하면 Redis-only 정합성 원칙에 따라 fallback 없이 실패시킵니다.
+                    recordRetryableFailureAttempts(
+                            traceId,
+                            TrafficPoolType.INDIVIDUAL,
+                            attempt,
+                            lastRetryableFailure
+                    );
+                    log.warn(
+                            "{} traceId={} poolType=UNIFIED requestedData={} fallback=disabled reason={}",
+                            failureStage.retryExhaustedLogKey(),
+                            traceId,
+                            requestedDataBytes,
+                            failureStage.stageKey() + "_stage_retry_exhausted",
+                            lastRetryableFailure
+                    );
+                    throw TrafficStageFailureException.retryExhausted(failureStage, lastRetryableFailure);
+                }
+                // [6] 남은 시도가 있으면 지수 backoff 후 같은 Lua를 다시 호출합니다.
+                sleepHydrateRetryBackoff(attempt);
+            }
+        }
+
+        throw TrafficStageFailureException.retryExhausted(failureStage, lastRetryableFailure);
+    }
+
+    /**
      * retryable Redis 실패 횟수만큼 dedupe 상태/메트릭을 누적 기록합니다.
      * 예외 타입이 중간에 바뀌더라도 기존 계약과 동일하게 실패 횟수 누적을 우선 보장합니다.
      */
@@ -1098,14 +1482,23 @@ public class TrafficHydrateRefillAdapterService {
     ) {
         private static final String UNUSED_KEY = "__unused_refill_idempotency__";
 
+        /**
+         * 리필 적용 없이 일반 차감 Lua를 호출할 때 사용하는 기본 인자입니다.
+         */
         private static RefillLuaArguments none() {
             return new RefillLuaArguments(0L, "", UNUSED_KEY, 0L, "0", 0);
         }
 
+        /**
+         * legacy 공유풀 Lua에서 리필 없이 QoS fallback만 허용할 때 사용하는 인자입니다.
+         */
         private static RefillLuaArguments withQosFallback() {
             return new RefillLuaArguments(0L, "", UNUSED_KEY, 0L, "0", 1);
         }
 
+        /**
+         * DB refill claim 결과를 Redis 재차감 Lua에 전달하기 위한 인자입니다.
+         */
         private static RefillLuaArguments of(
                 long refillAmount,
                 String refillUuid,
@@ -1128,6 +1521,9 @@ public class TrafficHydrateRefillAdapterService {
         }
     }
 
+    /**
+     * 실행 컨텍스트의 traceId를 우선 사용하고, 없으면 payload의 traceId를 사용합니다.
+     */
     private String resolveTraceId(TrafficDeductExecutionContext context, TrafficPayloadReqDto payload) {
         if (context != null && context.getTraceId() != null && !context.getTraceId().isBlank()) {
             return context.getTraceId();
@@ -1136,8 +1532,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     *
-     * @return remaining_indiv/shared_amount ??
+     * 풀 유형과 대상 월 기준으로 Redis 잔량 hash key를 생성합니다.
      */
     private String resolveBalanceKey(TrafficPoolType poolType, TrafficPayloadReqDto payload, YearMonth targetMonth) {
         return switch (poolType) {
@@ -1147,8 +1542,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     *
-     * @return indiv/shared refill lock ??
+     * 풀 유형 기준으로 refill 분산락 key를 생성합니다.
      */
     private String resolveLockKey(TrafficPoolType poolType, TrafficPayloadReqDto payload) {
         return switch (poolType) {
@@ -1158,8 +1552,7 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     *
-     * @return indiv/shared hydrate lock ??
+     * 풀 유형 기준으로 hydrate 분산락 key를 생성합니다.
      */
     private String resolveHydrateLockKey(TrafficPoolType poolType, TrafficPayloadReqDto payload) {
         return switch (poolType) {
@@ -1232,6 +1625,18 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
+     * 이벤트가 속한 사용 일자를 계산합니다.
+     */
+    private LocalDate resolveTargetDate(TrafficPayloadReqDto payload) {
+        Long enqueuedAt = payload.getEnqueuedAt();
+        if (enqueuedAt == null || enqueuedAt <= 0) {
+            return LocalDate.now(trafficRedisRuntimePolicy.zoneId());
+        }
+
+        return Instant.ofEpochMilli(enqueuedAt).atZone(trafficRedisRuntimePolicy.zoneId()).toLocalDate();
+    }
+
+    /**
      * 풀 유형에 필요한 payload 필수값이 모두 존재하는지 확인합니다.
      */
     private boolean isPayloadValidForPool(TrafficPoolType poolType, TrafficPayloadReqDto payload) {
@@ -1258,12 +1663,23 @@ public class TrafficHydrateRefillAdapterService {
     }
 
     /**
-     *
-     * @return answer=-1, status=ERROR
+     * legacy 단일 수치 Lua 경로에서 입력 오류를 표현하는 결과를 반환합니다.
      */
     private TrafficLuaExecutionResult errorResult() {
         return TrafficLuaExecutionResult.builder()
                 .answer(-1L)
+                .status(TrafficLuaStatus.ERROR)
+                .build();
+    }
+
+    /**
+     * 통합 Lua 경로에서 입력 오류를 표현하는 결과를 반환합니다.
+     */
+    private TrafficLuaDeductExecutionResult unifiedErrorResult() {
+        return TrafficLuaDeductExecutionResult.builder()
+                .indivDeducted(0L)
+                .sharedDeducted(0L)
+                .qosDeducted(0L)
                 .status(TrafficLuaStatus.ERROR)
                 .build();
     }

@@ -1,0 +1,2 @@
+ALTER TABLE TRAFFIC_DEDUCT_DONE
+    ADD COLUMN deducted_qos_bytes BIGINT NOT NULL DEFAULT 0 AFTER deducted_shared_bytes;

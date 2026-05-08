@@ -1241,6 +1241,7 @@ class TrafficFlowLocalAcceptanceTest {
                     api_total_data,
                     deducted_individual_bytes,
                     deducted_shared_bytes,
+                    deducted_qos_bytes,
                     api_remaining_data,
                     final_status,
                     last_lua_status,
@@ -1267,6 +1268,7 @@ class TrafficFlowLocalAcceptanceTest {
                         .apiTotalData(rs.getLong("api_total_data"))
                         .deductedIndividualBytes(rs.getLong("deducted_individual_bytes"))
                         .deductedSharedBytes(rs.getLong("deducted_shared_bytes"))
+                        .deductedQosBytes(rs.getLong("deducted_qos_bytes"))
                         .apiRemainingData(rs.getLong("api_remaining_data"))
                         .finalStatus(rs.getString("final_status"))
                         .lastLuaStatus(rs.getString("last_lua_status"))

@@ -36,6 +36,8 @@ public class TrafficDeductDoneLog {
 
     private Long deductedSharedBytes;
 
+    private Long deductedQosBytes;
+
     private Long apiRemainingData;
 
     private String finalStatus;
@@ -57,7 +59,9 @@ public class TrafficDeductDoneLog {
      * `deducted_total_bytes` 저장 컬럼 제거에 따라 분리 필드 합산값을 파생 반환합니다.
      */
     public Long getDeductedTotalBytes() {
-        return safeNonNegative(deductedIndividualBytes) + safeNonNegative(deductedSharedBytes);
+        return safeNonNegative(deductedIndividualBytes)
+                + safeNonNegative(deductedSharedBytes)
+                + safeNonNegative(deductedQosBytes);
     }
 
     private long safeNonNegative(Long value) {

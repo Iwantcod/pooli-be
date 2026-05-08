@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum TrafficLuaScriptType {
     BLOCK_POLICY_CHECK("block_policy_check", "lua/traffic/block_policy_check.lua"),
+    DEDUCT_UNIFIED("deduct_unified", "lua/traffic/deduct_unified.lua"),
     DEDUCT_INDIVIDUAL("deduct_indiv", "lua/traffic/deduct_indiv.lua"),
     DEDUCT_SHARED("deduct_shared", "lua/traffic/deduct_shared.lua"),
     REFILL_GATE("refill_gate", "lua/traffic/refill_gate.lua"),

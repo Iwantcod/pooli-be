@@ -239,13 +239,35 @@ public class TrafficDeductDoneLogServiceTest {
         }
 
         @Test
-        @DisplayName("빈 recordId는 예외를 발생시킨다")
-        void throwsWhenRecordIdIsBlank() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> trafficDeductDoneLogService.saveIfAbsent(payload(), result(), " ", 10L)
-            );
-            verify(trafficDeductDoneLogMapper, never()).insert(any());
+        @DisplayName("빈 recordId는 로그만 남기고 그대로 저장한다")
+        void savesBlankRecordIdAsIs() {
+            // given
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class))).thenReturn(1);
+
+            // when
+            boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload(), result(), " ", 10L);
+
+            // then
+            assertTrue(saved);
+            ArgumentCaptor<TrafficDeductDoneLog> captor = ArgumentCaptor.forClass(TrafficDeductDoneLog.class);
+            verify(trafficDeductDoneLogMapper).insert(captor.capture());
+            assertEquals(" ", captor.getValue().getRecordId());
+        }
+
+        @Test
+        @DisplayName("null recordId는 로그만 남기고 그대로 저장한다")
+        void savesNullRecordIdAsIs() {
+            // given
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class))).thenReturn(1);
+
+            // when
+            boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload(), result(), null, 10L);
+
+            // then
+            assertTrue(saved);
+            ArgumentCaptor<TrafficDeductDoneLog> captor = ArgumentCaptor.forClass(TrafficDeductDoneLog.class);
+            verify(trafficDeductDoneLogMapper).insert(captor.capture());
+            assertNull(captor.getValue().getRecordId());
         }
     }
 
