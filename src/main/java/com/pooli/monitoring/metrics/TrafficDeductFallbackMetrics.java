@@ -30,17 +30,6 @@ public class TrafficDeductFallbackMetrics {
         ).increment();
     }
 
-    /**
-     * DB fallback 전환 횟수를 집계합니다.
-     */
-    public void incrementDbFallback(String poolType, String reason) {
-        meterRegistry.counter(
-                "traffic_deduct_db_fallback_total",
-                "pool_type", normalizePoolType(poolType),
-                "reason", normalizeReason(reason)
-        ).increment();
-    }
-
     private String normalizePoolType(String poolType) {
         if (poolType == null || poolType.isBlank()) {
             return "unknown";

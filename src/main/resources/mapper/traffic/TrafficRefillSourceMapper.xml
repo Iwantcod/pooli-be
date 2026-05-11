@@ -6,7 +6,7 @@
 <mapper namespace="com.pooli.traffic.mapper.TrafficRefillSourceMapper">
 
     <select id="selectIndividualRemaining" resultType="java.lang.Long">
-        SELECT remaining_data
+        SELECT total_data
         FROM LINE
         WHERE line_id = #{lineId}
           AND deleted_at IS NULL
@@ -47,7 +47,7 @@
     </update>
 
     <select id="selectSharedRemaining" resultType="java.lang.Long">
-        SELECT pool_remaining_data
+        SELECT pool_total_data
         FROM FAMILY
         WHERE family_id = #{familyId}
           AND deleted_at IS NULL

@@ -19,7 +19,7 @@ public class TrafficRemainingBalanceQueryService {
 
     private final ObjectProvider<TrafficRedisKeyFactory> trafficRedisKeyFactoryProvider;
     private final ObjectProvider<TrafficRedisRuntimePolicy> trafficRedisRuntimePolicyProvider;
-    private final ObjectProvider<TrafficQuotaCacheService> trafficQuotaCacheServiceProvider;
+    private final ObjectProvider<TrafficRemainingBalanceCacheService> trafficRemainingBalanceCacheServiceProvider;
 
     public Long resolveIndividualActualRemaining(Long lineId, Long dbRemaining) {
         return resolveActualRemaining(
@@ -58,17 +58,17 @@ public class TrafficRemainingBalanceQueryService {
 
         TrafficRedisKeyFactory trafficRedisKeyFactory = trafficRedisKeyFactoryProvider.getIfAvailable();
         TrafficRedisRuntimePolicy trafficRedisRuntimePolicy = trafficRedisRuntimePolicyProvider.getIfAvailable();
-        TrafficQuotaCacheService trafficQuotaCacheService = trafficQuotaCacheServiceProvider.getIfAvailable();
+        TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService = trafficRemainingBalanceCacheServiceProvider.getIfAvailable();
         if (trafficRedisKeyFactory == null
                 || trafficRedisRuntimePolicy == null
-                || trafficQuotaCacheService == null) {
+                || trafficRemainingBalanceCacheService == null) {
             return normalizedDbRemaining;
         }
 
         YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
         String balanceKey = balanceKeyResolver.resolve(trafficRedisKeyFactory, targetMonth, ownerId);
         try {
-            long redisRemaining = Math.max(0L, trafficQuotaCacheService.readAmountOrDefault(balanceKey, 0L));
+            long redisRemaining = Math.max(0L, trafficRemainingBalanceCacheService.readAmountOrDefault(balanceKey, 0L));
             return safeAdd(normalizedDbRemaining, redisRemaining);
         } catch (RuntimeException e) {
             log.warn("traffic_remaining_balance_query_redis_failed key={} ownerId={}", balanceKey, ownerId, e);

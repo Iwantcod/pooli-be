@@ -35,7 +35,7 @@ public class TrafficFamilyMetaCacheService {
     private final StringRedisTemplate cacheStringRedisTemplate;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficFamilyMetaMapper trafficFamilyMetaMapper;
-    private final TrafficQuotaCacheService trafficQuotaCacheService;
+    private final TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
     /**
@@ -225,7 +225,7 @@ public class TrafficFamilyMetaCacheService {
     private long resolveSharedRedisRemaining(long familyId) {
         YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
         String sharedRemainingKey = trafficRedisKeyFactory.remainingSharedAmountKey(familyId, targetMonth);
-        return Math.max(0L, trafficQuotaCacheService.readAmountOrDefault(sharedRemainingKey, 0L));
+        return Math.max(0L, trafficRemainingBalanceCacheService.readAmountOrDefault(sharedRemainingKey, 0L));
     }
 
     private Long normalizeNonNegative(Long value) {

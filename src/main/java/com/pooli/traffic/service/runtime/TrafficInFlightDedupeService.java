@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 
 import com.pooli.traffic.domain.TrafficInFlightIdempotencyEntry;
 import com.pooli.traffic.domain.TrafficInFlightIdempotencyEntryResult;
-import com.pooli.traffic.domain.enums.TrafficInFlightState;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * traceId 기준 in-flight 멱등 hash를 관리하는 서비스입니다.
  * 멱등키는 Redis hash(`processed_individual_data`, `processed_shared_data`, `processed_qos_data`, `retry_count`)로 저장하며 TTL을 사용하지 않습니다.
+ * `retry_count`는 Redis infra retry가 아니라 메시지 reclaim 횟수만 의미합니다.
  */
 @Slf4j
 @Service
@@ -141,29 +141,6 @@ public class TrafficInFlightDedupeService {
     }
 
     /**
-     * 개인풀 차감량을 processed_individual_data에 원자적으로 합산하고 증가 후 값을 반환합니다.
-     */
-    public long addProcessedDataAtomically(String traceId, long delta) {
-        if (delta < 0L) {
-            throw new IllegalArgumentException("delta must be 0 or greater");
-        }
-
-        String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
-        long incremented = trafficLuaScriptInfraService.executeInFlightIncrementProcessedWithInit(
-                dedupeKey,
-                FIELD_PROCESSED_INDIVIDUAL_DATA,
-                FIELD_PROCESSED_SHARED_DATA,
-                FIELD_PROCESSED_QOS_DATA,
-                FIELD_RETRY_COUNT,
-                DEFAULT_ZERO,
-                FIELD_PROCESSED_INDIVIDUAL_DATA,
-                delta
-        );
-        long safeValue = Math.max(0L, incremented);
-        return safeValue;
-    }
-
-    /**
      * 처리 완료 또는 종결 경로에서 in-flight 멱등 hash를 삭제합니다.
      */
     public void delete(String traceId) {
@@ -172,32 +149,6 @@ public class TrafficInFlightDedupeService {
         }
         String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
         cacheStringRedisTemplate.delete(dedupeKey);
-    }
-
-    /**
-     * Redis 재시도 진행 상태를 로그로만 남깁니다.
-     * Redis 장애 상황에서도 본 실행 + hydrate/refill/fallback 흐름(retry/backoff/fallback)을 절대 방해하지 않기 위함입니다.
-     */
-    public void markRedisRetry(String traceId, int retryAttempt) {
-        if (traceId == null || traceId.isBlank()) {
-            return;
-        }
-        TrafficInFlightState state = TrafficInFlightState.fromRetryAttempt(retryAttempt);
-        if (state == null) {
-            return;
-        }
-        log.info("traffic_dedupe_state_log_only traceId={} state={}", traceId, state.name());
-    }
-
-    /**
-     * 요청 단위 DB fallback 전환 상태를 로그로만 남깁니다.
-     * Redis 상태 저장 실패가 DB fallback 자체를 끊지 않도록 Redis 쓰기를 하지 않습니다.
-     */
-    public void markDbFallback(String traceId) {
-        if (traceId == null || traceId.isBlank()) {
-            return;
-        }
-        log.info("traffic_dedupe_state_log_only traceId={} state={}", traceId, TrafficInFlightState.DB_FALLBACK.name());
     }
 
     private HashOperations<String, Object, Object> hashOps() {

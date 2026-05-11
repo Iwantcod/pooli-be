@@ -1,9 +1,7 @@
 package com.pooli.traffic.service.runtime;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -23,7 +21,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.pooli.traffic.domain.TrafficInFlightIdempotencyEntry;
 import com.pooli.traffic.domain.TrafficInFlightIdempotencyEntryResult;
-import com.pooli.traffic.domain.enums.TrafficInFlightState;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficInFlightDedupeServiceTest {
@@ -166,39 +163,6 @@ class TrafficInFlightDedupeServiceTest {
     }
 
     @Test
-    @DisplayName("addProcessedDataAtomically는 processed_individual_data를 원자 증가시킨다")
-    void addProcessedDataAtomicallyIncrementsProcessedData() {
-        String traceId = "trace-processed";
-        String dedupeKey = "pooli:dedupe:run:trace-processed";
-        when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
-        when(trafficLuaScriptInfraService.executeInFlightIncrementProcessedWithInit(
-                dedupeKey,
-                "processed_individual_data",
-                "processed_shared_data",
-                "processed_qos_data",
-                "retry_count",
-                "0",
-                "processed_individual_data",
-                40L
-        ))
-                .thenReturn(140L);
-
-        long processedData = trafficInFlightDedupeService.addProcessedDataAtomically(traceId, 40L);
-
-        assertEquals(140L, processedData);
-    }
-
-    @Test
-    @DisplayName("addProcessedDataAtomically는 음수 delta를 거부한다")
-    void addProcessedDataAtomicallyRejectsNegativeDelta() {
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> trafficInFlightDedupeService.addProcessedDataAtomically("trace-negative", -1L)
-        );
-        assertEquals("delta must be 0 or greater", exception.getMessage());
-    }
-
-    @Test
     @DisplayName("delete는 멱등키를 제거한다")
     void deleteRemovesDedupeKey() {
         String traceId = "trace-delete";
@@ -210,16 +174,4 @@ class TrafficInFlightDedupeServiceTest {
         verify(cacheStringRedisTemplate).delete(dedupeKey);
     }
 
-    @Test
-    @DisplayName("Redis 재시도와 DB fallback 상태는 로그로만 남긴다")
-    void marksRetryAndFallbackAsLogOnly() {
-        String traceId = "trace-log-only";
-
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 1));
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 2));
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 3));
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markDbFallback(traceId));
-
-        verify(cacheStringRedisTemplate, never()).opsForValue();
-    }
 }

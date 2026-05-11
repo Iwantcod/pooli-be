@@ -48,7 +48,7 @@ import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
 import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
-import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
+import com.pooli.traffic.service.runtime.TrafficRemainingBalanceCacheService;
 import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
@@ -84,7 +84,7 @@ class FamilySharedPoolsServiceTest {
     private ObjectProvider<TrafficRedisRuntimePolicy> trafficRedisRuntimePolicyProvider;
 
     @Mock
-    private ObjectProvider<TrafficQuotaCacheService> trafficQuotaCacheServiceProvider;
+    private ObjectProvider<TrafficRemainingBalanceCacheService> trafficRemainingBalanceCacheServiceProvider;
 
     @Mock
     private TrafficRedisKeyFactory trafficRedisKeyFactory;
@@ -93,7 +93,7 @@ class FamilySharedPoolsServiceTest {
     private TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
     @Mock
-    private TrafficQuotaCacheService trafficQuotaCacheService;
+    private TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
 
     private FamilySharedPoolsService service;
 
@@ -108,7 +108,7 @@ class FamilySharedPoolsServiceTest {
                 trafficRemainingBalanceQueryService,
                 trafficRedisKeyFactoryProvider,
                 trafficRedisRuntimePolicyProvider,
-                trafficQuotaCacheServiceProvider
+                trafficRemainingBalanceCacheServiceProvider
         );
     }
 
@@ -212,7 +212,6 @@ class FamilySharedPoolsServiceTest {
         verify(sharedPoolMapper).updateLineRemainingData(101L, 500_000L);
         verify(sharedPoolMapper).updateFamilyPoolData(1L, 500_000L);
         verify(sharedPoolMapper).insertContribution(1L, 101L, 500_000L);
-        verify(trafficBalanceStateWriteThroughService).markSharedBalanceNotEmpty(1L);
         verify(trafficBalanceStateWriteThroughService).markSharedMetaContribution(1L, 500_000L);
         verify(transferLogRepository).save(any(SharedPoolTransferLog.class));
         verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY), eq(AlarmType.SHARED_POOL_CONTRIBUTION));
@@ -398,13 +397,13 @@ class FamilySharedPoolsServiceTest {
         ));
         when(trafficRedisKeyFactoryProvider.getIfAvailable()).thenReturn(trafficRedisKeyFactory);
         when(trafficRedisRuntimePolicyProvider.getIfAvailable()).thenReturn(trafficRedisRuntimePolicy);
-        when(trafficQuotaCacheServiceProvider.getIfAvailable()).thenReturn(trafficQuotaCacheService);
+        when(trafficRemainingBalanceCacheServiceProvider.getIfAvailable()).thenReturn(trafficRemainingBalanceCacheService);
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(zoneId);
         when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 2_000L)).thenReturn(2_000L);
         when(trafficRedisKeyFactory.monthlySharedUsageKey(101L, targetMonth)).thenReturn("monthly:101");
         when(trafficRedisKeyFactory.monthlySharedUsageKey(201L, targetMonth)).thenReturn("monthly:201");
-        when(trafficQuotaCacheService.readValueOrDefault("monthly:101", 0L)).thenReturn(5_000L);
-        when(trafficQuotaCacheService.readValueOrDefault("monthly:201", 0L)).thenReturn(1_000L);
+        when(trafficRemainingBalanceCacheService.readValueOrDefault("monthly:101", 0L)).thenReturn(5_000L);
+        when(trafficRemainingBalanceCacheService.readValueOrDefault("monthly:201", 0L)).thenReturn(1_000L);
 
         SharedPoolMonthlyUsageResDto result = service.getFamilyMonthlySharedUsageTotal(principal);
 

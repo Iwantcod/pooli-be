@@ -24,7 +24,6 @@ import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.dto.response.TrafficLuaDeductResDto;
 import com.pooli.traffic.domain.enums.TrafficLuaScriptType;
-import com.pooli.traffic.domain.enums.TrafficRefillGateStatus;
 
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -78,62 +77,11 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * 개인풀 차감 Lua 스크립트를 실행합니다.
-     */
-    public TrafficLuaExecutionResult executeDeductIndividual(List<String> keys, List<String> args) {
-        String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_INDIVIDUAL, keys, args);
-        return parseDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_INDIVIDUAL);
-    }
-
-    /**
-     * 공유풀 차감 Lua 스크립트를 실행합니다.
-     */
-    public TrafficLuaExecutionResult executeDeductShared(List<String> keys, List<String> args) {
-        String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_SHARED, keys, args);
-        return parseDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_SHARED);
-    }
-
-    /**
      * 개인+공유+QoS 단일 차감 Lua 스크립트를 실행합니다.
      */
     public TrafficLuaDeductExecutionResult executeDeductUnified(List<String> keys, List<String> args) {
         String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_UNIFIED, keys, args);
         return parseUnifiedDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_UNIFIED);
-    }
-
-    /**
-     * 리필 가능 여부를 판단하는 gate Lua 스크립트를 실행합니다.
-     */
-    public TrafficRefillGateStatus executeRefillGate(
-            String lockKey,
-            String balanceKey,
-            String traceId,
-            long lockTtlMs,
-            long currentAmount,
-            long threshold
-    ) {
-        String statusText = executeStringSingle(
-                TrafficLuaScriptType.REFILL_GATE,
-                List.of(lockKey, balanceKey),
-                List.of(
-                        traceId,
-                        String.valueOf(lockTtlMs),
-                        String.valueOf(threshold)
-                )
-        );
-
-        try {
-            // 점진 배포 중 구버전 Lua가 "SKIP" 단일 상태를 반환할 수 있어 하위 호환 매핑을 유지합니다.
-            if ("SKIP".equals(statusText)) {
-                return TrafficRefillGateStatus.SKIP_THRESHOLD;
-            }
-            return TrafficRefillGateStatus.valueOf(statusText);
-        } catch (IllegalArgumentException e) {
-            throw new ApplicationException(
-                    CommonErrorCode.INTERNAL_SERVER_ERROR,
-                    "Failed to parse refill gate status. status=" + statusText
-            );
-        }
     }
 
     /**
@@ -210,36 +158,6 @@ public class TrafficLuaScriptInfraService {
                         processedQosField,
                         retryField,
                         defaultValue
-                )
-        );
-        return rawResult == null ? 0L : rawResult;
-    }
-
-    /**
-     * in-flight 멱등 hash의 processedData를 delta만큼 증가시킵니다.
-     * 키가 없으면 기본 필드를 초기화한 후 증가합니다.
-     */
-    public long executeInFlightIncrementProcessedWithInit(
-            String dedupeKey,
-            String processedIndividualField,
-            String processedSharedField,
-            String processedQosField,
-            String retryField,
-            String defaultValue,
-            String targetProcessedField,
-            long delta
-    ) {
-        Long rawResult = executeLongSingle(
-                TrafficLuaScriptType.IN_FLIGHT_INCREMENT_PROCESSED_WITH_INIT,
-                List.of(dedupeKey),
-                List.of(
-                        processedIndividualField,
-                        processedSharedField,
-                        processedQosField,
-                        retryField,
-                        defaultValue,
-                        targetProcessedField,
-                        String.valueOf(delta)
                 )
         );
         return rawResult == null ? 0L : rawResult;
@@ -389,7 +307,7 @@ public class TrafficLuaScriptInfraService {
      */
     private void registerScript(TrafficLuaScriptType scriptType, String scriptText) {
         switch (scriptType) {
-            case BLOCK_POLICY_CHECK, DEDUCT_UNIFIED, DEDUCT_INDIVIDUAL, DEDUCT_SHARED, REFILL_GATE -> {
+            case BLOCK_POLICY_CHECK, DEDUCT_UNIFIED -> {
                 DefaultRedisScript<String> redisScript = new DefaultRedisScript<>();
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(String.class);
@@ -398,8 +316,7 @@ public class TrafficLuaScriptInfraService {
             case LOCK_HEARTBEAT,
                  LOCK_RELEASE,
                  IN_FLIGHT_CREATE_IF_ABSENT,
-                 IN_FLIGHT_INCREMENT_RETRY_WITH_INIT,
-                 IN_FLIGHT_INCREMENT_PROCESSED_WITH_INIT -> {
+                 IN_FLIGHT_INCREMENT_RETRY_WITH_INIT -> {
                 DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(Long.class);

@@ -4,14 +4,13 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 /**
- * DB 원천 잔량 리필 차감을 위한 MyBatis Mapper입니다.
- * 개인풀/공유풀 row lock 조회와 조건부 차감 연산을 제공합니다.
+ * 트래픽 hydrate와 legacy refill 보상 흐름에서 DB 원천 데이터에 접근하는 MyBatis Mapper입니다.
  */
 @Mapper
 public interface TrafficRefillSourceMapper {
 
     /**
-     * 개인풀 원천 잔량을 조회합니다.
+     * 개인풀 hydrate에 사용할 원천 데이터량을 조회합니다.
      */
     Long selectIndividualRemaining(@Param("lineId") Long lineId);
 
@@ -26,7 +25,7 @@ public interface TrafficRefillSourceMapper {
     Long selectIndividualRemainingForUpdate(@Param("lineId") Long lineId);
 
     /**
-     * 개인풀 원천 잔량을 조건부 차감합니다.
+     * legacy refill 보상 흐름에서 개인풀 원천 잔량을 조건부 차감합니다.
      * remaining_data >= deductAmount 조건을 만족할 때만 1건 갱신됩니다.
      */
     int deductIndividualRemaining(
@@ -35,7 +34,7 @@ public interface TrafficRefillSourceMapper {
     );
 
     /**
-     * 개인풀 원천 잔량을 반납합니다.
+     * legacy refill 보상 흐름에서 개인풀 원천 잔량을 반납합니다.
      */
     int restoreIndividualRemaining(
             @Param("lineId") Long lineId,
@@ -43,7 +42,7 @@ public interface TrafficRefillSourceMapper {
     );
 
     /**
-     * 공유풀 원천 잔량을 조회합니다.
+     * 공유풀 hydrate에 사용할 원천 데이터량을 조회합니다.
      */
     Long selectSharedRemaining(@Param("familyId") Long familyId);
 
@@ -53,7 +52,7 @@ public interface TrafficRefillSourceMapper {
     Long selectSharedRemainingForUpdate(@Param("familyId") Long familyId);
 
     /**
-     * 공유풀 원천 잔량을 조건부 차감합니다.
+     * legacy refill 보상 흐름에서 공유풀 원천 잔량을 조건부 차감합니다.
      * pool_remaining_data >= deductAmount 조건을 만족할 때만 1건 갱신됩니다.
      */
     int deductSharedRemaining(
@@ -62,7 +61,7 @@ public interface TrafficRefillSourceMapper {
     );
 
     /**
-     * 공유풀 원천 잔량을 반납합니다.
+     * legacy refill 보상 흐름에서 공유풀 원천 잔량을 반납합니다.
      */
     int restoreSharedRemaining(
             @Param("familyId") Long familyId,

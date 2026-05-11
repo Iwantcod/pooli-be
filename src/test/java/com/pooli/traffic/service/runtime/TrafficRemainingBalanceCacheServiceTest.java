@@ -1,7 +1,6 @@
 package com.pooli.traffic.service.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,7 +17,7 @@ import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 @ExtendWith(MockitoExtension.class)
-class TrafficQuotaCacheServiceTest {
+class TrafficRemainingBalanceCacheServiceTest {
 
     @Mock
     private StringRedisTemplate cacheStringRedisTemplate;
@@ -27,7 +26,7 @@ class TrafficQuotaCacheServiceTest {
     private HashOperations<String, Object, Object> hashOperations;
 
     @InjectMocks
-    private TrafficQuotaCacheService trafficQuotaCacheService;
+    private TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
 
     @Nested
     class ReadAmountOrDefaultTest {
@@ -37,7 +36,7 @@ class TrafficQuotaCacheServiceTest {
             when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
             when(hashOperations.get("pooli:remaining_indiv_amount:11:202603", "amount")).thenReturn("300");
 
-            long amount = trafficQuotaCacheService.readAmountOrDefault(
+            long amount = trafficRemainingBalanceCacheService.readAmountOrDefault(
                     "pooli:remaining_indiv_amount:11:202603",
                     10L
             );
@@ -50,7 +49,7 @@ class TrafficQuotaCacheServiceTest {
             when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
             when(hashOperations.get("pooli:remaining_indiv_amount:11:202603", "amount")).thenReturn("not-a-number");
 
-            long amount = trafficQuotaCacheService.readAmountOrDefault(
+            long amount = trafficRemainingBalanceCacheService.readAmountOrDefault(
                     "pooli:remaining_indiv_amount:11:202603",
                     77L
             );
@@ -66,13 +65,13 @@ class TrafficQuotaCacheServiceTest {
         void hydratesBalanceWithExpireAt() {
             when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
 
-            trafficQuotaCacheService.hydrateBalance(
+            trafficRemainingBalanceCacheService.hydrateBalance(
                     "pooli:remaining_indiv_amount:11:202603",
+                    300L,
                     1_775_833_199L
             );
 
-            verify(hashOperations).putIfAbsent("pooli:remaining_indiv_amount:11:202603", "amount", "0");
-            verify(hashOperations).putIfAbsent("pooli:remaining_indiv_amount:11:202603", "is_empty", "0");
+            verify(hashOperations).putIfAbsent("pooli:remaining_indiv_amount:11:202603", "amount", "300");
             verify(cacheStringRedisTemplate).expireAt(
                     "pooli:remaining_indiv_amount:11:202603",
                     Instant.ofEpochSecond(1_775_833_199L)
@@ -80,52 +79,16 @@ class TrafficQuotaCacheServiceTest {
         }
 
         @Test
-        void normalizesNegativeInitialAmount() {
+        void keepsUnlimitedSentinel() {
             when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
 
-            trafficQuotaCacheService.hydrateBalance(
+            trafficRemainingBalanceCacheService.hydrateBalance(
                     "pooli:remaining_indiv_amount:11:202603",
+                    -1L,
                     1_775_833_199L
             );
 
-            verify(hashOperations).putIfAbsent("pooli:remaining_indiv_amount:11:202603", "amount", "0");
-            verify(hashOperations).putIfAbsent("pooli:remaining_indiv_amount:11:202603", "is_empty", "0");
-        }
-    }
-
-    @Nested
-    class RefillBalanceTest {
-
-        @Test
-        void refillsBalanceAndUpdatesExpireAt() {
-            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-
-            trafficQuotaCacheService.refillBalance(
-                    "pooli:remaining_indiv_amount:11:202603",
-                    80L,
-                    1_775_833_199L
-            );
-
-            verify(hashOperations).increment("pooli:remaining_indiv_amount:11:202603", "amount", 80L);
-            verify(cacheStringRedisTemplate).expireAt(
-                    "pooli:remaining_indiv_amount:11:202603",
-                    Instant.ofEpochSecond(1_775_833_199L)
-            );
-        }
-
-        @Test
-        void noOpWhenRefillAmountNonPositive() {
-            trafficQuotaCacheService.refillBalance(
-                    "pooli:remaining_indiv_amount:11:202603",
-                    0L,
-                    1_775_833_199L
-            );
-
-            verify(cacheStringRedisTemplate, never()).opsForHash();
-            verify(cacheStringRedisTemplate, never()).expireAt(
-                    "pooli:remaining_indiv_amount:11:202603",
-                    Instant.ofEpochSecond(1_775_833_199L)
-            );
+            verify(hashOperations).putIfAbsent("pooli:remaining_indiv_amount:11:202603", "amount", "-1");
         }
     }
 }

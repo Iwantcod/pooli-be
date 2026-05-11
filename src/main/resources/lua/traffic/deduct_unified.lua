@@ -43,9 +43,9 @@ local function has_missing_global_policy_key(...)
   return false
 end
 
--- Redis hash 숫자 필드를 0 이상 값으로 읽는다.
--- 누락/음수/비숫자는 정책적으로 0으로 보정한다.
-local function read_non_negative_hash_number(key, field)
+-- Redis hash 숫자 필드를 counter 성격의 0 이상 값으로 읽는다.
+-- 누락/음수/비숫자는 dedupe/QoS counter 계약에 맞춰 0으로 취급한다.
+local function read_non_negative_counter(key, field)
   local value = tonumber(redis.call("HGET", key, field) or "0")
   if not value or value < 0 then
     return 0
@@ -136,9 +136,9 @@ end
 
 -- 이미 처리한 개인/공유/QoS 합계를 원본 api_total_data에서 차감해 이번 호출의 상한을 정한다.
 -- reclaim 재처리 중에도 총 처리량이 원본 요청량을 넘지 않게 하는 방어선이다.
-local processed_individual = read_non_negative_hash_number(dedupe_key, DEDUPE_PROCESSED_INDIVIDUAL_FIELD)
-local processed_shared = read_non_negative_hash_number(dedupe_key, DEDUPE_PROCESSED_SHARED_FIELD)
-local processed_qos = read_non_negative_hash_number(dedupe_key, DEDUPE_PROCESSED_QOS_FIELD)
+local processed_individual = read_non_negative_counter(dedupe_key, DEDUPE_PROCESSED_INDIVIDUAL_FIELD)
+local processed_shared = read_non_negative_counter(dedupe_key, DEDUPE_PROCESSED_SHARED_FIELD)
+local processed_qos = read_non_negative_counter(dedupe_key, DEDUPE_PROCESSED_QOS_FIELD)
 local processed_data = processed_individual + processed_shared + processed_qos
 local remaining_quota = math.max(0, api_total_data - processed_data)
 if remaining_quota <= 0 then
@@ -160,10 +160,16 @@ end
 -- ===== 잔량 cache 존재성 검증 =====
 -- 개인풀 잔량은 항상 첫 번째 차감 대상이므로 먼저 확인한다.
 -- 공유풀 잔량은 실제 공유 차감 대상이 생겼을 때 아래에서 지연 확인한다.
-local individual_amount = tonumber(redis.call("HGET", individual_remaining_key, "amount") or "-1")
-if individual_amount < 0 then
+-- amount 필드 누락은 hydrate 대상이고, 값 -1은 무제한 잔량 sentinel이다.
+local raw_individual_amount = redis.call("HGET", individual_remaining_key, "amount")
+if raw_individual_amount == false or raw_individual_amount == nil then
   return as_json(0, 0, 0, "HYDRATE")
 end
+local individual_amount = tonumber(raw_individual_amount)
+if not individual_amount or individual_amount < -1 then
+  return as_json(0, 0, 0, "ERROR")
+end
+local individual_unlimited = individual_amount == -1
 
 local whitelist_bypass = whitelist_bypass_flag == 1
 local app_member = tostring(math.floor(app_id))
@@ -237,8 +243,8 @@ if not whitelist_bypass then
 end
 
 -- ===== 개인풀 차감량 계산 =====
--- 개인풀은 pool_target 범위 안에서 현재 Redis 잔량만큼 먼저 차감한다.
-local indiv_deducted = math.min(individual_amount, pool_target)
+-- 개인풀은 pool_target 범위 안에서 먼저 차감한다. amount=-1이면 잔량 감소 없이 전체 pool_target을 처리한다.
+local indiv_deducted = individual_unlimited and pool_target or math.min(individual_amount, pool_target)
 local remaining_pool_target = math.max(0, pool_target - indiv_deducted)
 
 -- ===== 공유풀 차감량 계산 =====
@@ -260,19 +266,25 @@ if not whitelist_bypass and shared_target > 0 and is_policy_enabled(policy_share
 end
 
 local shared_amount = 0
+local shared_unlimited = false
 if shared_target > 0 then
-  shared_amount = tonumber(redis.call("HGET", shared_remaining_key, "amount") or "-1")
-  if shared_amount < 0 then
+  local raw_shared_amount = redis.call("HGET", shared_remaining_key, "amount")
+  if raw_shared_amount == false or raw_shared_amount == nil then
     return as_json(0, 0, 0, "HYDRATE")
   end
+  shared_amount = tonumber(raw_shared_amount)
+  if not shared_amount or shared_amount < -1 then
+    return as_json(0, 0, 0, "ERROR")
+  end
+  shared_unlimited = shared_amount == -1
 end
-local shared_deducted = math.min(shared_amount, shared_target)
+local shared_deducted = shared_unlimited and shared_target or math.min(shared_amount, shared_target)
 
 -- ===== QoS 처리량 계산 =====
 -- QoS는 개인/공유 잔량으로 처리하지 못한 policy_target 잔여량을 대상으로 한다.
 -- `qos` 필드는 잔량이 아니라 이번 요청에서 QoS로 처리 가능한 한도로 해석한다.
 local qos_target = math.max(0, policy_target - indiv_deducted - shared_deducted)
-local qos_limit = read_non_negative_hash_number(individual_remaining_key, "qos")
+local qos_limit = read_non_negative_counter(individual_remaining_key, "qos")
 local qos_deducted = math.min(qos_limit, qos_target)
 
 -- ===== 상태 우선순위 결정 =====
@@ -287,15 +299,19 @@ if total_deducted <= 0 then
 end
 
 -- ===== 원자적 상태 갱신 =====
--- 개인풀 잔량 차감량은 개인 잔량과 processed_individual_data에만 반영한다.
-if indiv_deducted > 0 then
+-- 개인풀 무제한 sentinel(-1)은 감소시키지 않고 처리량만 dedupe에 기록한다.
+if indiv_deducted > 0 and not individual_unlimited then
   redis.call("HINCRBY", individual_remaining_key, "amount", -indiv_deducted)
+end
+if indiv_deducted > 0 then
   redis.call("HINCRBY", dedupe_key, DEDUPE_PROCESSED_INDIVIDUAL_FIELD, indiv_deducted)
 end
 
--- 공유풀 잔량 차감량은 공유 잔량, 월별 공유 사용량, processed_shared_data에만 반영한다.
-if shared_deducted > 0 then
+-- 공유풀 무제한 sentinel(-1)이 있으면 잔량은 감소시키지 않고 사용량/dedupe만 기록한다.
+if shared_deducted > 0 and not shared_unlimited then
   redis.call("HINCRBY", shared_remaining_key, "amount", -shared_deducted)
+end
+if shared_deducted > 0 then
   redis.call("INCRBY", monthly_shared_usage_key, shared_deducted)
   redis.call("EXPIREAT", monthly_shared_usage_key, monthly_expire_at)
   redis.call("HINCRBY", dedupe_key, DEDUPE_PROCESSED_SHARED_FIELD, shared_deducted)
