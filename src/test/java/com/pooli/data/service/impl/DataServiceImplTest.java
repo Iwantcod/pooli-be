@@ -252,7 +252,8 @@ class DataServiceImplTest {
     @Test
     @DisplayName("데이터 요약: Redis 버퍼 잔량을 합산해서 반환")
     void getDataSummary_success_returnsMergedBalances() {
-        YearMonth targetMonth = YearMonth.of(2026, 3);
+        ZoneId zoneId = ZoneId.of("Asia/Seoul");
+        YearMonth targetMonth = YearMonth.now(zoneId);
         DataBalancesResDto dto = DataBalancesResDto.builder()
             .lineId(1L)
             .userName("user")
@@ -262,15 +263,15 @@ class DataServiceImplTest {
             .planName("plan")
             .build();
         when(dataMapper.findDataSummaryByLineId(1L)).thenReturn(dto);
-        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(zoneId);
         when(trafficRedisKeyFactory.remainingIndivAmountKey(1L, targetMonth))
-            .thenReturn("pooli:remaining_indiv_amount:1:202603");
+            .thenReturn("pooli:remaining_indiv_amount:1:" + targetMonth);
         when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.of(familyLine(true)));
         when(trafficRedisKeyFactory.remainingSharedAmountKey(1L, targetMonth))
-            .thenReturn("pooli:remaining_shared_amount:1:202603");
+            .thenReturn("pooli:remaining_shared_amount:1:" + targetMonth);
         when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(hashOperations.get("pooli:remaining_indiv_amount:1:202603", "amount")).thenReturn("20");
-        when(hashOperations.get("pooli:remaining_shared_amount:1:202603", "amount")).thenReturn("30");
+        when(hashOperations.get("pooli:remaining_indiv_amount:1:" + targetMonth, "amount")).thenReturn("20");
+        when(hashOperations.get("pooli:remaining_shared_amount:1:" + targetMonth, "amount")).thenReturn("30");
 
         DataBalancesResDto result = dataService.getDataSummary(1L);
 
@@ -285,7 +286,8 @@ class DataServiceImplTest {
     @Test
     @DisplayName("데이터 요약: Redis 값이 없으면 DB 값을 유지")
     void getDataSummary_whenRedisMissing_keepsDbValues() {
-        YearMonth targetMonth = YearMonth.of(2026, 3);
+        ZoneId zoneId = ZoneId.of("Asia/Seoul");
+        YearMonth targetMonth = YearMonth.now(zoneId);
         DataBalancesResDto dto = DataBalancesResDto.builder()
             .lineId(1L)
             .userName("user")
@@ -295,15 +297,15 @@ class DataServiceImplTest {
             .planName("plan")
             .build();
         when(dataMapper.findDataSummaryByLineId(1L)).thenReturn(dto);
-        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(zoneId);
         when(trafficRedisKeyFactory.remainingIndivAmountKey(1L, targetMonth))
-            .thenReturn("pooli:remaining_indiv_amount:1:202603");
+            .thenReturn("pooli:remaining_indiv_amount:1:" + targetMonth);
         when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.of(familyLine(true)));
         when(trafficRedisKeyFactory.remainingSharedAmountKey(1L, targetMonth))
-            .thenReturn("pooli:remaining_shared_amount:1:202603");
+            .thenReturn("pooli:remaining_shared_amount:1:" + targetMonth);
         when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(hashOperations.get("pooli:remaining_indiv_amount:1:202603", "amount")).thenReturn(null);
-        when(hashOperations.get("pooli:remaining_shared_amount:1:202603", "amount")).thenReturn(null);
+        when(hashOperations.get("pooli:remaining_indiv_amount:1:" + targetMonth, "amount")).thenReturn(null);
+        when(hashOperations.get("pooli:remaining_shared_amount:1:" + targetMonth, "amount")).thenReturn(null);
 
         DataBalancesResDto result = dataService.getDataSummary(1L);
 
