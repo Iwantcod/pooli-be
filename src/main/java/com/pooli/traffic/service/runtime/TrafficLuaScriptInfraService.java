@@ -20,6 +20,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics;
+import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics.FailureKind;
+import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics.RedisTarget;
 import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.dto.response.TrafficLuaDeductResDto;
@@ -41,6 +44,10 @@ public class TrafficLuaScriptInfraService {
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
     private final ObjectMapper objectMapper;
+    // cache Redis Lua 호출의 시도/실패 raw metric을 기록하는 전담 컴포넌트입니다.
+    private final TrafficRedisAvailabilityMetrics trafficRedisAvailabilityMetrics;
+    // Redis 예외를 timeout/connection/non-retryable metric tag로 분류할 때 사용합니다.
+    private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     private final Map<TrafficLuaScriptType, String> scriptShaRegistry =
             new EnumMap<>(TrafficLuaScriptType.class);
@@ -201,11 +208,18 @@ public class TrafficLuaScriptInfraService {
 
     /**
      * 문자열 결과를 반환하는 Lua 스크립트를 실행합니다.
+     *
+     * <p>1. 스크립트 타입에 맞는 문자열 반환 RedisScript를 조회합니다.
+     * <br>2. cache Redis 명령 시도 metric을 먼저 증가시킵니다.
+     * <br>3. Redis Lua를 실행하고 null 결과는 내부 오류로 처리합니다.
+     * <br>4. Redis 접근 예외가 발생하면 실패 유형 metric을 기록한 뒤 외부 시스템 오류로 래핑합니다.
      */
     private String executeStringSingle(TrafficLuaScriptType scriptType, List<String> keys, List<String> args) {
         RedisScript<String> script = requireStringScript(scriptType);
 
         try {
+            // alert rule의 분모가 되는 cache Redis 명령 시도 수를 기록합니다.
+            trafficRedisAvailabilityMetrics.incrementOperation(RedisTarget.CACHE);
             String result = cacheStringRedisTemplate.execute(script, keys, args.toArray());
             if (result == null) {
                 throw new ApplicationException(CommonErrorCode.INTERNAL_SERVER_ERROR, "Lua script returned null result.");
@@ -213,6 +227,8 @@ public class TrafficLuaScriptInfraService {
 
             return result;
         } catch (DataAccessException e) {
+            // alert rule의 분자가 되는 Redis 실패 수를 timeout/connection/non-retryable로 분리해 기록합니다.
+            trafficRedisAvailabilityMetrics.incrementFailure(RedisTarget.CACHE, resolveFailureKind(e));
             log.error("traffic_lua_execute_failed script={}", scriptType.getScriptName(), e);
             throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);
         }
@@ -220,11 +236,18 @@ public class TrafficLuaScriptInfraService {
 
     /**
      * 정수 결과를 반환하는 Lua 스크립트를 실행합니다.
+     *
+     * <p>1. 스크립트 타입에 맞는 정수 반환 RedisScript를 조회합니다.
+     * <br>2. cache Redis 명령 시도 metric을 먼저 증가시킵니다.
+     * <br>3. Redis Lua를 실행하고 null 결과는 내부 오류로 처리합니다.
+     * <br>4. Redis 접근 예외가 발생하면 실패 유형 metric을 기록한 뒤 외부 시스템 오류로 래핑합니다.
      */
     private Long executeLongSingle(TrafficLuaScriptType scriptType, List<String> keys, List<String> args) {
         RedisScript<Long> script = requireLongScript(scriptType);
 
         try {
+            // hydrate/lock/in-flight Lua도 같은 cache Redis 가용성 지표의 요청 수에 포함합니다.
+            trafficRedisAvailabilityMetrics.incrementOperation(RedisTarget.CACHE);
             Long result = cacheStringRedisTemplate.execute(script, keys, args.toArray());
             if (result == null) {
                 throw new ApplicationException(CommonErrorCode.INTERNAL_SERVER_ERROR, "Lua script returned null result.");
@@ -232,9 +255,28 @@ public class TrafficLuaScriptInfraService {
 
             return result;
         } catch (DataAccessException e) {
+            // non-retryable은 별도 집계하되 Prometheus 실패율 rule에서는 제외합니다.
+            trafficRedisAvailabilityMetrics.incrementFailure(RedisTarget.CACHE, resolveFailureKind(e));
             log.error("traffic_lua_execute_failed script={}", scriptType.getScriptName(), e);
             throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);
         }
+    }
+
+    /**
+     * Redis 예외를 EM6 alert rule tag 계약에 맞는 실패 유형으로 변환합니다.
+     *
+     * <p>1. timeout 계열이면 `timeout`으로 분류합니다.
+     * <br>2. connection 계열이면 `connection`으로 분류합니다.
+     * <br>3. 둘 다 아니면 alert 실패율에서 제외할 `non_retryable`로 분류합니다.
+     */
+    private FailureKind resolveFailureKind(RuntimeException failure) {
+        if (trafficRedisFailureClassifier.isTimeoutFailure(failure)) {
+            return FailureKind.TIMEOUT;
+        }
+        if (trafficRedisFailureClassifier.isConnectionFailure(failure)) {
+            return FailureKind.CONNECTION;
+        }
+        return FailureKind.NON_RETRYABLE;
     }
 
     /**

@@ -12,7 +12,6 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import com.pooli.common.exception.ApplicationException;
-import com.pooli.monitoring.metrics.TrafficDeductFallbackMetrics;
 import com.pooli.traffic.domain.TrafficDeductExecutionContext;
 import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
@@ -54,7 +53,6 @@ public class TrafficDeductLuaExecutor {
     private final TrafficLuaScriptInfraService trafficLuaScriptInfraService;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
-    private final TrafficDeductFallbackMetrics trafficDeductFallbackMetrics;
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     /**
@@ -113,13 +111,10 @@ public class TrafficDeductLuaExecutor {
                         requestedDataBytes,
                         whitelistBypassFlag
                 );
-                // 성공 전 retryable 실패가 있었다면 Redis retry 메트릭에만 기록합니다.
-                recordRetryableFailureAttempts(TrafficPoolType.INDIVIDUAL, attempt - 1, lastRetryableFailure);
                 return result;
             } catch (ApplicationException | DataAccessException exception) {
                 // non-retryable 예외는 재시도하지 않고 현재 failure stage로 래핑해 전파합니다.
                 if (!trafficRedisFailureClassifier.isRetryableInfrastructureFailure(exception)) {
-                    recordRetryableFailureAttempts(TrafficPoolType.INDIVIDUAL, attempt - 1, lastRetryableFailure);
                     TrafficStageFailureException stageFailure =
                             TrafficStageFailureException.nonRetryableFailure(failureStage, exception);
                     log.error(
@@ -135,7 +130,6 @@ public class TrafficDeductLuaExecutor {
                 lastRetryableFailure = exception;
                 if (attempt >= maxAttempts) {
                     // Redis-Only 원칙상 retry 소진 후 DB fallback 없이 단계 실패로 종료합니다.
-                    recordRetryableFailureAttempts(TrafficPoolType.INDIVIDUAL, attempt, lastRetryableFailure);
                     log.warn(
                             "{} traceId={} poolType=UNIFIED requestedData={} fallback=disabled reason={}",
                             failureStage.retryExhaustedLogKey(),
@@ -219,27 +213,6 @@ public class TrafficDeductLuaExecutor {
         );
         // Redis 원자 구간에서 개인/공유/QoS 처리량과 usage/dedupe 갱신을 함께 수행합니다.
         return trafficLuaScriptInfraService.executeDeductUnified(keys, args);
-    }
-
-    /**
-     * 통합 차감 재시도 중 발생한 retryable 실패 횟수를 Redis retry 메트릭에 기록합니다.
-     *
-     * <p>in-flight dedupe의 retry_count는 메시지 reclaim 횟수 전용이므로 여기서 갱신하지 않습니다.
-     */
-    private void recordRetryableFailureAttempts(
-            TrafficPoolType poolType,
-            int failedAttemptCount,
-            RuntimeException lastFailure
-    ) {
-        int normalizedFailedAttemptCount = Math.max(0, failedAttemptCount);
-        if (normalizedFailedAttemptCount <= 0) {
-            return;
-        }
-
-        String reason = trafficRedisFailureClassifier.isTimeoutFailure(lastFailure) ? "timeout" : "connection";
-        for (int attempt = 1; attempt <= normalizedFailedAttemptCount; attempt++) {
-            trafficDeductFallbackMetrics.incrementRedisRetry(poolType.name(), attempt, reason);
-        }
     }
 
     /**

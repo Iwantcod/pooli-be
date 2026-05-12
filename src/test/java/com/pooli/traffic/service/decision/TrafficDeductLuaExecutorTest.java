@@ -16,7 +16,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import com.pooli.monitoring.metrics.TrafficDeductFallbackMetrics;
 import com.pooli.traffic.domain.TrafficDeductExecutionContext;
 import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
@@ -37,9 +36,6 @@ class TrafficDeductLuaExecutorTest {
 
     @Mock
     private TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
-
-    @Mock
-    private TrafficDeductFallbackMetrics trafficDeductFallbackMetrics;
 
     @Mock
     private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
