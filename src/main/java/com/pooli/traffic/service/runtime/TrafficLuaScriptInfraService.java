@@ -85,6 +85,35 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * 개인풀 월별 잔량 snapshot hydrate Lua 스크립트를 실행합니다.
+     */
+    public long executeHydrateIndividualSnapshot(
+            String balanceKey,
+            long amount,
+            long qos,
+            long expireAtEpochSeconds
+    ) {
+        Long rawResult = executeLongSingle(
+                TrafficLuaScriptType.HYDRATE_INDIVIDUAL_SNAPSHOT,
+                List.of(balanceKey),
+                List.of(String.valueOf(amount), String.valueOf(qos), String.valueOf(expireAtEpochSeconds))
+        );
+        return rawResult == null ? 0L : rawResult;
+    }
+
+    /**
+     * 공유풀 월별 잔량 snapshot hydrate Lua 스크립트를 실행합니다.
+     */
+    public long executeHydrateSharedSnapshot(String balanceKey, long amount, long expireAtEpochSeconds) {
+        Long rawResult = executeLongSingle(
+                TrafficLuaScriptType.HYDRATE_SHARED_SNAPSHOT,
+                List.of(balanceKey),
+                List.of(String.valueOf(amount), String.valueOf(expireAtEpochSeconds))
+        );
+        return rawResult == null ? 0L : rawResult;
+    }
+
+    /**
      * 락 소유 여부를 heartbeat Lua 스크립트로 확인합니다.
      */
     public boolean executeLockHeartbeat(String lockKey, String traceId, long lockTtlMs) {
@@ -314,6 +343,8 @@ public class TrafficLuaScriptInfraService {
                 stringScriptRegistry.put(scriptType, redisScript);
             }
             case LOCK_HEARTBEAT,
+                 HYDRATE_INDIVIDUAL_SNAPSHOT,
+                 HYDRATE_SHARED_SNAPSHOT,
                  LOCK_RELEASE,
                  IN_FLIGHT_CREATE_IF_ABSENT,
                  IN_FLIGHT_INCREMENT_RETRY_WITH_INIT -> {

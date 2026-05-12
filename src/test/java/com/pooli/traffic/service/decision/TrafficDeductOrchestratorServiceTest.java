@@ -121,8 +121,43 @@ class TrafficDeductOrchestratorServiceTest {
     }
 
     @Test
-    @DisplayName("정책 검증 retryable 장애도 DB fallback 없이 차감 0 결과로 종료한다")
-    void doesNotUseDbFallbackWhenPolicyCheckFailsRetryable() {
+    @DisplayName("hydrate invalid 결과의 failureReason을 최종 결과에 전달한다")
+    void propagatesHydrateInvalidFailureReason() {
+        TrafficPayloadReqDto payload = payload(100L);
+        TrafficLuaDeductExecutionResult initialResult =
+                unifiedResult(0L, 0L, 0L, TrafficLuaStatus.HYDRATE_INDIVIDUAL);
+        TrafficLuaDeductExecutionResult invalidResult = TrafficLuaDeductExecutionResult.builder()
+                .indivDeducted(0L)
+                .sharedDeducted(0L)
+                .qosDeducted(0L)
+                .status(TrafficLuaStatus.ERROR)
+                .failureReason("STALE_TARGET_MONTH")
+                .build();
+        when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(TrafficFailureStage.DEDUCT)
+        )).thenReturn(initialResult);
+        when(trafficHydrateService.recoverIfNeeded(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(initialResult)
+        )).thenReturn(invalidResult);
+
+        TrafficDeductResultResDto result = service.orchestrate(payload);
+
+        assertAll(
+                () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
+                () -> assertEquals(TrafficLuaStatus.ERROR, result.getLastLuaStatus()),
+                () -> assertEquals("STALE_TARGET_MONTH", result.getFailureReason())
+        );
+    }
+
+    @Test
+    @DisplayName("정책 검증 retryable 장애는 결과 DTO로 종료하지 않고 예외로 전파한다")
+    void throwsWhenPolicyCheckFailsRetryable() {
         TrafficPayloadReqDto payload = payload(100L);
         TrafficStageFailureException stageFailure = TrafficStageFailureException.retryableFailure(
                 TrafficFailureStage.POLICY_CHECK,
@@ -134,13 +169,12 @@ class TrafficDeductOrchestratorServiceTest {
                         stageFailure
                 ));
 
-        TrafficDeductResultResDto result = service.orchestrate(payload);
-
-        assertAll(
-                () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
-                () -> assertEquals(TrafficLuaStatus.ERROR, result.getLastLuaStatus()),
-                () -> assertEquals(100L, result.getApiRemainingData())
+        TrafficStageFailureException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+                TrafficStageFailureException.class,
+                () -> service.orchestrate(payload)
         );
+
+        assertEquals(stageFailure, thrown);
         verify(trafficDeductLuaExecutor, never())
                 .executeUnifiedWithRetry(any(), any(Long.class), any(), any());
         verify(trafficHydrateService, never())

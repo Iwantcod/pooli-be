@@ -2,6 +2,7 @@ package com.pooli.traffic.service.decision;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -14,7 +15,9 @@ import org.springframework.stereotype.Service;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.monitoring.metrics.TrafficHydrateMetrics;
 import com.pooli.traffic.domain.TrafficDeductExecutionContext;
+import com.pooli.traffic.domain.TrafficIndividualBalanceSnapshot;
 import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
+import com.pooli.traffic.domain.TrafficSharedBalanceSnapshot;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPoolType;
@@ -43,6 +46,8 @@ public class TrafficHydrateService {
 
     private static final int HYDRATE_RETRY_MAX = 5;
     private static final long QOS_UPLOAD_MULTIPLIER = 125L;
+    private static final String FAILURE_REASON_STALE_TARGET_MONTH = "STALE_TARGET_MONTH";
+    private static final String FAILURE_REASON_SNAPSHOT_NOT_FOUND = "SNAPSHOT_NOT_FOUND";
 
     @Value("${app.traffic.hydrate-lock.enabled:true}")
     private boolean hydrateLockEnabled;
@@ -72,7 +77,7 @@ public class TrafficHydrateService {
     ) {
         if (currentResult == null
                 || (currentResult.getStatus() != TrafficLuaStatus.GLOBAL_POLICY_HYDRATE
-                && currentResult.getStatus() != TrafficLuaStatus.HYDRATE)) {
+                && !isBalanceHydrateStatus(currentResult.getStatus()))) {
             return currentResult;
         }
         if (!isPayloadValidForHydrate(payload)) {
@@ -93,7 +98,7 @@ public class TrafficHydrateService {
                 currentResult
         );
 
-        // 잔량/QoS hash 누락이면 Redis hydrate 후 같은 통합 Lua를 재시도합니다. Refill은 수행하지 않습니다.
+        // 잔량/QoS snapshot 미준비이면 Redis hydrate 후 같은 통합 Lua를 재시도합니다. Refill은 수행하지 않습니다.
         return handleHydrateIfNeeded(
                 payload,
                 targetMonth,
@@ -159,7 +164,7 @@ public class TrafficHydrateService {
     }
 
     /**
-     * 개인/공유 잔량 또는 QoS hash 누락 상태면 hydrate 후 동일 통합 Lua 차감을 재시도합니다.
+     * 개인/공유 잔량 snapshot 미준비 상태면 필요한 snapshot만 hydrate 후 동일 통합 Lua 차감을 재시도합니다.
      */
     private TrafficLuaDeductExecutionResult handleHydrateIfNeeded(
             TrafficPayloadReqDto payload,
@@ -170,22 +175,31 @@ public class TrafficHydrateService {
             TrafficDeductExecutionContext context,
             TrafficLuaDeductExecutionResult currentResult
     ) {
-        // HYDRATE가 아닌 상태는 잔량/QoS 복구 대상이 아닙니다.
-        if (currentResult.getStatus() != TrafficLuaStatus.HYDRATE) {
+        // hydrate 계열이 아닌 상태는 잔량/QoS 복구 대상이 아닙니다.
+        if (!isBalanceHydrateStatus(currentResult.getStatus())) {
             return currentResult;
         }
 
         TrafficLuaDeductExecutionResult retriedResult = currentResult;
         for (int retry = 0; retry < HYDRATE_RETRY_MAX; retry++) {
-            // 통합 Lua가 참조하는 개인 잔량, 공유 잔량, 개인 QoS 필드를 함께 준비합니다.
-            applyUnifiedHydrate(payload, targetMonth, individualBalanceKey, sharedBalanceKey);
+            // Lua가 알려준 원인에 맞춰 필요한 snapshot만 준비합니다.
+            TrafficLuaDeductExecutionResult invalidResult = applyUnifiedHydrate(
+                    retriedResult.getStatus(),
+                    payload,
+                    targetMonth,
+                    individualBalanceKey,
+                    sharedBalanceKey
+            );
+            if (invalidResult != null) {
+                return invalidResult;
+            }
             retriedResult = trafficDeductLuaExecutor.executeUnifiedWithRetry(
                     payload,
                     requestedDataBytes,
                     context,
                     TrafficFailureStage.HYDRATE
             );
-            if (retriedResult.getStatus() != TrafficLuaStatus.HYDRATE) {
+            if (!isBalanceHydrateStatus(retriedResult.getStatus())) {
                 return retriedResult;
             }
             // hydrate lock 경합 또는 Redis 반영 지연을 흡수하기 위해 backoff 후 재시도합니다.
@@ -202,36 +216,46 @@ public class TrafficHydrateService {
     }
 
     /**
-     * 통합 Lua가 참조하는 개인풀 잔량, 공유풀 잔량, 개인 QoS 필드를 함께 준비합니다.
+     * 통합 Lua가 참조하는 월별 snapshot 중 요청된 범위만 준비합니다.
      */
-    private void applyUnifiedHydrate(
+    private TrafficLuaDeductExecutionResult applyUnifiedHydrate(
+            TrafficLuaStatus hydrateStatus,
             TrafficPayloadReqDto payload,
             YearMonth targetMonth,
             String individualBalanceKey,
             String sharedBalanceKey
     ) {
-        // 개인풀 hydrate는 amount와 QoS 필드를 준비합니다.
-        applyHydrateWithOptionalLock(
-                TrafficPoolType.INDIVIDUAL,
-                payload,
-                targetMonth,
-                individualBalanceKey,
-                resolveHydrateLockKey(TrafficPoolType.INDIVIDUAL, payload)
-        );
-        // 공유풀 hydrate는 amount 필드만 준비합니다.
-        applyHydrateWithOptionalLock(
-                TrafficPoolType.SHARED,
-                payload,
-                targetMonth,
-                sharedBalanceKey,
-                resolveHydrateLockKey(TrafficPoolType.SHARED, payload)
-        );
+        if (hydrateStatus == TrafficLuaStatus.HYDRATE || hydrateStatus == TrafficLuaStatus.HYDRATE_INDIVIDUAL) {
+            TrafficLuaDeductExecutionResult invalidResult = applyHydrateWithOptionalLock(
+                    TrafficPoolType.INDIVIDUAL,
+                    payload,
+                    targetMonth,
+                    individualBalanceKey,
+                    resolveHydrateLockKey(TrafficPoolType.INDIVIDUAL, payload)
+            );
+            if (invalidResult != null) {
+                return invalidResult;
+            }
+        }
+        if (hydrateStatus == TrafficLuaStatus.HYDRATE || hydrateStatus == TrafficLuaStatus.HYDRATE_SHARED) {
+            TrafficLuaDeductExecutionResult invalidResult = applyHydrateWithOptionalLock(
+                    TrafficPoolType.SHARED,
+                    payload,
+                    targetMonth,
+                    sharedBalanceKey,
+                    resolveHydrateLockKey(TrafficPoolType.SHARED, payload)
+            );
+            if (invalidResult != null) {
+                return invalidResult;
+            }
+        }
+        return null;
     }
 
     /**
      * hydrate 중복 실행을 줄이기 위해 설정에 따라 Redis lock을 획득한 worker만 실제 hydrate를 수행합니다.
      */
-    private void applyHydrateWithOptionalLock(
+    private TrafficLuaDeductExecutionResult applyHydrateWithOptionalLock(
             TrafficPoolType poolType,
             TrafficPayloadReqDto payload,
             YearMonth targetMonth,
@@ -240,15 +264,14 @@ public class TrafficHydrateService {
     ) {
         // 로컬/테스트 설정에서는 중복 hydrate를 허용해 즉시 적재합니다.
         if (!hydrateLockEnabled) {
-            applyHydrate(poolType, payload, targetMonth, balanceKey);
-            return;
+            return applyHydrate(poolType, payload, targetMonth, balanceKey);
         }
         // 운영성 경합 방지를 위해 같은 owner hydrate는 Redis lock 보유자만 수행합니다.
         if (!tryAcquireHydrateLock(hydrateLockKey, payload.getTraceId())) {
-            return;
+            return null;
         }
         try {
-            applyHydrate(poolType, payload, targetMonth, balanceKey);
+            return applyHydrate(poolType, payload, targetMonth, balanceKey);
         } finally {
             trafficLuaScriptInfraService.executeLockRelease(hydrateLockKey, payload.getTraceId());
         }
@@ -257,7 +280,7 @@ public class TrafficHydrateService {
     /**
      * 월별 잔량 hash를 생성하고, 개인풀인 경우 QoS 한도를 같은 hash에 적재합니다.
      */
-    private void applyHydrate(
+    private TrafficLuaDeductExecutionResult applyHydrate(
             TrafficPoolType poolType,
             TrafficPayloadReqDto payload,
             YearMonth targetMonth,
@@ -265,32 +288,134 @@ public class TrafficHydrateService {
     ) {
         // 월별 잔량 hash는 DB 원천값과 월말+10일 TTL로 생성합니다. amount=-1은 무제한으로 그대로 유지합니다.
         long monthlyExpireAt = trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth);
-        Long sourceAmount = switch (poolType) {
-            case INDIVIDUAL -> trafficRefillSourceMapper.selectIndividualRemaining(payload.getLineId());
-            case SHARED -> trafficRefillSourceMapper.selectSharedRemaining(payload.getFamilyId());
-        };
-        trafficRemainingBalanceCacheService.hydrateBalance(
-                balanceKey,
-                sourceAmount == null ? 0L : sourceAmount,
-                monthlyExpireAt
-        );
+
         if (poolType == TrafficPoolType.INDIVIDUAL) {
-            // QoS 한도는 LINE -> PLAN 조인 결과를 Redis 저장 단위로 변환해 개인풀 hash에 저장합니다.
-            long qosSpeedLimit = loadIndividualQosSpeedLimit(payload);
-            trafficRemainingBalanceCacheService.putQos(balanceKey, qosSpeedLimit);
+            HydrateSnapshotDecision<TrafficIndividualBalanceSnapshot> decision =
+                    resolveIndividualSnapshot(payload, targetMonth);
+            if (decision.failureReason() != null) {
+                trafficHydrateMetrics.incrementHydrate(poolType);
+                trafficHydrateMetrics.incrementInvalidHydrate(poolType, decision.failureReason());
+                return invalidHydrateResult(decision.failureReason());
+            }
+            TrafficIndividualBalanceSnapshot snapshot = decision.snapshot();
+            if (snapshot == null) {
+                return null;
+            }
+            trafficRemainingBalanceCacheService.hydrateIndividualSnapshot(
+                    balanceKey,
+                    snapshot.getAmount() == null ? 0L : snapshot.getAmount(),
+                    resolveQosSpeedLimit(snapshot),
+                    monthlyExpireAt
+            );
+        } else {
+            HydrateSnapshotDecision<TrafficSharedBalanceSnapshot> decision =
+                    resolveSharedSnapshot(payload, targetMonth);
+            if (decision.failureReason() != null) {
+                trafficHydrateMetrics.incrementHydrate(poolType);
+                trafficHydrateMetrics.incrementInvalidHydrate(poolType, decision.failureReason());
+                return invalidHydrateResult(decision.failureReason());
+            }
+            TrafficSharedBalanceSnapshot snapshot = decision.snapshot();
+            if (snapshot == null) {
+                return null;
+            }
+            trafficRemainingBalanceCacheService.hydrateSharedSnapshot(
+                    balanceKey,
+                    snapshot.getAmount() == null ? 0L : snapshot.getAmount(),
+                    monthlyExpireAt
+            );
         }
         trafficHydrateMetrics.incrementHydrate(poolType);
+        return null;
+    }
+
+    private HydrateSnapshotDecision<TrafficIndividualBalanceSnapshot> resolveIndividualSnapshot(
+            TrafficPayloadReqDto payload,
+            YearMonth targetMonth
+    ) {
+        TrafficIndividualBalanceSnapshot snapshot =
+                trafficRefillSourceMapper.selectIndividualBalanceSnapshot(payload.getLineId());
+        HydrateSnapshotDecision<TrafficIndividualBalanceSnapshot> initialDecision =
+                decideSnapshot(snapshot, targetMonth);
+        if (initialDecision.failureReason() != null || initialDecision.snapshot() != null) {
+            return initialDecision;
+        }
+
+        LocalDateTime targetMonthStart = targetMonth.atDay(1).atStartOfDay();
+        trafficRefillSourceMapper.refreshIndividualBalanceIfBeforeTargetMonth(
+                payload.getLineId(),
+                targetMonthStart
+        );
+        return decideSnapshot(
+                trafficRefillSourceMapper.selectIndividualBalanceSnapshot(payload.getLineId()),
+                targetMonth
+        );
+    }
+
+    private HydrateSnapshotDecision<TrafficSharedBalanceSnapshot> resolveSharedSnapshot(
+            TrafficPayloadReqDto payload,
+            YearMonth targetMonth
+    ) {
+        TrafficSharedBalanceSnapshot snapshot =
+                trafficRefillSourceMapper.selectSharedBalanceSnapshot(payload.getFamilyId());
+        HydrateSnapshotDecision<TrafficSharedBalanceSnapshot> initialDecision =
+                decideSnapshot(snapshot, targetMonth);
+        if (initialDecision.failureReason() != null || initialDecision.snapshot() != null) {
+            return initialDecision;
+        }
+
+        LocalDateTime targetMonthStart = targetMonth.atDay(1).atStartOfDay();
+        trafficRefillSourceMapper.refreshSharedBalanceIfBeforeTargetMonth(
+                payload.getFamilyId(),
+                targetMonthStart
+        );
+        return decideSnapshot(
+                trafficRefillSourceMapper.selectSharedBalanceSnapshot(payload.getFamilyId()),
+                targetMonth
+        );
+    }
+
+    private <T> HydrateSnapshotDecision<T> decideSnapshot(T snapshot, YearMonth targetMonth) {
+        LocalDateTime lastBalanceRefreshedAt = extractLastBalanceRefreshedAt(snapshot);
+        if (snapshot == null || lastBalanceRefreshedAt == null) {
+            return HydrateSnapshotDecision.failure(FAILURE_REASON_SNAPSHOT_NOT_FOUND);
+        }
+
+        YearMonth refreshedMonth = YearMonth.from(lastBalanceRefreshedAt);
+        if (refreshedMonth.isAfter(targetMonth)) {
+            return HydrateSnapshotDecision.failure(FAILURE_REASON_STALE_TARGET_MONTH);
+        }
+        if (refreshedMonth.isBefore(targetMonth)) {
+            return HydrateSnapshotDecision.notReady();
+        }
+        return HydrateSnapshotDecision.ready(snapshot);
+    }
+
+    private LocalDateTime extractLastBalanceRefreshedAt(Object snapshot) {
+        if (snapshot instanceof TrafficIndividualBalanceSnapshot individualSnapshot) {
+            return individualSnapshot.getLastBalanceRefreshedAt();
+        }
+        if (snapshot instanceof TrafficSharedBalanceSnapshot sharedSnapshot) {
+            return sharedSnapshot.getLastBalanceRefreshedAt();
+        }
+        return null;
+    }
+
+    private TrafficLuaDeductExecutionResult invalidHydrateResult(String failureReason) {
+        return TrafficLuaDeductExecutionResult.builder()
+                .indivDeducted(0L)
+                .sharedDeducted(0L)
+                .qosDeducted(0L)
+                .status(TrafficLuaStatus.ERROR)
+                .failureReason(failureReason)
+                .build();
     }
 
     /**
      * LINE -> PLAN 조인 결과의 qos_speed_limit 값을 Redis 저장 단위로 변환합니다.
      */
-    private long loadIndividualQosSpeedLimit(TrafficPayloadReqDto payload) {
-        if (payload == null || payload.getLineId() == null) {
-            return 0L;
-        }
-
-        Long rawQosSpeedLimit = trafficRefillSourceMapper.selectIndividualQosSpeedLimit(payload.getLineId());
+    private long resolveQosSpeedLimit(TrafficIndividualBalanceSnapshot snapshot) {
+        Long rawQosSpeedLimit = snapshot == null ? null : snapshot.getQosSpeedLimit();
         if (rawQosSpeedLimit == null || rawQosSpeedLimit < 0) {
             return 0L;
         }
@@ -374,6 +499,26 @@ public class TrafficHydrateService {
             return false;
         }
         return payload.getFamilyId() != null && payload.getFamilyId() > 0;
+    }
+
+    private boolean isBalanceHydrateStatus(TrafficLuaStatus status) {
+        return status == TrafficLuaStatus.HYDRATE
+                || status == TrafficLuaStatus.HYDRATE_INDIVIDUAL
+                || status == TrafficLuaStatus.HYDRATE_SHARED;
+    }
+
+    private record HydrateSnapshotDecision<T>(T snapshot, String failureReason) {
+        static <T> HydrateSnapshotDecision<T> ready(T snapshot) {
+            return new HydrateSnapshotDecision<>(snapshot, null);
+        }
+
+        static <T> HydrateSnapshotDecision<T> notReady() {
+            return new HydrateSnapshotDecision<>(null, null);
+        }
+
+        static <T> HydrateSnapshotDecision<T> failure(String failureReason) {
+            return new HydrateSnapshotDecision<>(null, failureReason);
+        }
     }
 
 }

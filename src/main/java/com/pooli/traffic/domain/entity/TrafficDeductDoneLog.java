@@ -44,6 +44,8 @@ public class TrafficDeductDoneLog {
 
     private String lastLuaStatus;
 
+    private String failureReason;
+
     private LocalDateTime createdAt;
     private LocalDateTime startedAt;
 

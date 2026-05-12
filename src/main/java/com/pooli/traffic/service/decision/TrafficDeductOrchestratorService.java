@@ -55,6 +55,7 @@ public class TrafficDeductOrchestratorService {
         long deductedSharedBytes = 0L;
         long deductedQosBytes = 0L;
         TrafficLuaStatus lastLuaStatus = null;
+        String failureReason = null;
         // 개인/공유 차감 재시도 경로에서 traceId 단위 상태를 공유하기 위한 컨텍스트를 준비합니다.
         TrafficDeductExecutionContext deductExecutionContext = TrafficDeductExecutionContext.of(
                 payload == null ? null : payload.getTraceId()
@@ -76,9 +77,16 @@ public class TrafficDeductOrchestratorService {
                 );
             }
 
-            // [분기 1] 현재 차단 정책이 적용 중이거나, 정책 검증 자체가 실패한 상태입니다.
-            // 즉시차단/반복차단/오류에서는 차감을 절대 시도하지 않고, "차감 0" 결과를 바로 반환합니다.
-            // 이 반환값은 상위(StreamConsumerRunner)에서 done log 저장 후 ACK 처리로 이어집니다.
+            // 정책 검증 단계의 retryable 인프라 장애는 정상 정책 판정이 아니다.
+            // 결과 DTO로 FAILED를 만들면 done log 저장 대상으로 오인될 수 있으므로,
+            // 예외를 전파해 Stream consumer가 ACK 없이 pending/reclaim 경로로 넘기게 한다.
+            if (policyCheckResult != null && policyCheckResult.isRetryableFailure()) {
+                throw policyCheckResult.getFailure();
+            }
+
+            // [분기 1] 현재 차단 정책이 적용 중인 상태입니다.
+            // 즉시차단/반복차단에서는 차감을 시도하지 않고, "차감 0" 결과를 바로 반환합니다.
+            // 이 반환값은 상위(StreamConsumerRunner)에서 정상 처리로 보고 done log 저장 후 ACK 처리로 이어집니다.
             if (policyCheckResult != null && policyCheckResult.getStatus() != TrafficLuaStatus.OK) {
                 return buildOrchestrateResult(
                         payload,
@@ -88,6 +96,7 @@ public class TrafficDeductOrchestratorService {
                         0L,
                         apiRemainingData,
                         policyCheckResult.getStatus(),
+                        null,
                         startedAt
                 );
             } else {
@@ -110,6 +119,7 @@ public class TrafficDeductOrchestratorService {
                         initialResult
                 );
                 lastLuaStatus = unifiedResult.getStatus();
+                failureReason = unifiedResult.getFailureReason();
 
                 long indivDeducted = normalizeNonNegative(unifiedResult.getIndivDeducted());
                 long sharedDeducted = normalizeNonNegative(unifiedResult.getSharedDeducted());
@@ -134,6 +144,7 @@ public class TrafficDeductOrchestratorService {
                 deductedQosBytes,
                 apiRemainingData,
                 lastLuaStatus,
+                failureReason,
                 startedAt
         );
     }
@@ -266,6 +277,7 @@ public class TrafficDeductOrchestratorService {
             long deductedQosBytes,
             long apiRemainingData,
             TrafficLuaStatus lastLuaStatus,
+            String failureReason,
             LocalDateTime startedAt
     ) {
         return TrafficDeductResultResDto.builder()
@@ -284,6 +296,7 @@ public class TrafficDeductOrchestratorService {
                         lastLuaStatus
                 ))
                 .lastLuaStatus(lastLuaStatus)
+                .failureReason(failureReason)
                 .createdAt(startedAt)
                 .finishedAt(LocalDateTime.now())
                 .build();

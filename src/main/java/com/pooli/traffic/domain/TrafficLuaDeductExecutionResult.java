@@ -16,6 +16,7 @@ public class TrafficLuaDeductExecutionResult {
     private final long sharedDeducted;
     private final long qosDeducted;
     private final TrafficLuaStatus status;
+    private final String failureReason;
 
     public long getTotalDeducted() {
         return safeNonNegative(indivDeducted)

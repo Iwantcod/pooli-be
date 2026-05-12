@@ -1,10 +1,9 @@
 package com.pooli.traffic.service.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
-import java.time.Instant;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -13,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
@@ -24,6 +24,12 @@ class TrafficRemainingBalanceCacheServiceTest {
 
     @Mock
     private HashOperations<String, Object, Object> hashOperations;
+
+    @Mock
+    private ObjectProvider<TrafficLuaScriptInfraService> trafficLuaScriptInfraServiceProvider;
+
+    @Mock
+    private TrafficLuaScriptInfraService trafficLuaScriptInfraService;
 
     @InjectMocks
     private TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
@@ -59,36 +65,113 @@ class TrafficRemainingBalanceCacheServiceTest {
     }
 
     @Nested
-    class HydrateBalanceTest {
+    class HydrateSnapshotTest {
 
         @Test
-        void hydratesBalanceWithExpireAt() {
-            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-
-            trafficRemainingBalanceCacheService.hydrateBalance(
+        void hydratesIndividualSnapshotAtomically() {
+            when(trafficLuaScriptInfraServiceProvider.getIfAvailable()).thenReturn(trafficLuaScriptInfraService);
+            when(trafficLuaScriptInfraService.executeHydrateIndividualSnapshot(
                     "pooli:remaining_indiv_amount:11:202603",
                     300L,
+                    125L,
+                    1_775_833_199L
+            )).thenReturn(1L);
+
+            trafficRemainingBalanceCacheService.hydrateIndividualSnapshot(
+                    "pooli:remaining_indiv_amount:11:202603",
+                    300L,
+                    125L,
                     1_775_833_199L
             );
 
-            verify(hashOperations).putIfAbsent("pooli:remaining_indiv_amount:11:202603", "amount", "300");
-            verify(cacheStringRedisTemplate).expireAt(
+            verify(trafficLuaScriptInfraService).executeHydrateIndividualSnapshot(
                     "pooli:remaining_indiv_amount:11:202603",
-                    Instant.ofEpochSecond(1_775_833_199L)
+                    300L,
+                    125L,
+                    1_775_833_199L
+            );
+        }
+
+        @Test
+        void hydratesSharedSnapshotAtomically() {
+            when(trafficLuaScriptInfraServiceProvider.getIfAvailable()).thenReturn(trafficLuaScriptInfraService);
+            when(trafficLuaScriptInfraService.executeHydrateSharedSnapshot(
+                    "pooli:remaining_shared_amount:22:202603",
+                    500L,
+                    1_775_833_199L
+            )).thenReturn(1L);
+
+            trafficRemainingBalanceCacheService.hydrateSharedSnapshot(
+                    "pooli:remaining_shared_amount:22:202603",
+                    500L,
+                    1_775_833_199L
+            );
+
+            verify(trafficLuaScriptInfraService).executeHydrateSharedSnapshot(
+                    "pooli:remaining_shared_amount:22:202603",
+                    500L,
+                    1_775_833_199L
             );
         }
 
         @Test
         void keepsUnlimitedSentinel() {
-            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-
-            trafficRemainingBalanceCacheService.hydrateBalance(
+            when(trafficLuaScriptInfraServiceProvider.getIfAvailable()).thenReturn(trafficLuaScriptInfraService);
+            when(trafficLuaScriptInfraService.executeHydrateIndividualSnapshot(
                     "pooli:remaining_indiv_amount:11:202603",
                     -1L,
+                    0L,
+                    1_775_833_199L
+            )).thenReturn(1L);
+
+            trafficRemainingBalanceCacheService.hydrateIndividualSnapshot(
+                    "pooli:remaining_indiv_amount:11:202603",
+                    -1L,
+                    -20L,
                     1_775_833_199L
             );
 
-            verify(hashOperations).putIfAbsent("pooli:remaining_indiv_amount:11:202603", "amount", "-1");
+            verify(trafficLuaScriptInfraService).executeHydrateIndividualSnapshot(
+                    "pooli:remaining_indiv_amount:11:202603",
+                    -1L,
+                    0L,
+                    1_775_833_199L
+            );
+        }
+
+        @Test
+        void throwsWhenLuaRejectsSnapshot() {
+            when(trafficLuaScriptInfraServiceProvider.getIfAvailable()).thenReturn(trafficLuaScriptInfraService);
+            when(trafficLuaScriptInfraService.executeHydrateIndividualSnapshot(
+                    "pooli:remaining_indiv_amount:11:202603",
+                    -2L,
+                    0L,
+                    1_775_833_199L
+            )).thenReturn(-1L);
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> trafficRemainingBalanceCacheService.hydrateIndividualSnapshot(
+                            "pooli:remaining_indiv_amount:11:202603",
+                            -2L,
+                            0L,
+                            1_775_833_199L
+                    )
+            );
+        }
+
+        @Test
+        void throwsWhenLuaInfraServiceUnavailable() {
+            when(trafficLuaScriptInfraServiceProvider.getIfAvailable()).thenReturn(null);
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> trafficRemainingBalanceCacheService.hydrateSharedSnapshot(
+                            "pooli:remaining_shared_amount:22:202603",
+                            500L,
+                            1_775_833_199L
+                    )
+            );
         }
     }
 }

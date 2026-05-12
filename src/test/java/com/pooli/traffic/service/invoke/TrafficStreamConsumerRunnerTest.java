@@ -349,6 +349,75 @@ public class TrafficStreamConsumerRunnerTest {
         }
 
         @Test
+        @DisplayName("routes hydrate invalid result to DLQ without done log insert")
+        void routeHydrateInvalidResultToDlqWithoutDoneLogInsert() {
+            String payloadJson = "{\"traceId\":\"trace-hydrate-invalid\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("6-1", payloadJson);
+            ArgumentCaptor<String> dlqReasonCaptor = ArgumentCaptor.forClass(String.class);
+            TrafficDeductResultResDto orchestratorResult = TrafficDeductResultResDto.builder()
+                    .traceId("trace-hydrate-invalid")
+                    .apiTotalData(100L)
+                    .finalStatus(TrafficFinalStatus.FAILED)
+                    .deductedIndividualBytes(0L)
+                    .deductedSharedBytes(0L)
+                    .deductedQosBytes(0L)
+                    .apiRemainingData(100L)
+                    .lastLuaStatus(TrafficLuaStatus.ERROR)
+                    .failureReason("STALE_TARGET_MONTH")
+                    .build();
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficInFlightDedupeService.createOrGet("trace-hydrate-invalid"))
+                    .thenReturn(createdEntryResult("trace-hydrate-invalid", 0L));
+            when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
+
+            invokeHandleRecord(record);
+
+            InOrder inOrder = inOrder(trafficStreamInfraService, trafficInFlightDedupeDeleteOutboxService);
+            inOrder.verify(trafficStreamInfraService).writeDlq(eq(payloadJson), dlqReasonCaptor.capture(), eq("6-1"));
+            inOrder.verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-hydrate-invalid", "6-1");
+            inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
+            assertTrue(dlqReasonCaptor.getValue().contains("STALE_TARGET_MONTH"));
+            verify(trafficDeductDoneLogService, never())
+                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
+            verify(trafficRecordStageMetricsPort).incrementResult("dlq");
+        }
+
+        @Test
+        @DisplayName("routes invalid failure result without reason to DLQ without done log insert")
+        void routeInvalidFailureResultWithoutReasonToDlqWithoutDoneLogInsert() {
+            String payloadJson = "{\"traceId\":\"trace-terminal-failed\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("6-2", payloadJson);
+            ArgumentCaptor<String> dlqReasonCaptor = ArgumentCaptor.forClass(String.class);
+            TrafficDeductResultResDto orchestratorResult = TrafficDeductResultResDto.builder()
+                    .traceId("trace-terminal-failed")
+                    .apiTotalData(100L)
+                    .finalStatus(TrafficFinalStatus.FAILED)
+                    .deductedIndividualBytes(0L)
+                    .deductedSharedBytes(0L)
+                    .deductedQosBytes(0L)
+                    .apiRemainingData(100L)
+                    .lastLuaStatus(TrafficLuaStatus.ERROR)
+                    .build();
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficInFlightDedupeService.createOrGet("trace-terminal-failed"))
+                    .thenReturn(createdEntryResult("trace-terminal-failed", 0L));
+            when(trafficDeductOrchestratorService.orchestrate(any())).thenReturn(orchestratorResult);
+
+            invokeHandleRecord(record);
+
+            verify(trafficStreamInfraService).writeDlq(eq(payloadJson), dlqReasonCaptor.capture(), eq("6-2"));
+            verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-terminal-failed", "6-2");
+            verify(trafficStreamInfraService).acknowledge(record.getId());
+            assertTrue(dlqReasonCaptor.getValue().contains("invalid/failure result"));
+            assertTrue(dlqReasonCaptor.getValue().contains("finalStatus=FAILED"));
+            assertTrue(dlqReasonCaptor.getValue().contains("lastLuaStatus=ERROR"));
+            verify(trafficDeductDoneLogService, never())
+                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
+        }
+
+        @Test
         @DisplayName("does not ack when done log save fails")
         void acknowledgeFirstWhenDoneLogSaveFails() {
             String payloadJson = "{\"traceId\":\"trace-fail\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";

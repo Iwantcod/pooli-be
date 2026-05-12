@@ -1,7 +1,6 @@
 package com.pooli.traffic.service.runtime;
 
-import java.time.Instant;
-
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -24,6 +23,7 @@ public class TrafficRemainingBalanceCacheService {
 
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
+    private final ObjectProvider<TrafficLuaScriptInfraService> trafficLuaScriptInfraServiceProvider;
 
     /**
      * 잔량 hash의 `amount` 필드를 long으로 읽습니다.
@@ -65,24 +65,43 @@ public class TrafficRemainingBalanceCacheService {
     }
 
     /**
-     * 월별 잔량 hash를 DB 원천값 기준으로 생성합니다.
-     *
-     * <p>Hydrate는 누락 key 복구 목적이므로 기존 `amount`가 있으면 덮어쓰지 않습니다.
-     * `amount=-1`은 무제한 sentinel이므로 보정하지 않고 그대로 저장합니다.
-     * TTL은 월말+10일 정책으로 계산된 epoch second를 그대로 적용합니다.
+     * 개인풀 월별 잔량 snapshot(`amount`, `qos`)을 한 Redis Lua 원자 구간에서 적재합니다.
      */
-    public void hydrateBalance(String balanceKey, long amount, long expireAtEpochSeconds) {
-        cacheStringRedisTemplate.opsForHash().putIfAbsent(balanceKey, "amount", String.valueOf(amount));
-        cacheStringRedisTemplate.expireAt(balanceKey, Instant.ofEpochSecond(expireAtEpochSeconds));
+    public void hydrateIndividualSnapshot(String balanceKey, long amount, long qos, long expireAtEpochSeconds) {
+        long normalizedQos = Math.max(0L, qos);
+        long result = requireTrafficLuaScriptInfraService().executeHydrateIndividualSnapshot(
+                balanceKey,
+                amount,
+                normalizedQos,
+                expireAtEpochSeconds
+        );
+        assertSnapshotHydrated(balanceKey, result);
     }
 
     /**
-     * 개인풀 잔량 hash의 `qos` 필드를 저장합니다.
-     *
-     * <p>QoS 값은 잔량 차감 대상이 아니라 통합 Lua가 잔량 부족 시 처리 가능한 한도로 해석합니다.
+     * 공유풀 월별 잔량 snapshot(`amount`)을 한 Redis Lua 원자 구간에서 적재합니다.
      */
-    public void putQos(String balanceKey, long qos) {
-        long normalizedQos = Math.max(0L, qos);
-        cacheStringRedisTemplate.opsForHash().put(balanceKey, "qos", String.valueOf(normalizedQos));
+    public void hydrateSharedSnapshot(String balanceKey, long amount, long expireAtEpochSeconds) {
+        long result = requireTrafficLuaScriptInfraService().executeHydrateSharedSnapshot(
+                balanceKey,
+                amount,
+                expireAtEpochSeconds
+        );
+        assertSnapshotHydrated(balanceKey, result);
+    }
+
+    private TrafficLuaScriptInfraService requireTrafficLuaScriptInfraService() {
+        TrafficLuaScriptInfraService trafficLuaScriptInfraService =
+                trafficLuaScriptInfraServiceProvider.getIfAvailable();
+        if (trafficLuaScriptInfraService == null) {
+            throw new IllegalStateException("Traffic Lua script infra service is not available.");
+        }
+        return trafficLuaScriptInfraService;
+    }
+
+    private void assertSnapshotHydrated(String balanceKey, long result) {
+        if (result != 1L) {
+            throw new IllegalStateException("Failed to hydrate traffic balance snapshot. key=" + balanceKey);
+        }
     }
 }

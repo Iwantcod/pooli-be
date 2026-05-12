@@ -38,6 +38,12 @@ public enum TrafficLuaStatus {
     /** 월별 개인/공유 잔량 또는 QoS hash가 Redis에 없어 잔량 hydrate 후 재시도가 필요한 상태입니다. */
     HYDRATE,
 
+    /** 월별 개인 잔량 snapshot(`amount`, `qos`)이 Redis에 없어 개인 hydrate 후 재시도가 필요한 상태입니다. */
+    HYDRATE_INDIVIDUAL,
+
+    /** 월별 공유 잔량 snapshot(`amount`)이 Redis에 없어 공유 hydrate 후 재시도가 필요한 상태입니다. */
+    HYDRATE_SHARED,
+
     /** Lua 입력 검증 실패 또는 스크립트 처리 중 오류로 정상 상태를 확정할 수 없는 상태입니다. */
     ERROR
 }

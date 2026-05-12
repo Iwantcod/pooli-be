@@ -89,7 +89,7 @@ class TrafficPolicyCheckLayerServiceTest {
         assertAll(
                 () -> assertEquals(TrafficLuaStatus.OK, result.getStatus()),
                 () -> assertEquals(1, result.getWhitelistBypass()),
-                () -> assertFalse(result.isFallbackEligible()),
+                () -> assertFalse(result.isRetryableFailure()),
                 () -> assertEquals(TrafficPolicyCheckFailureCause.NONE, result.getFailureCause())
         );
     }
@@ -111,14 +111,14 @@ class TrafficPolicyCheckLayerServiceTest {
         assertAll(
                 () -> assertEquals(TrafficLuaStatus.BLOCKED_REPEAT, result.getStatus()),
                 () -> assertEquals(0, result.getWhitelistBypass()),
-                () -> assertFalse(result.isFallbackEligible()),
+                () -> assertFalse(result.isRetryableFailure()),
                 () -> assertEquals(TrafficPolicyCheckFailureCause.NONE, result.getFailureCause())
         );
         verify(trafficPolicyBootstrapService, times(1)).hydrateOnDemand();
     }
 
     @Test
-    void evaluateMarksFallbackEligibleWhenRetryablePolicyCheckFailureOccurs() {
+    void evaluateMarksRetryableFailureWhenPolicyCheckFailureOccurs() {
         // given
         TrafficPayloadReqDto payload = createPayload();
         stubPolicyCheckKeys(payload.getLineId());
@@ -137,7 +137,7 @@ class TrafficPolicyCheckLayerServiceTest {
         assertAll(
                 () -> assertEquals(TrafficLuaStatus.ERROR, result.getStatus()),
                 () -> assertEquals(0, result.getWhitelistBypass()),
-                () -> assertTrue(result.isFallbackEligible()),
+                () -> assertTrue(result.isRetryableFailure()),
                 () -> assertEquals(TrafficPolicyCheckFailureCause.POLICY_CHECK_RETRYABLE, result.getFailureCause()),
                 () -> assertTrue(result.getFailure() instanceof TrafficStageFailureException),
                 () -> assertEquals(TrafficFailureStage.POLICY_CHECK, stageFailure.getStage()),

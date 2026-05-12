@@ -114,6 +114,7 @@ public class TrafficDeductDoneLogServiceTest {
             assertEquals(30L, savedLog.getDeductedIndividualBytes());
             assertEquals(60L, savedLog.getDeductedSharedBytes());
             assertEquals(90L, savedLog.getDeductedTotalBytes());
+            assertNull(savedLog.getFailureReason());
             assertEquals(latency, savedLog.getLatency());
             assertNull(savedLog.getRestoreStatus());
             assertNull(savedLog.getRestoreStatusUpdatedAt());
@@ -157,6 +158,31 @@ public class TrafficDeductDoneLogServiceTest {
             assertEquals(0L, savedLog.getDeductedSharedBytes());
             assertEquals(0L, savedLog.getDeductedTotalBytes());
             assertEquals(100L, savedLog.getApiRemainingData());
+        }
+
+        @Test
+        @DisplayName("실패 사유가 있으면 DONE 이력의 failureReason으로 저장한다")
+        void storesFailureReasonInDoneHistory() {
+            // given
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class))).thenReturn(1);
+
+            // when
+            boolean saved = trafficDeductDoneLogService.saveIfAbsent(
+                    payload(),
+                    result(TrafficFinalStatus.FAILED, TrafficLuaStatus.ERROR, 0L, 0L, 100L)
+                            .toBuilder()
+                            .failureReason("STALE_TARGET_MONTH")
+                            .build(),
+                    "1-2",
+                    55L
+            );
+
+            // then
+            assertTrue(saved);
+            ArgumentCaptor<TrafficDeductDoneLog> captor = ArgumentCaptor.forClass(TrafficDeductDoneLog.class);
+            verify(trafficDeductDoneLogMapper).insert(captor.capture());
+            TrafficDeductDoneLog savedLog = captor.getValue();
+            assertEquals("STALE_TARGET_MONTH", savedLog.getFailureReason());
         }
 
         @Test

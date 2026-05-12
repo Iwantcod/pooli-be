@@ -29,11 +29,11 @@ import org.springframework.stereotype.Service;
  * <p>책임 범위:
  * 1) 차단성 정책 검증 Lua 실행
  * 2) GLOBAL_POLICY_HYDRATE 보정 재시도
- * 3) retryable 인프라 예외의 fallbackEligible 판정
+ * 3) retryable 인프라 예외의 pending/reclaim 대상 판정
  *
  * <p>비포함 범위:
  * - line 정책 ensureLoaded 호출
- * - DB fallback 실제 실행
+ * - retryable 실패 이후의 stream pending/reclaim 처리
  */
 @Slf4j
 @Service

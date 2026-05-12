@@ -5,21 +5,30 @@
 
 <mapper namespace="com.pooli.traffic.mapper.TrafficRefillSourceMapper">
 
-    <select id="selectIndividualRemaining" resultType="java.lang.Long">
-        SELECT total_data
-        FROM LINE
-        WHERE line_id = #{lineId}
-          AND deleted_at IS NULL
-    </select>
-
-    <select id="selectIndividualQosSpeedLimit" resultType="java.lang.Long">
-        SELECT p.qos_speed_limit
+    <select id="selectIndividualBalanceSnapshot" resultType="com.pooli.traffic.domain.TrafficIndividualBalanceSnapshot">
+        SELECT
+            l.line_id AS lineId,
+            l.total_data AS amount,
+            p.qos_speed_limit AS qosSpeedLimit,
+            l.last_balance_refreshed_at AS lastBalanceRefreshedAt
         FROM LINE l
         JOIN PLAN p ON p.plan_id = l.plan_id
         WHERE l.line_id = #{lineId}
           AND l.deleted_at IS NULL
           AND p.deleted_at IS NULL
     </select>
+
+    <update id="refreshIndividualBalanceIfBeforeTargetMonth">
+        UPDATE LINE l
+        JOIN PLAN p ON p.plan_id = l.plan_id
+        SET l.total_data = p.basic_data_amount,
+            l.last_balance_refreshed_at = #{targetMonthStart},
+            l.updated_at = NOW(6)
+        WHERE l.line_id = #{lineId}
+          AND l.deleted_at IS NULL
+          AND p.deleted_at IS NULL
+          AND l.last_balance_refreshed_at &lt; #{targetMonthStart}
+    </update>
 
     <select id="selectIndividualRemainingForUpdate" resultType="java.lang.Long">
         SELECT remaining_data
@@ -46,12 +55,32 @@
           AND deleted_at IS NULL
     </update>
 
-    <select id="selectSharedRemaining" resultType="java.lang.Long">
-        SELECT pool_total_data
+    <select id="selectSharedBalanceSnapshot" resultType="com.pooli.traffic.domain.TrafficSharedBalanceSnapshot">
+        SELECT
+            family_id AS familyId,
+            pool_total_data AS amount,
+            last_balance_refreshed_at AS lastBalanceRefreshedAt
         FROM FAMILY
         WHERE family_id = #{familyId}
           AND deleted_at IS NULL
     </select>
+
+    <update id="refreshSharedBalanceIfBeforeTargetMonth">
+        UPDATE FAMILY f
+        SET f.pool_total_data = (
+                SELECT COALESCE(SUM(p.shared_pool_amount), 0)
+                FROM LINE l
+                JOIN PLAN p ON p.plan_id = l.plan_id
+                WHERE l.family_id = #{familyId}
+                  AND l.deleted_at IS NULL
+                  AND p.deleted_at IS NULL
+            ),
+            f.last_balance_refreshed_at = #{targetMonthStart},
+            f.updated_at = NOW(6)
+        WHERE f.family_id = #{familyId}
+          AND f.deleted_at IS NULL
+          AND f.last_balance_refreshed_at &lt; #{targetMonthStart}
+    </update>
 
     <select id="selectSharedRemainingForUpdate" resultType="java.lang.Long">
         SELECT pool_remaining_data

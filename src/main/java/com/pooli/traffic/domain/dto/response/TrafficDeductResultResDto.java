@@ -15,7 +15,7 @@ import lombok.Getter;
  * 최종 상태, 총 차감량, 마지막 Lua 상태를 함께 전달합니다.
  */
 @Getter
-@Builder
+@Builder(toBuilder = true)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class TrafficDeductResultResDto {
     private final String traceId;
@@ -26,6 +26,7 @@ public class TrafficDeductResultResDto {
     private final Long apiRemainingData;
     private final TrafficFinalStatus finalStatus;
     private final TrafficLuaStatus lastLuaStatus;
+    private final String failureReason;
     private final LocalDateTime createdAt;
     private final LocalDateTime finishedAt;
 

@@ -494,6 +494,21 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 // latency는 레코드 처리 시작 시점부터 done-log 저장 직전까지의 ms를 사용한다.
                 long latency = Math.max(0L, System.currentTimeMillis() - consumeStartTimeMs);
 
+                // hydrate invalid는 현재 TrafficHydrateService가 예외가 아닌 failureReason 포함 결과로 전달한다.
+                // 이런 invalid/failure 결과는 정상 완료 이력이 아니므로 done log를 남기지 않고
+                // DLQ 기록 후 ACK하여 같은 메시지가 재처리되지 않게 한다.
+                if (shouldRouteInvalidResultToDlqWithoutDoneLog(cumulativeResult)) {
+                    trafficStreamInfraService.writeDlq(
+                            payloadJson,
+                            buildInvalidResultDlqReason(cumulativeResult),
+                            recordId
+                    );
+                    trafficInFlightDedupeDeleteOutboxService.createPending(traceId, recordId);
+                    acknowledgeWithMetrics(record.getId());
+                    resultTag = RESULT_DLQ;
+                    return;
+                }
+
                 boolean saved;
                 long mysqlSaveStartNs = System.nanoTime();
                 try {
@@ -689,6 +704,53 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     /**
+     * done log 저장 대상이 아닌 invalid/failure 결과인지 판정합니다.
+     *
+     * <p>정책 차단/정책 cap은 정상 처리 결과이므로 여기서 제외됩니다.
+     * `FAILED`, Lua `ERROR`, 명시적 failureReason은 처리 결과를 확정할 수 없는 invalid/terminal 실패로 보고
+     * DLQ no done 경로로 보냅니다.
+     */
+    private boolean shouldRouteInvalidResultToDlqWithoutDoneLog(TrafficDeductResultResDto result) {
+        // 결과 객체 자체가 없으면 저장 가능한 완료 이력이 아니므로 DLQ로 보낸다.
+        if (result == null) {
+            return true;
+        }
+        // 최종 상태 FAILED는 정상 완료가 아니라 terminal failure로 본다.
+        if (result.getFinalStatus() == TrafficFinalStatus.FAILED) {
+            return true;
+        }
+        // Lua ERROR는 입력/스냅샷/스크립트 계약 위반 계열로 보고 done log 저장 대상에서 제외한다.
+        if (result.getLastLuaStatus() == TrafficLuaStatus.ERROR) {
+            return true;
+        }
+        // failureReason이 있으면 hydrate invalid 등 명시적 실패 사유가 있는 결과로 본다.
+        return result.getFailureReason() != null && !result.getFailureReason().isBlank();
+    }
+
+    /**
+     * invalid/failure 결과를 DLQ에 남길 때 사용할 사유 문자열을 생성합니다.
+     *
+     * <p>운영자가 원인을 바로 볼 수 있도록 명시적 failureReason을 우선 사용하고,
+     * reason이 없으면 최종 상태와 Lua 상태를 함께 남겨 어떤 계약에서 실패했는지 추적할 수 있게 합니다.
+     */
+    private String buildInvalidResultDlqReason(TrafficDeductResultResDto result) {
+        // 방어적으로 null 결과도 DLQ 사유를 남긴다.
+        if (result == null) {
+            return "invalid/failure result: result=null";
+        }
+        String failureReason = result.getFailureReason();
+        // hydrate invalid처럼 도메인 사유가 있으면 상태값보다 사유를 우선 노출한다.
+        if (failureReason != null && !failureReason.isBlank()) {
+            return "invalid/failure result: " + failureReason;
+        }
+        // 사유가 없으면 상태 조합만으로도 후속 분석이 가능하도록 최소 상태 정보를 남긴다.
+        return "invalid/failure result: finalStatus="
+                + result.getFinalStatus()
+                + ", lastLuaStatus="
+                + result.getLastLuaStatus();
+    }
+
+    /**
      * 예외 타입 + 핵심 메시지 형태로 요약 문자열을 생성합니다.
      */
     private String summarizeException(Throwable throwable) {
@@ -748,6 +810,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 .apiRemainingData(0L)
                 .finalStatus(TrafficFinalStatus.SUCCESS)
                 .lastLuaStatus(TrafficLuaStatus.OK)
+                .failureReason(null)
                 .createdAt(now)
                 .finishedAt(now)
                 .build();
@@ -833,6 +896,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 .apiRemainingData(cumulativeRemaining)
                 .finalStatus(finalStatus)
                 .lastLuaStatus(lastLuaStatus)
+                .failureReason(executionResult == null ? null : executionResult.getFailureReason())
                 .createdAt(defaultNowIfNull(executionResult == null ? null : executionResult.getCreatedAt(), now))
                 .finishedAt(defaultNowIfNull(executionResult == null ? null : executionResult.getFinishedAt(), now))
                 .build();

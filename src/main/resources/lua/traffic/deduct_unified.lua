@@ -53,6 +53,23 @@ local function read_non_negative_counter(key, field)
   return value
 end
 
+-- hydrate는 필드 단위 보강이 아니라 월별 snapshot 준비 여부로 판단한다.
+local function is_hash_snapshot_ready(key, required_fields)
+  if redis.call("EXISTS", key) == 0 then
+    return false
+  end
+  local idx = 1
+  while idx <= #required_fields do
+    local field = required_fields[idx]
+    local value = redis.call("HGET", key, field)
+    if value == false or value == nil then
+      return false
+    end
+    idx = idx + 1
+  end
+  return true
+end
+
 local SPEED_BUCKET_TTL_SECONDS = 15
 local DEDUPE_PROCESSED_INDIVIDUAL_FIELD = "processed_individual_data"
 local DEDUPE_PROCESSED_SHARED_FIELD = "processed_shared_data"
@@ -157,14 +174,12 @@ if has_missing_global_policy_key(
   return as_json(0, 0, 0, "GLOBAL_POLICY_HYDRATE")
 end
 
--- ===== 잔량 cache 존재성 검증 =====
--- 개인풀 잔량은 항상 첫 번째 차감 대상이므로 먼저 확인한다.
--- 공유풀 잔량은 실제 공유 차감 대상이 생겼을 때 아래에서 지연 확인한다.
--- amount 필드 누락은 hydrate 대상이고, 값 -1은 무제한 잔량 sentinel이다.
-local raw_individual_amount = redis.call("HGET", individual_remaining_key, "amount")
-if raw_individual_amount == false or raw_individual_amount == nil then
-  return as_json(0, 0, 0, "HYDRATE")
+-- ===== 잔량 snapshot readiness 검증 =====
+-- 개인 snapshot은 amount와 qos가 함께 준비되어야 한다.
+if not is_hash_snapshot_ready(individual_remaining_key, { "amount", "qos" }) then
+  return as_json(0, 0, 0, "HYDRATE_INDIVIDUAL")
 end
+local raw_individual_amount = redis.call("HGET", individual_remaining_key, "amount")
 local individual_amount = tonumber(raw_individual_amount)
 if not individual_amount or individual_amount < -1 then
   return as_json(0, 0, 0, "ERROR")
@@ -268,10 +283,10 @@ end
 local shared_amount = 0
 local shared_unlimited = false
 if shared_target > 0 then
-  local raw_shared_amount = redis.call("HGET", shared_remaining_key, "amount")
-  if raw_shared_amount == false or raw_shared_amount == nil then
-    return as_json(0, 0, 0, "HYDRATE")
+  if not is_hash_snapshot_ready(shared_remaining_key, { "amount" }) then
+    return as_json(0, 0, 0, "HYDRATE_SHARED")
   end
+  local raw_shared_amount = redis.call("HGET", shared_remaining_key, "amount")
   shared_amount = tonumber(raw_shared_amount)
   if not shared_amount or shared_amount < -1 then
     return as_json(0, 0, 0, "ERROR")

@@ -1,7 +1,12 @@
 package com.pooli.traffic.mapper;
 
+import java.time.LocalDateTime;
+
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import com.pooli.traffic.domain.TrafficIndividualBalanceSnapshot;
+import com.pooli.traffic.domain.TrafficSharedBalanceSnapshot;
 
 /**
  * 트래픽 hydrate와 legacy refill 보상 흐름에서 DB 원천 데이터에 접근하는 MyBatis Mapper입니다.
@@ -10,14 +15,17 @@ import org.apache.ibatis.annotations.Param;
 public interface TrafficRefillSourceMapper {
 
     /**
-     * 개인풀 hydrate에 사용할 원천 데이터량을 조회합니다.
+     * 개인풀 hydrate에 사용할 잔량/QoS 스냅샷을 조회합니다.
      */
-    Long selectIndividualRemaining(@Param("lineId") Long lineId);
+    TrafficIndividualBalanceSnapshot selectIndividualBalanceSnapshot(@Param("lineId") Long lineId);
 
     /**
-     * 개인 회선의 요금제 QoS 속도 제한 값을 조회합니다.
+     * target 월보다 오래된 개인풀 월 잔량이면 월초 기본량으로 조건부 갱신합니다.
      */
-    Long selectIndividualQosSpeedLimit(@Param("lineId") Long lineId);
+    int refreshIndividualBalanceIfBeforeTargetMonth(
+            @Param("lineId") Long lineId,
+            @Param("targetMonthStart") LocalDateTime targetMonthStart
+    );
 
     /**
      * 개인풀 원천 잔량을 row lock과 함께 조회합니다.
@@ -42,9 +50,17 @@ public interface TrafficRefillSourceMapper {
     );
 
     /**
-     * 공유풀 hydrate에 사용할 원천 데이터량을 조회합니다.
+     * 공유풀 hydrate에 사용할 잔량 스냅샷을 조회합니다.
      */
-    Long selectSharedRemaining(@Param("familyId") Long familyId);
+    TrafficSharedBalanceSnapshot selectSharedBalanceSnapshot(@Param("familyId") Long familyId);
+
+    /**
+     * target 월보다 오래된 공유풀 월 잔량이면 월초 기본량으로 조건부 갱신합니다.
+     */
+    int refreshSharedBalanceIfBeforeTargetMonth(
+            @Param("familyId") Long familyId,
+            @Param("targetMonthStart") LocalDateTime targetMonthStart
+    );
 
     /**
      * 공유풀 원천 잔량을 row lock과 함께 조회합니다.
