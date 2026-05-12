@@ -75,16 +75,29 @@ services:
     # CPU 사용량을 0.25 core로 제한합니다.
 
     volumes:
-      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      # Alertmanager 설정 파일을 컨테이너 내부 설정 경로로 read-only mount합니다.
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.template.yml:ro
+      # Alertmanager 설정 template을 read-only mount합니다. webhook URL placeholder는 컨테이너 시작 시 치환합니다.
 
       - ./secrets/discord_webhook_url:/etc/alertmanager/secrets/discord_webhook_url:ro
       # deploy/monitoring/secrets/discord_webhook_url 파일을 컨테이너 내부 secret 경로로 주입합니다.
       # secrets 디렉터리는 .gitignore로 제외해 webhook URL이 repository에 포함되지 않게 합니다.
 
-    command:
-      - --config.file=/etc/alertmanager/alertmanager.yml
-      # 사용할 Alertmanager 설정 파일 경로입니다.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        webhook_url="$$(cat /etc/alertmanager/secrets/discord_webhook_url)"
+        if [ -z "$$webhook_url" ]; then
+          echo "discord webhook URL secret is empty" >&2
+          exit 1
+        fi
+        escaped_webhook_url="$$(printf '%s' "$$webhook_url" | sed 's/[&|]/\\&/g')"
+        sed "s|__DISCORD_WEBHOOK_URL__|$${escaped_webhook_url}|g" \
+          /etc/alertmanager/alertmanager.template.yml > /tmp/alertmanager.yml
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml
+      # secret 파일 값을 읽어 런타임 설정(`/tmp/alertmanager.yml`)을 만든 뒤 Alertmanager를 실행합니다.
+      # 생성된 설정은 컨테이너 내부 임시 파일이므로 repository에 webhook URL이 남지 않습니다.
 
 volumes:
   prometheus-data:

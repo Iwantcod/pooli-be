@@ -30,13 +30,19 @@ class TrafficRedisAlertRuleConfigTest {
     }
 
     @Test
-    @DisplayName("Alertmanager uses webhook_url_file for Discord secret")
-    void alertmanagerUsesWebhookUrlFile() throws IOException {
+    @DisplayName("Alertmanager template keeps Discord webhook secret out of git")
+    void alertmanagerTemplateKeepsDiscordWebhookSecretOutOfGit() throws IOException {
         String alertmanager = Files.readString(Path.of("deploy/monitoring/alertmanager.yml"));
+        String compose = Files.readString(Path.of("deploy/monitoring/docker-compose.yml"));
 
         assertThat(alertmanager).contains(
                 "discord_configs:",
-                "webhook_url_file: /etc/alertmanager/secrets/discord_webhook_url"
+                "webhook_url: \"__DISCORD_WEBHOOK_URL__\""
+        );
+        assertThat(compose).contains(
+                "./secrets/discord_webhook_url:/etc/alertmanager/secrets/discord_webhook_url:ro",
+                "/etc/alertmanager/alertmanager.template.yml",
+                "/tmp/alertmanager.yml"
         );
     }
 
