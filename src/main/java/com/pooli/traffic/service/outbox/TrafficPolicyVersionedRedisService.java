@@ -1,25 +1,16 @@
 package com.pooli.traffic.service.outbox;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.springframework.context.annotation.Profile;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.dao.DataAccessException;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pooli.traffic.service.retry.TrafficRedisCasRetryInvoker;
-import com.pooli.traffic.service.retry.TrafficRedisCasRetryExecutionResult;
-import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
+import com.pooli.traffic.domain.enums.TrafficPolicyLuaScriptType;
 
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -30,37 +21,15 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class TrafficPolicyVersionedRedisService {
 
-    private static final String VALUE_CAS_SCRIPT_RESOURCE = "lua/traffic/policy_value_cas.lua";
-    private static final String REPEAT_BLOCK_CAS_SCRIPT_RESOURCE = "lua/traffic/repeat_block_snapshot_cas.lua";
-    private static final String APP_POLICY_SINGLE_CAS_SCRIPT_RESOURCE = "lua/traffic/app_policy_single_cas.lua";
-    private static final String APP_POLICY_SNAPSHOT_CAS_SCRIPT_RESOURCE = "lua/traffic/app_policy_snapshot_cas.lua";
-
     private final ObjectMapper objectMapper;
-    private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
-    private final TrafficRedisCasRetryInvoker trafficRedisCasRetryInvoker;
-
-    private RedisScript<Long> valueCasScript;
-    private RedisScript<Long> repeatBlockCasScript;
-    private RedisScript<Long> appPolicySingleCasScript;
-    private RedisScript<Long> appPolicySnapshotCasScript;
-
-    /**
-     * 애플리케이션 시작 시 CAS Lua 스크립트를 classpath에서 읽어 RedisScript로 준비합니다.
-     */
-    @PostConstruct
-    public void initializeScripts() {
-        valueCasScript = buildLongScript(loadScriptText(VALUE_CAS_SCRIPT_RESOURCE));
-        repeatBlockCasScript = buildLongScript(loadScriptText(REPEAT_BLOCK_CAS_SCRIPT_RESOURCE));
-        appPolicySingleCasScript = buildLongScript(loadScriptText(APP_POLICY_SINGLE_CAS_SCRIPT_RESOURCE));
-        appPolicySnapshotCasScript = buildLongScript(loadScriptText(APP_POLICY_SNAPSHOT_CAS_SCRIPT_RESOURCE));
-    }
+    private final TrafficPolicyLuaScriptInfraService trafficPolicyLuaScriptInfraService;
 
     /**
      * value/version 구조 Hash를 CAS 규칙으로 갱신합니다.
      */
     public PolicySyncResult syncVersionedValue(String key, String value, long version) {
-        return executeCas(
-                requireScript(valueCasScript, "valueCasScript"),
+        return trafficPolicyLuaScriptInfraService.executeLongScript(
+                TrafficPolicyLuaScriptType.POLICY_VALUE_CAS,
                 List.of(key),
                 String.valueOf(version),
                 value
@@ -72,8 +41,8 @@ public class TrafficPolicyVersionedRedisService {
      */
     public PolicySyncResult syncRepeatBlockSnapshot(String repeatBlockKey, Map<String, String> repeatHash, long version) {
         String payloadJson = toJson(repeatHash == null ? Map.of() : repeatHash);
-        return executeCas(
-                requireScript(repeatBlockCasScript, "repeatBlockCasScript"),
+        return trafficPolicyLuaScriptInfraService.executeLongScript(
+                TrafficPolicyLuaScriptType.REPEAT_BLOCK_SNAPSHOT_CAS,
                 List.of(repeatBlockKey),
                 String.valueOf(version),
                 payloadJson
@@ -94,8 +63,8 @@ public class TrafficPolicyVersionedRedisService {
             boolean isWhitelist,
             long version
     ) {
-        return executeCas(
-                requireScript(appPolicySingleCasScript, "appPolicySingleCasScript"),
+        return trafficPolicyLuaScriptInfraService.executeLongScript(
+                TrafficPolicyLuaScriptType.APP_POLICY_SINGLE_CAS,
                 List.of(appDataKey, appSpeedKey, appWhitelistKey),
                 String.valueOf(version),
                 String.valueOf(appId),
@@ -118,65 +87,14 @@ public class TrafficPolicyVersionedRedisService {
             Set<String> whitelistMembers,
             long version
     ) {
-        return executeCas(
-                requireScript(appPolicySnapshotCasScript, "appPolicySnapshotCasScript"),
+        return trafficPolicyLuaScriptInfraService.executeLongScript(
+                TrafficPolicyLuaScriptType.APP_POLICY_SNAPSHOT_CAS,
                 List.of(appDataKey, appSpeedKey, appWhitelistKey),
                 String.valueOf(version),
                 toJson(dataLimitHash == null ? Map.of() : dataLimitHash),
                 toJson(speedLimitHash == null ? Map.of() : speedLimitHash),
                 toJson(whitelistMembers == null ? List.of() : whitelistMembers)
         );
-    }
-
-    /**
-     * 공통 CAS Lua 실행 래퍼입니다.
-     */
-    private PolicySyncResult executeCas(RedisScript<Long> script, List<String> keys, String... args) {
-        try {
-            TrafficRedisCasRetryExecutionResult retryExecutionResult =
-                    trafficRedisCasRetryInvoker.execute(script, keys, (Object[]) args);
-            return mapRetryExecutionResult(retryExecutionResult);
-        } catch (DataAccessException e) {
-            // Retry 프록시가 적용되지 않는 예외 경로에서도 기존 CONNECTION/RETRYABLE 분류 계약을 보장합니다.
-            return mapDataAccessException(e);
-        }
-    }
-
-    /**
-     * Retry 실행 결과를 기존 PolicySyncResult 계약으로 변환합니다.
-     */
-    private PolicySyncResult mapRetryExecutionResult(TrafficRedisCasRetryExecutionResult retryExecutionResult) {
-        DataAccessException lastFailure = retryExecutionResult.lastFailure();
-        if (lastFailure != null) {
-            return mapDataAccessException(lastFailure);
-        }
-        return mapRawResult(retryExecutionResult.rawResult());
-    }
-
-    /**
-     * Redis DataAccessException을 CONNECTION/RETRYABLE 경계로 분류합니다.
-     */
-    private PolicySyncResult mapDataAccessException(DataAccessException exception) {
-        if (trafficRedisFailureClassifier.isConnectionFailure(exception)) {
-            return PolicySyncResult.CONNECTION_FAILURE;
-        }
-        return PolicySyncResult.RETRYABLE_FAILURE;
-    }
-
-    /**
-     * CAS Lua raw result를 기존 상태 계약으로 매핑합니다.
-     */
-    private PolicySyncResult mapRawResult(Long rawResult) {
-        if (rawResult == null) {
-            return PolicySyncResult.RETRYABLE_FAILURE;
-        }
-        if (rawResult == 1L) {
-            return PolicySyncResult.SUCCESS;
-        }
-        if (rawResult == 0L) {
-            return PolicySyncResult.STALE_REJECTED;
-        }
-        return PolicySyncResult.RETRYABLE_FAILURE;
     }
 
     /**
@@ -188,37 +106,5 @@ public class TrafficPolicyVersionedRedisService {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize Lua payload.", e);
         }
-    }
-
-    /**
-     * classpath에서 Lua 스크립트 본문을 읽어옵니다.
-     */
-    private String loadScriptText(String resourcePath) {
-        ClassPathResource resource = new ClassPathResource(resourcePath);
-        try {
-            return new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to load Lua script text. resource=" + resourcePath, e);
-        }
-    }
-
-    /**
-     * 초기화 누락을 빠르게 감지하기 위해 스크립트 존재를 검증합니다.
-     */
-    private RedisScript<Long> requireScript(RedisScript<Long> script, String scriptName) {
-        if (script == null) {
-            throw new IllegalStateException("Lua script is not initialized. script=" + scriptName);
-        }
-        return script;
-    }
-
-    /**
-     * Long 반환 스크립트 객체를 생성합니다.
-     */
-    private static RedisScript<Long> buildLongScript(String scriptText) {
-        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
-        script.setScriptText(scriptText);
-        script.setResultType(Long.class);
-        return script;
     }
 }
