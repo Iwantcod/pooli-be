@@ -1,5 +1,6 @@
 package com.pooli.traffic.service.runtime;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -7,9 +8,14 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import com.pooli.traffic.domain.enums.TrafficPolicyLuaScriptType;
 
 /**
  * Lua 정책/차감 스크립트 계약을 검증합니다.
@@ -26,6 +32,8 @@ class TrafficLuaPolicyContractTest {
             Path.of("src/main/resources/lua/traffic/hydrate_shared_snapshot.lua");
     private static final Path LUA_SCRIPT_TYPE_SOURCE =
             Path.of("src/main/java/com/pooli/traffic/domain/enums/TrafficLuaScriptType.java");
+    private static final Path LUA_RESOURCE_ROOT =
+            Path.of("src/main/resources");
 
     @Test
     @DisplayName("1차 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
@@ -52,6 +60,35 @@ class TrafficLuaPolicyContractTest {
         assertTrue(enumSource.contains("HYDRATE_SHARED_SNAPSHOT(\"hydrate_shared_snapshot\", \"lua/traffic/hydrate_shared_snapshot.lua\")"));
         assertTrue(!enumSource.contains("DEDUCT_INDIVIDUAL"));
         assertTrue(!enumSource.contains("DEDUCT_SHARED"));
+    }
+
+    @Test
+    @DisplayName("policy Lua 타입은 CAS 스크립트 4개만 관리하고 실제 파일을 가리킨다")
+    void policyLuaScriptTypesPointToExistingCasResourcesOnly() throws IOException {
+        String runtimeEnumSource = Files.readString(LUA_SCRIPT_TYPE_SOURCE, StandardCharsets.UTF_8);
+        Set<String> resourcePaths = Arrays.stream(TrafficPolicyLuaScriptType.values())
+                .map(TrafficPolicyLuaScriptType::getResourcePath)
+                .collect(Collectors.toSet());
+        Set<String> expectedResourcePaths = Set.of(
+                "lua/traffic/policy_value_cas.lua",
+                "lua/traffic/repeat_block_snapshot_cas.lua",
+                "lua/traffic/app_policy_single_cas.lua",
+                "lua/traffic/app_policy_snapshot_cas.lua"
+        );
+
+        assertEquals(4, TrafficPolicyLuaScriptType.values().length);
+        assertEquals(expectedResourcePaths, resourcePaths);
+
+        for (String resourcePath : resourcePaths) {
+            assertTrue(
+                    Files.exists(LUA_RESOURCE_ROOT.resolve(resourcePath)),
+                    "Lua resource must exist. path=" + resourcePath
+            );
+            assertFalse(
+                    runtimeEnumSource.contains(resourcePath),
+                    "Policy Lua resource must not be managed by TrafficLuaScriptType. path=" + resourcePath
+            );
+        }
     }
 
     @Test

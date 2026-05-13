@@ -69,7 +69,9 @@ public class TrafficPolicyLuaScriptInfraService {
     private RedisScript<Long> requireLongScript(TrafficPolicyLuaScriptType scriptType) {
         RedisScript<Long> script = longScriptRegistry.get(scriptType);
         if (script == null) {
-            throw new IllegalStateException("Policy Lua script is not initialized. script=" + scriptType.getScriptName());
+            throw new IllegalStateException(
+                    "Policy Lua script is not initialized. script=" + scriptType.getScriptName()
+            );
         }
         return script;
     }
