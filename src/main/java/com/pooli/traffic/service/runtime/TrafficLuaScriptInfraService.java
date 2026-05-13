@@ -121,19 +121,6 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * 락 소유 여부를 heartbeat Lua 스크립트로 확인합니다.
-     */
-    public boolean executeLockHeartbeat(String lockKey, String traceId, long lockTtlMs) {
-        Long rawResult = executeLongSingle(
-                TrafficLuaScriptType.LOCK_HEARTBEAT,
-                List.of(lockKey),
-                List.of(traceId, String.valueOf(lockTtlMs))
-        );
-
-        return rawResult == 1L;
-    }
-
-    /**
      * 락 해제 Lua 스크립트를 실행합니다.
      */
     public boolean executeLockRelease(String lockKey, String traceId) {
@@ -384,8 +371,7 @@ public class TrafficLuaScriptInfraService {
                 redisScript.setResultType(String.class);
                 stringScriptRegistry.put(scriptType, redisScript);
             }
-            case LOCK_HEARTBEAT,
-                 HYDRATE_INDIVIDUAL_SNAPSHOT,
+            case HYDRATE_INDIVIDUAL_SNAPSHOT,
                  HYDRATE_SHARED_SNAPSHOT,
                  LOCK_RELEASE,
                  IN_FLIGHT_CREATE_IF_ABSENT,
