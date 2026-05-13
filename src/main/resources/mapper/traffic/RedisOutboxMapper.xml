@@ -107,13 +107,4 @@
           AND status NOT IN ('REVERT', 'FINAL_FAIL')
     </update>
 
-    <update id="markRevertIfCompensable">
-        UPDATE TRAFFIC_REDIS_OUTBOX
-        SET status = 'REVERT',
-            status_updated_at = NOW(6)
-        WHERE id = #{id}
-          AND event_type = 'REFILL'
-          AND status IN ('FAIL', 'PENDING', 'PROCESSING')
-    </update>
-
 </mapper>

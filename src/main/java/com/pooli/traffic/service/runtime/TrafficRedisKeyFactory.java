@@ -176,20 +176,6 @@ public class TrafficRedisKeyFactory {
     /**
       * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
      */
-    public String indivRefillLockKey(long lineId) {
-        return namespaced("indiv_refill_lock:" + lineId);
-    }
-
-    /**
-      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
-     */
-    public String sharedRefillLockKey(long familyId) {
-        return namespaced("shared_refill_lock:" + familyId);
-    }
-
-    /**
-      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
-     */
     public String indivHydrateLockKey(long lineId) {
         return namespaced("indiv_hydrate_lock:" + lineId);
     }
@@ -255,17 +241,6 @@ public class TrafficRedisKeyFactory {
             throw new IllegalArgumentException("traceId must not be blank");
         }
         return namespaced("dedupe:run:" + normalizedTraceId);
-    }
-
-    /**
-     * 리필 요청 멱등키를 생성합니다.
-     */
-    public String refillIdempotencyKey(String uuid) {
-        String normalizedUuid = Objects.requireNonNull(uuid, "uuid must not be null").trim();
-        if (normalizedUuid.isEmpty()) {
-            throw new IllegalArgumentException("uuid must not be blank");
-        }
-        return namespaced("refill:idempotency:" + normalizedUuid);
     }
 
     /**

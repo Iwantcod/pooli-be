@@ -52,7 +52,6 @@ class TrafficLuaPolicyContractTest {
         assertTrue(enumSource.contains("HYDRATE_SHARED_SNAPSHOT(\"hydrate_shared_snapshot\", \"lua/traffic/hydrate_shared_snapshot.lua\")"));
         assertTrue(!enumSource.contains("DEDUCT_INDIVIDUAL"));
         assertTrue(!enumSource.contains("DEDUCT_SHARED"));
-        assertTrue(!enumSource.contains("REFILL_GATE"));
     }
 
     @Test

@@ -178,8 +178,8 @@ class TrafficFlowLocalAcceptanceTest {
     // ---------------------------------------------------------------------
 
     @Test
-    @DisplayName("[REG-01] 기본 흐름: 개인풀 차감 요청은 DB 잔량에서 refill 후 정상 차감된다")
-    void shouldDeductIndividualBalanceAfterHydrateAndRefill() throws Exception {
+    @DisplayName("[REG-01] 기본 흐름: 개인풀 차감 요청은 DB 잔량 hydrate 후 정상 차감된다")
+    void shouldDeductIndividualBalanceAfterHydrate() throws Exception {
         long before = readLineRemaining(LINE_ID);
 
         String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
@@ -1122,37 +1122,6 @@ class TrafficFlowLocalAcceptanceTest {
             return 0L;
         }
         return Long.parseLong(amount);
-    }
-
-    private Long awaitRefillOutboxIdByTraceIdAndPoolType(String traceId, String poolType) throws Exception {
-        long startedAt = System.currentTimeMillis();
-        long timeoutMs = 5_000L;
-        while (System.currentTimeMillis() - startedAt < timeoutMs) {
-            Long outboxId = findLatestRefillOutboxIdByTraceIdAndPoolType(traceId, poolType);
-            if (outboxId != null) {
-                return outboxId;
-            }
-            TimeUnit.MILLISECONDS.sleep(100);
-        }
-        throw new AssertionError("Timeout while waiting refill outbox: traceId=" + traceId + ", poolType=" + poolType);
-    }
-
-    private Long findLatestRefillOutboxIdByTraceIdAndPoolType(String traceId, String poolType) {
-        List<Long> ids = jdbcTemplate.queryForList(
-                """
-                SELECT id
-                FROM TRAFFIC_REDIS_OUTBOX
-                WHERE event_type = 'REFILL'
-                  AND payload LIKE ?
-                  AND payload LIKE ?
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                Long.class,
-                "%\\\"traceId\\\":\\\"" + traceId + "\\\"%",
-                "%\\\"poolType\\\":\\\"" + poolType + "\\\"%"
-        );
-        return ids.isEmpty() ? null : ids.getFirst();
     }
 
     private String readOutboxStatus(long outboxId) {

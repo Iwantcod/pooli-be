@@ -9,7 +9,6 @@ import com.pooli.traffic.domain.TrafficPolicyCheckLayerResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPolicyCheckFailureCause;
-import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
@@ -53,7 +52,6 @@ public class TrafficPolicyCheckLayerService {
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficPolicyBootstrapService trafficPolicyBootstrapService;
-    private final TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     /**
@@ -65,10 +63,9 @@ public class TrafficPolicyCheckLayerService {
             TrafficLuaExecutionResult luaResult = executePolicyCheckWithGlobalRecovery(payload);
             return TrafficPolicyCheckLayerResult.fromLuaResult(luaResult);
         } catch (ApplicationException | DataAccessException e) {
-            RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
-            if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)) {
+            if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(e)) {
                 TrafficStageFailureException stageFailure =
-                        TrafficStageFailureException.retryableFailure(failureStage, unwrapped);
+                        TrafficStageFailureException.retryableFailure(failureStage, e);
                 log.warn(
                         "{} traceId={} failureCause={}",
                         failureStage.retryableFailureLogKey(),
