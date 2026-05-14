@@ -6,7 +6,7 @@
     <select id="selectMySharedPoolStatus" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
         SELECT
             l.line_id,
-            l.remaining_data,
+            l.total_data AS remainingData,
             COALESCE(SUM(fsud.contribution_amount), 0) AS personal_contribution
         FROM LINE l
         LEFT JOIN FAMILY_SHARED_USAGE_DAILY fsud
@@ -14,7 +14,7 @@
          AND DATE_FORMAT(fsud.usage_date, '%Y-%m') = DATE_FORMAT(CURRENT_DATE(), '%Y-%m')
         WHERE l.line_id = #{lineId}
           AND l.deleted_at IS NULL
-        GROUP BY l.line_id, l.remaining_data
+        GROUP BY l.line_id, l.total_data
     </select>
 
     <select id="selectFamilySharedPool" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
@@ -22,7 +22,7 @@
             f.family_id,
             f.pool_base_data,
             f.pool_total_data,
-            f.pool_remaining_data,
+            0 AS poolRemainingData,
             COALESCE(SUM(fsud.usage_amount), 0) AS monthly_usage_amount,
             COALESCE(SUM(fsud.contribution_amount), 0) AS monthly_contribution_amount
         FROM FAMILY f
@@ -31,7 +31,7 @@
          AND DATE_FORMAT(fsud.usage_date, '%Y-%m') = DATE_FORMAT(CURRENT_DATE(), '%Y-%m')
         WHERE f.family_id = #{familyId}
           AND f.deleted_at IS NULL
-        GROUP BY f.family_id, f.pool_base_data, f.pool_total_data, f.pool_remaining_data
+        GROUP BY f.family_id, f.pool_base_data, f.pool_total_data
     </select>
 
     <select id="selectMonthlyContributionByFamilyId" resultType="java.lang.Long">
@@ -45,15 +45,14 @@
 
     <update id="updateLineRemainingData">
         UPDATE LINE
-        SET remaining_data = remaining_data - #{amount}
+        SET total_data = total_data - #{amount}
         WHERE line_id = #{lineId}
-          AND remaining_data >= #{amount}
+          AND total_data >= #{amount}
     </update>
 
     <update id="updateFamilyPoolData">
         UPDATE FAMILY
-        SET pool_remaining_data = pool_remaining_data + #{amount},
-            pool_total_data = pool_total_data + #{amount}
+        SET pool_total_data = pool_total_data + #{amount}
         WHERE family_id = #{familyId}
     </update>
 
@@ -68,9 +67,9 @@
     <select id="selectSharedPoolDetail" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
         SELECT
             p.basic_data_amount,
-            l.remaining_data,
+            l.total_data AS remainingData,
             f.pool_total_data,
-            f.pool_remaining_data
+            0 AS poolRemainingData
         FROM LINE l
         INNER JOIN PLAN p ON l.plan_id = p.plan_id
         INNER JOIN FAMILY_LINE fl ON l.line_id = fl.line_id
@@ -85,7 +84,7 @@
         SELECT
             f.pool_base_data,
             f.pool_total_data,
-            f.pool_remaining_data,
+            0 AS poolRemainingData,
             COALESCE(SUM(fsud.contribution_amount), 0) AS monthly_contribution_amount
         FROM FAMILY f
         LEFT JOIN FAMILY_SHARED_USAGE_DAILY fsud
@@ -93,7 +92,7 @@
          AND DATE_FORMAT(fsud.usage_date, '%Y-%m') = DATE_FORMAT(CURRENT_DATE(), '%Y-%m')
         WHERE f.family_id = #{familyId}
           AND f.deleted_at IS NULL
-        GROUP BY f.family_id, f.pool_base_data, f.pool_total_data, f.pool_remaining_data
+        GROUP BY f.family_id, f.pool_base_data, f.pool_total_data
     </select>
 
     <select id="selectSharedDataThreshold" resultType="com.pooli.family.domain.entity.SharedPoolDomain">
@@ -101,7 +100,7 @@
             f.family_threshold,
             f.is_threshold_active,
             f.pool_total_data,
-            f.pool_remaining_data
+            0 AS poolRemainingData
         FROM FAMILY f
         WHERE f.family_id = #{familyId}
           AND f.deleted_at IS NULL
@@ -117,7 +116,7 @@
     </update>
 
     <select id="selectRemainingData" resultType="java.lang.Long">
-        SELECT remaining_data
+        SELECT total_data
         FROM LINE
         WHERE line_id = #{lineId}
           AND deleted_at IS NULL

@@ -44,9 +44,10 @@
         UPDATE FAMILY f
         SET f.pool_total_data = (
                 SELECT COALESCE(SUM(p.shared_pool_amount), 0)
-                FROM LINE l
+                FROM FAMILY_LINE fl
+                JOIN LINE l ON l.line_id = fl.line_id
                 JOIN PLAN p ON p.plan_id = l.plan_id
-                WHERE l.family_id = #{familyId}
+                WHERE fl.family_id = #{familyId}
                   AND l.deleted_at IS NULL
                   AND p.deleted_at IS NULL
             ),

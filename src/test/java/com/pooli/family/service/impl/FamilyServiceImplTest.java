@@ -88,7 +88,7 @@ class FamilyServiceImplTest {
         when(familySharedPoolsService.calculateFamilyActualSharedUsed(1_000L, 700L)).thenReturn(300L);
         when(familySharedPoolsService.resolveDisplaySharedPoolRemainingAmount(members.get(0), 700L, 300L))
                 .thenReturn(700L);
-        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L, 500L)).thenReturn(650L);
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L)).thenReturn(650L);
 
         FamilyMembersResDto result = familyService.getFamilyMembers(principal);
 
@@ -125,7 +125,7 @@ class FamilyServiceImplTest {
         when(familySharedPoolsService.calculateFamilyActualSharedUsed(1_000L, 700L)).thenReturn(300L);
         when(familySharedPoolsService.resolveDisplaySharedPoolRemainingAmount(members.get(0), 700L, 300L))
                 .thenReturn(700L);
-        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L, 500L)).thenReturn(650L);
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L)).thenReturn(650L);
 
         FamilyMembersResDto result = familyService.getFamilyMembers(principal);
 

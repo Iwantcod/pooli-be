@@ -16,7 +16,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -34,6 +33,7 @@ import com.pooli.family.domain.entity.FamilyLine;
 import com.pooli.family.service.FamilySharedPoolsService;
 import com.pooli.permission.mapper.FamilyLineMapper;
 import com.pooli.permission.mapper.PermissionLineMapper;
+import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
@@ -56,10 +56,10 @@ class DataServiceImplTest {
     private StringRedisTemplate cacheStringRedisTemplate;
 
     @Mock
-    private HashOperations<String, Object, Object> hashOperations;
+    private ValueOperations<String, String> valueOperations;
 
     @Mock
-    private ValueOperations<String, String> valueOperations;
+    private TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
 
     @Mock
     private TrafficRedisKeyFactory trafficRedisKeyFactory;
@@ -250,67 +250,47 @@ class DataServiceImplTest {
     }
 
     @Test
-    @DisplayName("데이터 요약: Redis 버퍼 잔량을 합산해서 반환")
-    void getDataSummary_success_returnsMergedBalances() {
-        ZoneId zoneId = ZoneId.of("Asia/Seoul");
-        YearMonth targetMonth = YearMonth.now(zoneId);
+    @DisplayName("데이터 요약: Redis 잔량 amount만 반환")
+    void getDataSummary_success_returnsRedisAmountsOnly() {
         DataBalancesResDto dto = DataBalancesResDto.builder()
             .lineId(1L)
             .userName("user")
             .role("OWNER")
-            .sharedDataRemaining(100L)
-            .personalDataRemaining(50L)
             .planName("plan")
             .build();
         when(dataMapper.findDataSummaryByLineId(1L)).thenReturn(dto);
-        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(zoneId);
-        when(trafficRedisKeyFactory.remainingIndivAmountKey(1L, targetMonth))
-            .thenReturn("pooli:remaining_indiv_amount:1:" + targetMonth);
         when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.of(familyLine(true)));
-        when(trafficRedisKeyFactory.remainingSharedAmountKey(1L, targetMonth))
-            .thenReturn("pooli:remaining_shared_amount:1:" + targetMonth);
-        when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(hashOperations.get("pooli:remaining_indiv_amount:1:" + targetMonth, "amount")).thenReturn("20");
-        when(hashOperations.get("pooli:remaining_shared_amount:1:" + targetMonth, "amount")).thenReturn("30");
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(1L)).thenReturn(20L);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(30L);
 
         DataBalancesResDto result = dataService.getDataSummary(1L);
 
         assertThat(result.getLineId()).isEqualTo(1L);
         assertThat(result.getUserName()).isEqualTo("user");
         assertThat(result.getRole()).isEqualTo("OWNER");
-        assertThat(result.getPersonalDataRemaining()).isEqualTo(70L);
-        assertThat(result.getSharedDataRemaining()).isEqualTo(130L);
+        assertThat(result.getPersonalDataRemaining()).isEqualTo(20L);
+        assertThat(result.getSharedDataRemaining()).isEqualTo(30L);
         assertThat(result.getPlanName()).isEqualTo("plan");
     }
 
     @Test
-    @DisplayName("데이터 요약: Redis 값이 없으면 DB 값을 유지")
-    void getDataSummary_whenRedisMissing_keepsDbValues() {
-        ZoneId zoneId = ZoneId.of("Asia/Seoul");
-        YearMonth targetMonth = YearMonth.now(zoneId);
+    @DisplayName("데이터 요약: Redis 값이 없으면 DB fallback 없이 null 반환")
+    void getDataSummary_whenRedisMissing_returnsNullBalances() {
         DataBalancesResDto dto = DataBalancesResDto.builder()
             .lineId(1L)
             .userName("user")
             .role("OWNER")
-            .sharedDataRemaining(100L)
-            .personalDataRemaining(50L)
             .planName("plan")
             .build();
         when(dataMapper.findDataSummaryByLineId(1L)).thenReturn(dto);
-        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(zoneId);
-        when(trafficRedisKeyFactory.remainingIndivAmountKey(1L, targetMonth))
-            .thenReturn("pooli:remaining_indiv_amount:1:" + targetMonth);
         when(familyLineMapper.findByLineId(1L)).thenReturn(Optional.of(familyLine(true)));
-        when(trafficRedisKeyFactory.remainingSharedAmountKey(1L, targetMonth))
-            .thenReturn("pooli:remaining_shared_amount:1:" + targetMonth);
-        when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(hashOperations.get("pooli:remaining_indiv_amount:1:" + targetMonth, "amount")).thenReturn(null);
-        when(hashOperations.get("pooli:remaining_shared_amount:1:" + targetMonth, "amount")).thenReturn(null);
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(1L)).thenReturn(null);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(null);
 
         DataBalancesResDto result = dataService.getDataSummary(1L);
 
-        assertThat(result.getPersonalDataRemaining()).isEqualTo(50L);
-        assertThat(result.getSharedDataRemaining()).isEqualTo(100L);
+        assertThat(result.getPersonalDataRemaining()).isNull();
+        assertThat(result.getSharedDataRemaining()).isNull();
     }
 
     @Test

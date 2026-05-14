@@ -122,8 +122,7 @@ public class FamilyServiceImpl implements FamilyService {
     ) {
         Long lineId = member.getLineId() == null ? null : member.getLineId().longValue();
         Long actualRemainingData = trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(
-                lineId,
-                member.getRemainingData()
+                lineId
         );
 
         return FamilyMembersResDto.FamilyMemberDto.builder()

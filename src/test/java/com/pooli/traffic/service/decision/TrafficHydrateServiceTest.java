@@ -1,21 +1,25 @@
 package com.pooli.traffic.service.decision;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.data.redis.core.ValueOperations;
 
 import com.pooli.monitoring.metrics.TrafficHydrateMetrics;
 import com.pooli.traffic.domain.TrafficDeductExecutionContext;
@@ -27,6 +31,7 @@ import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPoolType;
 import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
+import com.pooli.traffic.service.runtime.TrafficBalanceSnapshotHydrateService;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficRemainingBalanceCacheService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
@@ -37,6 +42,9 @@ class TrafficHydrateServiceTest {
 
     @Mock
     private StringRedisTemplate cacheStringRedisTemplate;
+
+    @Mock
+    private ValueOperations<String, String> valueOperations;
 
     @Mock
     private TrafficDeductLuaExecutor trafficDeductLuaExecutor;
@@ -62,8 +70,28 @@ class TrafficHydrateServiceTest {
     @Mock
     private TrafficLuaScriptInfraService trafficLuaScriptInfraService;
 
-    @InjectMocks
     private TrafficHydrateService service;
+
+    @BeforeEach
+    void setUp() {
+        TrafficBalanceSnapshotHydrateService trafficBalanceSnapshotHydrateService =
+                new TrafficBalanceSnapshotHydrateService(
+                        trafficRefillSourceMapper,
+                        trafficRedisKeyFactory,
+                        trafficRedisRuntimePolicy,
+                        trafficRemainingBalanceCacheService,
+                        trafficLuaScriptInfraService,
+                        cacheStringRedisTemplate
+                );
+        service = new TrafficHydrateService(
+                trafficDeductLuaExecutor,
+                trafficRedisKeyFactory,
+                trafficRedisRuntimePolicy,
+                trafficPolicyBootstrapService,
+                trafficHydrateMetrics,
+                trafficBalanceSnapshotHydrateService
+        );
+    }
 
     @Test
     @DisplayName("HYDRATE가 반환되면 개인/공유 잔량과 QoS를 적재한 뒤 통합 Lua를 재시도한다")
@@ -72,7 +100,8 @@ class TrafficHydrateServiceTest {
         TrafficDeductExecutionContext context = TrafficDeductExecutionContext.of("trace-001");
         TrafficLuaDeductExecutionResult currentResult = unifiedResult(0L, 0L, 0L, TrafficLuaStatus.HYDRATE);
         TrafficLuaDeductExecutionResult retriedResult = unifiedResult(60L, 0L, 0L, TrafficLuaStatus.OK);
-        ReflectionTestUtils.setField(service, "hydrateLockEnabled", false);
+        stubIndividualHydrateLockAcquired();
+        stubSharedHydrateLockAcquired();
 
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(java.time.YearMonth.of(2026, 3)))
@@ -115,7 +144,7 @@ class TrafficHydrateServiceTest {
         TrafficLuaDeductExecutionResult currentResult =
                 unifiedResult(0L, 0L, 0L, TrafficLuaStatus.HYDRATE_INDIVIDUAL);
         TrafficLuaDeductExecutionResult retriedResult = unifiedResult(60L, 0L, 0L, TrafficLuaStatus.OK);
-        ReflectionTestUtils.setField(service, "hydrateLockEnabled", false);
+        stubIndividualHydrateLockAcquired();
 
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(java.time.YearMonth.of(2026, 3)))
@@ -157,7 +186,7 @@ class TrafficHydrateServiceTest {
         TrafficLuaDeductExecutionResult currentResult =
                 unifiedResult(0L, 0L, 0L, TrafficLuaStatus.HYDRATE_SHARED);
         TrafficLuaDeductExecutionResult retriedResult = unifiedResult(60L, 0L, 0L, TrafficLuaStatus.OK);
-        ReflectionTestUtils.setField(service, "hydrateLockEnabled", false);
+        stubSharedHydrateLockAcquired();
 
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(java.time.YearMonth.of(2026, 3)))
@@ -199,7 +228,7 @@ class TrafficHydrateServiceTest {
         TrafficLuaDeductExecutionResult currentResult =
                 unifiedResult(0L, 0L, 0L, TrafficLuaStatus.HYDRATE_INDIVIDUAL);
         TrafficLuaDeductExecutionResult retriedResult = unifiedResult(60L, 0L, 0L, TrafficLuaStatus.OK);
-        ReflectionTestUtils.setField(service, "hydrateLockEnabled", false);
+        stubIndividualHydrateLockAcquired();
 
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(java.time.YearMonth.of(2026, 3)))
@@ -245,7 +274,7 @@ class TrafficHydrateServiceTest {
         TrafficLuaDeductExecutionResult currentResult =
                 unifiedResult(0L, 0L, 0L, TrafficLuaStatus.HYDRATE_SHARED);
         TrafficLuaDeductExecutionResult retriedResult = unifiedResult(60L, 0L, 0L, TrafficLuaStatus.OK);
-        ReflectionTestUtils.setField(service, "hydrateLockEnabled", false);
+        stubSharedHydrateLockAcquired();
 
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(java.time.YearMonth.of(2026, 3)))
@@ -282,11 +311,9 @@ class TrafficHydrateServiceTest {
         TrafficDeductExecutionContext context = TrafficDeductExecutionContext.of("trace-001");
         TrafficLuaDeductExecutionResult currentResult =
                 unifiedResult(0L, 0L, 0L, TrafficLuaStatus.HYDRATE_INDIVIDUAL);
-        ReflectionTestUtils.setField(service, "hydrateLockEnabled", false);
+        stubIndividualHydrateLockAcquired();
 
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
-        when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(java.time.YearMonth.of(2026, 3)))
-                .thenReturn(1_775_833_199L);
         when(trafficRedisKeyFactory.remainingIndivAmountKey(11L, java.time.YearMonth.of(2026, 3)))
                 .thenReturn("individual-balance");
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, java.time.YearMonth.of(2026, 3)))
@@ -329,7 +356,7 @@ class TrafficHydrateServiceTest {
         TrafficLuaDeductExecutionResult currentResult =
                 unifiedResult(0L, 0L, 0L, TrafficLuaStatus.HYDRATE_SHARED);
         TrafficLuaDeductExecutionResult retriedResult = unifiedResult(60L, 0L, 0L, TrafficLuaStatus.OK);
-        ReflectionTestUtils.setField(service, "hydrateLockEnabled", false);
+        stubSharedHydrateLockAcquired();
 
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(java.time.YearMonth.of(2026, 3)))
@@ -432,5 +459,20 @@ class TrafficHydrateServiceTest {
                 .qosDeducted(qos)
                 .status(status)
                 .build();
+    }
+
+    private void stubIndividualHydrateLockAcquired() {
+        stubHydrateLockAcquired("individual-hydrate-lock");
+        when(trafficRedisKeyFactory.indivHydrateLockKey(11L)).thenReturn("individual-hydrate-lock");
+    }
+
+    private void stubSharedHydrateLockAcquired() {
+        stubHydrateLockAcquired("shared-hydrate-lock");
+        when(trafficRedisKeyFactory.sharedHydrateLockKey(22L)).thenReturn("shared-hydrate-lock");
+    }
+
+    private void stubHydrateLockAcquired(String lockKey) {
+        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(eq(lockKey), anyString(), any(Duration.class))).thenReturn(true);
     }
 }

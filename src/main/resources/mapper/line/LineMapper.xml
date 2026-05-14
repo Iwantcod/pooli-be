@@ -37,7 +37,7 @@
 	          l.individual_threshold AS individualThreshold,
 	          l.is_threshold_active AS isThresholdActive,
 	          p.basic_data_amount AS thresholdMaxValue,
-	          (p.basic_data_amount - l.remaining_data) AS thresholdMinValue
+	          (p.basic_data_amount - l.total_data) AS thresholdMinValue
 	      FROM LINE l
 	      JOIN PLAN p ON l.plan_id = p.plan_id
 	      WHERE

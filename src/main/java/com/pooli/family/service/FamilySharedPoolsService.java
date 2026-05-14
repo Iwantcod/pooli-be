@@ -106,8 +106,7 @@ public class FamilySharedPoolsService {
 
         // 실시간 차감은 Redis에서 발생하므로 화면 잔량은 Traffic 조회 서비스로 보정합니다.
         Long actualRemainingData = trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(
-                lineId,
-                domain.getRemainingData()
+                lineId
         );
 
         return SharedPoolMyStatusResDto.builder()
@@ -130,8 +129,7 @@ public class FamilySharedPoolsService {
 
         // Redis-Only 차감 이후 DB 잔량은 stale할 수 있으므로 실제 공유 잔량을 보정합니다.
         Long actualPoolRemainingData = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
-                familyId,
-                domain.getPoolRemainingData()
+                familyId
         );
 
         return FamilySharedPoolResDto.builder()
@@ -246,12 +244,10 @@ public class FamilySharedPoolsService {
         // 회선별 공유 한도와 Redis 기준 실제 잔량을 함께 조회해 표시값을 계산합니다.
         Long sharedDataLimit = sharedPoolMapper.selectSharedDataLimit(lineId);
         Long actualRemainingData = trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(
-                lineId,
-                domain.getRemainingData()
+                lineId
         );
         Long actualPoolRemainingData = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
-                familyId,
-                domain.getPoolRemainingData()
+                familyId
         );
 
         return SharedPoolDetailResDto.builder()
@@ -274,8 +270,7 @@ public class FamilySharedPoolsService {
 
         // 공유풀 잔량은 Redis 실시간 차감 상태를 반영해 보정합니다.
         Long actualPoolRemainingData = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
-                familyId,
-                domain.getPoolRemainingData()
+                familyId
         );
 
         return SharedPoolMainResDto.builder()
@@ -343,8 +338,7 @@ public class FamilySharedPoolsService {
         // 이미 사용한 데이터보다 낮은 임계치를 설정하지 않도록 실사용량을 산출합니다.
         long poolTotal = domain.getPoolTotalData() != null ? domain.getPoolTotalData() : 0L;
         Long actualPoolRemainingData = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
-                familyId,
-                domain.getPoolRemainingData()
+                familyId
         );
         long poolRemaining = actualPoolRemainingData != null ? Math.max(0L, actualPoolRemainingData) : 0L;
         long usedData = Math.max(0L, poolTotal - poolRemaining);
@@ -429,8 +423,7 @@ public class FamilySharedPoolsService {
         }
 
         return trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
-                familyId,
-                domain.getPoolRemainingData()
+                familyId
         );
     }
 
@@ -476,8 +469,7 @@ public class FamilySharedPoolsService {
                         .phone(member.getPhone())
                         .planName(member.getPlanName())
                         .remainingData(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(
-                                lineId,
-                                member.getRemainingData()
+                                lineId
                         ))
                         .basicDataAmount(member.getBasicDataAmount())
                         .role(member.getRole())

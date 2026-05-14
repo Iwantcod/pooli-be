@@ -137,15 +137,14 @@ class TrafficFlowLocalAcceptanceTest {
         assertThat(lineCount).isNotNull();
         assertThat(lineCount).isEqualTo(4);
 
-        // 공통 초기값: family 잔량 100, line(1~4) 잔량 200.
+        // 공통 초기값: family hydrate source 100, line(1~4) hydrate source 200.
         jdbcTemplate.update(
-                "UPDATE FAMILY SET pool_remaining_data = ?, pool_total_data = ?, updated_at = NOW(6) WHERE family_id = ?",
-                RESET_FAMILY_REMAINING,
+                "UPDATE FAMILY SET pool_total_data = ?, updated_at = NOW(6) WHERE family_id = ?",
                 RESET_FAMILY_REMAINING,
                 FAMILY_ID
         );
         jdbcTemplate.update(
-                "UPDATE LINE SET remaining_data = ?, updated_at = NOW(6) WHERE line_id IN (" + TARGET_LINE_IDS + ")",
+                "UPDATE LINE SET total_data = ?, updated_at = NOW(6) WHERE line_id IN (" + TARGET_LINE_IDS + ")",
                 RESET_LINE_REMAINING
         );
 
@@ -959,7 +958,7 @@ class TrafficFlowLocalAcceptanceTest {
 
     private void setLineRemaining(long lineId, long amount) {
         jdbcTemplate.update(
-                "UPDATE LINE SET remaining_data = ?, updated_at = NOW(6) WHERE line_id = ?",
+                "UPDATE LINE SET total_data = ?, updated_at = NOW(6) WHERE line_id = ?",
                 amount,
                 lineId
         );
@@ -967,8 +966,7 @@ class TrafficFlowLocalAcceptanceTest {
 
     private void setFamilyRemaining(long familyId, long amount) {
         jdbcTemplate.update(
-                "UPDATE FAMILY SET pool_remaining_data = ?, pool_total_data = ?, updated_at = NOW(6) WHERE family_id = ?",
-                amount,
+                "UPDATE FAMILY SET pool_total_data = ?, updated_at = NOW(6) WHERE family_id = ?",
                 amount,
                 familyId
         );
@@ -1085,7 +1083,7 @@ class TrafficFlowLocalAcceptanceTest {
 
     private long readLineRemaining(long lineId) {
         Long value = jdbcTemplate.queryForObject(
-                "SELECT remaining_data FROM LINE WHERE line_id = ? AND deleted_at IS NULL",
+                "SELECT total_data FROM LINE WHERE line_id = ? AND deleted_at IS NULL",
                 Long.class,
                 lineId
         );
@@ -1095,7 +1093,7 @@ class TrafficFlowLocalAcceptanceTest {
 
     private long readFamilyRemaining(long familyId) {
         Long value = jdbcTemplate.queryForObject(
-                "SELECT pool_remaining_data FROM FAMILY WHERE family_id = ? AND deleted_at IS NULL",
+                "SELECT pool_total_data FROM FAMILY WHERE family_id = ? AND deleted_at IS NULL",
                 Long.class,
                 familyId
         );
