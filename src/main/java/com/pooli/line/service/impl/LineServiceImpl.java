@@ -22,6 +22,7 @@ import com.pooli.line.domain.dto.response.LineUserSummaryResDto;
 import com.pooli.line.error.LineErrorCode;
 import com.pooli.line.mapper.LineMapper;
 import com.pooli.line.service.LineService;
+import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -33,6 +34,7 @@ public class LineServiceImpl implements LineService {
 
 	private final LineMapper lineMapper;
     private final SecurityContextRepository securityContextRepository;
+    private final TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
 
 	@Override
 	public List<LineSimpleResDto> getLines(Long userId, Long lineId) {
@@ -85,7 +87,7 @@ public class LineServiceImpl implements LineService {
 			throw new ApplicationException(LineErrorCode.LINE_NOT_FOUND);
 		}
 		
-		return result;
+		return applyActualThresholdMinValue(principal.getLineId(), result);
 		
 	}
 
@@ -137,6 +139,42 @@ public class LineServiceImpl implements LineService {
 		
 		return list;
 	}
+
+    /**
+     * 개인 임계치 최소값은 LINE.total_data와 Redis amount-only 잔량 기준의 현재 사용량으로 계산합니다.
+     */
+    private IndividualThresholdResDto applyActualThresholdMinValue(Long lineId, IndividualThresholdResDto source) {
+        Long thresholdMaxValue = normalizeTotalAmount(source.getThresholdMaxValue());
+        Long actualRemaining = trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(lineId);
+        Long thresholdMinValue = calculateUsedAmount(thresholdMaxValue, actualRemaining);
+
+        return IndividualThresholdResDto.builder()
+                .individualThreshold(source.getIndividualThreshold())
+                .isThresholdActive(source.getIsThresholdActive())
+                .thresholdMinValue(thresholdMinValue)
+                .thresholdMaxValue(thresholdMaxValue)
+                .build();
+    }
+
+    private Long calculateUsedAmount(Long totalAmount, Long actualRemaining) {
+        if (totalAmount == null || actualRemaining == null) {
+            return null;
+        }
+        if (totalAmount < 0L || actualRemaining < 0L) {
+            return 0L;
+        }
+        return Math.max(0L, totalAmount - actualRemaining);
+    }
+
+    private Long normalizeTotalAmount(Long value) {
+        if (value == null) {
+            return null;
+        }
+        if (value < 0L) {
+            return -1L;
+        }
+        return value;
+    }
 
 
 	

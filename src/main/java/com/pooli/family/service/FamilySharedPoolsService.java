@@ -95,7 +95,7 @@ public class FamilySharedPoolsService {
     /**
      * 내 공유풀 상태 화면에 필요한 개인 잔량과 월 기여량을 반환합니다.
      *
-     * <p>DB 잔량은 기준값으로만 사용하고, 실제 표시 잔량은 Traffic Redis 잔량을 우선 반영해 보정합니다.
+     * <p>실제 표시 잔량은 Traffic Redis amount-only 조회 결과만 사용합니다.
      */
     public SharedPoolMyStatusResDto getMySharedPoolStatus(Long lineId) {
         // 공유풀 가입 상태와 DB 기준 개인 잔량/기여량을 조회합니다.
@@ -118,7 +118,7 @@ public class FamilySharedPoolsService {
     /**
      * 가족 공유풀 요약 정보를 반환합니다.
      *
-     * <p>공유풀 총량/기본량/월 집계는 DB 값을 사용하고, 공유풀 잔량은 Redis 실시간 잔량으로 보정합니다.
+     * <p>공유풀 총량/기본량/월 집계는 DB 값을 사용하고, 공유풀 잔량은 Redis 실시간 잔량만 사용합니다.
      */
     public FamilySharedPoolResDto getFamilySharedPool(Long familyId) {
         // 가족 공유풀 메타데이터를 조회합니다.
@@ -127,7 +127,7 @@ public class FamilySharedPoolsService {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
         }
 
-        // Redis-Only 차감 이후 DB 잔량은 stale할 수 있으므로 실제 공유 잔량을 보정합니다.
+        // Redis-Only 차감 이후 공유풀 잔량은 Redis amount-only 조회 결과만 사용합니다.
         Long actualPoolRemainingData = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
                 familyId
         );
@@ -340,8 +340,9 @@ public class FamilySharedPoolsService {
         Long actualPoolRemainingData = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(
                 familyId
         );
-        long poolRemaining = actualPoolRemainingData != null ? Math.max(0L, actualPoolRemainingData) : 0L;
-        long usedData = Math.max(0L, poolTotal - poolRemaining);
+        Long usedData = actualPoolRemainingData == null
+                ? null
+                : Math.max(0L, poolTotal - Math.max(0L, actualPoolRemainingData));
 
         return SharedDataThresholdResDto.builder()
                 .isThresholdActive(domain.getIsThresholdActive())
@@ -413,10 +414,10 @@ public class FamilySharedPoolsService {
     }
 
     /**
-     * 가족 공유풀의 실제 잔량을 Redis 실시간 값 기준으로 반환합니다.
+     * 가족 공유풀의 실제 잔량을 Redis amount-only 기준으로 반환합니다.
      */
     public Long resolveFamilyActualSharedRemaining(Long familyId) {
-        // DB 스냅샷을 조회한 뒤 Traffic 조회 서비스가 Redis 우선 잔량을 계산하게 합니다.
+        // 가족 존재 여부만 확인하고, 잔량은 DB fallback 없이 Traffic 조회 서비스 결과를 그대로 사용합니다.
         SharedPoolDomain domain = sharedPoolMapper.selectSharedPoolMain(familyId);
         if (domain == null) {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_NOT_FOUND);
@@ -431,7 +432,7 @@ public class FamilySharedPoolsService {
      * 가족 공유풀 총량과 실제 잔량으로 실제 사용량을 계산합니다.
      */
     public Long calculateFamilyActualSharedUsed(Long familySharedPoolTotal, Long familyActualSharedRemaining) {
-        // 둘 중 하나라도 없으면 상위 표시 정책이 기존 값을 유지할 수 있도록 null을 반환합니다.
+        // 둘 중 하나라도 없으면 DB fallback 없이 unavailable을 전파합니다.
         if (familySharedPoolTotal == null || familyActualSharedRemaining == null) {
             return null;
         }
@@ -492,19 +493,19 @@ public class FamilySharedPoolsService {
             Long familyActualSharedRemaining,
             Long familyActualSharedUsed
     ) {
-        // Redis 실제 잔량을 모르면 기존 DB 기반 표시값을 유지합니다.
+        // Redis 실제 잔량을 모르면 DB fallback 없이 unavailable을 표시합니다.
         if (familyActualSharedRemaining == null) {
-            return member.getSharedPoolRemainingAmount();
+            return null;
         }
         // 회선별 제한이 비활성화된 경우 가족 전체 실제 잔량을 그대로 보여줍니다.
         if (!Boolean.TRUE.equals(member.getSharedLimitActive())) {
             return familyActualSharedRemaining;
         }
 
-        // 제한 정책 총량이 없거나 무제한이면 제한 계산 없이 가족 전체 실제 잔량을 사용합니다.
+        // 제한 정책 총량이 없으면 DB fallback 없이 unavailable을 표시합니다.
         Long policyTotalAmount = member.getSharedPoolTotalAmount();
         if (policyTotalAmount == null) {
-            return member.getSharedPoolRemainingAmount();
+            return null;
         }
         if (policyTotalAmount == -1L) {
             return familyActualSharedRemaining;

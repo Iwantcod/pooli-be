@@ -187,6 +187,25 @@ class FamilySharedPoolsServiceTest {
     }
 
     @Test
+    @DisplayName("getFamilySharedPool returns null remaining without DB fallback when Redis is unavailable")
+    void getFamilySharedPool_whenRedisUnavailable_returnsNullRemaining() {
+        SharedPoolDomain domain = SharedPoolDomain.builder()
+                .poolTotalData(1_000_000L)
+                .poolRemainingData(800_000L)
+                .poolBaseData(0L)
+                .monthlyUsageAmount(0L)
+                .monthlyContributionAmount(0L)
+                .build();
+
+        when(sharedPoolMapper.selectFamilySharedPool(1L)).thenReturn(domain);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(null);
+
+        FamilySharedPoolResDto result = service.getFamilySharedPool(1L);
+
+        assertThat(result.getPoolRemainingData()).isNull();
+    }
+
+    @Test
     @DisplayName("getFamilySharedPool throws when family pool is missing")
     void getFamilySharedPool_notFound() {
         when(sharedPoolMapper.selectFamilySharedPool(999L)).thenReturn(null);
@@ -272,6 +291,27 @@ class FamilySharedPoolsServiceTest {
         assertThat(result.getRemainingDataAmount()).isEqualTo(8_300_000L);
         assertThat(result.getSharedPoolTotalAmount()).isEqualTo(1_000_000L);
         assertThat(result.getSharedPoolRemainingAmount()).isEqualTo(900_000L);
+    }
+
+    @Test
+    @DisplayName("getSharedPoolDetail returns null remaining without DB fallback when Redis is unavailable")
+    void getSharedPoolDetail_whenRedisUnavailable_returnsNullRemaining() {
+        SharedPoolDomain domain = SharedPoolDomain.builder()
+                .basicDataAmount(10_000_000L)
+                .remainingData(8_000_000L)
+                .poolTotalData(1_000_000L)
+                .poolRemainingData(800_000L)
+                .build();
+
+        when(sharedPoolMapper.selectSharedPoolDetail(1L, 101L)).thenReturn(domain);
+        when(sharedPoolMapper.selectSharedDataLimit(101L)).thenReturn(null);
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(101L)).thenReturn(null);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(null);
+
+        SharedPoolDetailResDto result = service.getSharedPoolDetail(1L, 101L);
+
+        assertThat(result.getRemainingDataAmount()).isNull();
+        assertThat(result.getSharedPoolRemainingAmount()).isNull();
     }
 
     @Test
@@ -463,6 +503,25 @@ class FamilySharedPoolsServiceTest {
         assertThat(result.getIsThresholdActive()).isTrue();
         assertThat(result.getFamilyThreshold()).isEqualTo(200_000L);
         assertThat(result.getMinThreshold()).isEqualTo(150_000L);
+        assertThat(result.getMaxThreshold()).isEqualTo(500_000L);
+    }
+
+    @Test
+    @DisplayName("getSharedDataThreshold returns null min without DB fallback when Redis remaining is unavailable")
+    void getSharedDataThreshold_whenRedisUnavailable_returnsNullMinThreshold() {
+        SharedPoolDomain domain = SharedPoolDomain.builder()
+                .isThresholdActive(true)
+                .familyThreshold(200_000L)
+                .poolTotalData(500_000L)
+                .poolRemainingData(300_000L)
+                .build();
+
+        when(sharedPoolMapper.selectSharedDataThreshold(1L)).thenReturn(domain);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(null);
+
+        SharedDataThresholdResDto result = service.getSharedDataThreshold(1L);
+
+        assertThat(result.getMinThreshold()).isNull();
         assertThat(result.getMaxThreshold()).isEqualTo(500_000L);
     }
 

@@ -36,8 +36,7 @@
 	      SELECT
 	          l.individual_threshold AS individualThreshold,
 	          l.is_threshold_active AS isThresholdActive,
-	          p.basic_data_amount AS thresholdMaxValue,
-	          (p.basic_data_amount - l.total_data) AS thresholdMinValue
+	          l.total_data AS thresholdMaxValue
 	      FROM LINE l
 	      JOIN PLAN p ON l.plan_id = p.plan_id
 	      WHERE

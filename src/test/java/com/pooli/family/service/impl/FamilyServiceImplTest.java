@@ -133,6 +133,39 @@ class FamilyServiceImplTest {
     }
 
     @Test
+    @DisplayName("getFamilyMembers returns null member remaining without DB fallback when Redis is unavailable")
+    void getFamilyMembers_whenRedisUnavailable_returnsNullMemberRemaining() {
+        AuthUserDetails principal = principalWithLineId(10L);
+        FamilyMembersResDto header = FamilyMembersResDto.builder()
+                .isEnable(true)
+                .familyId(1)
+                .sharedPoolTotalData(1_000L)
+                .sharedPoolRemainingData(300L)
+                .build();
+        List<FamilyMembersResDto.FamilyMemberDto> members = List.of(
+                FamilyMembersResDto.FamilyMemberDto.builder()
+                        .lineId(10)
+                        .remainingData(500L)
+                        .sharedPoolRemainingAmount(300L)
+                        .sharedLimitActive(false)
+                        .build()
+        );
+
+        when(familyMapper.selectFamilyMembersHeader(10L)).thenReturn(header);
+        when(familyMapper.selectFamilyMembers(1, 10L)).thenReturn(members);
+        when(familySharedPoolsService.resolveFamilyActualSharedRemaining(1L)).thenReturn(null);
+        when(familySharedPoolsService.calculateFamilyActualSharedUsed(1_000L, null)).thenReturn(null);
+        when(familySharedPoolsService.resolveDisplaySharedPoolRemainingAmount(members.get(0), null, null))
+                .thenReturn(null);
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L)).thenReturn(null);
+
+        FamilyMembersResDto result = familyService.getFamilyMembers(principal);
+
+        assertThat(result.getMembers().get(0).getRemainingData()).isNull();
+        assertThat(result.getMembers().get(0).getSharedPoolRemainingAmount()).isNull();
+    }
+
+    @Test
     @DisplayName("getFamilyMembersSimple throws when result is empty")
     void getFamilyMembersSimple_empty_throws() {
         AuthUserDetails principal = principalWithLineId(10L);
