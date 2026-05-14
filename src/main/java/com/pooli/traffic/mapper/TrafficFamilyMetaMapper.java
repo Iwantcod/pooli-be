@@ -12,7 +12,7 @@ import com.pooli.traffic.domain.TrafficFamilyMetaSnapshot;
 public interface TrafficFamilyMetaMapper {
 
     /**
-     * 가족 공유풀 메타(총량/DB잔량/임계치 설정)를 조회합니다.
+     * 가족 공유풀 메타(총량/임계치 설정)를 조회합니다.
      */
     TrafficFamilyMetaSnapshot selectFamilyMeta(@Param("familyId") Long familyId);
 }

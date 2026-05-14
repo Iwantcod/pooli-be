@@ -23,7 +23,7 @@ public class TrafficBalanceStateWriteThroughService {
     private final TrafficFamilyMetaCacheService trafficFamilyMetaCacheService;
 
     /**
-     * 공유풀 기여 성공 후 family meta 캐시의 총량과 표시용 잔량을 함께 증가시킵니다.
+     * 공유풀 기여 성공 후 family meta 캐시의 총량을 증가시킵니다.
      *
      * <p>트랜잭션이 열려 있으면 DB commit 이후 실행해 rollback된 변경이 Redis에 먼저 반영되지 않게 합니다.
      */
@@ -34,7 +34,7 @@ public class TrafficBalanceStateWriteThroughService {
 
         executeAfterCommit(
                 "shared_meta_contribution familyId=" + familyId + " amount=" + amount,
-                () -> trafficFamilyMetaCacheService.increaseTotalAndDbRemaining(familyId, amount)
+                () -> trafficFamilyMetaCacheService.increasePoolTotal(familyId, amount)
         );
     }
 
