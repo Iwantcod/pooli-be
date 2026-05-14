@@ -277,6 +277,10 @@ After each milestone completion (post self-review), report using this standard f
 - Issues found and fixed during self-review
 - Any concerns noted but deferred
 
+**Simplicity Check**
+- Explain why this is the smallest reasonable implementation for the approved milestone
+- List any abstraction, configuration, or refactor that was considered but intentionally avoided
+
 **Known Risks / Open Issues**
 - Remaining risks, limitations, or unresolved items
 
@@ -320,6 +324,62 @@ The purpose of milestone decomposition is to **control change scope** and mainta
 - Do NOT refactor unrelated code even if it looks imperfect.
 - Remove imports, variables, functions, files, or comments only when they became unused because of the current change.
 - If unrelated dead code or cleanup opportunities are noticed, mention them in the report instead of changing them.
+
+### 14.5 Minimal Implementation Policy
+
+All implementation MUST prefer the smallest change that fully satisfies the approved milestone.
+
+#### 14.5.1 Smallest Working Change Rule
+
+- Implement only the minimum behavior required by the current milestone.
+- Do NOT generalize the solution for hypothetical future requirements.
+- Do NOT introduce new abstractions, helper layers, interfaces, factories, strategies, configuration options, or extension points unless they are strictly required by the current milestone.
+- Do NOT make code "more flexible" unless flexibility is part of the explicit requirement.
+- Prefer modifying existing code paths over creating parallel implementations.
+
+#### 14.5.2 Complexity Justification Rule
+
+Before adding any of the following, the agent MUST explicitly justify why a simpler solution is insufficient:
+
+- New class
+- New interface
+- New configuration property
+- New dependency
+- New framework feature
+- New utility/helper module
+- Reflection, generics-heavy design, dynamic dispatch, or pattern-based abstraction
+- Broad refactor touching files outside the approved milestone scope
+
+If the justification is weak or based on possible future needs, the change MUST NOT be made.
+
+#### 14.5.3 Prefer Boring Code
+
+- Prefer direct, readable, local code over clever or highly abstract code.
+- Prefer explicit conditionals over premature polymorphism.
+- Prefer existing project conventions over newly introduced patterns.
+- Prefer a small duplication over a premature shared abstraction when reuse is uncertain.
+- Prefer deleting unnecessary code over adding compatibility layers.
+
+#### 14.5.4 Scope Growth Stop Rule
+
+If the implementation starts requiring unrelated refactoring, new architecture, or broad changes, the agent MUST stop and report:
+
+- Why the scope grew
+- What simpler alternative exists
+- Whether the milestone should be split
+- What user approval is needed before continuing
+
+#### 14.5.5 Simplicity Self-Review Requirement
+
+During self-review, the agent MUST answer:
+
+- Can this be implemented with fewer files?
+- Can this be implemented with fewer new concepts?
+- Did I add any abstraction for a future case not required now?
+- Did I modify unrelated code for cleanliness rather than necessity?
+- Would a maintainer understand this change without reading extra documentation?
+
+If the answer reveals unnecessary complexity, simplify before reporting completion.
 
 ---
 
