@@ -1,7 +1,10 @@
 package com.pooli.traffic.service.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -172,6 +175,55 @@ class TrafficRemainingBalanceCacheServiceTest {
                             1_775_833_199L
                     )
             );
+        }
+    }
+
+    @Nested
+    class IncrementAmountIfPresentTest {
+
+        @Test
+        @DisplayName("amount가 있으면 delta를 적용한다")
+        void incrementsAmountWhenPresent() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get("pooli:remaining_shared_amount:22:202603", "amount")).thenReturn("500");
+
+            boolean result = trafficRemainingBalanceCacheService.incrementAmountIfPresent(
+                    "pooli:remaining_shared_amount:22:202603",
+                    100L
+            );
+
+            assertTrue(result);
+            verify(hashOperations).increment("pooli:remaining_shared_amount:22:202603", "amount", 100L);
+        }
+
+        @Test
+        @DisplayName("amount가 없으면 Redis 값을 만들지 않는다")
+        void skipsWhenAmountMissing() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get("pooli:remaining_shared_amount:22:202603", "amount")).thenReturn(null);
+
+            boolean result = trafficRemainingBalanceCacheService.incrementAmountIfPresent(
+                    "pooli:remaining_shared_amount:22:202603",
+                    100L
+            );
+
+            assertFalse(result);
+            verify(hashOperations, never()).increment("pooli:remaining_shared_amount:22:202603", "amount", 100L);
+        }
+
+        @Test
+        @DisplayName("무제한 sentinel은 개인 기여 차감으로 변경하지 않는다")
+        void keepsUnlimitedSentinelWhenDecrementRequested() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get("pooli:remaining_indiv_amount:11:202603", "amount")).thenReturn("-1");
+
+            boolean result = trafficRemainingBalanceCacheService.incrementAmountIfPresent(
+                    "pooli:remaining_indiv_amount:11:202603",
+                    -100L
+            );
+
+            assertTrue(result);
+            verify(hashOperations, never()).increment("pooli:remaining_indiv_amount:11:202603", "amount", -100L);
         }
     }
 }

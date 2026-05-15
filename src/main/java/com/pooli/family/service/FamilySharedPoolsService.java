@@ -144,7 +144,7 @@ public class FamilySharedPoolsService {
     /**
      * 개인 회선의 데이터를 가족 공유풀에 기여합니다.
      *
-     * <p>개인 잔량 검증, 공유풀 총량 증가, 기여 이력 저장, Traffic family meta cache write-through,
+     * <p>개인 잔량 검증, 공유풀 총량 증가, 기여 이력 저장, Traffic Redis balance write-through,
      * 가족 알림 발송을 하나의 트랜잭션 흐름에서 조율합니다. Mongo 로그 저장과 알림은 보조 기능입니다.
      */
     @Transactional
@@ -178,7 +178,7 @@ public class FamilySharedPoolsService {
 
         // Family DB의 공유풀 총량과 기여 이력을 영속화합니다.
         sharedPoolMapper.updateFamilyPoolData(familyId, amount);
-        syncSharedPoolWriteThroughAfterContribution(familyId, amount);
+        syncSharedPoolWriteThroughAfterContribution(lineId, familyId, amount, isUnlimited);
         sharedPoolMapper.insertContribution(familyId, lineId, amount);
 
         try {
@@ -206,12 +206,17 @@ public class FamilySharedPoolsService {
     }
 
     /**
-     * 공유풀 기여 성공 후 Traffic family meta cache에 공유풀 총량 증가분을 반영합니다.
+     * 공유풀 기여 성공 후 Traffic Redis balance와 family meta cache에 증가분을 반영합니다.
      *
      * <p>Traffic bean은 profile에 따라 없을 수 있으므로 선택적으로 조회합니다.
      */
-    private void syncSharedPoolWriteThroughAfterContribution(Long familyId, Long amount) {
-        if (familyId == null || familyId <= 0) {
+    private void syncSharedPoolWriteThroughAfterContribution(
+            Long lineId,
+            Long familyId,
+            Long amount,
+            boolean individualUnlimited
+    ) {
+        if (lineId == null || lineId <= 0 || familyId == null || familyId <= 0) {
             return;
         }
 
@@ -225,7 +230,7 @@ public class FamilySharedPoolsService {
         }
 
         if (amount != null && amount > 0) {
-            writeThroughService.markSharedMetaContribution(familyId, amount);
+            writeThroughService.markSharedPoolContribution(lineId, familyId, amount, individualUnlimited);
         }
     }
 

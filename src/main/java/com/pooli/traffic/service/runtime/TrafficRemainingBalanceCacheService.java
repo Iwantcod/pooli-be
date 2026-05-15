@@ -54,6 +54,25 @@ public class TrafficRemainingBalanceCacheService {
     }
 
     /**
+     * 잔량 hash가 이미 hydrate되어 있을 때만 `amount` 필드를 증감합니다.
+     *
+     * <p>key 또는 amount가 없으면 RDB source만 갱신된 상태로 두고, 다음 조회 hydrate가 반영하게 합니다.
+     */
+    public boolean incrementAmountIfPresent(String balanceKey, long delta) {
+        Optional<Long> currentAmount = readAmount(balanceKey);
+        if (currentAmount.isEmpty()) {
+            return false;
+        }
+
+        if (currentAmount.get() < 0L && delta < 0L) {
+            return true;
+        }
+
+        cacheStringRedisTemplate.opsForHash().increment(balanceKey, "amount", delta);
+        return true;
+    }
+
+    /**
      * Redis string value를 long으로 읽습니다.
      *
      * <p>월별 공유풀 사용량처럼 hash가 아닌 단순 counter 조회에 사용하며,

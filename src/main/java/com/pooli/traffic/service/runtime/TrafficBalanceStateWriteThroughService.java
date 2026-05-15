@@ -1,5 +1,7 @@
 package com.pooli.traffic.service.runtime;
 
+import java.time.YearMonth;
+
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -21,20 +23,43 @@ import lombok.extern.slf4j.Slf4j;
 public class TrafficBalanceStateWriteThroughService {
 
     private final TrafficFamilyMetaCacheService trafficFamilyMetaCacheService;
+    private final TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
+    private final TrafficRedisKeyFactory trafficRedisKeyFactory;
+    private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
     /**
-     * 공유풀 기여 성공 후 family meta 캐시의 총량을 증가시킵니다.
+     * 공유풀 기여 성공 후 현재월 Redis 잔량 snapshot이 있는 경우에만 개인/공유 amount를 보정합니다.
      *
-     * <p>트랜잭션이 열려 있으면 DB commit 이후 실행해 rollback된 변경이 Redis에 먼저 반영되지 않게 합니다.
+     * <p>snapshot key가 없으면 RDB source 변경만 유지하고 다음 조회 hydrate가 최신 source를 적재합니다.
+     * write-through 실행 중 Redis 오류가 나면 호출자에게 전파해 Redis-Only 화면 정합성 문제를 숨기지 않습니다.
      */
-    public void markSharedMetaContribution(long familyId, long amount) {
-        if (familyId <= 0 || amount <= 0) {
+    public void markSharedPoolContribution(
+            long lineId,
+            long familyId,
+            long amount,
+            boolean individualUnlimited
+    ) {
+        if (lineId <= 0 || familyId <= 0 || amount <= 0) {
             return;
         }
 
-        executeAfterCommit(
-                "shared_meta_contribution familyId=" + familyId + " amount=" + amount,
-                () -> trafficFamilyMetaCacheService.increasePoolTotal(familyId, amount)
+        executeAfterCommitStrict(
+                "shared_pool_contribution lineId=" + lineId + " familyId=" + familyId + " amount=" + amount,
+                () -> {
+                    YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+                    if (!individualUnlimited) {
+                        String individualBalanceKey =
+                                trafficRedisKeyFactory.remainingIndivAmountKey(lineId, targetMonth);
+                        trafficRemainingBalanceCacheService.incrementAmountIfPresent(
+                                individualBalanceKey,
+                                -amount
+                        );
+                    }
+
+                    String sharedBalanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(familyId, targetMonth);
+                    trafficRemainingBalanceCacheService.incrementAmountIfPresent(sharedBalanceKey, amount);
+                    trafficFamilyMetaCacheService.increasePoolTotal(familyId, amount);
+                }
         );
     }
 
@@ -65,6 +90,29 @@ public class TrafficBalanceStateWriteThroughService {
                 operation.run();
             } catch (RuntimeException e) {
                 log.error("traffic_balance_state_write_through_failed operation={}", operationName, e);
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    wrappedOperation.run();
+                }
+            });
+            return;
+        }
+
+        wrappedOperation.run();
+    }
+
+    private void executeAfterCommitStrict(String operationName, Runnable operation) {
+        Runnable wrappedOperation = () -> {
+            try {
+                operation.run();
+            } catch (RuntimeException e) {
+                log.error("traffic_balance_state_write_through_failed operation={}", operationName, e);
+                throw e;
             }
         };
 
