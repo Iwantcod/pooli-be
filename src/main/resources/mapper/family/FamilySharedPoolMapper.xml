@@ -58,7 +58,7 @@
 
     <insert id="insertContribution">
         INSERT INTO FAMILY_SHARED_USAGE_DAILY (usage_date, family_id, line_id, contribution_amount, usage_amount, created_at)
-        VALUES (CURRENT_DATE(), #{familyId}, #{lineId}, #{amount}, 0, NOW())
+        VALUES (#{usageDate}, #{familyId}, #{lineId}, #{amount}, 0, NOW())
         ON DUPLICATE KEY UPDATE
             contribution_amount = contribution_amount + #{amount},
             updated_at = NOW()

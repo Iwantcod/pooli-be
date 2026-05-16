@@ -18,7 +18,6 @@ import java.util.stream.Stream;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.pooli.auth.service.AuthUserDetails;
 import com.pooli.common.exception.ApplicationException;
@@ -73,6 +72,7 @@ public class FamilySharedPoolsService {
     private final AlarmHistoryService alarmHistoryService;
     private final SharedPoolTransferLogRepository transferLogRepository;
     private final ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
+    private final ObjectProvider<FamilySharedPoolContributionRedisFirstService> contributionRedisFirstServiceProvider;
     private final TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
     private final ObjectProvider<TrafficRedisKeyFactory> trafficRedisKeyFactoryProvider;
     private final ObjectProvider<TrafficRedisRuntimePolicy> trafficRedisRuntimePolicyProvider;
@@ -144,10 +144,9 @@ public class FamilySharedPoolsService {
     /**
      * 개인 회선의 데이터를 가족 공유풀에 기여합니다.
      *
-     * <p>개인 잔량 검증, 공유풀 총량 증가, 기여 이력 저장, Traffic Redis balance write-through,
-     * 가족 알림 발송을 하나의 트랜잭션 흐름에서 조율합니다. Mongo 로그 저장과 알림은 보조 기능입니다.
+     * <p>개인 잔량 검증 뒤 Redis-first outbox 흐름으로 요청을 접수합니다.
+     * 즉시 처리까지 완료된 경우에만 Mongo 로그와 가족 알림을 보조로 저장/전파합니다.
      */
-    @Transactional
     public void contributeToSharedPool(Long lineId, Long familyId, Long amount) {
         // 무제한 회선(-1)은 개인 잔량 차감 없이 공유풀 기여를 허용합니다.
         Long remainingData = sharedPoolMapper.selectRemainingData(lineId);
@@ -165,7 +164,7 @@ public class FamilySharedPoolsService {
             throw new ApplicationException(SharedPoolErrorCode.SHARED_POOL_LIMIT_EXCEEDED);
         }
 
-        // 유한 요금제 회선은 존재 여부와 잔량 충분 여부를 확인한 뒤 개인 잔량을 차감합니다.
+        // 유한 요금제 회선은 존재 여부와 RDB source 기준 기여 가능 여부만 확인합니다.
         if (!isUnlimited) {
             if (remainingData == null) {
                 throw new ApplicationException(SharedPoolErrorCode.LINE_NOT_FOUND);
@@ -173,13 +172,12 @@ public class FamilySharedPoolsService {
             if (remainingData < amount) {
                 throw new ApplicationException(SharedPoolErrorCode.INSUFFICIENT_DATA);
             }
-            sharedPoolMapper.updateLineRemainingData(lineId, amount);
         }
 
-        // Family DB의 공유풀 총량과 기여 이력을 영속화합니다.
-        sharedPoolMapper.updateFamilyPoolData(familyId, amount);
-        syncSharedPoolWriteThroughAfterContribution(lineId, familyId, amount, isUnlimited);
-        sharedPoolMapper.insertContribution(familyId, lineId, amount);
+        boolean applied = submitRedisFirstContribution(lineId, familyId, amount, isUnlimited);
+        if (!applied) {
+            return;
+        }
 
         try {
             // MongoDB 이력은 상세 히스토리 화면용 보조 저장소입니다.
@@ -206,31 +204,34 @@ public class FamilySharedPoolsService {
     }
 
     /**
-     * 공유풀 기여 성공 후 Traffic Redis balance와 family meta cache에 증가분을 반영합니다.
+     * 공유풀 기여 요청을 Redis-first outbox 흐름으로 접수합니다.
      *
-     * <p>Traffic bean은 profile에 따라 없을 수 있으므로 선택적으로 조회합니다.
+     * <p>접수/즉시 처리 실패는 복구 대상 outbox를 남기는 정책이므로 사용자 요청 실패로 전파하지 않습니다.
      */
-    private void syncSharedPoolWriteThroughAfterContribution(
+    private boolean submitRedisFirstContribution(
             Long lineId,
             Long familyId,
             Long amount,
             boolean individualUnlimited
     ) {
-        if (lineId == null || lineId <= 0 || familyId == null || familyId <= 0) {
-            return;
+        FamilySharedPoolContributionRedisFirstService contributionService =
+                contributionRedisFirstServiceProvider.getIfAvailable();
+        if (contributionService == null) {
+            log.warn("shared_pool_contribution_redis_first_service_unavailable familyId={} lineId={}", familyId, lineId);
+            return false;
         }
 
-        // Traffic 캐시 write-through는 local/traffic/api profile에서만 제공되는 보조 기능입니다.
-        // Family 기여 트랜잭션은 해당 bean이 없는 실행 환경에서도 성공해야 하므로 선택적으로 조회합니다.
-        TrafficBalanceStateWriteThroughService writeThroughService =
-                trafficBalanceStateWriteThroughServiceProvider.getIfAvailable();
-        if (writeThroughService == null) {
-            log.debug("traffic_balance_state_write_through_unavailable familyId={}", familyId);
-            return;
-        }
-
-        if (amount != null && amount > 0) {
-            writeThroughService.markSharedPoolContribution(lineId, familyId, amount, individualUnlimited);
+        try {
+            return contributionService.submit(lineId, familyId, amount, individualUnlimited);
+        } catch (RuntimeException e) {
+            log.error(
+                    "shared_pool_contribution_submit_failed familyId={} lineId={} amount={}",
+                    familyId,
+                    lineId,
+                    amount,
+                    e
+            );
+            return false;
         }
     }
 

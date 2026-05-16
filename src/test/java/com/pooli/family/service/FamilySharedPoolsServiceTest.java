@@ -72,7 +72,10 @@ class FamilySharedPoolsServiceTest {
     private ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
 
     @Mock
-    private TrafficBalanceStateWriteThroughService trafficBalanceStateWriteThroughService;
+    private ObjectProvider<FamilySharedPoolContributionRedisFirstService> contributionRedisFirstServiceProvider;
+
+    @Mock
+    private FamilySharedPoolContributionRedisFirstService contributionRedisFirstService;
 
     @Mock
     private TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
@@ -105,6 +108,7 @@ class FamilySharedPoolsServiceTest {
                 alarmHistoryService,
                 transferLogRepository,
                 trafficBalanceStateWriteThroughServiceProvider,
+                contributionRedisFirstServiceProvider,
                 trafficRemainingBalanceQueryService,
                 trafficRedisKeyFactoryProvider,
                 trafficRedisRuntimePolicyProvider,
@@ -223,18 +227,34 @@ class FamilySharedPoolsServiceTest {
         when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
                 .thenReturn(0L);
         when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L, 201L));
-        when(trafficBalanceStateWriteThroughServiceProvider.getIfAvailable())
-                .thenReturn(trafficBalanceStateWriteThroughService);
+        when(contributionRedisFirstServiceProvider.getIfAvailable()).thenReturn(contributionRedisFirstService);
+        when(contributionRedisFirstService.submit(101L, 1L, 500_000L, false)).thenReturn(true);
 
         service.contributeToSharedPool(101L, 1L, 500_000L);
 
-        verify(sharedPoolMapper).updateLineRemainingData(101L, 500_000L);
-        verify(sharedPoolMapper).updateFamilyPoolData(1L, 500_000L);
-        verify(sharedPoolMapper).insertContribution(1L, 101L, 500_000L);
-        verify(trafficBalanceStateWriteThroughService).markSharedPoolContribution(101L, 1L, 500_000L, false);
+        verify(contributionRedisFirstService).submit(101L, 1L, 500_000L, false);
+        verify(sharedPoolMapper, never()).updateLineRemainingData(anyLong(), anyLong());
+        verify(sharedPoolMapper, never()).updateFamilyPoolData(anyLong(), anyLong());
+        verify(sharedPoolMapper, never()).insertContribution(anyLong(), anyLong(), anyLong(), any(LocalDate.class));
         verify(transferLogRepository).save(any(SharedPoolTransferLog.class));
         verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY), eq(AlarmType.SHARED_POOL_CONTRIBUTION));
         verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any());
+    }
+
+    @Test
+    @DisplayName("contributeToSharedPool keeps request successful when Redis-first processing is deferred")
+    void contributeToSharedPool_deferred() {
+        when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
+        when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(0L);
+        when(contributionRedisFirstServiceProvider.getIfAvailable()).thenReturn(contributionRedisFirstService);
+        when(contributionRedisFirstService.submit(101L, 1L, 500_000L, false)).thenReturn(false);
+
+        service.contributeToSharedPool(101L, 1L, 500_000L);
+
+        verify(contributionRedisFirstService).submit(101L, 1L, 500_000L, false);
+        verify(transferLogRepository, never()).save(any());
+        verify(alarmHistoryService, never()).createAlarm(anyLong(), any(), any());
     }
 
     @Test
@@ -635,6 +655,8 @@ class FamilySharedPoolsServiceTest {
             when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
             when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
                     .thenReturn(0L);
+            when(contributionRedisFirstServiceProvider.getIfAvailable()).thenReturn(contributionRedisFirstService);
+            when(contributionRedisFirstService.submit(101L, 1L, 500_000L, false)).thenReturn(true);
             when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L));
 
             service.contributeToSharedPool(101L, 1L, 500_000L);
@@ -648,6 +670,8 @@ class FamilySharedPoolsServiceTest {
             when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
             when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
                     .thenReturn(0L);
+            when(contributionRedisFirstServiceProvider.getIfAvailable()).thenReturn(contributionRedisFirstService);
+            when(contributionRedisFirstService.submit(101L, 1L, 500_000L, false)).thenReturn(true);
             when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L, 201L, 301L));
 
             service.contributeToSharedPool(101L, 1L, 500_000L);
