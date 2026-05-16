@@ -81,7 +81,7 @@ public class TrafficHydrateService {
                 currentResult
         );
 
-        // 잔량/QoS snapshot 미준비이면 Redis hydrate 후 같은 통합 Lua를 재시도합니다. Refill은 수행하지 않습니다.
+        // 잔량/QoS snapshot 미준비이면 Redis hydrate 후 같은 통합 Lua를 재시도합니다.
         return handleHydrateIfNeeded(
                 payload,
                 targetMonth,

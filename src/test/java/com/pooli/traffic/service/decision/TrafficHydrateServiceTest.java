@@ -25,7 +25,7 @@ import com.pooli.traffic.domain.TrafficSharedBalanceSnapshot;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPoolType;
-import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
+import com.pooli.traffic.mapper.TrafficBalanceSnapshotSourceMapper;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficBalanceSnapshotHydrateService;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
@@ -40,7 +40,7 @@ class TrafficHydrateServiceTest {
     private TrafficDeductLuaExecutor trafficDeductLuaExecutor;
 
     @Mock
-    private TrafficRefillSourceMapper trafficRefillSourceMapper;
+    private TrafficBalanceSnapshotSourceMapper trafficBalanceSnapshotSourceMapper;
 
     @Mock
     private TrafficRedisKeyFactory trafficRedisKeyFactory;
@@ -66,7 +66,7 @@ class TrafficHydrateServiceTest {
     void setUp() {
         TrafficBalanceSnapshotHydrateService trafficBalanceSnapshotHydrateService =
                 new TrafficBalanceSnapshotHydrateService(
-                        trafficRefillSourceMapper,
+                        trafficBalanceSnapshotSourceMapper,
                         trafficRedisKeyFactory,
                         trafficRedisRuntimePolicy,
                         trafficRemainingBalanceCacheService,
@@ -99,14 +99,14 @@ class TrafficHydrateServiceTest {
                 .thenReturn("individual-balance");
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, java.time.YearMonth.of(2026, 3)))
                 .thenReturn("shared-balance");
-        when(trafficRefillSourceMapper.selectIndividualBalanceSnapshot(11L))
+        when(trafficBalanceSnapshotSourceMapper.selectIndividualBalanceSnapshot(11L))
                 .thenReturn(TrafficIndividualBalanceSnapshot.builder()
                         .lineId(11L)
                         .amount(-1L)
                         .qosSpeedLimit(1L)
                         .lastBalanceRefreshedAt(LocalDateTime.of(2026, 3, 1, 0, 0))
                         .build());
-        when(trafficRefillSourceMapper.selectSharedBalanceSnapshot(22L))
+        when(trafficBalanceSnapshotSourceMapper.selectSharedBalanceSnapshot(22L))
                 .thenReturn(TrafficSharedBalanceSnapshot.builder()
                         .familyId(22L)
                         .amount(500L)
@@ -142,7 +142,7 @@ class TrafficHydrateServiceTest {
                 .thenReturn("individual-balance");
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, java.time.YearMonth.of(2026, 3)))
                 .thenReturn("shared-balance");
-        when(trafficRefillSourceMapper.selectIndividualBalanceSnapshot(11L))
+        when(trafficBalanceSnapshotSourceMapper.selectIndividualBalanceSnapshot(11L))
                 .thenReturn(TrafficIndividualBalanceSnapshot.builder()
                         .lineId(11L)
                         .amount(300L)
@@ -184,7 +184,7 @@ class TrafficHydrateServiceTest {
                 .thenReturn("individual-balance");
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, java.time.YearMonth.of(2026, 3)))
                 .thenReturn("shared-balance");
-        when(trafficRefillSourceMapper.selectSharedBalanceSnapshot(22L))
+        when(trafficBalanceSnapshotSourceMapper.selectSharedBalanceSnapshot(22L))
                 .thenReturn(TrafficSharedBalanceSnapshot.builder()
                         .familyId(22L)
                         .amount(500L)
@@ -226,7 +226,7 @@ class TrafficHydrateServiceTest {
                 .thenReturn("individual-balance");
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, java.time.YearMonth.of(2026, 3)))
                 .thenReturn("shared-balance");
-        when(trafficRefillSourceMapper.selectIndividualBalanceSnapshot(11L))
+        when(trafficBalanceSnapshotSourceMapper.selectIndividualBalanceSnapshot(11L))
                 .thenReturn(
                         TrafficIndividualBalanceSnapshot.builder()
                                 .lineId(11L)
@@ -248,7 +248,7 @@ class TrafficHydrateServiceTest {
                 service.recoverIfNeeded(payload, 60L, context, currentResult);
 
         assertEquals(TrafficLuaStatus.OK, result.getStatus());
-        verify(trafficRefillSourceMapper).refreshIndividualBalanceIfBeforeTargetMonth(
+        verify(trafficBalanceSnapshotSourceMapper).refreshIndividualBalanceIfBeforeTargetMonth(
                 11L,
                 LocalDateTime.of(2026, 3, 1, 0, 0)
         );
@@ -272,7 +272,7 @@ class TrafficHydrateServiceTest {
                 .thenReturn("individual-balance");
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, java.time.YearMonth.of(2026, 3)))
                 .thenReturn("shared-balance");
-        when(trafficRefillSourceMapper.selectSharedBalanceSnapshot(22L))
+        when(trafficBalanceSnapshotSourceMapper.selectSharedBalanceSnapshot(22L))
                 .thenReturn(TrafficSharedBalanceSnapshot.builder()
                         .familyId(22L)
                         .amount(500L)
@@ -285,7 +285,7 @@ class TrafficHydrateServiceTest {
                 service.recoverIfNeeded(payload, 60L, context, currentResult);
 
         assertEquals(TrafficLuaStatus.OK, result.getStatus());
-        verify(trafficRefillSourceMapper, never())
+        verify(trafficBalanceSnapshotSourceMapper, never())
                 .refreshSharedBalanceIfBeforeTargetMonth(
                         org.mockito.ArgumentMatchers.anyLong(),
                         org.mockito.ArgumentMatchers.any()
@@ -307,7 +307,7 @@ class TrafficHydrateServiceTest {
                 .thenReturn("individual-balance");
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, java.time.YearMonth.of(2026, 3)))
                 .thenReturn("shared-balance");
-        when(trafficRefillSourceMapper.selectIndividualBalanceSnapshot(11L))
+        when(trafficBalanceSnapshotSourceMapper.selectIndividualBalanceSnapshot(11L))
                 .thenReturn(TrafficIndividualBalanceSnapshot.builder()
                         .lineId(11L)
                         .amount(300L)
@@ -354,7 +354,7 @@ class TrafficHydrateServiceTest {
                 .thenReturn("individual-balance");
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, java.time.YearMonth.of(2026, 3)))
                 .thenReturn("shared-balance");
-        when(trafficRefillSourceMapper.selectSharedBalanceSnapshot(22L))
+        when(trafficBalanceSnapshotSourceMapper.selectSharedBalanceSnapshot(22L))
                 .thenReturn(
                         TrafficSharedBalanceSnapshot.builder()
                                 .familyId(22L)
@@ -367,7 +367,7 @@ class TrafficHydrateServiceTest {
                                 .lastBalanceRefreshedAt(LocalDateTime.of(2026, 3, 1, 0, 0))
                                 .build()
                 );
-        when(trafficRefillSourceMapper.refreshSharedBalanceIfBeforeTargetMonth(
+        when(trafficBalanceSnapshotSourceMapper.refreshSharedBalanceIfBeforeTargetMonth(
                 22L,
                 LocalDateTime.of(2026, 3, 1, 0, 0)
         )).thenReturn(0);
@@ -378,7 +378,7 @@ class TrafficHydrateServiceTest {
                 service.recoverIfNeeded(payload, 60L, context, currentResult);
 
         assertEquals(TrafficLuaStatus.OK, result.getStatus());
-        verify(trafficRefillSourceMapper).refreshSharedBalanceIfBeforeTargetMonth(
+        verify(trafficBalanceSnapshotSourceMapper).refreshSharedBalanceIfBeforeTargetMonth(
                 22L,
                 LocalDateTime.of(2026, 3, 1, 0, 0)
         );

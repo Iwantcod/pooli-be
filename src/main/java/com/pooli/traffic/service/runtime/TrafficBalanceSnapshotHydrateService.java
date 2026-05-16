@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import com.pooli.traffic.domain.TrafficBalanceSnapshotHydrateResult;
 import com.pooli.traffic.domain.TrafficIndividualBalanceSnapshot;
 import com.pooli.traffic.domain.TrafficSharedBalanceSnapshot;
-import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
+import com.pooli.traffic.mapper.TrafficBalanceSnapshotSourceMapper;
 
 import lombok.RequiredArgsConstructor;
 
@@ -27,7 +27,7 @@ public class TrafficBalanceSnapshotHydrateService {
 
     private static final long QOS_UPLOAD_MULTIPLIER = 125L;
 
-    private final TrafficRefillSourceMapper trafficRefillSourceMapper;
+    private final TrafficBalanceSnapshotSourceMapper trafficBalanceSnapshotSourceMapper;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
@@ -143,19 +143,19 @@ public class TrafficBalanceSnapshotHydrateService {
             YearMonth targetMonth
     ) {
         TrafficIndividualBalanceSnapshot snapshot =
-                trafficRefillSourceMapper.selectIndividualBalanceSnapshot(lineId);
+                trafficBalanceSnapshotSourceMapper.selectIndividualBalanceSnapshot(lineId);
         SnapshotDecision<TrafficIndividualBalanceSnapshot> initialDecision =
                 decideSnapshot(snapshot, targetMonth);
         if (initialDecision.status() != SnapshotStatus.STALE) {
             return initialDecision;
         }
 
-        trafficRefillSourceMapper.refreshIndividualBalanceIfBeforeTargetMonth(
+        trafficBalanceSnapshotSourceMapper.refreshIndividualBalanceIfBeforeTargetMonth(
                 lineId,
                 targetMonth.atDay(1).atStartOfDay()
         );
         return decideSnapshot(
-                trafficRefillSourceMapper.selectIndividualBalanceSnapshot(lineId),
+                trafficBalanceSnapshotSourceMapper.selectIndividualBalanceSnapshot(lineId),
                 targetMonth
         );
     }
@@ -167,19 +167,19 @@ public class TrafficBalanceSnapshotHydrateService {
      */
     private SnapshotDecision<TrafficSharedBalanceSnapshot> resolveSharedSnapshot(Long familyId, YearMonth targetMonth) {
         TrafficSharedBalanceSnapshot snapshot =
-                trafficRefillSourceMapper.selectSharedBalanceSnapshot(familyId);
+                trafficBalanceSnapshotSourceMapper.selectSharedBalanceSnapshot(familyId);
         SnapshotDecision<TrafficSharedBalanceSnapshot> initialDecision =
                 decideSnapshot(snapshot, targetMonth);
         if (initialDecision.status() != SnapshotStatus.STALE) {
             return initialDecision;
         }
 
-        trafficRefillSourceMapper.refreshSharedBalanceIfBeforeTargetMonth(
+        trafficBalanceSnapshotSourceMapper.refreshSharedBalanceIfBeforeTargetMonth(
                 familyId,
                 targetMonth.atDay(1).atStartOfDay()
         );
         return decideSnapshot(
-                trafficRefillSourceMapper.selectSharedBalanceSnapshot(familyId),
+                trafficBalanceSnapshotSourceMapper.selectSharedBalanceSnapshot(familyId),
                 targetMonth
         );
     }

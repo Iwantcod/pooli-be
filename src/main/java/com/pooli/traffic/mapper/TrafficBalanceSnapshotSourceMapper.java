@@ -9,10 +9,14 @@ import com.pooli.traffic.domain.TrafficIndividualBalanceSnapshot;
 import com.pooli.traffic.domain.TrafficSharedBalanceSnapshot;
 
 /**
- * 트래픽 hydrate 흐름에서 DB 원천 데이터에 접근하는 MyBatis Mapper입니다.
+ * Redis 월별 잔량 snapshot hydrate에 필요한 RDB source를 조회/갱신하는 MyBatis Mapper입니다.
+ *
+ * <p>이 Mapper는 실시간 잔량 fallback이나 차감 처리를 담당하지 않습니다. Redis `remaining_*_amount`
+ * hash가 비어 있을 때 snapshot을 만들 수 있도록 LINE/FAMILY의 월 기준 source 값과 refresh 기준 시각만
+ * 제공하고, 실제 잔량 판단과 차감은 Redis snapshot을 사용하는 상위 서비스가 담당합니다.
  */
 @Mapper
-public interface TrafficRefillSourceMapper {
+public interface TrafficBalanceSnapshotSourceMapper {
 
     /**
      * 개인풀 hydrate에 사용할 잔량/QoS 스냅샷을 조회합니다.

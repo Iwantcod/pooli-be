@@ -15,7 +15,7 @@ import lombok.extern.slf4j.Slf4j;
  * Redis의 트래픽 잔량 hash(`remaining_*_amount:*`)와 단순 사용량 값을 읽고 갱신합니다.
  *
  * <p>이 서비스는 Hydrate 시 필요한 최소 필드(`amount`, 개인풀 `qos`)만 다룹니다.
- * Refill 제거 이후 DB 고갈 플래그(`is_empty`)나 잔량 증가 로직은 이 클래스의 책임이 아닙니다.
+ * Redis-Only 전환 이후 DB 고갈 플래그(`is_empty`)나 잔량 증가 로직은 이 클래스의 책임이 아닙니다.
  */
 @Slf4j
 @Service

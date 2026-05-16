@@ -21,13 +21,13 @@ import com.pooli.traffic.domain.TrafficBalanceSnapshotHydrateResult;
 import com.pooli.traffic.domain.TrafficBalanceSnapshotHydrateResult.Status;
 import com.pooli.traffic.domain.TrafficIndividualBalanceSnapshot;
 import com.pooli.traffic.domain.TrafficSharedBalanceSnapshot;
-import com.pooli.traffic.mapper.TrafficRefillSourceMapper;
+import com.pooli.traffic.mapper.TrafficBalanceSnapshotSourceMapper;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficBalanceSnapshotHydrateServiceTest {
 
     @Mock
-    private TrafficRefillSourceMapper trafficRefillSourceMapper;
+    private TrafficBalanceSnapshotSourceMapper trafficBalanceSnapshotSourceMapper;
 
     @Mock
     private TrafficRedisKeyFactory trafficRedisKeyFactory;
@@ -55,7 +55,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
                 .lastBalanceRefreshedAt(LocalDateTime.of(2026, 5, 1, 0, 0))
                 .build();
         stubIndividualHydrateLockAcquired(11L);
-        when(trafficRefillSourceMapper.selectIndividualBalanceSnapshot(11L)).thenReturn(snapshot);
+        when(trafficBalanceSnapshotSourceMapper.selectIndividualBalanceSnapshot(11L)).thenReturn(snapshot);
         when(trafficRedisKeyFactory.remainingIndivAmountKey(11L, targetMonth)).thenReturn("indiv:11");
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth)).thenReturn(1_779_033_599L);
 
@@ -81,7 +81,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
                 .lastBalanceRefreshedAt(LocalDateTime.of(2026, 5, 1, 0, 0))
                 .build();
         stubSharedHydrateLockAcquired(22L);
-        when(trafficRefillSourceMapper.selectSharedBalanceSnapshot(22L))
+        when(trafficBalanceSnapshotSourceMapper.selectSharedBalanceSnapshot(22L))
                 .thenReturn(staleSnapshot, refreshedSnapshot);
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, targetMonth)).thenReturn("shared:22");
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth)).thenReturn(1_779_033_599L);
@@ -89,7 +89,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
         TrafficBalanceSnapshotHydrateResult result = service.hydrateSharedSnapshot(22L, targetMonth);
 
         assertThat(result.status()).isEqualTo(Status.HYDRATED);
-        verify(trafficRefillSourceMapper).refreshSharedBalanceIfBeforeTargetMonth(
+        verify(trafficBalanceSnapshotSourceMapper).refreshSharedBalanceIfBeforeTargetMonth(
                 22L,
                 targetMonth.atDay(1).atStartOfDay()
         );
@@ -102,7 +102,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
     void hydrateIndividualSnapshot_returnsStaleTargetMonthWhenTargetBeforeRefreshMonth() {
         YearMonth targetMonth = YearMonth.of(2026, 5);
         stubIndividualHydrateLockAcquired(11L);
-        when(trafficRefillSourceMapper.selectIndividualBalanceSnapshot(11L))
+        when(trafficBalanceSnapshotSourceMapper.selectIndividualBalanceSnapshot(11L))
                 .thenReturn(TrafficIndividualBalanceSnapshot.builder()
                         .lineId(11L)
                         .amount(300L)
@@ -132,7 +132,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
                 .lastBalanceRefreshedAt(LocalDateTime.of(2026, 4, 1, 0, 0))
                 .build();
         stubSharedHydrateLockAcquired(22L);
-        when(trafficRefillSourceMapper.selectSharedBalanceSnapshot(22L))
+        when(trafficBalanceSnapshotSourceMapper.selectSharedBalanceSnapshot(22L))
                 .thenReturn(staleSnapshot, staleSnapshot);
 
         TrafficBalanceSnapshotHydrateResult result = service.hydrateSharedSnapshot(22L, targetMonth);
@@ -156,7 +156,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
         TrafficBalanceSnapshotHydrateResult result = service.hydrateIndividualSnapshot(11L, targetMonth);
 
         assertThat(result.status()).isEqualTo(Status.NOT_READY);
-        verify(trafficRefillSourceMapper, never()).selectIndividualBalanceSnapshot(11L);
+        verify(trafficBalanceSnapshotSourceMapper, never()).selectIndividualBalanceSnapshot(11L);
         verify(trafficRemainingBalanceCacheService, never())
                 .hydrateIndividualSnapshot(
                         org.mockito.ArgumentMatchers.anyString(),

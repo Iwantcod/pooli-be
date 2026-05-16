@@ -17,7 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 차감 처리량을 초 단위 Redis 버킷에 기록합니다.
  *
- * <p>현재 버킷은 실시간 관측/속도성 보조 데이터이며 Refill 계획 계산에는 사용하지 않습니다.
+ * <p>현재 버킷은 실시간 관측/속도성 보조 데이터이며 월별 snapshot source 계산에는 사용하지 않습니다.
  */
 @Slf4j
 @Service
