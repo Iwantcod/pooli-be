@@ -22,6 +22,18 @@ public enum TrafficLuaScriptType {
     IN_FLIGHT_INCREMENT_RETRY_WITH_INIT(
             "in_flight_increment_retry_with_init",
             "lua/traffic/in_flight_increment_retry_with_init.lua"
+    ),
+    SHARED_POOL_CONTRIBUTION_APPLY(
+            "shared_pool_contribution_apply",
+            "lua/traffic/shared_pool_contribution_apply.lua"
+    ),
+    SHARED_POOL_CONTRIBUTION_RECOVER(
+            "shared_pool_contribution_recover",
+            "lua/traffic/shared_pool_contribution_recover.lua"
+    ),
+    SHARED_POOL_CONTRIBUTION_CLEANUP(
+            "shared_pool_contribution_cleanup",
+            "lua/traffic/shared_pool_contribution_cleanup.lua"
     );
 
     private final String scriptName;

@@ -2,15 +2,13 @@ package com.pooli.traffic.service.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,8 +16,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 
 import com.pooli.traffic.domain.TrafficBalanceSnapshotHydrateResult;
 import com.pooli.traffic.domain.TrafficBalanceSnapshotHydrateResult.Status;
@@ -44,12 +40,6 @@ class TrafficBalanceSnapshotHydrateServiceTest {
 
     @Mock
     private TrafficLuaScriptInfraService trafficLuaScriptInfraService;
-
-    @Mock
-    private StringRedisTemplate cacheStringRedisTemplate;
-
-    @Mock
-    private ValueOperations<String, String> valueOperations;
 
     @InjectMocks
     private TrafficBalanceSnapshotHydrateService service;
@@ -161,8 +151,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
     void hydrateIndividualSnapshot_returnsNotReadyWhenLockIsNotAcquired() {
         YearMonth targetMonth = YearMonth.of(2026, 5);
         when(trafficRedisKeyFactory.indivHydrateLockKey(11L)).thenReturn("indiv-lock:11");
-        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.setIfAbsent(eq("indiv-lock:11"), anyString(), any(Duration.class))).thenReturn(false);
+        when(trafficLuaScriptInfraService.tryAcquireHydrateLock("indiv-lock:11")).thenReturn(Optional.empty());
 
         TrafficBalanceSnapshotHydrateResult result = service.hydrateIndividualSnapshot(11L, targetMonth);
 
@@ -175,7 +164,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
                         org.mockito.ArgumentMatchers.anyLong(),
                         org.mockito.ArgumentMatchers.anyLong()
                 );
-        verify(trafficLuaScriptInfraService, never()).executeLockRelease(anyString(), anyString());
+        verify(trafficLuaScriptInfraService, never()).releaseHydrateLock(any());
     }
 
     private void stubIndividualHydrateLockAcquired(Long lineId) {
@@ -189,7 +178,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
     }
 
     private void stubHydrateLockAcquired(String lockKey) {
-        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.setIfAbsent(eq(lockKey), anyString(), any(Duration.class))).thenReturn(true);
+        when(trafficLuaScriptInfraService.tryAcquireHydrateLock(lockKey))
+                .thenReturn(Optional.of(new TrafficLuaScriptInfraService.HydrateLockHandle(lockKey, "owner")));
     }
 }

@@ -261,6 +261,18 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * 공유풀 기여 Redis 적용 상태를 추적하는 metadata hash 키입니다.
+     */
+    public String sharedPoolContributionMetadataKey(String traceId) {
+        String normalizedTraceId = Objects.requireNonNull(traceId, "traceId must not be null").trim();
+        if (normalizedTraceId.isEmpty()) {
+            throw new IllegalArgumentException("traceId must not be blank");
+        }
+
+        return namespaced("shared_pool_contribution:metadata:" + normalizedTraceId);
+    }
+
+    /**
       * `namespaced` 처리 목적에 맞는 핵심 로직을 수행합니다.
      */
     private String namespaced(String keyBody) {

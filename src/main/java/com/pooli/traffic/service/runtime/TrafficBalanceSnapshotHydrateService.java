@@ -1,13 +1,10 @@
 package com.pooli.traffic.service.runtime;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.util.UUID;
+import java.util.Optional;
 
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import com.pooli.traffic.domain.TrafficBalanceSnapshotHydrateResult;
@@ -35,8 +32,6 @@ public class TrafficBalanceSnapshotHydrateService {
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
     private final TrafficLuaScriptInfraService trafficLuaScriptInfraService;
-    @Qualifier("cacheStringRedisTemplate")
-    private final StringRedisTemplate cacheStringRedisTemplate;
 
     /**
      * 개인 회선의 월별 잔량/QoS snapshot을 hydrate합니다.
@@ -125,30 +120,17 @@ public class TrafficBalanceSnapshotHydrateService {
             String lockKey,
             SnapshotHydrateAction hydrateAction
     ) {
-        String lockValue = "hydrate:" + UUID.randomUUID();
-        if (!tryAcquireHydrateLock(lockKey, lockValue)) {
+        Optional<TrafficLuaScriptInfraService.HydrateLockHandle> lockHandle =
+                trafficLuaScriptInfraService.tryAcquireHydrateLock(lockKey);
+        if (lockHandle.isEmpty()) {
             return TrafficBalanceSnapshotHydrateResult.notReady();
         }
 
         try {
             return hydrateAction.hydrate();
         } finally {
-            trafficLuaScriptInfraService.executeLockRelease(lockKey, lockValue);
+            trafficLuaScriptInfraService.releaseHydrateLock(lockHandle.get());
         }
-    }
-
-    /**
-     * 짧은 TTL의 Redis lock을 선점합니다.
-     *
-     * <p>lock value는 해제 시 소유자 확인에 사용되며, Redis 응답이 true일 때만 획득으로 인정합니다.
-     */
-    private boolean tryAcquireHydrateLock(String lockKey, String lockValue) {
-        Boolean acquired = cacheStringRedisTemplate.opsForValue().setIfAbsent(
-                lockKey,
-                lockValue,
-                Duration.ofMillis(TrafficRedisRuntimePolicy.LOCK_TTL_MS)
-        );
-        return Boolean.TRUE.equals(acquired);
     }
 
     /**

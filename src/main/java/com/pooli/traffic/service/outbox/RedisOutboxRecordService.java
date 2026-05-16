@@ -11,6 +11,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.traffic.domain.outbox.OutboxCreateResult;
 import com.pooli.traffic.domain.outbox.OutboxEventType;
 import com.pooli.traffic.domain.outbox.OutboxStatus;
 import com.pooli.traffic.domain.outbox.RedisOutboxRecord;
@@ -37,13 +38,52 @@ public class RedisOutboxRecordService {
      * @return 생성된 Outbox ID
      */
     public long createPending(OutboxEventType eventType, Object payloadObject, String traceId) {
+        OutboxCreateResult result = create(
+                eventType,
+                payloadObject,
+                traceId,
+                OutboxStatus.PENDING
+        );
+        return result.outboxId();
+    }
+
+    /**
+     * 공유풀 기여 복구용 PROCESSING Outbox 레코드를 생성합니다.
+     *
+     * <p>DB unique key 대신 trace_id와 SHARED_POOL_CONTRIBUTION event type 기준으로 기존 접수 레코드를 조회합니다.
+     */
+    public OutboxCreateResult createSharedPoolContributionProcessingIfAbsent(
+            Object payloadObject,
+            String traceId
+    ) {
+        String normalizedTraceId = normalizeRequiredTraceId(traceId);
+        RedisOutboxRecord existingRecord =
+                redisOutboxMapper.selectSharedPoolContributionByTraceId(normalizedTraceId);
+        if (existingRecord != null) {
+            return OutboxCreateResult.duplicate();
+        }
+
+        return create(
+                OutboxEventType.SHARED_POOL_CONTRIBUTION,
+                payloadObject,
+                normalizedTraceId,
+                OutboxStatus.PROCESSING
+        );
+    }
+
+    private OutboxCreateResult create(
+            OutboxEventType eventType,
+            Object payloadObject,
+            String traceId,
+            OutboxStatus initialStatus
+    ) {
         String normalizedTraceId = normalizeRequiredTraceId(traceId);
         String payloadJson = toJson(payloadObject);
         RedisOutboxRecord record = RedisOutboxRecord.builder()
                 .eventType(eventType)
                 .payload(payloadJson)
                 .traceId(normalizedTraceId)
-                .status(OutboxStatus.PENDING)
+                .status(initialStatus)
                 .retryCount(0)
                 .build();
 
@@ -51,7 +91,7 @@ public class RedisOutboxRecordService {
         if (record.getId() == null) {
             throw new ApplicationException(CommonErrorCode.DATABASE_ERROR, "Outbox ID 생성에 실패했습니다.");
         }
-        return record.getId();
+        return OutboxCreateResult.created(record.getId());
     }
 
     /**
@@ -98,6 +138,13 @@ public class RedisOutboxRecordService {
      */
     public void markFinalFail(long id) {
         redisOutboxMapper.markFinalFail(id);
+    }
+
+    /**
+     * Outbox 레코드를 CANCELED로 전이합니다.
+     */
+    public void markCanceled(long id) {
+        redisOutboxMapper.markCanceled(id);
     }
 
     /**

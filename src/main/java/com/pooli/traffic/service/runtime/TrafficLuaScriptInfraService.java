@@ -2,9 +2,12 @@ package com.pooli.traffic.service.runtime;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
@@ -25,6 +28,7 @@ import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics.FailureKind;
 import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics.RedisTarget;
 import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
+import com.pooli.traffic.domain.TrafficSharedPoolContributionLuaResult;
 import com.pooli.traffic.domain.dto.response.TrafficLuaDeductResDto;
 import com.pooli.traffic.domain.enums.TrafficLuaScriptType;
 
@@ -123,14 +127,146 @@ public class TrafficLuaScriptInfraService {
     /**
      * 락 해제 Lua 스크립트를 실행합니다.
      */
-    public boolean executeLockRelease(String lockKey, String traceId) {
+    public boolean executeLockRelease(String lockKey, String lockOwner) {
         Long rawResult = executeLongSingle(
                 TrafficLuaScriptType.LOCK_RELEASE,
                 List.of(lockKey),
-                List.of(traceId)
+                List.of(lockOwner)
         );
 
         return rawResult == 1L;
+    }
+
+    /**
+     * hydrate와 Redis-first 기여 흐름이 공유하는 owner 단위 lock을 획득합니다.
+     *
+     * <p>lockKey는 `TrafficRedisKeyFactory`가 만든 고정 Redis key이며,
+     * UUID는 compare-and-delete 해제를 위한 lock value(owner token)로만 저장합니다.
+     */
+    public Optional<HydrateLockHandle> tryAcquireHydrateLock(String lockKey) {
+        if (lockKey == null || lockKey.isBlank()) {
+            return Optional.empty();
+        }
+
+        String lockOwner = "hydrate-lock-owner:" + UUID.randomUUID();
+        try {
+            trafficRedisAvailabilityMetrics.incrementOperation(RedisTarget.CACHE);
+            Boolean acquired = cacheStringRedisTemplate.opsForValue().setIfAbsent(
+                    lockKey,
+                    lockOwner,
+                    Duration.ofMillis(TrafficRedisRuntimePolicy.LOCK_TTL_MS)
+            );
+            if (!Boolean.TRUE.equals(acquired)) {
+                return Optional.empty();
+            }
+            return Optional.of(new HydrateLockHandle(lockKey, lockOwner));
+        } catch (DataAccessException e) {
+            trafficRedisAvailabilityMetrics.incrementFailure(RedisTarget.CACHE, resolveFailureKind(e));
+            log.error("traffic_hydrate_lock_acquire_failed lockKey={}", lockKey, e);
+            throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);
+        }
+    }
+
+    /**
+     * 개인/공유 hydrate lock을 모두 획득합니다. 일부 획득 후 실패하거나 예외가 발생하면 이미 잡은 lock을 즉시 해제합니다.
+     */
+    public Optional<HydrateLockPair> tryAcquireHydrateLocks(String individualLockKey, String sharedLockKey) {
+        Optional<HydrateLockHandle> individualLock = tryAcquireHydrateLock(individualLockKey);
+        if (individualLock.isEmpty()) {
+            return Optional.empty();
+        }
+
+        try {
+            Optional<HydrateLockHandle> sharedLock = tryAcquireHydrateLock(sharedLockKey);
+            if (sharedLock.isEmpty()) {
+                releaseHydrateLock(individualLock.get());
+                return Optional.empty();
+            }
+
+            return Optional.of(new HydrateLockPair(individualLock.get(), sharedLock.get()));
+        } catch (RuntimeException e) {
+            try {
+                releaseHydrateLock(individualLock.get());
+            } catch (RuntimeException releaseFailure) {
+                e.addSuppressed(releaseFailure);
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * lock owner 값이 일치할 때만 hydrate lock을 해제합니다.
+     */
+    public boolean releaseHydrateLock(HydrateLockHandle lockHandle) {
+        if (lockHandle == null) {
+            return false;
+        }
+        return executeLockRelease(lockHandle.lockKey(), lockHandle.lockOwner());
+    }
+
+    /**
+     * 개인/공유 hydrate lock pair를 해제합니다.
+     */
+    public void releaseHydrateLocks(HydrateLockPair lockPair) {
+        if (lockPair == null) {
+            return;
+        }
+        releaseHydrateLock(lockPair.individualLock());
+        releaseHydrateLock(lockPair.sharedLock());
+    }
+
+    /**
+     * 공유풀 기여 정식 Redis 적용 Lua를 실행합니다.
+     */
+    public TrafficSharedPoolContributionLuaResult executeSharedPoolContributionApply(
+            String metadataKey,
+            String individualBalanceKey,
+            String sharedBalanceKey,
+            String traceId,
+            long amount,
+            boolean individualUnlimited
+    ) {
+        String rawJson = executeStringSingle(
+                TrafficLuaScriptType.SHARED_POOL_CONTRIBUTION_APPLY,
+                List.of(metadataKey, individualBalanceKey, sharedBalanceKey),
+                List.of(traceId, String.valueOf(amount), individualUnlimited ? "1" : "0")
+        );
+        return parseSharedPoolContributionResult(rawJson, TrafficLuaScriptType.SHARED_POOL_CONTRIBUTION_APPLY);
+    }
+
+    /**
+     * 공유풀 기여 outbox 복구 Lua를 실행합니다.
+     */
+    public TrafficSharedPoolContributionLuaResult executeSharedPoolContributionRecover(
+            String metadataKey,
+            String individualBalanceKey,
+            String sharedBalanceKey,
+            boolean individualUnlimited
+    ) {
+        String rawJson = executeStringSingle(
+                TrafficLuaScriptType.SHARED_POOL_CONTRIBUTION_RECOVER,
+                List.of(metadataKey, individualBalanceKey, sharedBalanceKey),
+                List.of(individualUnlimited ? "1" : "0")
+        );
+        return parseSharedPoolContributionResult(rawJson, TrafficLuaScriptType.SHARED_POOL_CONTRIBUTION_RECOVER);
+    }
+
+    /**
+     * 공유풀 기여 metadata를 삭제하고 hydrate lock을 owner 검증 후 해제합니다.
+     */
+    public long executeSharedPoolContributionCleanup(
+            String metadataKey,
+            HydrateLockPair lockPair
+    ) {
+        if (lockPair == null) {
+            return 0L;
+        }
+        Long rawResult = executeLongSingle(
+                TrafficLuaScriptType.SHARED_POOL_CONTRIBUTION_CLEANUP,
+                List.of(metadataKey, lockPair.individualLock().lockKey(), lockPair.sharedLock().lockKey()),
+                List.of(lockPair.individualLock().lockOwner(), lockPair.sharedLock().lockOwner())
+        );
+        return rawResult == null ? 0L : rawResult;
     }
 
     /**
@@ -371,11 +507,19 @@ public class TrafficLuaScriptInfraService {
                 redisScript.setResultType(String.class);
                 stringScriptRegistry.put(scriptType, redisScript);
             }
+            case SHARED_POOL_CONTRIBUTION_APPLY,
+                 SHARED_POOL_CONTRIBUTION_RECOVER -> {
+                DefaultRedisScript<String> redisScript = new DefaultRedisScript<>();
+                redisScript.setScriptText(scriptText);
+                redisScript.setResultType(String.class);
+                stringScriptRegistry.put(scriptType, redisScript);
+            }
             case HYDRATE_INDIVIDUAL_SNAPSHOT,
                  HYDRATE_SHARED_SNAPSHOT,
                  LOCK_RELEASE,
                  IN_FLIGHT_CREATE_IF_ABSENT,
-                 IN_FLIGHT_INCREMENT_RETRY_WITH_INIT -> {
+                 IN_FLIGHT_INCREMENT_RETRY_WITH_INIT,
+                 SHARED_POOL_CONTRIBUTION_CLEANUP -> {
                 DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(Long.class);
@@ -422,6 +566,50 @@ public class TrafficLuaScriptInfraService {
                     "Failed to load Lua script text. script=" + scriptType.getScriptName()
             );
         }
+    }
+
+    /**
+     * 공유풀 기여 Lua 결과 JSON을 파싱하고 유효성을 검증합니다.
+     */
+    private TrafficSharedPoolContributionLuaResult parseSharedPoolContributionResult(
+            String rawJson,
+            TrafficLuaScriptType scriptType
+    ) {
+        if (rawJson == null || rawJson.isBlank()) {
+            throw new ApplicationException(
+                    CommonErrorCode.INTERNAL_SERVER_ERROR,
+                    "Lua shared pool contribution result is empty. script=" + scriptType.getScriptName()
+            );
+        }
+
+        try {
+            TrafficSharedPoolContributionLuaResult parsedResult =
+                    objectMapper.readValue(rawJson, TrafficSharedPoolContributionLuaResult.class);
+            if (parsedResult.getStatus() == null || parsedResult.getStatus().isBlank()) {
+                throw new ApplicationException(
+                        CommonErrorCode.INTERNAL_SERVER_ERROR,
+                        "Lua shared pool contribution status is missing. script=" + scriptType.getScriptName()
+                );
+            }
+            return parsedResult;
+        } catch (JsonProcessingException e) {
+            throw new ApplicationException(
+                    CommonErrorCode.INTERNAL_SERVER_ERROR,
+                    "Failed to parse Lua shared pool contribution JSON result. script=" + scriptType.getScriptName()
+            );
+        }
+    }
+
+    /**
+     * 획득한 hydrate lock의 Redis key와 해제 검증용 owner token입니다.
+     */
+    public record HydrateLockHandle(String lockKey, String lockOwner) {
+    }
+
+    /**
+     * 공유풀 기여처럼 개인/공유 owner lock을 동시에 잡아야 하는 흐름에서 사용하는 lock 묶음입니다.
+     */
+    public record HydrateLockPair(HydrateLockHandle individualLock, HydrateLockHandle sharedLock) {
     }
 
 }

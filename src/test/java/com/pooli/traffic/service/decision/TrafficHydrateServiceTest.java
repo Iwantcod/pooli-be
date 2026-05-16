@@ -2,15 +2,13 @@ package com.pooli.traffic.service.decision;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,8 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 
 import com.pooli.monitoring.metrics.TrafficHydrateMetrics;
 import com.pooli.traffic.domain.TrafficDeductExecutionContext;
@@ -39,12 +35,6 @@ import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficHydrateServiceTest {
-
-    @Mock
-    private StringRedisTemplate cacheStringRedisTemplate;
-
-    @Mock
-    private ValueOperations<String, String> valueOperations;
 
     @Mock
     private TrafficDeductLuaExecutor trafficDeductLuaExecutor;
@@ -80,8 +70,7 @@ class TrafficHydrateServiceTest {
                         trafficRedisKeyFactory,
                         trafficRedisRuntimePolicy,
                         trafficRemainingBalanceCacheService,
-                        trafficLuaScriptInfraService,
-                        cacheStringRedisTemplate
+                        trafficLuaScriptInfraService
                 );
         service = new TrafficHydrateService(
                 trafficDeductLuaExecutor,
@@ -472,7 +461,7 @@ class TrafficHydrateServiceTest {
     }
 
     private void stubHydrateLockAcquired(String lockKey) {
-        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.setIfAbsent(eq(lockKey), anyString(), any(Duration.class))).thenReturn(true);
+        when(trafficLuaScriptInfraService.tryAcquireHydrateLock(lockKey))
+                .thenReturn(Optional.of(new TrafficLuaScriptInfraService.HydrateLockHandle(lockKey, "owner")));
     }
 }

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.Map;
 
@@ -20,8 +21,11 @@ import org.slf4j.MDC;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pooli.traffic.domain.outbox.OutboxCreateResult;
 import com.pooli.traffic.domain.outbox.OutboxEventType;
+import com.pooli.traffic.domain.outbox.OutboxStatus;
 import com.pooli.traffic.domain.outbox.RedisOutboxRecord;
+import com.pooli.traffic.domain.outbox.payload.SharedPoolContributionOutboxPayload;
 import com.pooli.traffic.mapper.RedisOutboxMapper;
 
 @ExtendWith(MockitoExtension.class)
@@ -96,5 +100,67 @@ class RedisOutboxRecordServiceTest {
         );
 
         assertEquals(202L, outboxId);
+    }
+
+    @Test
+    @DisplayName("공유풀 기여 Outbox는 PROCESSING 상태로 생성한다")
+    void createsSharedPoolContributionProcessingOutbox() {
+        SharedPoolContributionOutboxPayload payload = SharedPoolContributionOutboxPayload.builder()
+                .lineId(11L)
+                .familyId(22L)
+                .amount(100L)
+                .individualUnlimited(false)
+                .targetMonth("202605")
+                .usageDate("2026-05-16")
+                .build();
+        when(redisOutboxMapper.selectSharedPoolContributionByTraceId("trace-contribution-001"))
+                .thenReturn(null);
+        doAnswer(invocation -> {
+            RedisOutboxRecord record = invocation.getArgument(0);
+            assertEquals(OutboxEventType.SHARED_POOL_CONTRIBUTION, record.getEventType());
+            assertEquals(OutboxStatus.PROCESSING, record.getStatus());
+            assertEquals("trace-contribution-001", record.getTraceId());
+            ReflectionTestUtils.setField(record, "id", 303L);
+            return 1;
+        }).when(redisOutboxMapper).insert(any(RedisOutboxRecord.class));
+
+        OutboxCreateResult result = redisOutboxRecordService.createSharedPoolContributionProcessingIfAbsent(
+                payload,
+                "trace-contribution-001"
+        );
+
+        assertEquals(true, result.created());
+        assertEquals(303L, result.outboxId());
+        verify(redisOutboxMapper).selectSharedPoolContributionByTraceId("trace-contribution-001");
+    }
+
+    @Test
+    @DisplayName("공유풀 기여 Outbox 기존 접수 레코드가 있으면 insert 없이 duplicate 결과를 반환한다")
+    void returnsDuplicateWhenSharedPoolContributionOutboxExists() {
+        SharedPoolContributionOutboxPayload payload = SharedPoolContributionOutboxPayload.builder()
+                .lineId(11L)
+                .familyId(22L)
+                .amount(100L)
+                .individualUnlimited(false)
+                .targetMonth("202605")
+                .usageDate("2026-05-16")
+                .build();
+        when(redisOutboxMapper.selectSharedPoolContributionByTraceId("trace-contribution-001"))
+                .thenReturn(RedisOutboxRecord.builder()
+                        .id(303L)
+                        .eventType(OutboxEventType.SHARED_POOL_CONTRIBUTION)
+                        .traceId("trace-contribution-001")
+                        .status(OutboxStatus.PROCESSING)
+                        .build());
+
+        OutboxCreateResult result = redisOutboxRecordService.createSharedPoolContributionProcessingIfAbsent(
+                payload,
+                "trace-contribution-001"
+        );
+
+        assertEquals(false, result.created());
+        assertEquals(null, result.outboxId());
+        verify(redisOutboxMapper).selectSharedPoolContributionByTraceId("trace-contribution-001");
+        verify(redisOutboxMapper, never()).insert(any(RedisOutboxRecord.class));
     }
 }

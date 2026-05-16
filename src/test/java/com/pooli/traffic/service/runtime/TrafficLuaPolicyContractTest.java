@@ -30,6 +30,12 @@ class TrafficLuaPolicyContractTest {
             Path.of("src/main/resources/lua/traffic/hydrate_individual_snapshot.lua");
     private static final Path HYDRATE_SHARED_SNAPSHOT_SCRIPT =
             Path.of("src/main/resources/lua/traffic/hydrate_shared_snapshot.lua");
+    private static final Path SHARED_POOL_CONTRIBUTION_APPLY_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/shared_pool_contribution_apply.lua");
+    private static final Path SHARED_POOL_CONTRIBUTION_RECOVER_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/shared_pool_contribution_recover.lua");
+    private static final Path SHARED_POOL_CONTRIBUTION_CLEANUP_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/shared_pool_contribution_cleanup.lua");
     private static final Path LUA_SCRIPT_TYPE_SOURCE =
             Path.of("src/main/java/com/pooli/traffic/domain/enums/TrafficLuaScriptType.java");
     private static final Path LUA_RESOURCE_ROOT =
@@ -58,6 +64,12 @@ class TrafficLuaPolicyContractTest {
         assertTrue(enumSource.contains("\"hydrate_individual_snapshot\""));
         assertTrue(enumSource.contains("\"lua/traffic/hydrate_individual_snapshot.lua\""));
         assertTrue(enumSource.contains("HYDRATE_SHARED_SNAPSHOT(\"hydrate_shared_snapshot\", \"lua/traffic/hydrate_shared_snapshot.lua\")"));
+        assertTrue(enumSource.contains("SHARED_POOL_CONTRIBUTION_APPLY("));
+        assertTrue(enumSource.contains("\"lua/traffic/shared_pool_contribution_apply.lua\""));
+        assertTrue(enumSource.contains("SHARED_POOL_CONTRIBUTION_RECOVER("));
+        assertTrue(enumSource.contains("\"lua/traffic/shared_pool_contribution_recover.lua\""));
+        assertTrue(enumSource.contains("SHARED_POOL_CONTRIBUTION_CLEANUP("));
+        assertTrue(enumSource.contains("\"lua/traffic/shared_pool_contribution_cleanup.lua\""));
         assertTrue(!enumSource.contains("DEDUCT_INDIVIDUAL"));
         assertTrue(!enumSource.contains("DEDUCT_SHARED"));
     }
@@ -170,6 +182,54 @@ class TrafficLuaPolicyContractTest {
                 "local individual_unlimited = individual_amount == -1",
                 "local indiv_deducted = individual_unlimited and pool_target or math.min(individual_amount, pool_target)",
                 "if indiv_deducted > 0 and not individual_unlimited then"
+        );
+    }
+
+    @Test
+    @DisplayName("공유풀 기여 Lua는 metadata applied flag 기준으로 중복 Redis 변경을 막는다")
+    void sharedPoolContributionLuaUsesMetadataAppliedFlags() throws IOException {
+        String applyScript = Files.readString(SHARED_POOL_CONTRIBUTION_APPLY_SCRIPT, StandardCharsets.UTF_8);
+        String recoverScript = Files.readString(SHARED_POOL_CONTRIBUTION_RECOVER_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                applyScript,
+                "local metadata_exists = redis.call(\"EXISTS\", metadata_key) == 1",
+                "existing_trace_id ~= trace_id",
+                "redis.call(",
+                "\"HSET\",",
+                "metadata_key,",
+                "\"trace_id\", trace_id,",
+                "\"amount\", ARGV[2],",
+                "\"individual_applied\", \"0\",",
+                "\"shared_applied\", \"0\"",
+                "if individual_unlimited then",
+                "redis.call(\"HSET\", metadata_key, \"individual_applied\", \"1\")",
+                "elseif individual_applied == \"0\" and redis.call(\"EXISTS\", individual_key) == 1 then",
+                "redis.call(\"HINCRBY\", individual_key, \"amount\", -amount)",
+                "redis.call(\"HSET\", metadata_key, \"individual_applied\", \"1\")",
+                "if shared_applied == \"0\" and redis.call(\"EXISTS\", shared_key) == 1 then",
+                "redis.call(\"HINCRBY\", shared_key, \"amount\", amount)",
+                "redis.call(\"HSET\", metadata_key, \"shared_applied\", \"1\")"
+        );
+        assertTrue(applyScript.contains("return as_json(\"INSUFFICIENT_INDIVIDUAL\", 0, 0)"));
+        assertTrue(recoverScript.contains("return as_json(\"METADATA_MISSING\", 0, 0)"));
+        assertTrue(recoverScript.contains("local amount = tonumber(redis.call(\"HGET\", metadata_key, \"amount\"))"));
+        assertTrue(recoverScript.contains("if individual_applied == \"0\""));
+        assertTrue(recoverScript.contains("if shared_applied == \"0\""));
+    }
+
+    @Test
+    @DisplayName("공유풀 기여 cleanup Lua는 owner 값이 일치할 때만 hydrate lock을 해제한다")
+    void sharedPoolContributionCleanupReleasesOwnedLocksOnly() throws IOException {
+        String cleanupScript = Files.readString(SHARED_POOL_CONTRIBUTION_CLEANUP_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                cleanupScript,
+                "deleted_count = deleted_count + redis.call(\"DEL\", KEYS[1])",
+                "if redis.call(\"GET\", KEYS[2]) == ARGV[1] then",
+                "deleted_count = deleted_count + redis.call(\"DEL\", KEYS[2])",
+                "if redis.call(\"GET\", KEYS[3]) == ARGV[2] then",
+                "deleted_count = deleted_count + redis.call(\"DEL\", KEYS[3])"
         );
     }
 
