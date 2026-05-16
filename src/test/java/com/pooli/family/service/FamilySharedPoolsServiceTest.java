@@ -48,7 +48,7 @@ import com.pooli.notification.domain.enums.AlarmCode;
 import com.pooli.notification.domain.enums.AlarmType;
 import com.pooli.notification.service.AlarmHistoryService;
 import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
-import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
+import com.pooli.traffic.service.runtime.TrafficRemainingBalanceCacheService;
 import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
@@ -72,7 +72,10 @@ class FamilySharedPoolsServiceTest {
     private ObjectProvider<TrafficBalanceStateWriteThroughService> trafficBalanceStateWriteThroughServiceProvider;
 
     @Mock
-    private TrafficBalanceStateWriteThroughService trafficBalanceStateWriteThroughService;
+    private ObjectProvider<FamilySharedPoolContributionRedisFirstService> contributionRedisFirstServiceProvider;
+
+    @Mock
+    private FamilySharedPoolContributionRedisFirstService contributionRedisFirstService;
 
     @Mock
     private TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
@@ -84,7 +87,7 @@ class FamilySharedPoolsServiceTest {
     private ObjectProvider<TrafficRedisRuntimePolicy> trafficRedisRuntimePolicyProvider;
 
     @Mock
-    private ObjectProvider<TrafficQuotaCacheService> trafficQuotaCacheServiceProvider;
+    private ObjectProvider<TrafficRemainingBalanceCacheService> trafficRemainingBalanceCacheServiceProvider;
 
     @Mock
     private TrafficRedisKeyFactory trafficRedisKeyFactory;
@@ -93,7 +96,7 @@ class FamilySharedPoolsServiceTest {
     private TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
     @Mock
-    private TrafficQuotaCacheService trafficQuotaCacheService;
+    private TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
 
     private FamilySharedPoolsService service;
 
@@ -105,10 +108,11 @@ class FamilySharedPoolsServiceTest {
                 alarmHistoryService,
                 transferLogRepository,
                 trafficBalanceStateWriteThroughServiceProvider,
+                contributionRedisFirstServiceProvider,
                 trafficRemainingBalanceQueryService,
                 trafficRedisKeyFactoryProvider,
                 trafficRedisRuntimePolicyProvider,
-                trafficQuotaCacheServiceProvider
+                trafficRemainingBalanceCacheServiceProvider
         );
     }
 
@@ -143,7 +147,7 @@ class FamilySharedPoolsServiceTest {
                 .build();
 
         when(sharedPoolMapper.selectMySharedPoolStatus(101L)).thenReturn(domain);
-        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(101L, 8_000_000L))
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(101L))
                 .thenReturn(8_500_000L);
 
         SharedPoolMyStatusResDto result = service.getMySharedPoolStatus(101L);
@@ -175,7 +179,7 @@ class FamilySharedPoolsServiceTest {
                 .build();
 
         when(sharedPoolMapper.selectFamilySharedPool(1L)).thenReturn(domain);
-        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 800_000L)).thenReturn(950_000L);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(950_000L);
 
         FamilySharedPoolResDto result = service.getFamilySharedPool(1L);
 
@@ -184,6 +188,25 @@ class FamilySharedPoolsServiceTest {
         assertThat(result.getPoolBaseData()).isEqualTo(0L);
         assertThat(result.getMonthlyUsageAmount()).isEqualTo(0L);
         assertThat(result.getMonthlyContributionAmount()).isEqualTo(0L);
+    }
+
+    @Test
+    @DisplayName("getFamilySharedPool returns null remaining without DB fallback when Redis is unavailable")
+    void getFamilySharedPool_whenRedisUnavailable_returnsNullRemaining() {
+        SharedPoolDomain domain = SharedPoolDomain.builder()
+                .poolTotalData(1_000_000L)
+                .poolRemainingData(800_000L)
+                .poolBaseData(0L)
+                .monthlyUsageAmount(0L)
+                .monthlyContributionAmount(0L)
+                .build();
+
+        when(sharedPoolMapper.selectFamilySharedPool(1L)).thenReturn(domain);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(null);
+
+        FamilySharedPoolResDto result = service.getFamilySharedPool(1L);
+
+        assertThat(result.getPoolRemainingData()).isNull();
     }
 
     @Test
@@ -204,19 +227,34 @@ class FamilySharedPoolsServiceTest {
         when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
                 .thenReturn(0L);
         when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L, 201L));
-        when(trafficBalanceStateWriteThroughServiceProvider.getIfAvailable())
-                .thenReturn(trafficBalanceStateWriteThroughService);
+        when(contributionRedisFirstServiceProvider.getIfAvailable()).thenReturn(contributionRedisFirstService);
+        when(contributionRedisFirstService.submit(101L, 1L, 500_000L, false)).thenReturn(true);
 
         service.contributeToSharedPool(101L, 1L, 500_000L);
 
-        verify(sharedPoolMapper).updateLineRemainingData(101L, 500_000L);
-        verify(sharedPoolMapper).updateFamilyPoolData(1L, 500_000L);
-        verify(sharedPoolMapper).insertContribution(1L, 101L, 500_000L);
-        verify(trafficBalanceStateWriteThroughService).markSharedBalanceNotEmpty(1L);
-        verify(trafficBalanceStateWriteThroughService).markSharedMetaContribution(1L, 500_000L);
+        verify(contributionRedisFirstService).submit(101L, 1L, 500_000L, false);
+        verify(sharedPoolMapper, never()).updateLineRemainingData(anyLong(), anyLong());
+        verify(sharedPoolMapper, never()).updateFamilyPoolData(anyLong(), anyLong());
+        verify(sharedPoolMapper, never()).insertContribution(anyLong(), anyLong(), anyLong(), any(LocalDate.class));
         verify(transferLogRepository).save(any(SharedPoolTransferLog.class));
         verify(alarmHistoryService).createAlarm(eq(201L), eq(AlarmCode.FAMILY), eq(AlarmType.SHARED_POOL_CONTRIBUTION));
         verify(alarmHistoryService, never()).createAlarm(eq(101L), any(), any());
+    }
+
+    @Test
+    @DisplayName("contributeToSharedPool keeps request successful when Redis-first processing is deferred")
+    void contributeToSharedPool_deferred() {
+        when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
+        when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(0L);
+        when(contributionRedisFirstServiceProvider.getIfAvailable()).thenReturn(contributionRedisFirstService);
+        when(contributionRedisFirstService.submit(101L, 1L, 500_000L, false)).thenReturn(false);
+
+        service.contributeToSharedPool(101L, 1L, 500_000L);
+
+        verify(contributionRedisFirstService).submit(101L, 1L, 500_000L, false);
+        verify(transferLogRepository, never()).save(any());
+        verify(alarmHistoryService, never()).createAlarm(anyLong(), any(), any());
     }
 
     @Test
@@ -263,9 +301,9 @@ class FamilySharedPoolsServiceTest {
 
         when(sharedPoolMapper.selectSharedPoolDetail(1L, 101L)).thenReturn(domain);
         when(sharedPoolMapper.selectSharedDataLimit(101L)).thenReturn(null);
-        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(101L, 8_000_000L))
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(101L))
                 .thenReturn(8_300_000L);
-        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 800_000L))
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L))
                 .thenReturn(900_000L);
 
         SharedPoolDetailResDto result = service.getSharedPoolDetail(1L, 101L);
@@ -273,6 +311,27 @@ class FamilySharedPoolsServiceTest {
         assertThat(result.getRemainingDataAmount()).isEqualTo(8_300_000L);
         assertThat(result.getSharedPoolTotalAmount()).isEqualTo(1_000_000L);
         assertThat(result.getSharedPoolRemainingAmount()).isEqualTo(900_000L);
+    }
+
+    @Test
+    @DisplayName("getSharedPoolDetail returns null remaining without DB fallback when Redis is unavailable")
+    void getSharedPoolDetail_whenRedisUnavailable_returnsNullRemaining() {
+        SharedPoolDomain domain = SharedPoolDomain.builder()
+                .basicDataAmount(10_000_000L)
+                .remainingData(8_000_000L)
+                .poolTotalData(1_000_000L)
+                .poolRemainingData(800_000L)
+                .build();
+
+        when(sharedPoolMapper.selectSharedPoolDetail(1L, 101L)).thenReturn(domain);
+        when(sharedPoolMapper.selectSharedDataLimit(101L)).thenReturn(null);
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(101L)).thenReturn(null);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(null);
+
+        SharedPoolDetailResDto result = service.getSharedPoolDetail(1L, 101L);
+
+        assertThat(result.getRemainingDataAmount()).isNull();
+        assertThat(result.getSharedPoolRemainingAmount()).isNull();
     }
 
     @Test
@@ -287,9 +346,9 @@ class FamilySharedPoolsServiceTest {
 
         when(sharedPoolMapper.selectSharedPoolDetail(1L, 101L)).thenReturn(domain);
         when(sharedPoolMapper.selectSharedDataLimit(101L)).thenReturn(500_000L);
-        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(101L, 8_000_000L))
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(101L))
                 .thenReturn(8_200_000L);
-        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 800_000L))
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L))
                 .thenReturn(650_000L);
 
         SharedPoolDetailResDto result = service.getSharedPoolDetail(1L, 101L);
@@ -311,9 +370,9 @@ class FamilySharedPoolsServiceTest {
 
         when(sharedPoolMapper.selectSharedPoolDetail(1L, 101L)).thenReturn(domain);
         when(sharedPoolMapper.selectSharedDataLimit(101L)).thenReturn(-1L);
-        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(101L, 8_000_000L))
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(101L))
                 .thenReturn(8_200_000L);
-        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 800_000L))
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L))
                 .thenReturn(650_000L);
 
         SharedPoolDetailResDto result = service.getSharedPoolDetail(1L, 101L);
@@ -344,7 +403,7 @@ class FamilySharedPoolsServiceTest {
                 .build();
 
         when(sharedPoolMapper.selectSharedPoolMain(1L)).thenReturn(domain);
-        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 1_200_000L))
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L))
                 .thenReturn(1_350_000L);
 
         SharedPoolMainResDto result = service.getSharedPoolMain(1L);
@@ -398,13 +457,13 @@ class FamilySharedPoolsServiceTest {
         ));
         when(trafficRedisKeyFactoryProvider.getIfAvailable()).thenReturn(trafficRedisKeyFactory);
         when(trafficRedisRuntimePolicyProvider.getIfAvailable()).thenReturn(trafficRedisRuntimePolicy);
-        when(trafficQuotaCacheServiceProvider.getIfAvailable()).thenReturn(trafficQuotaCacheService);
+        when(trafficRemainingBalanceCacheServiceProvider.getIfAvailable()).thenReturn(trafficRemainingBalanceCacheService);
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(zoneId);
-        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 2_000L)).thenReturn(2_000L);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(2_000L);
         when(trafficRedisKeyFactory.monthlySharedUsageKey(101L, targetMonth)).thenReturn("monthly:101");
         when(trafficRedisKeyFactory.monthlySharedUsageKey(201L, targetMonth)).thenReturn("monthly:201");
-        when(trafficQuotaCacheService.readValueOrDefault("monthly:101", 0L)).thenReturn(5_000L);
-        when(trafficQuotaCacheService.readValueOrDefault("monthly:201", 0L)).thenReturn(1_000L);
+        when(trafficRemainingBalanceCacheService.readValueOrDefault("monthly:101", 0L)).thenReturn(5_000L);
+        when(trafficRemainingBalanceCacheService.readValueOrDefault("monthly:201", 0L)).thenReturn(1_000L);
 
         SharedPoolMonthlyUsageResDto result = service.getFamilyMonthlySharedUsageTotal(principal);
 
@@ -437,7 +496,7 @@ class FamilySharedPoolsServiceTest {
                         .build()
         ));
         when(trafficRedisKeyFactoryProvider.getIfAvailable()).thenReturn(null);
-        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 8_000L)).thenReturn(8_000L);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(8_000L);
 
         SharedPoolMonthlyUsageResDto result = service.getFamilyMonthlySharedUsageTotal(principal);
 
@@ -456,7 +515,7 @@ class FamilySharedPoolsServiceTest {
                 .build();
 
         when(sharedPoolMapper.selectSharedDataThreshold(1L)).thenReturn(domain);
-        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L, 300_000L))
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L))
                 .thenReturn(350_000L);
 
         SharedDataThresholdResDto result = service.getSharedDataThreshold(1L);
@@ -464,6 +523,25 @@ class FamilySharedPoolsServiceTest {
         assertThat(result.getIsThresholdActive()).isTrue();
         assertThat(result.getFamilyThreshold()).isEqualTo(200_000L);
         assertThat(result.getMinThreshold()).isEqualTo(150_000L);
+        assertThat(result.getMaxThreshold()).isEqualTo(500_000L);
+    }
+
+    @Test
+    @DisplayName("getSharedDataThreshold returns null min without DB fallback when Redis remaining is unavailable")
+    void getSharedDataThreshold_whenRedisUnavailable_returnsNullMinThreshold() {
+        SharedPoolDomain domain = SharedPoolDomain.builder()
+                .isThresholdActive(true)
+                .familyThreshold(200_000L)
+                .poolTotalData(500_000L)
+                .poolRemainingData(300_000L)
+                .build();
+
+        when(sharedPoolMapper.selectSharedDataThreshold(1L)).thenReturn(domain);
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(null);
+
+        SharedDataThresholdResDto result = service.getSharedDataThreshold(1L);
+
+        assertThat(result.getMinThreshold()).isNull();
         assertThat(result.getMaxThreshold()).isEqualTo(500_000L);
     }
 
@@ -577,6 +655,8 @@ class FamilySharedPoolsServiceTest {
             when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
             when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
                     .thenReturn(0L);
+            when(contributionRedisFirstServiceProvider.getIfAvailable()).thenReturn(contributionRedisFirstService);
+            when(contributionRedisFirstService.submit(101L, 1L, 500_000L, false)).thenReturn(true);
             when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L));
 
             service.contributeToSharedPool(101L, 1L, 500_000L);
@@ -590,6 +670,8 @@ class FamilySharedPoolsServiceTest {
             when(sharedPoolMapper.selectRemainingData(101L)).thenReturn(8_000_000L);
             when(sharedPoolMapper.selectMonthlyContributionByFamilyId(eq(101L), any(LocalDate.class), any(LocalDate.class)))
                     .thenReturn(0L);
+            when(contributionRedisFirstServiceProvider.getIfAvailable()).thenReturn(contributionRedisFirstService);
+            when(contributionRedisFirstService.submit(101L, 1L, 500_000L, false)).thenReturn(true);
             when(sharedPoolMapper.selectLineIdsByFamilyId(1L)).thenReturn(List.of(101L, 201L, 301L));
 
             service.contributeToSharedPool(101L, 1L, 500_000L);

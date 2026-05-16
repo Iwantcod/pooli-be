@@ -11,10 +11,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 공유풀 상태 변경을 Redis 캐시에 즉시 반영하는 write-through 서비스입니다.
+ * Family DB 변경 후 family meta Redis 캐시에 필요한 write-through를 수행합니다.
  *
- * <p>현재는 공유풀 충전 시점의 is_empty 복구와, 실제 공유풀 사용량에 대한 family meta 잔량 차감을 제공합니다.
- * 트랜잭션이 존재하면 커밋 성공 이후에 반영해 DB/Redis 순서를 보장합니다.
+ * <p>실시간 잔량 차감은 통합 Lua가 remaining hash에서 처리합니다. 이 서비스는 기여/임계치 변경처럼
+ * Family 도메인에서 발생한 메타데이터 변경만 commit 이후 캐시에 반영합니다.
  */
 @Slf4j
 @Service
@@ -22,43 +22,51 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficBalanceStateWriteThroughService {
 
+    private final TrafficFamilyMetaCacheService trafficFamilyMetaCacheService;
+    private final TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
-    private final TrafficQuotaCacheService trafficQuotaCacheService;
-    private final TrafficFamilyMetaCacheService trafficFamilyMetaCacheService;
 
     /**
-     * 공유풀 충전 성공 후 해당 월 잔량 키의 DB 고갈 플래그(is_empty)를 0으로 복구합니다.
+     * 공유풀 기여 성공 후 현재월 Redis 잔량 snapshot이 있는 경우에만 개인/공유 amount를 보정합니다.
+     *
+     * <p>snapshot key가 없으면 RDB source 변경만 유지하고 다음 조회 hydrate가 최신 source를 적재합니다.
+     * write-through 실행 중 Redis 오류가 나면 호출자에게 전파해 Redis-Only 화면 정합성 문제를 숨기지 않습니다.
      */
-    public void markSharedBalanceNotEmpty(long familyId) {
-        if (familyId <= 0) {
+    public void markSharedPoolContribution(
+            long lineId,
+            long familyId,
+            long amount,
+            boolean individualUnlimited
+    ) {
+        if (lineId <= 0 || familyId <= 0 || amount <= 0) {
             return;
         }
 
-        YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
-        String balanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(familyId, targetMonth);
-        executeAfterCommit(
-                "shared_balance_db_empty_reset familyId=" + familyId + " key=" + balanceKey,
-                () -> trafficQuotaCacheService.writeDbEmptyFlag(balanceKey, false)
-        );
-    }
+        executeAfterCommitStrict(
+                "shared_pool_contribution lineId=" + lineId + " familyId=" + familyId + " amount=" + amount,
+                () -> {
+                    YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+                    if (!individualUnlimited) {
+                        String individualBalanceKey =
+                                trafficRedisKeyFactory.remainingIndivAmountKey(lineId, targetMonth);
+                        trafficRemainingBalanceCacheService.incrementAmountIfPresent(
+                                individualBalanceKey,
+                                -amount
+                        );
+                    }
 
-    /**
-     * 공유풀 기여 성공 후 family meta 캐시의 총량/DB잔량을 함께 증가시킵니다.
-     */
-    public void markSharedMetaContribution(long familyId, long amount) {
-        if (familyId <= 0 || amount <= 0) {
-            return;
-        }
-
-        executeAfterCommit(
-                "shared_meta_contribution familyId=" + familyId + " amount=" + amount,
-                () -> trafficFamilyMetaCacheService.increaseTotalAndDbRemaining(familyId, amount)
+                    String sharedBalanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(familyId, targetMonth);
+                    trafficRemainingBalanceCacheService.incrementAmountIfPresent(sharedBalanceKey, amount);
+                    trafficFamilyMetaCacheService.increasePoolTotal(familyId, amount);
+                }
         );
     }
 
     /**
      * 공유풀 임계치 설정 변경을 family meta 캐시에 반영합니다.
+     *
+     * <p>임계치 변경 역시 Family DB가 기준이므로 commit 이후 캐시를 갱신합니다.
      */
     public void markSharedMetaThresholdUpdated(long familyId, long familyThreshold, boolean thresholdActive) {
         if (familyId <= 0) {
@@ -68,23 +76,6 @@ public class TrafficBalanceStateWriteThroughService {
         executeAfterCommit(
                 "shared_meta_threshold familyId=" + familyId + " threshold=" + familyThreshold,
                 () -> trafficFamilyMetaCacheService.updateThreshold(familyId, familyThreshold, thresholdActive)
-        );
-    }
-
-    /**
-     * 공유풀 실사용량 차감 성공 후 family meta 캐시의 잔량을 감소시킵니다.
-     *
-     * <p>리필 claim은 DB->Redis 버퍼 이동이므로 총 잔량을 바꾸지 않습니다.
-     * 따라서 meta 잔량은 "실제 사용자 차감량" 기준으로만 줄어야 합니다.
-     */
-    public void markSharedMetaConsumed(long familyId, long amount) {
-        if (familyId <= 0 || amount <= 0) {
-            return;
-        }
-
-        executeAfterCommit(
-                "shared_meta_consumed familyId=" + familyId + " amount=" + amount,
-                () -> trafficFamilyMetaCacheService.decreaseDbRemaining(familyId, amount)
         );
     }
 
@@ -99,6 +90,29 @@ public class TrafficBalanceStateWriteThroughService {
                 operation.run();
             } catch (RuntimeException e) {
                 log.error("traffic_balance_state_write_through_failed operation={}", operationName, e);
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    wrappedOperation.run();
+                }
+            });
+            return;
+        }
+
+        wrappedOperation.run();
+    }
+
+    private void executeAfterCommitStrict(String operationName, Runnable operation) {
+        Runnable wrappedOperation = () -> {
+            try {
+                operation.run();
+            } catch (RuntimeException e) {
+                log.error("traffic_balance_state_write_through_failed operation={}", operationName, e);
+                throw e;
             }
         };
 

@@ -176,20 +176,6 @@ public class TrafficRedisKeyFactory {
     /**
       * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
      */
-    public String indivRefillLockKey(long lineId) {
-        return namespaced("indiv_refill_lock:" + lineId);
-    }
-
-    /**
-      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
-     */
-    public String sharedRefillLockKey(long familyId) {
-        return namespaced("shared_refill_lock:" + familyId);
-    }
-
-    /**
-      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
-     */
     public String indivHydrateLockKey(long lineId) {
         return namespaced("indiv_hydrate_lock:" + lineId);
     }
@@ -258,17 +244,6 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
-     * 리필 요청 멱등키를 생성합니다.
-     */
-    public String refillIdempotencyKey(String uuid) {
-        String normalizedUuid = Objects.requireNonNull(uuid, "uuid must not be null").trim();
-        if (normalizedUuid.isEmpty()) {
-            throw new IllegalArgumentException("uuid must not be blank");
-        }
-        return namespaced("refill:idempotency:" + normalizedUuid);
-    }
-
-    /**
      * usage delta replay 멱등 적용 여부를 기록하는 키를 생성합니다.
      */
     public String usageDeltaReplayIdempotencyKey(String traceId, String poolType) {
@@ -283,6 +258,18 @@ public class TrafficRedisKeyFactory {
         }
 
         return namespaced("usage_delta:replay:idempotency:" + normalizedTraceId + ":" + normalizedPoolType);
+    }
+
+    /**
+     * 공유풀 기여 Redis 적용 상태를 추적하는 metadata hash 키입니다.
+     */
+    public String sharedPoolContributionMetadataKey(String traceId) {
+        String normalizedTraceId = Objects.requireNonNull(traceId, "traceId must not be null").trim();
+        if (normalizedTraceId.isEmpty()) {
+            throw new IllegalArgumentException("traceId must not be blank");
+        }
+
+        return namespaced("shared_pool_contribution:metadata:" + normalizedTraceId);
     }
 
     /**

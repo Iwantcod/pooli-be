@@ -1,16 +1,18 @@
 package com.pooli.traffic.service.runtime;
 
 import java.time.YearMonth;
+import java.util.Optional;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+
+import com.pooli.traffic.domain.TrafficBalanceSnapshotHydrateResult;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 가족/개인 조회 API에서 사용할 "실제 잔량(DB + Redis)" 계산 전용 서비스다.
- * traffic 프로필 비활성 환경에서는 Redis 조회를 생략하고 DB 값만 그대로 반환한다.
+ * 가족/개인 조회 API에서 사용할 Redis amount-only 잔량 조회 서비스입니다.
  */
 @Slf4j
 @Service
@@ -19,72 +21,120 @@ public class TrafficRemainingBalanceQueryService {
 
     private final ObjectProvider<TrafficRedisKeyFactory> trafficRedisKeyFactoryProvider;
     private final ObjectProvider<TrafficRedisRuntimePolicy> trafficRedisRuntimePolicyProvider;
-    private final ObjectProvider<TrafficQuotaCacheService> trafficQuotaCacheServiceProvider;
+    private final ObjectProvider<TrafficRemainingBalanceCacheService> trafficRemainingBalanceCacheServiceProvider;
+    private final ObjectProvider<TrafficBalanceSnapshotHydrateService> trafficBalanceSnapshotHydrateServiceProvider;
 
-    public Long resolveIndividualActualRemaining(Long lineId, Long dbRemaining) {
+    /**
+     * 개인 회선의 현재월 Redis amount를 조회합니다.
+     *
+     * <p>Redis amount가 없으면 공용 hydrate 서비스를 호출한 뒤 같은 key를 다시 읽습니다.
+     */
+    public Long resolveIndividualActualRemaining(Long lineId) {
         return resolveActualRemaining(
-                dbRemaining,
                 lineId,
                 (trafficRedisKeyFactory, targetMonth, ownerId) ->
-                        trafficRedisKeyFactory.remainingIndivAmountKey(ownerId, targetMonth)
+                        trafficRedisKeyFactory.remainingIndivAmountKey(ownerId, targetMonth),
+                (hydrateService, targetMonth, ownerId) ->
+                        hydrateService.hydrateIndividualSnapshot(ownerId, targetMonth)
         );
     }
 
-    public Long resolveSharedActualRemaining(Long familyId, Long dbRemaining) {
+    /**
+     * 가족 공유풀의 현재월 Redis amount를 조회합니다.
+     *
+     * <p>개인 잔량과 동일한 amount-only 계약을 사용하되 familyId 기준 key와 hydrate 경로를 선택합니다.
+     */
+    public Long resolveSharedActualRemaining(Long familyId) {
         return resolveActualRemaining(
-                dbRemaining,
                 familyId,
                 (trafficRedisKeyFactory, targetMonth, ownerId) ->
-                        trafficRedisKeyFactory.remainingSharedAmountKey(ownerId, targetMonth)
+                        trafficRedisKeyFactory.remainingSharedAmountKey(ownerId, targetMonth),
+                (hydrateService, targetMonth, ownerId) ->
+                        hydrateService.hydrateSharedSnapshot(ownerId, targetMonth)
         );
     }
 
+    /**
+     * owner 타입별 key 생성/hydrate 전략을 받아 Redis amount-only 조회 흐름을 공통 처리합니다.
+     *
+     * <p>Redis 관련 bean이 없거나 hydrate/재조회가 실패하면 DB fallback 없이 null을 반환합니다.
+     */
     private Long resolveActualRemaining(
-            Long dbRemaining,
             Long ownerId,
-            BalanceKeyResolver balanceKeyResolver
+            BalanceKeyResolver balanceKeyResolver,
+            BalanceHydrator balanceHydrator
     ) {
-        if (dbRemaining == null) {
-            return null;
-        }
-        if (dbRemaining == -1L) {
-            return -1L;
-        }
-
-        long normalizedDbRemaining = Math.max(0L, dbRemaining);
         if (ownerId == null || ownerId <= 0) {
-            return normalizedDbRemaining;
+            return null;
         }
 
         TrafficRedisKeyFactory trafficRedisKeyFactory = trafficRedisKeyFactoryProvider.getIfAvailable();
         TrafficRedisRuntimePolicy trafficRedisRuntimePolicy = trafficRedisRuntimePolicyProvider.getIfAvailable();
-        TrafficQuotaCacheService trafficQuotaCacheService = trafficQuotaCacheServiceProvider.getIfAvailable();
+        TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService = trafficRemainingBalanceCacheServiceProvider.getIfAvailable();
         if (trafficRedisKeyFactory == null
                 || trafficRedisRuntimePolicy == null
-                || trafficQuotaCacheService == null) {
-            return normalizedDbRemaining;
+                || trafficRemainingBalanceCacheService == null) {
+            return null;
         }
 
         YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
         String balanceKey = balanceKeyResolver.resolve(trafficRedisKeyFactory, targetMonth, ownerId);
         try {
-            long redisRemaining = Math.max(0L, trafficQuotaCacheService.readAmountOrDefault(balanceKey, 0L));
-            return safeAdd(normalizedDbRemaining, redisRemaining);
+            Optional<Long> cachedAmount = trafficRemainingBalanceCacheService.readAmount(balanceKey);
+            if (cachedAmount.isPresent()) {
+                return normalizeAmount(cachedAmount.get());
+            }
+
+            TrafficBalanceSnapshotHydrateService hydrateService =
+                    trafficBalanceSnapshotHydrateServiceProvider.getIfAvailable();
+            TrafficBalanceSnapshotHydrateResult hydrateResult = hydrateService == null
+                    ? TrafficBalanceSnapshotHydrateResult.notReady()
+                    : balanceHydrator.hydrate(hydrateService, targetMonth, ownerId);
+            if (!hydrateResult.isHydrated()) {
+                return null;
+            }
+
+            return trafficRemainingBalanceCacheService.readAmount(balanceKey)
+                    .map(this::normalizeAmount)
+                    .orElse(null);
         } catch (RuntimeException e) {
             log.warn("traffic_remaining_balance_query_redis_failed key={} ownerId={}", balanceKey, ownerId, e);
-            return normalizedDbRemaining;
+            return null;
         }
     }
 
-    private long safeAdd(long left, long right) {
-        if (Long.MAX_VALUE - left < right) {
-            return Long.MAX_VALUE;
+    /**
+     * Redis amount 표현을 API 표시 계약에 맞게 정규화합니다.
+     *
+     * <p>음수는 무제한 sentinel `-1`로 통일하고, 0 이상 값은 실제 잔량으로 그대로 반환합니다.
+     */
+    private Long normalizeAmount(Long amount) {
+        if (amount == null) {
+            return null;
         }
-        return left + right;
+        if (amount < 0L) {
+            return -1L;
+        }
+        return amount;
     }
 
     @FunctionalInterface
     private interface BalanceKeyResolver {
+        /**
+         * ownerId와 현재월을 기준으로 개인/공유 잔량 Redis key를 생성합니다.
+         */
         String resolve(TrafficRedisKeyFactory trafficRedisKeyFactory, YearMonth targetMonth, long ownerId);
+    }
+
+    @FunctionalInterface
+    private interface BalanceHydrator {
+        /**
+         * owner 타입에 맞는 공용 snapshot hydrate 메서드를 호출합니다.
+         */
+        TrafficBalanceSnapshotHydrateResult hydrate(
+                TrafficBalanceSnapshotHydrateService hydrateService,
+                YearMonth targetMonth,
+                long ownerId
+        );
     }
 }

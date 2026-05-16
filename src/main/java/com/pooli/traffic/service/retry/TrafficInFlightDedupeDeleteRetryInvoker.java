@@ -65,7 +65,7 @@ public class TrafficInFlightDedupeDeleteRetryInvoker {
         // [0] recover 진입 시점에도 traceId를 RetryContext에 보강해 후속 로그에서 참조 가능하게 합니다.
         rememberTraceId(traceId);
         // [1] 최종 시도 횟수를 확정합니다.
-        int attemptCount = resolveAttemptCount(1);
+        int attemptCount = resolveRecoverAttemptCount(1);
         // [2] 컨텍스트 저장 실패를 우선 사용하고, 없으면 recover 인자로 넘어온 예외를 사용합니다.
         RuntimeException lastFailure = resolveLastFailure();
         RuntimeException failureToReport = lastFailure == null ? exception : lastFailure;
@@ -160,5 +160,13 @@ public class TrafficInFlightDedupeDeleteRetryInvoker {
             return Math.max(1, fallbackAttemptCount);
         }
         return retryContext.getRetryCount() + 1;
+    }
+
+    private int resolveRecoverAttemptCount(int fallbackAttemptCount) {
+        RetryContext retryContext = RetrySynchronizationManager.getContext();
+        if (retryContext == null) {
+            return Math.max(1, fallbackAttemptCount);
+        }
+        return Math.max(1, retryContext.getRetryCount());
     }
 }

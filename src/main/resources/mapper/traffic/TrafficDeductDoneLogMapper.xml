@@ -24,11 +24,15 @@
             line_id,
             family_id,
             app_id,
+            enqueued_at,
             api_total_data,
-            deducted_total_bytes,
+            deducted_individual_bytes,
+            deducted_shared_bytes,
+            deducted_qos_bytes,
             api_remaining_data,
             final_status,
             last_lua_status,
+            failure_reason,
             started_at,
             finished_at,
             latency,
@@ -42,11 +46,15 @@
             #{lineId},
             #{familyId},
             #{appId},
+            #{enqueuedAt},
             #{apiTotalData},
-            #{deductedTotalBytes},
+            #{deductedIndividualBytes},
+            #{deductedSharedBytes},
+            #{deductedQosBytes},
             #{apiRemainingData},
             #{finalStatus},
             #{lastLuaStatus},
+            #{failureReason},
             #{startedAt},
             #{finishedAt},
             #{latency},
@@ -54,50 +62,6 @@
             CURRENT_TIMESTAMP(6),
             0,
             NULL
-        )
-    </insert>
-
-    <insert id="insertNonRetryableFailure"
-            parameterType="com.pooli.traffic.domain.entity.TrafficDeductDoneLog"
-            useGeneratedKeys="true"
-            keyProperty="trafficDeductDoneId"
-            keyColumn="traffic_deduct_done_id">
-        INSERT INTO TRAFFIC_DEDUCT_DONE (
-            trace_id,
-            record_id,
-            line_id,
-            family_id,
-            app_id,
-            api_total_data,
-            deducted_total_bytes,
-            api_remaining_data,
-            final_status,
-            last_lua_status,
-            started_at,
-            finished_at,
-            latency,
-            restore_status,
-            restore_status_updated_at,
-            restore_retry_count,
-            restore_last_error_message
-        ) VALUES (
-            #{traceId},
-            #{recordId},
-            #{lineId},
-            #{familyId},
-            #{appId},
-            #{apiTotalData},
-            #{deductedTotalBytes},
-            #{apiRemainingData},
-            'FAILED',
-            'ERROR',
-            #{startedAt},
-            #{finishedAt},
-            #{latency},
-            'NONE',
-            CURRENT_TIMESTAMP(6),
-            0,
-            #{restoreLastErrorMessage}
         )
     </insert>
 

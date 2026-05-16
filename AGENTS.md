@@ -179,8 +179,9 @@ Use this document as the default style and quality guide for JUnit test structur
 
 For code written by the AI agent:
 
-- Write comments kindly and clearly so maintainers can understand intent and flow quickly.
-- Prioritize comments for non-obvious logic, branching reasons, and important constraints.
+- Prefer code that is simple enough to understand without comments.
+- Use comments kindly and clearly only when they help maintainers understand non-obvious intent, branching reasons, important constraints, or workflow.
+- Do NOT add comments that merely restate obvious code.
 
 ---
 
@@ -188,12 +189,21 @@ For code written by the AI agent:
 
 This section governs how non-trivial tasks are planned and executed.
 
+### 11.0 Think Before Coding
+
+- State assumptions explicitly before implementation.
+- If requirements are unclear, stop, name what is unclear, and ask the user.
+- If multiple valid interpretations exist, present them instead of silently choosing one.
+- If a simpler approach exists, mention it and prefer it unless the user approves a broader scope.
+- Push back when the requested approach appears unnecessarily complex, risky, or misaligned with the stated goal.
+
 ### 11.1 Plan-First Principle
 
 - Non-trivial tasks MUST start in **plan-only mode**.
 - During the planning phase, do NOT implement any code.
 - Break work into the **smallest meaningful milestones**.
 - A plan is a **candidate task list**, not permission to execute all listed steps.
+- For multi-step work, include concrete success criteria for each step, such as `Step -> verify: check`.
 
 ### 11.2 One-Milestone-Per-Turn Rule
 
@@ -207,6 +217,14 @@ This section governs how non-trivial tasks are planned and executed.
 - User approval is required before each milestone execution begins.
 - Unapproved milestones MUST NOT be executed under any circumstance.
 - If a milestone's scope grows during implementation, pause and re-decompose before continuing.
+
+### 11.4 Goal-Driven Execution
+
+- Convert vague requests into verifiable goals before coding.
+- For bug fixes, prefer a test or focused reproduction that fails before the fix and passes after it.
+- For validation changes, include checks for invalid and boundary inputs when practical.
+- For refactors, verify behavior before and after when the project provides suitable tests.
+- Continue the implement/verify loop within the approved milestone until the stated success criteria are met or a blocker is surfaced.
 
 ---
 
@@ -229,6 +247,7 @@ Perform a brief but honest review for:
 - **Regression**: Could this change break existing behavior?
 - **Edge cases**: Are important boundary conditions handled?
 - **Over-engineering**: Is the solution unnecessarily complex for the requirement?
+- **Simplicity**: Could the solution be materially smaller or clearer without losing required behavior?
 
 ### 12.3 Fix-Before-Report
 
@@ -258,6 +277,10 @@ After each milestone completion (post self-review), report using this standard f
 - Issues found and fixed during self-review
 - Any concerns noted but deferred
 
+**Simplicity Check**
+- Explain why this is the smallest reasonable implementation for the approved milestone
+- List any abstraction, configuration, or refactor that was considered but intentionally avoided
+
 **Known Risks / Open Issues**
 - Remaining risks, limitations, or unresolved items
 
@@ -278,17 +301,85 @@ The purpose of milestone decomposition is to **control change scope** and mainta
 - Do NOT modify code unrelated to the current milestone.
 - Refactoring is permitted ONLY within the current milestone's scope.
 - Do NOT introduce new dependencies unless strictly necessary for the milestone.
+- Do NOT add features, flexibility, configuration, or abstractions that were not requested.
+- Do NOT add error handling for scenarios that cannot occur in the current design.
+- Every changed line should trace directly to the user's request or to cleanup caused by that change.
 
 ### 14.2 Reuse Over Duplication
 
 - Prefer reusing existing project structures and patterns.
 - Avoid duplicate implementations of logic that already exists.
+- Match existing local style, even when another style would also be reasonable.
+- If the implementation becomes much larger than the requirement warrants, simplify it before reporting.
 
 ### 14.3 Scope Escalation
 
 - If the change scope starts growing beyond the original milestone boundary, **stop implementing**.
 - Re-decompose the milestone into smaller sub-milestones.
 - Present the revised plan to the user before continuing.
+
+### 14.4 Surgical Change Rules
+
+- Do NOT improve adjacent code, comments, formatting, or naming unless it is required for the approved milestone.
+- Do NOT refactor unrelated code even if it looks imperfect.
+- Remove imports, variables, functions, files, or comments only when they became unused because of the current change.
+- If unrelated dead code or cleanup opportunities are noticed, mention them in the report instead of changing them.
+
+### 14.5 Minimal Implementation Policy
+
+All implementation MUST prefer the smallest change that fully satisfies the approved milestone.
+
+#### 14.5.1 Smallest Working Change Rule
+
+- Implement only the minimum behavior required by the current milestone.
+- Do NOT generalize the solution for hypothetical future requirements.
+- Do NOT introduce new abstractions, helper layers, interfaces, factories, strategies, configuration options, or extension points unless they are strictly required by the current milestone.
+- Do NOT make code "more flexible" unless flexibility is part of the explicit requirement.
+- Prefer modifying existing code paths over creating parallel implementations.
+
+#### 14.5.2 Complexity Justification Rule
+
+Before adding any of the following, the agent MUST explicitly justify why a simpler solution is insufficient:
+
+- New class
+- New interface
+- New configuration property
+- New dependency
+- New framework feature
+- New utility/helper module
+- Reflection, generics-heavy design, dynamic dispatch, or pattern-based abstraction
+- Broad refactor touching files outside the approved milestone scope
+
+If the justification is weak or based on possible future needs, the change MUST NOT be made.
+
+#### 14.5.3 Prefer Boring Code
+
+- Prefer direct, readable, local code over clever or highly abstract code.
+- Prefer explicit conditionals over premature polymorphism.
+- Prefer existing project conventions over newly introduced patterns.
+- Prefer a small duplication over a premature shared abstraction when reuse is uncertain.
+- Prefer deleting unnecessary code over adding compatibility layers.
+
+#### 14.5.4 Scope Growth Stop Rule
+
+If the implementation starts requiring unrelated refactoring, new architecture, or broad changes, the agent MUST stop and report:
+
+- Why the scope grew
+- What simpler alternative exists
+- Whether the milestone should be split
+- What user approval is needed before continuing
+
+#### 14.5.5 Simplicity Self-Review Requirement
+
+During self-review, the agent MUST answer:
+
+- Can this be implemented with fewer files?
+- Can this be implemented with fewer new concepts?
+- Did I add any abstraction for a future case not required now?
+- Did I modify unrelated code for cleanliness rather than necessity?
+- Would a maintainer understand this change without reading extra documentation?
+
+If the answer reveals unnecessary complexity, simplify before reporting completion.
 
 ---
 

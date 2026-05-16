@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
 @Profile({"local", "traffic", "api"})
 public class TrafficRedisRuntimePolicy {
 
-    public static final long LOCK_TTL_MS = 6000L;
+    public static final long LOCK_TTL_MS = 10000L;
 
     private static final ZoneId ASIA_SEOUL_ZONE_ID = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter YYYYMMDD_FORMATTER = DateTimeFormatter.BASIC_ISO_DATE;

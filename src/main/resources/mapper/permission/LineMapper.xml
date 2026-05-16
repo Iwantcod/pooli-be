@@ -11,7 +11,7 @@
             <arg column="plan_id"              javaType="java.lang.Integer"/>
             <arg column="phone"                javaType="java.lang.String"/>
             <arg column="block_end_at"         javaType="java.time.LocalDateTime"/>
-            <arg column="remaining_data"       javaType="java.lang.Long"/>
+            <arg column="total_data"           javaType="java.lang.Long"/>
             <arg column="is_main"              javaType="java.lang.Boolean"/>
             <arg column="created_at"           javaType="java.time.LocalDateTime"/>
             <arg column="deleted_at"           javaType="java.time.LocalDateTime"/>
@@ -23,7 +23,7 @@
 
     <!-- userId로 메인 회선 조회 -->
     <select id="findMainLineByUserId" resultMap="lineResultMap">
-        SELECT line_id, user_id, plan_id, phone, block_end_at, remaining_data,
+        SELECT line_id, user_id, plan_id, phone, block_end_at, total_data,
                is_main, created_at, deleted_at, updated_at,
                individual_threshold, is_threshold_active
         FROM LINE

@@ -11,9 +11,7 @@ public enum TrafficFailureStage {
     /** 초기 차감 Lua 실행(개인/공유) 단계의 장애 구간입니다. */
     DEDUCT("deduct"),
     /** HYDRATE 보정 후 재차감 단계의 장애 구간입니다. */
-    HYDRATE("hydrate"),
-    /** REFILL 적용 후 재차감 단계(QoS fallback 포함)의 장애 구간입니다. */
-    REFILL("refill");
+    HYDRATE("hydrate");
 
     /** 로그 키 조합에 사용하는 단계 식별자 문자열입니다. */
     private final String stageKey;
@@ -57,7 +55,7 @@ public enum TrafficFailureStage {
     /**
      * Redis 재시도 소진 로그 키를 생성합니다.
      *
-     * @return 예: {@code traffic_refill_redis_retry_exhausted}
+     * @return 예: {@code traffic_hydrate_redis_retry_exhausted}
      */
     public String retryExhaustedLogKey() {
         return "traffic_" + stageKey + "_redis_retry_exhausted";

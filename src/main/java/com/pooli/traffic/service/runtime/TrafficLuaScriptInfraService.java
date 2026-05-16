@@ -2,9 +2,12 @@ package com.pooli.traffic.service.runtime;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
@@ -20,10 +23,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.common.exception.CommonErrorCode;
+import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics;
+import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics.FailureKind;
+import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics.RedisTarget;
+import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
+import com.pooli.traffic.domain.TrafficSharedPoolContributionLuaResult;
 import com.pooli.traffic.domain.dto.response.TrafficLuaDeductResDto;
 import com.pooli.traffic.domain.enums.TrafficLuaScriptType;
-import com.pooli.traffic.domain.enums.TrafficRefillGateStatus;
 
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -34,13 +41,17 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Service
-@Profile({"local", "traffic"})
+@Profile({"local", "api", "traffic"})
 @RequiredArgsConstructor
 public class TrafficLuaScriptInfraService {
 
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
     private final ObjectMapper objectMapper;
+    // cache Redis Lua 호출의 시도/실패 raw metric을 기록하는 전담 컴포넌트입니다.
+    private final TrafficRedisAvailabilityMetrics trafficRedisAvailabilityMetrics;
+    // Redis 예외를 timeout/connection/non-retryable metric tag로 분류할 때 사용합니다.
+    private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     private final Map<TrafficLuaScriptType, String> scriptShaRegistry =
             new EnumMap<>(TrafficLuaScriptType.class);
@@ -77,80 +88,185 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * 개인풀 차감 Lua 스크립트를 실행합니다.
+     * 개인+공유+QoS 단일 차감 Lua 스크립트를 실행합니다.
      */
-    public TrafficLuaExecutionResult executeDeductIndividual(List<String> keys, List<String> args) {
-        String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_INDIVIDUAL, keys, args);
-        return parseDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_INDIVIDUAL);
+    public TrafficLuaDeductExecutionResult executeDeductUnified(List<String> keys, List<String> args) {
+        String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_UNIFIED, keys, args);
+        return parseUnifiedDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_UNIFIED);
     }
 
     /**
-     * 공유풀 차감 Lua 스크립트를 실행합니다.
+     * 개인풀 월별 잔량 snapshot hydrate Lua 스크립트를 실행합니다.
      */
-    public TrafficLuaExecutionResult executeDeductShared(List<String> keys, List<String> args) {
-        String rawJson = executeStringSingle(TrafficLuaScriptType.DEDUCT_SHARED, keys, args);
-        return parseDeductResult(rawJson, TrafficLuaScriptType.DEDUCT_SHARED);
-    }
-
-    /**
-     * 리필 가능 여부를 판단하는 gate Lua 스크립트를 실행합니다.
-     */
-    public TrafficRefillGateStatus executeRefillGate(
-            String lockKey,
+    public long executeHydrateIndividualSnapshot(
             String balanceKey,
-            String traceId,
-            long lockTtlMs,
-            long currentAmount,
-            long threshold
+            long amount,
+            long qos,
+            long expireAtEpochSeconds
     ) {
-        String statusText = executeStringSingle(
-                TrafficLuaScriptType.REFILL_GATE,
-                List.of(lockKey, balanceKey),
-                List.of(
-                        traceId,
-                        String.valueOf(lockTtlMs),
-                        String.valueOf(threshold)
-                )
+        Long rawResult = executeLongSingle(
+                TrafficLuaScriptType.HYDRATE_INDIVIDUAL_SNAPSHOT,
+                List.of(balanceKey),
+                List.of(String.valueOf(amount), String.valueOf(qos), String.valueOf(expireAtEpochSeconds))
         );
-
-        try {
-            // 점진 배포 중 구버전 Lua가 "SKIP" 단일 상태를 반환할 수 있어 하위 호환 매핑을 유지합니다.
-            if ("SKIP".equals(statusText)) {
-                return TrafficRefillGateStatus.SKIP_THRESHOLD;
-            }
-            return TrafficRefillGateStatus.valueOf(statusText);
-        } catch (IllegalArgumentException e) {
-            throw new ApplicationException(
-                    CommonErrorCode.INTERNAL_SERVER_ERROR,
-                    "Failed to parse refill gate status. status=" + statusText
-            );
-        }
+        return rawResult == null ? 0L : rawResult;
     }
 
     /**
-     * 락 소유 여부를 heartbeat Lua 스크립트로 확인합니다.
+     * 공유풀 월별 잔량 snapshot hydrate Lua 스크립트를 실행합니다.
      */
-    public boolean executeLockHeartbeat(String lockKey, String traceId, long lockTtlMs) {
+    public long executeHydrateSharedSnapshot(String balanceKey, long amount, long expireAtEpochSeconds) {
         Long rawResult = executeLongSingle(
-                TrafficLuaScriptType.LOCK_HEARTBEAT,
-                List.of(lockKey),
-                List.of(traceId, String.valueOf(lockTtlMs))
+                TrafficLuaScriptType.HYDRATE_SHARED_SNAPSHOT,
+                List.of(balanceKey),
+                List.of(String.valueOf(amount), String.valueOf(expireAtEpochSeconds))
         );
-
-        return rawResult == 1L;
+        return rawResult == null ? 0L : rawResult;
     }
 
     /**
      * 락 해제 Lua 스크립트를 실행합니다.
      */
-    public boolean executeLockRelease(String lockKey, String traceId) {
+    public boolean executeLockRelease(String lockKey, String lockOwner) {
         Long rawResult = executeLongSingle(
                 TrafficLuaScriptType.LOCK_RELEASE,
                 List.of(lockKey),
-                List.of(traceId)
+                List.of(lockOwner)
         );
 
         return rawResult == 1L;
+    }
+
+    /**
+     * hydrate와 Redis-first 기여 흐름이 공유하는 owner 단위 lock을 획득합니다.
+     *
+     * <p>lockKey는 `TrafficRedisKeyFactory`가 만든 고정 Redis key이며,
+     * UUID는 compare-and-delete 해제를 위한 lock value(owner token)로만 저장합니다.
+     */
+    public Optional<HydrateLockHandle> tryAcquireHydrateLock(String lockKey) {
+        if (lockKey == null || lockKey.isBlank()) {
+            return Optional.empty();
+        }
+
+        String lockOwner = "hydrate-lock-owner:" + UUID.randomUUID();
+        try {
+            trafficRedisAvailabilityMetrics.incrementOperation(RedisTarget.CACHE);
+            Boolean acquired = cacheStringRedisTemplate.opsForValue().setIfAbsent(
+                    lockKey,
+                    lockOwner,
+                    Duration.ofMillis(TrafficRedisRuntimePolicy.LOCK_TTL_MS)
+            );
+            if (!Boolean.TRUE.equals(acquired)) {
+                return Optional.empty();
+            }
+            return Optional.of(new HydrateLockHandle(lockKey, lockOwner));
+        } catch (DataAccessException e) {
+            trafficRedisAvailabilityMetrics.incrementFailure(RedisTarget.CACHE, resolveFailureKind(e));
+            log.error("traffic_hydrate_lock_acquire_failed lockKey={}", lockKey, e);
+            throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);
+        }
+    }
+
+    /**
+     * 개인/공유 hydrate lock을 모두 획득합니다. 일부 획득 후 실패하거나 예외가 발생하면 이미 잡은 lock을 즉시 해제합니다.
+     */
+    public Optional<HydrateLockPair> tryAcquireHydrateLocks(String individualLockKey, String sharedLockKey) {
+        Optional<HydrateLockHandle> individualLock = tryAcquireHydrateLock(individualLockKey);
+        if (individualLock.isEmpty()) {
+            return Optional.empty();
+        }
+
+        try {
+            Optional<HydrateLockHandle> sharedLock = tryAcquireHydrateLock(sharedLockKey);
+            if (sharedLock.isEmpty()) {
+                releaseHydrateLock(individualLock.get());
+                return Optional.empty();
+            }
+
+            return Optional.of(new HydrateLockPair(individualLock.get(), sharedLock.get()));
+        } catch (RuntimeException e) {
+            try {
+                releaseHydrateLock(individualLock.get());
+            } catch (RuntimeException releaseFailure) {
+                e.addSuppressed(releaseFailure);
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * lock owner 값이 일치할 때만 hydrate lock을 해제합니다.
+     */
+    public boolean releaseHydrateLock(HydrateLockHandle lockHandle) {
+        if (lockHandle == null) {
+            return false;
+        }
+        return executeLockRelease(lockHandle.lockKey(), lockHandle.lockOwner());
+    }
+
+    /**
+     * 개인/공유 hydrate lock pair를 해제합니다.
+     */
+    public void releaseHydrateLocks(HydrateLockPair lockPair) {
+        if (lockPair == null) {
+            return;
+        }
+        releaseHydrateLock(lockPair.individualLock());
+        releaseHydrateLock(lockPair.sharedLock());
+    }
+
+    /**
+     * 공유풀 기여 정식 Redis 적용 Lua를 실행합니다.
+     */
+    public TrafficSharedPoolContributionLuaResult executeSharedPoolContributionApply(
+            String metadataKey,
+            String individualBalanceKey,
+            String sharedBalanceKey,
+            String traceId,
+            long amount,
+            boolean individualUnlimited
+    ) {
+        String rawJson = executeStringSingle(
+                TrafficLuaScriptType.SHARED_POOL_CONTRIBUTION_APPLY,
+                List.of(metadataKey, individualBalanceKey, sharedBalanceKey),
+                List.of(traceId, String.valueOf(amount), individualUnlimited ? "1" : "0")
+        );
+        return parseSharedPoolContributionResult(rawJson, TrafficLuaScriptType.SHARED_POOL_CONTRIBUTION_APPLY);
+    }
+
+    /**
+     * 공유풀 기여 outbox 복구 Lua를 실행합니다.
+     */
+    public TrafficSharedPoolContributionLuaResult executeSharedPoolContributionRecover(
+            String metadataKey,
+            String individualBalanceKey,
+            String sharedBalanceKey,
+            boolean individualUnlimited
+    ) {
+        String rawJson = executeStringSingle(
+                TrafficLuaScriptType.SHARED_POOL_CONTRIBUTION_RECOVER,
+                List.of(metadataKey, individualBalanceKey, sharedBalanceKey),
+                List.of(individualUnlimited ? "1" : "0")
+        );
+        return parseSharedPoolContributionResult(rawJson, TrafficLuaScriptType.SHARED_POOL_CONTRIBUTION_RECOVER);
+    }
+
+    /**
+     * 공유풀 기여 metadata를 삭제하고 hydrate lock을 owner 검증 후 해제합니다.
+     */
+    public long executeSharedPoolContributionCleanup(
+            String metadataKey,
+            HydrateLockPair lockPair
+    ) {
+        if (lockPair == null) {
+            return 0L;
+        }
+        Long rawResult = executeLongSingle(
+                TrafficLuaScriptType.SHARED_POOL_CONTRIBUTION_CLEANUP,
+                List.of(metadataKey, lockPair.individualLock().lockKey(), lockPair.sharedLock().lockKey()),
+                List.of(lockPair.individualLock().lockOwner(), lockPair.sharedLock().lockOwner())
+        );
+        return rawResult == null ? 0L : rawResult;
     }
 
     /**
@@ -160,19 +276,21 @@ public class TrafficLuaScriptInfraService {
      */
     public long executeInFlightCreateIfAbsent(
             String dedupeKey,
-            String processedField,
-            String processedDefaultValue,
+            String processedIndividualField,
+            String processedSharedField,
+            String processedQosField,
             String retryField,
-            String retryDefaultValue
+            String defaultValue
     ) {
         Long rawResult = executeLongSingle(
                 TrafficLuaScriptType.IN_FLIGHT_CREATE_IF_ABSENT,
                 List.of(dedupeKey),
                 List.of(
-                        processedField,
-                        processedDefaultValue,
+                        processedIndividualField,
+                        processedSharedField,
+                        processedQosField,
                         retryField,
-                        retryDefaultValue
+                        defaultValue
                 )
         );
         return rawResult == null ? 0L : rawResult;
@@ -184,45 +302,21 @@ public class TrafficLuaScriptInfraService {
      */
     public long executeInFlightIncrementRetryWithInit(
             String dedupeKey,
-            String processedField,
-            String processedDefaultValue,
+            String processedIndividualField,
+            String processedSharedField,
+            String processedQosField,
             String retryField,
-            String retryDefaultValue
+            String defaultValue
     ) {
         Long rawResult = executeLongSingle(
                 TrafficLuaScriptType.IN_FLIGHT_INCREMENT_RETRY_WITH_INIT,
                 List.of(dedupeKey),
                 List.of(
-                        processedField,
-                        processedDefaultValue,
+                        processedIndividualField,
+                        processedSharedField,
+                        processedQosField,
                         retryField,
-                        retryDefaultValue
-                )
-        );
-        return rawResult == null ? 0L : rawResult;
-    }
-
-    /**
-     * in-flight 멱등 hash의 processedData를 delta만큼 증가시킵니다.
-     * 키가 없으면 기본 필드를 초기화한 후 증가합니다.
-     */
-    public long executeInFlightIncrementProcessedWithInit(
-            String dedupeKey,
-            String processedField,
-            String processedDefaultValue,
-            String retryField,
-            String retryDefaultValue,
-            long delta
-    ) {
-        Long rawResult = executeLongSingle(
-                TrafficLuaScriptType.IN_FLIGHT_INCREMENT_PROCESSED_WITH_INIT,
-                List.of(dedupeKey),
-                List.of(
-                        processedField,
-                        processedDefaultValue,
-                        retryField,
-                        retryDefaultValue,
-                        String.valueOf(delta)
+                        defaultValue
                 )
         );
         return rawResult == null ? 0L : rawResult;
@@ -237,11 +331,18 @@ public class TrafficLuaScriptInfraService {
 
     /**
      * 문자열 결과를 반환하는 Lua 스크립트를 실행합니다.
+     *
+     * <p>1. 스크립트 타입에 맞는 문자열 반환 RedisScript를 조회합니다.
+     * <br>2. cache Redis 명령 시도 metric을 먼저 증가시킵니다.
+     * <br>3. Redis Lua를 실행하고 null 결과는 내부 오류로 처리합니다.
+     * <br>4. Redis 접근 예외가 발생하면 실패 유형 metric을 기록한 뒤 외부 시스템 오류로 래핑합니다.
      */
     private String executeStringSingle(TrafficLuaScriptType scriptType, List<String> keys, List<String> args) {
         RedisScript<String> script = requireStringScript(scriptType);
 
         try {
+            // alert rule의 분모가 되는 cache Redis 명령 시도 수를 기록합니다.
+            trafficRedisAvailabilityMetrics.incrementOperation(RedisTarget.CACHE);
             String result = cacheStringRedisTemplate.execute(script, keys, args.toArray());
             if (result == null) {
                 throw new ApplicationException(CommonErrorCode.INTERNAL_SERVER_ERROR, "Lua script returned null result.");
@@ -249,6 +350,8 @@ public class TrafficLuaScriptInfraService {
 
             return result;
         } catch (DataAccessException e) {
+            // alert rule의 분자가 되는 Redis 실패 수를 timeout/connection/non-retryable로 분리해 기록합니다.
+            trafficRedisAvailabilityMetrics.incrementFailure(RedisTarget.CACHE, resolveFailureKind(e));
             log.error("traffic_lua_execute_failed script={}", scriptType.getScriptName(), e);
             throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);
         }
@@ -256,11 +359,18 @@ public class TrafficLuaScriptInfraService {
 
     /**
      * 정수 결과를 반환하는 Lua 스크립트를 실행합니다.
+     *
+     * <p>1. 스크립트 타입에 맞는 정수 반환 RedisScript를 조회합니다.
+     * <br>2. cache Redis 명령 시도 metric을 먼저 증가시킵니다.
+     * <br>3. Redis Lua를 실행하고 null 결과는 내부 오류로 처리합니다.
+     * <br>4. Redis 접근 예외가 발생하면 실패 유형 metric을 기록한 뒤 외부 시스템 오류로 래핑합니다.
      */
     private Long executeLongSingle(TrafficLuaScriptType scriptType, List<String> keys, List<String> args) {
         RedisScript<Long> script = requireLongScript(scriptType);
 
         try {
+            // hydrate/lock/in-flight Lua도 같은 cache Redis 가용성 지표의 요청 수에 포함합니다.
+            trafficRedisAvailabilityMetrics.incrementOperation(RedisTarget.CACHE);
             Long result = cacheStringRedisTemplate.execute(script, keys, args.toArray());
             if (result == null) {
                 throw new ApplicationException(CommonErrorCode.INTERNAL_SERVER_ERROR, "Lua script returned null result.");
@@ -268,9 +378,28 @@ public class TrafficLuaScriptInfraService {
 
             return result;
         } catch (DataAccessException e) {
+            // non-retryable은 별도 집계하되 Prometheus 실패율 rule에서는 제외합니다.
+            trafficRedisAvailabilityMetrics.incrementFailure(RedisTarget.CACHE, resolveFailureKind(e));
             log.error("traffic_lua_execute_failed script={}", scriptType.getScriptName(), e);
             throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);
         }
+    }
+
+    /**
+     * Redis 예외를 EM6 alert rule tag 계약에 맞는 실패 유형으로 변환합니다.
+     *
+     * <p>1. timeout 계열이면 `timeout`으로 분류합니다.
+     * <br>2. connection 계열이면 `connection`으로 분류합니다.
+     * <br>3. 둘 다 아니면 alert 실패율에서 제외할 `non_retryable`로 분류합니다.
+     */
+    private FailureKind resolveFailureKind(RuntimeException failure) {
+        if (trafficRedisFailureClassifier.isTimeoutFailure(failure)) {
+            return FailureKind.TIMEOUT;
+        }
+        if (trafficRedisFailureClassifier.isConnectionFailure(failure)) {
+            return FailureKind.CONNECTION;
+        }
+        return FailureKind.NON_RETRYABLE;
     }
 
     /**
@@ -295,6 +424,40 @@ public class TrafficLuaScriptInfraService {
 
             return TrafficLuaExecutionResult.builder()
                     .answer(parsedResult.getAnswer())
+                    .status(parsedResult.getStatus())
+                    .build();
+        } catch (JsonProcessingException e) {
+            throw new ApplicationException(
+                    CommonErrorCode.INTERNAL_SERVER_ERROR,
+                    "Failed to parse Lua JSON result. script=" + scriptType.getScriptName()
+            );
+        }
+    }
+
+    /**
+     * 단일 차감 Lua 결과 JSON을 파싱하고 유효성을 검증합니다.
+     */
+    private TrafficLuaDeductExecutionResult parseUnifiedDeductResult(String rawJson, TrafficLuaScriptType scriptType) {
+        if (rawJson == null || rawJson.isBlank()) {
+            throw new ApplicationException(
+                    CommonErrorCode.INTERNAL_SERVER_ERROR,
+                    "Lua deduct result is empty. script=" + scriptType.getScriptName()
+            );
+        }
+
+        try {
+            TrafficLuaDeductResDto parsedResult = objectMapper.readValue(rawJson, TrafficLuaDeductResDto.class);
+            if (parsedResult.getStatus() == null) {
+                throw new ApplicationException(
+                        CommonErrorCode.INTERNAL_SERVER_ERROR,
+                        "Lua deduct status is missing. script=" + scriptType.getScriptName()
+                );
+            }
+
+            return TrafficLuaDeductExecutionResult.builder()
+                    .indivDeducted(parsedResult.getIndivDeducted())
+                    .sharedDeducted(parsedResult.getSharedDeducted())
+                    .qosDeducted(parsedResult.getQosDeducted())
                     .status(parsedResult.getStatus())
                     .build();
         } catch (JsonProcessingException e) {
@@ -338,17 +501,25 @@ public class TrafficLuaScriptInfraService {
      */
     private void registerScript(TrafficLuaScriptType scriptType, String scriptText) {
         switch (scriptType) {
-            case BLOCK_POLICY_CHECK, DEDUCT_INDIVIDUAL, DEDUCT_SHARED, REFILL_GATE -> {
+            case BLOCK_POLICY_CHECK, DEDUCT_UNIFIED -> {
                 DefaultRedisScript<String> redisScript = new DefaultRedisScript<>();
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(String.class);
                 stringScriptRegistry.put(scriptType, redisScript);
             }
-            case LOCK_HEARTBEAT,
+            case SHARED_POOL_CONTRIBUTION_APPLY,
+                 SHARED_POOL_CONTRIBUTION_RECOVER -> {
+                DefaultRedisScript<String> redisScript = new DefaultRedisScript<>();
+                redisScript.setScriptText(scriptText);
+                redisScript.setResultType(String.class);
+                stringScriptRegistry.put(scriptType, redisScript);
+            }
+            case HYDRATE_INDIVIDUAL_SNAPSHOT,
+                 HYDRATE_SHARED_SNAPSHOT,
                  LOCK_RELEASE,
                  IN_FLIGHT_CREATE_IF_ABSENT,
                  IN_FLIGHT_INCREMENT_RETRY_WITH_INIT,
-                 IN_FLIGHT_INCREMENT_PROCESSED_WITH_INIT -> {
+                 SHARED_POOL_CONTRIBUTION_CLEANUP -> {
                 DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(Long.class);
@@ -395,6 +566,50 @@ public class TrafficLuaScriptInfraService {
                     "Failed to load Lua script text. script=" + scriptType.getScriptName()
             );
         }
+    }
+
+    /**
+     * 공유풀 기여 Lua 결과 JSON을 파싱하고 유효성을 검증합니다.
+     */
+    private TrafficSharedPoolContributionLuaResult parseSharedPoolContributionResult(
+            String rawJson,
+            TrafficLuaScriptType scriptType
+    ) {
+        if (rawJson == null || rawJson.isBlank()) {
+            throw new ApplicationException(
+                    CommonErrorCode.INTERNAL_SERVER_ERROR,
+                    "Lua shared pool contribution result is empty. script=" + scriptType.getScriptName()
+            );
+        }
+
+        try {
+            TrafficSharedPoolContributionLuaResult parsedResult =
+                    objectMapper.readValue(rawJson, TrafficSharedPoolContributionLuaResult.class);
+            if (parsedResult.getStatus() == null || parsedResult.getStatus().isBlank()) {
+                throw new ApplicationException(
+                        CommonErrorCode.INTERNAL_SERVER_ERROR,
+                        "Lua shared pool contribution status is missing. script=" + scriptType.getScriptName()
+                );
+            }
+            return parsedResult;
+        } catch (JsonProcessingException e) {
+            throw new ApplicationException(
+                    CommonErrorCode.INTERNAL_SERVER_ERROR,
+                    "Failed to parse Lua shared pool contribution JSON result. script=" + scriptType.getScriptName()
+            );
+        }
+    }
+
+    /**
+     * 획득한 hydrate lock의 Redis key와 해제 검증용 owner token입니다.
+     */
+    public record HydrateLockHandle(String lockKey, String lockOwner) {
+    }
+
+    /**
+     * 공유풀 기여처럼 개인/공유 owner lock을 동시에 잡아야 하는 흐름에서 사용하는 lock 묶음입니다.
+     */
+    public record HydrateLockPair(HydrateLockHandle individualLock, HydrateLockHandle sharedLock) {
     }
 
 }

@@ -1,7 +1,9 @@
 package com.pooli.traffic.service.invoke;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
+import lombok.NonNull;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.ConcurrencyFailureException;
@@ -15,13 +17,13 @@ import org.springframework.stereotype.Service;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
 import com.pooli.traffic.domain.entity.TrafficDeductDoneLog;
-import com.pooli.traffic.domain.enums.TrafficFinalStatus;
-import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.mapper.DoneLogInsertOperation;
 import com.pooli.traffic.mapper.TrafficDeductDoneLogMapper;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import com.pooli.traffic.util.TrafficRetryBackoffSupport;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 트래픽 차감 완료 로그를 MySQL에 저장하고 중복(traceId) 여부를 조회하는 서비스입니다.
@@ -29,13 +31,14 @@ import lombok.RequiredArgsConstructor;
 @Service
 @Profile({"local", "traffic"})
 @RequiredArgsConstructor
+@Slf4j
 public class TrafficDeductDoneLogService {
 
     private static final int DONE_LOG_DB_RETRY_MAX = 3;
     private static final long DONE_LOG_DB_RETRY_BASE_MS = 50L;
-    private static final int RESTORE_LAST_ERROR_MESSAGE_MAX_LENGTH = 1000;
 
     private final TrafficDeductDoneLogMapper trafficDeductDoneLogMapper;
+    private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
     /**
      * traceId 완료 이력이 존재하는지 확인합니다.
@@ -53,33 +56,41 @@ public class TrafficDeductDoneLogService {
      * @return 신규 저장이면 true, traceId 중복이면 false
      */
     public boolean saveIfAbsent(
-            TrafficPayloadReqDto payload,
-            TrafficDeductResultResDto result,
+            @NonNull TrafficPayloadReqDto payload,
+            @NonNull TrafficDeductResultResDto result,
             String recordId,
             Long latency
     ) {
-        if (payload == null || result == null) {
-            throw new IllegalArgumentException("payload/result must not be null");
-        }
-        if (payload.getTraceId() == null || payload.getTraceId().isBlank()) {
-            throw new IllegalArgumentException("traceId must not be blank");
-        }
         if (recordId == null || recordId.isBlank()) {
-            throw new IllegalArgumentException("recordId must not be blank");
+            log.warn(
+                    "traffic_done_log_record_id_missing traceId={} recordIdBlank={}",
+                    payload.getTraceId(),
+                    recordId != null
+            );
+        }
+        if(latency == null || latency <= 0) {
+            latency = 0L;
         }
 
         LocalDateTime startedAt = defaultNowIfNull(result.getCreatedAt());
+        long deductedIndividualBytes = normalizeNonNegative(result.getDeductedIndividualBytes());
+        long deductedSharedBytes = normalizeNonNegative(result.getDeductedSharedBytes());
+        long deductedQosBytes = normalizeNonNegative(result.getDeductedQosBytes());
         TrafficDeductDoneLog doneLog = TrafficDeductDoneLog.builder()
                 .traceId(payload.getTraceId())
                 .recordId(recordId)
                 .lineId(payload.getLineId())
                 .familyId(payload.getFamilyId())
                 .appId(payload.getAppId())
+                .enqueuedAt(resolveEnqueuedAt(payload.getEnqueuedAt()))
                 .apiTotalData(result.getApiTotalData())
-                .deductedTotalBytes(result.getDeductedTotalBytes())
+                .deductedIndividualBytes(deductedIndividualBytes)
+                .deductedSharedBytes(deductedSharedBytes)
+                .deductedQosBytes(deductedQosBytes)
                 .apiRemainingData(result.getApiRemainingData())
                 .finalStatus(result.getFinalStatus() == null ? null : result.getFinalStatus().name())
                 .lastLuaStatus(result.getLastLuaStatus() == null ? null : result.getLastLuaStatus().name())
+                .failureReason(result.getFailureReason())
                 .startedAt(startedAt)
                 .finishedAt(defaultNowIfNull(result.getFinishedAt()))
                 .latency(normalizeLatency(latency))
@@ -88,50 +99,6 @@ public class TrafficDeductDoneLogService {
         // saveWithRetry는 "재시도 공통 흐름"만 담당하고,
         // 실제 INSERT SQL 선택은 메서드 레퍼런스로 주입합니다.
         return saveWithRetry(doneLog, trafficDeductDoneLogMapper::insert);
-    }
-
-    /**
-     * traceId를 확보한 non-retryable 예외 종결 로그를 저장합니다.
-     *
-     * @return 신규 저장이면 true, traceId 중복이면 false
-     */
-    public boolean saveNonRetryableFailureIfAbsent(
-            TrafficPayloadReqDto payload,
-            String recordId,
-            Long latency,
-            String restoreLastErrorMessage
-    ) {
-        if (payload == null) {
-            throw new IllegalArgumentException("payload must not be null");
-        }
-        if (payload.getTraceId() == null || payload.getTraceId().isBlank()) {
-            throw new IllegalArgumentException("traceId must not be blank");
-        }
-        if (recordId == null || recordId.isBlank()) {
-            throw new IllegalArgumentException("recordId must not be blank");
-        }
-
-        long apiTotalData = normalizeNonNegative(payload.getApiTotalData());
-        LocalDateTime now = LocalDateTime.now();
-        TrafficDeductDoneLog doneLog = TrafficDeductDoneLog.builder()
-                .traceId(payload.getTraceId())
-                .recordId(recordId)
-                .lineId(payload.getLineId())
-                .familyId(payload.getFamilyId())
-                .appId(payload.getAppId())
-                .apiTotalData(apiTotalData)
-                .deductedTotalBytes(0L)
-                .apiRemainingData(apiTotalData)
-                .finalStatus(TrafficFinalStatus.FAILED.name())
-                .lastLuaStatus(TrafficLuaStatus.ERROR.name())
-                .startedAt(now)
-                .finishedAt(now)
-                .latency(normalizeLatency(latency))
-                .restoreLastErrorMessage(sanitizeRestoreLastErrorMessage(restoreLastErrorMessage))
-                .build();
-
-        // non-retryable 종결 전용 INSERT SQL 구현을 saveWithRetry에 주입합니다.
-        return saveWithRetry(doneLog, trafficDeductDoneLogMapper::insertNonRetryableFailure);
     }
 
     private boolean saveWithRetry(
@@ -173,7 +140,7 @@ public class TrafficDeductDoneLogService {
         if (value != null) {
             return value;
         }
-        return LocalDateTime.now();
+        return LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
     }
 
     /**
@@ -197,16 +164,16 @@ public class TrafficDeductDoneLogService {
     }
 
     /**
-     * 요약 문자열 생성은 호출부에서 수행하고, 저장 시점에는 길이 상한(1000자)만 보정합니다.
+     * payload `enqueuedAt` epoch millis를 도메인 표준 시간대(Asia/Seoul) 기준 LocalDateTime으로 변환합니다.
      */
-    private String sanitizeRestoreLastErrorMessage(String message) {
-        if (message == null) {
-            return null;
+    private LocalDateTime resolveEnqueuedAt(Long enqueuedAtEpochMillis) {
+        if (enqueuedAtEpochMillis == null || enqueuedAtEpochMillis <= 0L) {
+            return LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
         }
-        if (message.length() <= RESTORE_LAST_ERROR_MESSAGE_MAX_LENGTH) {
-            return message;
-        }
-        return message.substring(0, RESTORE_LAST_ERROR_MESSAGE_MAX_LENGTH);
+        return LocalDateTime.ofInstant(
+                Instant.ofEpochMilli(enqueuedAtEpochMillis),
+                trafficRedisRuntimePolicy.zoneId()
+        );
     }
 
     /**

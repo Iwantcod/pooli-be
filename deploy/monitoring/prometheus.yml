@@ -1,0 +1,33 @@
+# Prometheus 설정 파일입니다.
+# 목적:
+# - Spring Boot Actuator의 `/actuator/prometheus` endpoint를 주기적으로 scrape합니다.
+# - EM6 Redis 가용성 alert rule을 로딩해 warning/critical/global-down 조건을 평가합니다.
+# - firing alert는 Alertmanager로 전달합니다.
+global:
+  # metric scrape 주기입니다. 15초마다 Spring Actuator metric을 수집합니다.
+  scrape_interval: 15s
+  # alert rule 평가 주기입니다. 15초마다 rule_files의 PromQL을 재평가합니다.
+  evaluation_interval: 15s
+
+rule_files:
+  # Redis 가용성 alert rule 파일입니다. docker-compose volume mount 경로와 일치해야 합니다.
+  - /etc/prometheus/rules/traffic-redis-alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            # 같은 docker-compose network 안의 Alertmanager service 이름과 포트입니다.
+            - alertmanager:9093
+
+scrape_configs:
+  # pooli Spring 애플리케이션 metric scrape job입니다.
+  - job_name: pooli
+    # Spring Boot Actuator Prometheus endpoint path입니다.
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          # monitoring compose는 Spring app compose와 분리되어 있으므로 service name `app`에 의존하지 않습니다.
+          # Spring app 컨테이너가 호스트 8080에 publish한 endpoint를 scrape합니다.
+          # 모니터링 대상 워커의 ip 및 포트번호
+          - host.docker.internal:8080

@@ -404,9 +404,15 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
             String traceId = payload.getTraceId();
             MDC.put(TRACE_ID_MDC_KEY, traceId);
+            // createOrGet(traceId)가 성공한 뒤 DLQ로 종결되는 경우에만 cleanup outbox를 적재한다.
+            // dedupe 생성/확보 전 실패에는 삭제 대상 key가 있다고 단정할 수 없으므로 false로 둔다.
+            boolean dedupeCleanupRequired = false;
             try {
                 long originalApiTotalData = normalizeNonNegative(payload.getApiTotalData());
-                long processedDataBefore = 0L;
+                long processedIndividualDataBefore = 0L;
+                long processedSharedDataBefore = 0L;
+                long processedQosDataBefore = 0L;
+                long processedTotalDataBefore = 0L;
                 long remainingDataToProcess = originalApiTotalData;
 
                 long dedupeStartNs = System.nanoTime();
@@ -423,9 +429,13 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
                     TrafficInFlightIdempotencyEntryResult entryResult =
                             trafficInFlightDedupeService.createOrGet(traceId);
+                    dedupeCleanupRequired = true;
                     TrafficInFlightIdempotencyEntry entry = entryResult.entry();
-                    processedDataBefore = normalizeNonNegative(entry == null ? null : entry.processedData());
-                    remainingDataToProcess = clampRemaining(originalApiTotalData - processedDataBefore);
+                    processedIndividualDataBefore = normalizeNonNegative(entry == null ? null : entry.processedIndividualData());
+                    processedSharedDataBefore = normalizeNonNegative(entry == null ? null : entry.processedSharedData());
+                    processedQosDataBefore = normalizeNonNegative(entry == null ? null : entry.processedQosData());
+                    processedTotalDataBefore = processedIndividualDataBefore + processedSharedDataBefore + processedQosDataBefore;
+                    remainingDataToProcess = clampRemaining(originalApiTotalData - processedTotalDataBefore);
 
                     if (messageSource == TrafficStreamMessageSource.RECLAIM) {
                         // reclaim으로 워커가 실제 처리를 시작한 시점에 retryCount를 증가시킨다.
@@ -437,8 +447,6 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                                     payloadJson,
                                     recordId,
                                     record.getId(),
-                                    processedDataBefore,
-                                    consumeStartTimeMs,
                                     reclaimRetryCountAfterIncrement
                             );
                             // return 직전 결과 태그를 갱신해야 finally 블록에서 DLQ 결과 메트릭이 올바르게 집계된다.
@@ -449,10 +457,12 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
                     if (!entryResult.created()) {
                         log.info(
-                                "traffic_stream_record_resume traceId={} recordId={} processedData={} remaining={}",
+                                "traffic_stream_record_resume traceId={} recordId={} processedIndividualData={} processedSharedData={} processedTotalData={} remaining={}",
                                 traceId,
                                 recordId,
-                                processedDataBefore,
+                                processedIndividualDataBefore,
+                                processedSharedDataBefore,
+                                processedTotalDataBefore,
                                 remainingDataToProcess
                         );
                     }
@@ -472,20 +482,32 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 } finally {
                     trafficRecordStageMetricsPort.recordStageLatency(STAGE_ORCHESTRATE, elapsedSinceNs(orchestrateStartNs));
                 }
-                long processedDataAfter = resolveProcessedDataForDoneLog(
-                        payload,
-                        executionResult,
-                        processedDataBefore
-                );
                 TrafficDeductResultResDto cumulativeResult = buildCumulativeResult(
                         payload,
                         executionResult,
-                        processedDataAfter
+                        processedIndividualDataBefore,
+                        processedSharedDataBefore,
+                        processedQosDataBefore
                 );
 
                 // 완료 로그 저장 시점에 함께 남길 지연 시간(ms) 값을 계산한다.
                 // latency는 레코드 처리 시작 시점부터 done-log 저장 직전까지의 ms를 사용한다.
                 long latency = Math.max(0L, System.currentTimeMillis() - consumeStartTimeMs);
+
+                // hydrate invalid는 현재 TrafficHydrateService가 예외가 아닌 failureReason 포함 결과로 전달한다.
+                // 이런 invalid/failure 결과는 정상 완료 이력이 아니므로 done log를 남기지 않고
+                // DLQ 기록 후 ACK하여 같은 메시지가 재처리되지 않게 한다.
+                if (shouldRouteInvalidResultToDlqWithoutDoneLog(cumulativeResult)) {
+                    trafficStreamInfraService.writeDlq(
+                            payloadJson,
+                            buildInvalidResultDlqReason(cumulativeResult),
+                            recordId
+                    );
+                    trafficInFlightDedupeDeleteOutboxService.createPending(traceId, recordId);
+                    acknowledgeWithMetrics(record.getId());
+                    resultTag = RESULT_DLQ;
+                    return;
+                }
 
                 boolean saved;
                 long mysqlSaveStartNs = System.nanoTime();
@@ -567,9 +589,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                         payloadJson,
                         recordId,
                         record.getId(),
-                        consumeStartTimeMs,
                         e,
-                        dlqReason
+                        dlqReason,
+                        dedupeCleanupRequired
                 );
                 resultTag = RESULT_DLQ;
             } catch (Exception e) {
@@ -586,9 +608,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                         payloadJson,
                         recordId,
                         record.getId(),
-                        consumeStartTimeMs,
                         e,
-                        dlqReason
+                        dlqReason,
+                        dedupeCleanupRequired
                 );
                 resultTag = RESULT_DLQ;
             } finally {
@@ -606,89 +628,33 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
     /**
      * reclaim 재시도 횟수가 상한을 넘은 메시지를 종결 처리합니다.
-     * 순서는 정책에 맞춰 "Done Log 저장 -> dedupe 삭제 outbox 적재 -> DLQ 기록 -> ACK"로 유지합니다.
+     * 순서는 정책에 맞춰 "DLQ 기록 -> dedupe 삭제 outbox 적재 -> ACK"로 유지합니다.
      */
     private void handleReclaimRetryExceeded(
             TrafficPayloadReqDto payload,
             String payloadJson,
             String recordId,
             RecordId streamRecordId,
-            long processedDataBefore,
-            long consumeStartTimeMs,
             int retryCountAfterIncrement
     ) {
-        // 1) 정책 고정값(누적 차감량/남은량/상태)으로 retry-exceeded done log 결과를 먼저 만든다.
-        TrafficDeductResultResDto retryExceededResult = buildReclaimRetryExceededResult(payload, processedDataBefore);
-        long latency = Math.max(0L, System.currentTimeMillis() - consumeStartTimeMs);
-
-        boolean saved;
-        long doneLogSaveStartNs = System.nanoTime();
-        try {
-            // 2) done log는 traceId UNIQUE이므로 duplicate는 false로 흡수된다.
-            saved = trafficDeductDoneLogService.saveIfAbsent(payload, retryExceededResult, recordId, latency);
-        } finally {
-            trafficRecordStageMetricsPort.recordStageLatency(STAGE_DONE_LOG_SAVE, elapsedSinceNs(doneLogSaveStartNs));
-        }
-
-        if (!saved) {
-            log.warn(
-                    "traffic_stream_reclaim_retry_exceeded_duplicate_absorbed trace_id={} record_id={} retry_count={} threshold={}",
-                    payload.getTraceId(),
-                    recordId,
-                    retryCountAfterIncrement,
-                    RECLAIM_RETRY_EXCEEDED_THRESHOLD
-            );
-        }
-
-        // 3) 멱등키 정리는 outbox 경로로만 진행하고, 적재 직후 즉시 삭제 시도는 outbox 서비스가 담당한다.
-        trafficInFlightDedupeDeleteOutboxService.createPending(payload.getTraceId(), recordId);
-        // 4) 재처리 한도 초과 사유를 DLQ에 남겨 후속 분석/수동 복구 기준으로 사용한다.
+        // 1) 재처리 한도 초과 사유를 DLQ에 남겨 후속 분석/수동 복구 기준으로 사용한다.
         trafficStreamInfraService.writeDlq(
                 payloadJson,
                 buildReclaimRetryExceededDlqReason(retryCountAfterIncrement),
                 recordId
         );
-        // 5) 마지막에 ACK해 동일 레코드가 재배달되지 않도록 종결한다.
+        // 2) 멱등키 정리는 outbox 경로로만 진행하고, 적재 직후 즉시 삭제 시도는 outbox 서비스가 담당한다.
+        trafficInFlightDedupeDeleteOutboxService.createPending(payload.getTraceId(), recordId);
+        // 3) 마지막에 ACK해 동일 레코드가 재배달되지 않도록 종결한다.
         acknowledgeWithMetrics(streamRecordId);
 
         log.warn(
-                "traffic_stream_reclaim_retry_exceeded trace_id={} record_id={} retry_count={} threshold={} "
-                        + "api_total_data={} deducted_total_bytes={} api_remaining_data={} final_status={} last_lua_status={}",
+                "traffic_stream_reclaim_retry_exceeded trace_id={} record_id={} retry_count={} threshold={}",
                 payload.getTraceId(),
                 recordId,
                 retryCountAfterIncrement,
-                RECLAIM_RETRY_EXCEEDED_THRESHOLD,
-                retryExceededResult.getApiTotalData(),
-                retryExceededResult.getDeductedTotalBytes(),
-                retryExceededResult.getApiRemainingData(),
-                retryExceededResult.getFinalStatus(),
-                retryExceededResult.getLastLuaStatus()
+                RECLAIM_RETRY_EXCEEDED_THRESHOLD
         );
-    }
-
-    /**
-     * reclaim retry 초과 종결용 done log 결과를 누적 기준으로 조립합니다.
-     */
-    private TrafficDeductResultResDto buildReclaimRetryExceededResult(
-            TrafficPayloadReqDto payload,
-            long processedDataBefore
-    ) {
-        // 정책상 누적 기준은 "원본 apiTotalData - 지금까지 processedData"로 계산한다.
-        long originalApiTotalData = normalizeNonNegative(payload == null ? null : payload.getApiTotalData());
-        long cumulativeDeducted = resolveCumulativeDeducted(originalApiTotalData, processedDataBefore, 0L);
-        long cumulativeRemaining = clampRemaining(originalApiTotalData - cumulativeDeducted);
-        LocalDateTime now = LocalDateTime.now();
-
-        return TrafficDeductResultResDto.builder()
-                .traceId(payload == null ? null : payload.getTraceId())
-                .apiTotalData(originalApiTotalData)
-                .deductedTotalBytes(cumulativeDeducted)
-                .apiRemainingData(cumulativeRemaining)
-                .finalStatus(TrafficFinalStatus.RECLAIM_RETRY_EXCEEDED)
-                .lastLuaStatus(TrafficLuaStatus.OK)
-                .createdAt(now)
-                .finishedAt(now)
-                .build();
     }
 
     /**
@@ -703,43 +669,23 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     }
 
     /**
-     * traceId 확보 non-retryable 예외를 done log + DLQ + ACK 순서로 종결합니다.
+     * traceId 확보 non-retryable 예외를 DLQ + ACK 순서로 종결합니다.
      */
     private void handleTraceAwareNonRetryableFailure(
             TrafficPayloadReqDto payload,
             String payloadJson,
             String recordId,
             RecordId streamRecordId,
-            long consumeStartTimeMs,
             Exception exception,
-            String dlqReason
+            String dlqReason,
+            boolean dedupeCleanupRequired
     ) {
-        long latency = Math.max(0L, System.currentTimeMillis() - consumeStartTimeMs);
         String summarizedErrorMessage = summarizeException(exception);
 
-        boolean saved;
-        long doneLogSaveStartNs = System.nanoTime();
-        try {
-            saved = trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
-                    payload,
-                    recordId,
-                    latency,
-                    summarizedErrorMessage
-            );
-        } finally {
-            trafficRecordStageMetricsPort.recordStageLatency(STAGE_DONE_LOG_SAVE, elapsedSinceNs(doneLogSaveStartNs));
-        }
-
-        if (!saved) {
-            log.warn(
-                    "traffic_stream_non_retryable_terminal_done_log_duplicate_absorbed trace_id={} record_id={} summary={}",
-                    payload.getTraceId(),
-                    recordId,
-                    summarizedErrorMessage
-            );
-        }
-
         trafficStreamInfraService.writeDlq(payloadJson, dlqReason, recordId);
+        if (dedupeCleanupRequired) {
+            trafficInFlightDedupeDeleteOutboxService.createPending(payload.getTraceId(), recordId);
+        }
         acknowledgeWithMetrics(streamRecordId);
         log.warn(
                 "traffic_stream_non_retryable_terminated trace_id={} record_id={} dlq_reason={} summary={}",
@@ -755,6 +701,53 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
      */
     private String buildNonRetryableDlqReason(Exception exception) {
         return "non-retryable failure: " + summarizeException(exception);
+    }
+
+    /**
+     * done log 저장 대상이 아닌 invalid/failure 결과인지 판정합니다.
+     *
+     * <p>정책 차단/정책 cap은 정상 처리 결과이므로 여기서 제외됩니다.
+     * `FAILED`, Lua `ERROR`, 명시적 failureReason은 처리 결과를 확정할 수 없는 invalid/terminal 실패로 보고
+     * DLQ no done 경로로 보냅니다.
+     */
+    private boolean shouldRouteInvalidResultToDlqWithoutDoneLog(TrafficDeductResultResDto result) {
+        // 결과 객체 자체가 없으면 저장 가능한 완료 이력이 아니므로 DLQ로 보낸다.
+        if (result == null) {
+            return true;
+        }
+        // 최종 상태 FAILED는 정상 완료가 아니라 terminal failure로 본다.
+        if (result.getFinalStatus() == TrafficFinalStatus.FAILED) {
+            return true;
+        }
+        // Lua ERROR는 입력/스냅샷/스크립트 계약 위반 계열로 보고 done log 저장 대상에서 제외한다.
+        if (result.getLastLuaStatus() == TrafficLuaStatus.ERROR) {
+            return true;
+        }
+        // failureReason이 있으면 hydrate invalid 등 명시적 실패 사유가 있는 결과로 본다.
+        return result.getFailureReason() != null && !result.getFailureReason().isBlank();
+    }
+
+    /**
+     * invalid/failure 결과를 DLQ에 남길 때 사용할 사유 문자열을 생성합니다.
+     *
+     * <p>운영자가 원인을 바로 볼 수 있도록 명시적 failureReason을 우선 사용하고,
+     * reason이 없으면 최종 상태와 Lua 상태를 함께 남겨 어떤 계약에서 실패했는지 추적할 수 있게 합니다.
+     */
+    private String buildInvalidResultDlqReason(TrafficDeductResultResDto result) {
+        // 방어적으로 null 결과도 DLQ 사유를 남긴다.
+        if (result == null) {
+            return "invalid/failure result: result=null";
+        }
+        String failureReason = result.getFailureReason();
+        // hydrate invalid처럼 도메인 사유가 있으면 상태값보다 사유를 우선 노출한다.
+        if (failureReason != null && !failureReason.isBlank()) {
+            return "invalid/failure result: " + failureReason;
+        }
+        // 사유가 없으면 상태 조합만으로도 후속 분석이 가능하도록 최소 상태 정보를 남긴다.
+        return "invalid/failure result: finalStatus="
+                + result.getFinalStatus()
+                + ", lastLuaStatus="
+                + result.getLastLuaStatus();
     }
 
     /**
@@ -811,10 +804,13 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
         return TrafficDeductResultResDto.builder()
                 .traceId(traceId)
                 .apiTotalData(0L)
-                .deductedTotalBytes(0L)
+                .deductedIndividualBytes(0L)
+                .deductedSharedBytes(0L)
+                .deductedQosBytes(0L)
                 .apiRemainingData(0L)
                 .finalStatus(TrafficFinalStatus.SUCCESS)
                 .lastLuaStatus(TrafficLuaStatus.OK)
+                .failureReason(null)
                 .createdAt(now)
                 .finishedAt(now)
                 .build();
@@ -824,61 +820,86 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
      * done log 저장 직전 누적 처리량 기준으로 최종 결과를 재조립합니다.
      *
      * <p>핵심 규칙:
-     * 1) `deductedTotalBytes`/`apiRemainingData`는 이번 실행 증분값이 아니라
-     *    `processedDataAfter`(Redis dedupe 누적값)를 기준으로 계산합니다.
+     * 1) `deductedIndividualBytes`/`deductedSharedBytes`/`apiRemainingData`는
+     *    이번 실행 증분값이 아니라 Redis dedupe 누적값을 기준으로 계산합니다.
      * 2) `executionResult`는 마지막 Lua 상태(`lastLuaStatus`)와 시각 정보(`createdAt`/`finishedAt`) 전달에 사용합니다.
+     * 3) Redis dedupe 조회 결과가 비어 있으면(예: traceId 공백, key 미존재)
+     *    `processedBefore + deductedThisRun` 계산값을 fallback으로 사용합니다.
+     *    Redis 조회 중 예외가 발생하면 fallback하지 않고 상위로 전파합니다.
      *
      * @param originalPayload 원본 요청 payload
      * @param executionResult 이번 시도 실행 결과(상태/시각 전달용)
-     * @param processedDataAfter done log 직전 Redis dedupe에 기록된 누적 처리량
+     * @param processedIndividualDataBefore 이번 시도 전 개인풀 누적 처리량
+     * @param processedSharedDataBefore 이번 시도 전 공유풀 누적 처리량
+     * @param processedQosDataBefore 이번 시도 전 QoS 누적 처리량
      * @return done log 저장에 사용할 누적 기준 결과
      */
     private TrafficDeductResultResDto buildCumulativeResult(
             TrafficPayloadReqDto originalPayload,
             TrafficDeductResultResDto executionResult,
-            long processedDataAfter
+            long processedIndividualDataBefore,
+            long processedSharedDataBefore,
+            long processedQosDataBefore
     ) {
         long originalApiTotalData = normalizeNonNegative(originalPayload == null ? null : originalPayload.getApiTotalData());
-        long cumulativeDeducted = resolveCumulativeDeducted(originalApiTotalData, processedDataAfter, 0L);
+        String traceId = originalPayload == null ? null : originalPayload.getTraceId();
+        long cumulativeIndividual;
+        long cumulativeShared;
+        long cumulativeQos;
+
+        // done log 직전 기준값은 Redis dedupe 누적량을 우선 사용한다.
+        Optional<TrafficInFlightIdempotencyEntry> dedupeEntry = trafficInFlightDedupeService.get(traceId);
+        if (dedupeEntry.isPresent()) {
+            TrafficInFlightIdempotencyEntry entry = dedupeEntry.get();
+            cumulativeIndividual = normalizeNonNegative(entry.processedIndividualData());
+            cumulativeShared = normalizeNonNegative(entry.processedSharedData());
+            cumulativeQos = normalizeNonNegative(entry.processedQosData());
+        } else {
+            // dedupe 조회 결과가 비어 있으면: 직전 누적값 + 이번 실행 증분값으로 누적량을 복원한다.
+            long deductedIndividualThisRun = normalizeNonNegative(
+                    executionResult == null ? null : executionResult.getDeductedIndividualBytes()
+            );
+            long deductedSharedThisRun = normalizeNonNegative(
+                    executionResult == null ? null : executionResult.getDeductedSharedBytes()
+            );
+            long deductedQosThisRun = normalizeNonNegative(
+                    executionResult == null ? null : executionResult.getDeductedQosBytes()
+            );
+            cumulativeIndividual = normalizeNonNegative(processedIndividualDataBefore) + deductedIndividualThisRun;
+            cumulativeShared = normalizeNonNegative(processedSharedDataBefore) + deductedSharedThisRun;
+            cumulativeQos = normalizeNonNegative(processedQosDataBefore) + deductedQosThisRun;
+        }
+
+        long cumulativeDeducted = resolveCumulativeDeducted(
+                originalApiTotalData,
+                cumulativeIndividual + cumulativeShared + cumulativeQos,
+                0L
+        );
         long cumulativeRemaining = clampRemaining(originalApiTotalData - cumulativeDeducted);
 
+        // 최종 상태는 "이번 실행"이 아니라 누적 차감 결과(누적 차감량/남은량)로 판정한다.
         TrafficLuaStatus lastLuaStatus = executionResult == null ? null : executionResult.getLastLuaStatus();
-        TrafficFinalStatus finalStatus = resolveCumulativeFinalStatus(cumulativeRemaining, lastLuaStatus);
+        TrafficFinalStatus finalStatus = resolveCumulativeFinalStatus(
+                originalApiTotalData,
+                cumulativeDeducted,
+                cumulativeRemaining,
+                lastLuaStatus
+        );
         LocalDateTime now = LocalDateTime.now();
 
         return TrafficDeductResultResDto.builder()
                 .traceId(originalPayload == null ? null : originalPayload.getTraceId())
                 .apiTotalData(originalApiTotalData)
-                .deductedTotalBytes(cumulativeDeducted)
+                .deductedIndividualBytes(cumulativeIndividual)
+                .deductedSharedBytes(cumulativeShared)
+                .deductedQosBytes(cumulativeQos)
                 .apiRemainingData(cumulativeRemaining)
                 .finalStatus(finalStatus)
                 .lastLuaStatus(lastLuaStatus)
+                .failureReason(executionResult == null ? null : executionResult.getFailureReason())
                 .createdAt(defaultNowIfNull(executionResult == null ? null : executionResult.getCreatedAt(), now))
                 .finishedAt(defaultNowIfNull(executionResult == null ? null : executionResult.getFinishedAt(), now))
                 .build();
-    }
-
-    /**
-     * done log 기록 직전에 누적 처리량 기준을 확정합니다.
-     *
-     * <p>우선순위:
-     * 1) Redis dedupe hash의 `processedData`를 최우선으로 사용
-     * 2) dedupe 조회 실패/미존재 시 `processedDataBefore + deductedThisRun` 계산값을 fallback으로 사용
-     */
-    private long resolveProcessedDataForDoneLog(
-            TrafficPayloadReqDto originalPayload,
-            TrafficDeductResultResDto executionResult,
-            long processedDataBefore
-    ) {
-        String traceId = originalPayload == null ? null : originalPayload.getTraceId();
-        Optional<TrafficInFlightIdempotencyEntry> dedupeEntry = trafficInFlightDedupeService.get(traceId);
-        if (dedupeEntry != null && dedupeEntry.isPresent()) {
-            return normalizeNonNegative(dedupeEntry.get().processedData());
-        }
-
-        long originalApiTotalData = normalizeNonNegative(originalPayload == null ? null : originalPayload.getApiTotalData());
-        long deductedThisRun = normalizeNonNegative(executionResult == null ? null : executionResult.getDeductedTotalBytes());
-        return resolveCumulativeDeducted(originalApiTotalData, processedDataBefore, deductedThisRun);
     }
 
     /**
@@ -888,9 +909,17 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
      * @param lastLuaStatus 마지막 Lua 실행 상태
      * @return 최종 처리 상태
      */
-    private TrafficFinalStatus resolveCumulativeFinalStatus(long cumulativeRemaining, TrafficLuaStatus lastLuaStatus) {
+    private TrafficFinalStatus resolveCumulativeFinalStatus(
+            long originalApiTotalData,
+            long cumulativeDeducted,
+            long cumulativeRemaining,
+            TrafficLuaStatus lastLuaStatus
+    ) {
         if (lastLuaStatus == TrafficLuaStatus.ERROR) {
             return TrafficFinalStatus.FAILED;
+        }
+        if (cumulativeDeducted <= 0L && cumulativeRemaining == originalApiTotalData) {
+            return TrafficFinalStatus.NOT_DEDUCTED;
         }
         if (cumulativeRemaining <= 0L) {
             return TrafficFinalStatus.SUCCESS;

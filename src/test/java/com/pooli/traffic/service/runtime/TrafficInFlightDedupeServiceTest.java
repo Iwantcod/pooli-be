@@ -1,9 +1,7 @@
 package com.pooli.traffic.service.runtime;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -23,7 +21,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.pooli.traffic.domain.TrafficInFlightIdempotencyEntry;
 import com.pooli.traffic.domain.TrafficInFlightIdempotencyEntryResult;
-import com.pooli.traffic.domain.enums.TrafficInFlightState;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficInFlightDedupeServiceTest {
@@ -55,9 +52,10 @@ class TrafficInFlightDedupeServiceTest {
             when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
             when(trafficLuaScriptInfraService.executeInFlightCreateIfAbsent(
                     dedupeKey,
-                    "processedData",
-                    "0",
-                    "retryCount",
+                    "processed_individual_data",
+                    "processed_shared_data",
+                    "processed_qos_data",
+                    "retry_count",
                     "0"
             ))
                     .thenReturn(1L);
@@ -65,7 +63,9 @@ class TrafficInFlightDedupeServiceTest {
             TrafficInFlightIdempotencyEntryResult result = trafficInFlightDedupeService.createOrGet(traceId);
 
             assertTrue(result.created());
-            assertEquals(0L, result.entry().processedData());
+            assertEquals(0L, result.entry().processedIndividualData());
+            assertEquals(0L, result.entry().processedSharedData());
+            assertEquals(0L, result.entry().processedQosData());
             assertEquals(0, result.entry().retryCount());
         }
 
@@ -77,20 +77,25 @@ class TrafficInFlightDedupeServiceTest {
             when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
             when(trafficLuaScriptInfraService.executeInFlightCreateIfAbsent(
                     dedupeKey,
-                    "processedData",
-                    "0",
-                    "retryCount",
+                    "processed_individual_data",
+                    "processed_shared_data",
+                    "processed_qos_data",
+                    "retry_count",
                     "0"
             ))
                     .thenReturn(0L);
             when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-            when(hashOperations.get(dedupeKey, "processedData")).thenReturn("120");
-            when(hashOperations.get(dedupeKey, "retryCount")).thenReturn("3");
+            when(hashOperations.get(dedupeKey, "processed_individual_data")).thenReturn("120");
+            when(hashOperations.get(dedupeKey, "processed_shared_data")).thenReturn("30");
+            when(hashOperations.get(dedupeKey, "processed_qos_data")).thenReturn("10");
+            when(hashOperations.get(dedupeKey, "retry_count")).thenReturn("3");
 
             TrafficInFlightIdempotencyEntryResult result = trafficInFlightDedupeService.createOrGet(traceId);
 
             assertFalse(result.created());
-            assertEquals(120L, result.entry().processedData());
+            assertEquals(120L, result.entry().processedIndividualData());
+            assertEquals(30L, result.entry().processedSharedData());
+            assertEquals(10L, result.entry().processedQosData());
             assertEquals(3, result.entry().retryCount());
         }
     }
@@ -121,13 +126,17 @@ class TrafficInFlightDedupeServiceTest {
             when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
             when(cacheStringRedisTemplate.hasKey(dedupeKey)).thenReturn(true);
             when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-            when(hashOperations.get(dedupeKey, "processedData")).thenReturn("50");
-            when(hashOperations.get(dedupeKey, "retryCount")).thenReturn("2");
+            when(hashOperations.get(dedupeKey, "processed_individual_data")).thenReturn("50");
+            when(hashOperations.get(dedupeKey, "processed_shared_data")).thenReturn("20");
+            when(hashOperations.get(dedupeKey, "processed_qos_data")).thenReturn("5");
+            when(hashOperations.get(dedupeKey, "retry_count")).thenReturn("2");
 
             Optional<TrafficInFlightIdempotencyEntry> result = trafficInFlightDedupeService.get(traceId);
 
             assertTrue(result.isPresent());
-            assertEquals(50L, result.get().processedData());
+            assertEquals(50L, result.get().processedIndividualData());
+            assertEquals(20L, result.get().processedSharedData());
+            assertEquals(5L, result.get().processedQosData());
             assertEquals(2, result.get().retryCount());
         }
     }
@@ -140,9 +149,10 @@ class TrafficInFlightDedupeServiceTest {
         when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
         when(trafficLuaScriptInfraService.executeInFlightIncrementRetryWithInit(
                 dedupeKey,
-                "processedData",
-                "0",
-                "retryCount",
+                "processed_individual_data",
+                "processed_shared_data",
+                "processed_qos_data",
+                "retry_count",
                 "0"
         ))
                 .thenReturn(4L);
@@ -150,37 +160,6 @@ class TrafficInFlightDedupeServiceTest {
         int retryCount = trafficInFlightDedupeService.incrementRetryOnReclaim(traceId);
 
         assertEquals(4, retryCount);
-    }
-
-    @Test
-    @DisplayName("addProcessedDataAtomically는 processedData를 원자 증가시킨다")
-    void addProcessedDataAtomicallyIncrementsProcessedData() {
-        String traceId = "trace-processed";
-        String dedupeKey = "pooli:dedupe:run:trace-processed";
-        when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
-        when(trafficLuaScriptInfraService.executeInFlightIncrementProcessedWithInit(
-                dedupeKey,
-                "processedData",
-                "0",
-                "retryCount",
-                "0",
-                40L
-        ))
-                .thenReturn(140L);
-
-        long processedData = trafficInFlightDedupeService.addProcessedDataAtomically(traceId, 40L);
-
-        assertEquals(140L, processedData);
-    }
-
-    @Test
-    @DisplayName("addProcessedDataAtomically는 음수 delta를 거부한다")
-    void addProcessedDataAtomicallyRejectsNegativeDelta() {
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> trafficInFlightDedupeService.addProcessedDataAtomically("trace-negative", -1L)
-        );
-        assertEquals("delta must be 0 or greater", exception.getMessage());
     }
 
     @Test
@@ -195,16 +174,4 @@ class TrafficInFlightDedupeServiceTest {
         verify(cacheStringRedisTemplate).delete(dedupeKey);
     }
 
-    @Test
-    @DisplayName("Redis 재시도와 DB fallback 상태는 로그로만 남긴다")
-    void marksRetryAndFallbackAsLogOnly() {
-        String traceId = "trace-log-only";
-
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 1));
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 2));
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 3));
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markDbFallback(traceId));
-
-        verify(cacheStringRedisTemplate, never()).opsForValue();
-    }
 }

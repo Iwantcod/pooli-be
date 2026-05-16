@@ -48,8 +48,6 @@
 		    l.line_id AS lineId,
 	        u.user_name AS userName,
 	        fl.role AS role,
-	        f.pool_remaining_data AS sharedDataRemaining,
-	        l.remaining_data AS personalDataRemaining,
 	        p.plan_name AS planName
 	    FROM LINE l
 	    JOIN USERS u

@@ -10,9 +10,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -32,15 +36,27 @@ import com.pooli.traffic.domain.entity.TrafficDeductDoneLog;
 import com.pooli.traffic.domain.enums.TrafficFinalStatus;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.mapper.TrafficDeductDoneLogMapper;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 @ExtendWith(MockitoExtension.class)
 public class TrafficDeductDoneLogServiceTest {
 
+    private static final long ENQUEUED_AT_EPOCH_MILLIS = 1_700_000_000_000L;
+    private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
+
     @Mock
     private TrafficDeductDoneLogMapper trafficDeductDoneLogMapper;
 
+    @Mock
+    private TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
+
     @InjectMocks
     private TrafficDeductDoneLogService trafficDeductDoneLogService;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ASIA_SEOUL);
+    }
 
     @Nested
     @DisplayName("existsByTraceId 테스트")
@@ -94,7 +110,11 @@ public class TrafficDeductDoneLogServiceTest {
             assertEquals("trace-001", savedLog.getTraceId());
             assertEquals("1-0", savedLog.getRecordId());
             assertEquals(11L, savedLog.getLineId());
+            assertEquals(LocalDateTime.ofInstant(Instant.ofEpochMilli(ENQUEUED_AT_EPOCH_MILLIS), ASIA_SEOUL), savedLog.getEnqueuedAt());
+            assertEquals(30L, savedLog.getDeductedIndividualBytes());
+            assertEquals(60L, savedLog.getDeductedSharedBytes());
             assertEquals(90L, savedLog.getDeductedTotalBytes());
+            assertNull(savedLog.getFailureReason());
             assertEquals(latency, savedLog.getLatency());
             assertNull(savedLog.getRestoreStatus());
             assertNull(savedLog.getRestoreStatusUpdatedAt());
@@ -122,7 +142,7 @@ public class TrafficDeductDoneLogServiceTest {
             // when
             boolean saved = trafficDeductDoneLogService.saveIfAbsent(
                     payload(),
-                    result(TrafficFinalStatus.PARTIAL_SUCCESS, policyFailureStatus, 0L, 100L),
+                    result(TrafficFinalStatus.NOT_DEDUCTED, policyFailureStatus, 0L, 0L, 100L),
                     "1-1",
                     55L
             );
@@ -132,10 +152,37 @@ public class TrafficDeductDoneLogServiceTest {
             ArgumentCaptor<TrafficDeductDoneLog> captor = ArgumentCaptor.forClass(TrafficDeductDoneLog.class);
             verify(trafficDeductDoneLogMapper).insert(captor.capture());
             TrafficDeductDoneLog savedLog = captor.getValue();
-            assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS.name(), savedLog.getFinalStatus());
+            assertEquals(TrafficFinalStatus.NOT_DEDUCTED.name(), savedLog.getFinalStatus());
             assertEquals(policyFailureStatus.name(), savedLog.getLastLuaStatus());
+            assertEquals(0L, savedLog.getDeductedIndividualBytes());
+            assertEquals(0L, savedLog.getDeductedSharedBytes());
             assertEquals(0L, savedLog.getDeductedTotalBytes());
             assertEquals(100L, savedLog.getApiRemainingData());
+        }
+
+        @Test
+        @DisplayName("실패 사유가 있으면 DONE 이력의 failureReason으로 저장한다")
+        void storesFailureReasonInDoneHistory() {
+            // given
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class))).thenReturn(1);
+
+            // when
+            boolean saved = trafficDeductDoneLogService.saveIfAbsent(
+                    payload(),
+                    result(TrafficFinalStatus.FAILED, TrafficLuaStatus.ERROR, 0L, 0L, 100L)
+                            .toBuilder()
+                            .failureReason("STALE_TARGET_MONTH")
+                            .build(),
+                    "1-2",
+                    55L
+            );
+
+            // then
+            assertTrue(saved);
+            ArgumentCaptor<TrafficDeductDoneLog> captor = ArgumentCaptor.forClass(TrafficDeductDoneLog.class);
+            verify(trafficDeductDoneLogMapper).insert(captor.capture());
+            TrafficDeductDoneLog savedLog = captor.getValue();
+            assertEquals("STALE_TARGET_MONTH", savedLog.getFailureReason());
         }
 
         @Test
@@ -218,134 +265,35 @@ public class TrafficDeductDoneLogServiceTest {
         }
 
         @Test
-        @DisplayName("빈 recordId는 예외를 발생시킨다")
-        void throwsWhenRecordIdIsBlank() {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> trafficDeductDoneLogService.saveIfAbsent(payload(), result(), " ", 10L)
-            );
-            verify(trafficDeductDoneLogMapper, never()).insert(any());
-        }
-    }
-
-    @Nested
-    @DisplayName("saveNonRetryableFailureIfAbsent 테스트")
-    class SaveNonRetryableFailureIfAbsentTest {
-
-        @Test
-        @DisplayName("traceId 확보 non-retryable 종결 로그를 FAILED로 저장한다")
-        void savesNonRetryableFailureDoneLog() {
+        @DisplayName("빈 recordId는 로그만 남기고 그대로 저장한다")
+        void savesBlankRecordIdAsIs() {
             // given
-            when(trafficDeductDoneLogMapper.insertNonRetryableFailure(any(TrafficDeductDoneLog.class)))
-                    .thenReturn(1);
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class))).thenReturn(1);
 
             // when
-            boolean saved = trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
-                    payload(),
-                    "nr-1",
-                    77L,
-                    "IllegalStateException: wrong type at lua script"
-            );
+            boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload(), result(), " ", 10L);
 
             // then
             assertTrue(saved);
             ArgumentCaptor<TrafficDeductDoneLog> captor = ArgumentCaptor.forClass(TrafficDeductDoneLog.class);
-            verify(trafficDeductDoneLogMapper).insertNonRetryableFailure(captor.capture());
-            TrafficDeductDoneLog savedLog = captor.getValue();
-            assertEquals("trace-001", savedLog.getTraceId());
-            assertEquals("nr-1", savedLog.getRecordId());
-            assertEquals(TrafficFinalStatus.FAILED.name(), savedLog.getFinalStatus());
-            assertEquals(TrafficLuaStatus.ERROR.name(), savedLog.getLastLuaStatus());
-            assertEquals(0L, savedLog.getDeductedTotalBytes());
-            assertEquals(100L, savedLog.getApiRemainingData());
-            assertEquals("IllegalStateException: wrong type at lua script", savedLog.getRestoreLastErrorMessage());
+            verify(trafficDeductDoneLogMapper).insert(captor.capture());
+            assertEquals(" ", captor.getValue().getRecordId());
         }
 
         @Test
-        @DisplayName("non-retryable done log도 traceId UNIQUE 중복이면 false를 반환한다")
-        void returnsFalseWhenNonRetryableInsertDuplicateKey() {
+        @DisplayName("null recordId는 로그만 남기고 그대로 저장한다")
+        void savesNullRecordIdAsIs() {
             // given
-            when(trafficDeductDoneLogMapper.insertNonRetryableFailure(any(TrafficDeductDoneLog.class)))
-                    .thenThrow(new DuplicateKeyException("duplicate trace_id"));
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class))).thenReturn(1);
 
             // when
-            boolean saved = trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
-                    payload(),
-                    "nr-2",
-                    50L,
-                    "IllegalArgumentException: bad payload"
-            );
-
-            // then
-            assertFalse(saved);
-            verify(trafficDeductDoneLogMapper, times(1)).insertNonRetryableFailure(any(TrafficDeductDoneLog.class));
-        }
-
-        @Test
-        @DisplayName("non-retryable done log insert도 retryable DB 예외는 재시도한다")
-        void retriesNonRetryableInsertWhenRetryableDbExceptionOccurs() {
-            // given
-            when(trafficDeductDoneLogMapper.insertNonRetryableFailure(any(TrafficDeductDoneLog.class)))
-                    .thenThrow(new QueryTimeoutException("timeout-1"))
-                    .thenThrow(new QueryTimeoutException("timeout-2"))
-                    .thenThrow(new QueryTimeoutException("timeout-3"))
-                    .thenReturn(1);
-
-            // when
-            boolean saved = trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
-                    payload(),
-                    "nr-3",
-                    88L,
-                    "TimeoutException: redis timeout"
-            );
-
-            // then
-            assertTrue(saved);
-            verify(trafficDeductDoneLogMapper, times(4)).insertNonRetryableFailure(any(TrafficDeductDoneLog.class));
-        }
-
-        @Test
-        @DisplayName("restore_last_error_message는 DB 저장 시 1000자까지만 보정한다")
-        void truncateRestoreLastErrorMessageToColumnLimit() {
-            // given
-            String overLimitMessage = "X".repeat(1005);
-            when(trafficDeductDoneLogMapper.insertNonRetryableFailure(any(TrafficDeductDoneLog.class)))
-                    .thenReturn(1);
-
-            // when
-            boolean saved = trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
-                    payload(),
-                    "nr-4",
-                    11L,
-                    overLimitMessage
-            );
+            boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload(), result(), null, 10L);
 
             // then
             assertTrue(saved);
             ArgumentCaptor<TrafficDeductDoneLog> captor = ArgumentCaptor.forClass(TrafficDeductDoneLog.class);
-            verify(trafficDeductDoneLogMapper).insertNonRetryableFailure(captor.capture());
-            assertEquals(1000, captor.getValue().getRestoreLastErrorMessage().length());
-            assertEquals(overLimitMessage.substring(0, 1000), captor.getValue().getRestoreLastErrorMessage());
-        }
-
-        @Test
-        @DisplayName("non-retryable INSERT 영향 행수가 1이 아니면 예외를 전파한다")
-        void throwsWhenNonRetryableInsertAffectedRowsIsNotOne() {
-            // given
-            when(trafficDeductDoneLogMapper.insertNonRetryableFailure(any(TrafficDeductDoneLog.class)))
-                    .thenReturn(0);
-
-            // when & then
-            IllegalStateException thrown = assertThrows(
-                    IllegalStateException.class,
-                    () -> trafficDeductDoneLogService.saveNonRetryableFailureIfAbsent(
-                            payload(),
-                            "nr-5",
-                            11L,
-                            "IllegalArgumentException: bad payload"
-                    )
-            );
-            assertTrue(thrown.getMessage().contains("traffic_done_log_insert_unexpected_row_count"));
+            verify(trafficDeductDoneLogMapper).insert(captor.capture());
+            assertNull(captor.getValue().getRecordId());
         }
     }
 
@@ -356,24 +304,26 @@ public class TrafficDeductDoneLogServiceTest {
                 .familyId(22L)
                 .appId(33)
                 .apiTotalData(100L)
-                .enqueuedAt(System.currentTimeMillis())
+                .enqueuedAt(ENQUEUED_AT_EPOCH_MILLIS)
                 .build();
     }
 
     private TrafficDeductResultResDto result() {
-        return result(TrafficFinalStatus.PARTIAL_SUCCESS, TrafficLuaStatus.NO_BALANCE, 90L, 10L);
+        return result(TrafficFinalStatus.PARTIAL_SUCCESS, TrafficLuaStatus.NO_BALANCE, 30L, 60L, 10L);
     }
 
     private TrafficDeductResultResDto result(
             TrafficFinalStatus finalStatus,
             TrafficLuaStatus lastLuaStatus,
-            long deductedTotalBytes,
+            long deductedIndividualBytes,
+            long deductedSharedBytes,
             long apiRemainingData
     ) {
         return TrafficDeductResultResDto.builder()
                 .traceId("trace-001")
                 .apiTotalData(100L)
-                .deductedTotalBytes(deductedTotalBytes)
+                .deductedIndividualBytes(deductedIndividualBytes)
+                .deductedSharedBytes(deductedSharedBytes)
                 .apiRemainingData(apiRemainingData)
                 .finalStatus(finalStatus)
                 .lastLuaStatus(lastLuaStatus)

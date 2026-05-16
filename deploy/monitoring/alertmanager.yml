@@ -1,0 +1,37 @@
+# Alertmanager 설정 파일입니다.
+# 목적:
+# - Prometheus가 평가한 alert를 받아 알림 채널로 전달합니다.
+# - 현재 EM6 범위에서는 Discord webhook receiver만 사용합니다.
+# - webhook URL은 레포에 커밋하지 않고 compose 시작 스크립트가 secret 파일에서 읽어 주입합니다.
+# - 이 파일의 `__DISCORD_WEBHOOK_URL__` 값은 실제 URL이 아니라 런타임 치환용 placeholder입니다.
+global:
+  # alert가 해소된 뒤 resolved 상태로 간주하기까지 기다리는 기본 시간입니다.
+  resolve_timeout: 5m
+
+route:
+  # 별도 하위 route가 없으면 모든 alert를 discord receiver로 보냅니다.
+  receiver: discord
+  # 같은 alertname/redis 조합은 하나의 알림 그룹으로 묶어 중복 알림을 줄입니다.
+  group_by:
+    - alertname
+    - redis
+  # 첫 alert가 발생한 뒤 같은 그룹의 추가 alert를 묶기 위해 잠시 대기하는 시간입니다.
+  group_wait: 10s
+  # 이미 알림을 보낸 그룹에 새 alert가 추가되었을 때 다음 알림까지 기다리는 시간입니다.
+  group_interval: 1m
+  # 같은 alert가 계속 firing 상태일 때 반복 알림을 보내는 간격입니다.
+  repeat_interval: 30m
+
+receivers:
+  # Discord로 alert를 전달하는 receiver입니다.
+  - name: discord
+    discord_configs:
+      # Alertmanager v0.27.0의 discord_configs는 webhook_url_file을 유효한 URL 제공으로 처리하지 않습니다.
+      # deploy/monitoring/docker-compose.yml이 secret 파일을 읽어 이 placeholder를 실제 URL로 치환한 런타임 설정을 생성합니다.
+      - webhook_url: "__DISCORD_WEBHOOK_URL__"
+        # alert가 해소되었을 때도 resolved 알림을 보냅니다.
+        send_resolved: true
+        # Discord 메시지 제목입니다. alert 이름과 Redis 종류(cache/streams)를 함께 표시합니다.
+        title: "{{ .CommonLabels.alertname }} {{ .CommonLabels.redis }}"
+        # Discord 메시지 본문입니다. Prometheus rule의 description annotation을 출력합니다.
+        message: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"

@@ -2,43 +2,26 @@ package com.pooli.traffic.service.decision;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.dao.QueryTimeoutException;
-
-import com.pooli.common.exception.ApplicationException;
-import com.pooli.common.exception.CommonErrorCode;
-import com.pooli.monitoring.metrics.TrafficDeductFallbackMetrics;
-import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
-import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
-import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
-import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
-import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
-import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.QueryTimeoutException;
 
-import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.TrafficDeductExecutionContext;
+import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
+import com.pooli.traffic.domain.TrafficLuaExecutionResult;
 import com.pooli.traffic.domain.TrafficPolicyCheckLayerResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
@@ -46,12 +29,18 @@ import com.pooli.traffic.domain.enums.TrafficFinalStatus;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPolicyCheckFailureCause;
 import com.pooli.traffic.domain.enums.TrafficPoolType;
+import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
+import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficDeductOrchestratorServiceTest {
 
     @Mock
-    private TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
+    private TrafficDeductLuaExecutor trafficDeductLuaExecutor;
+
+    @Mock
+    private TrafficHydrateService trafficHydrateService;
 
     @Mock
     private TrafficRecentUsageBucketService trafficRecentUsageBucketService;
@@ -60,554 +49,152 @@ class TrafficDeductOrchestratorServiceTest {
     private TrafficSharedPoolThresholdAlarmService trafficSharedPoolThresholdAlarmService;
 
     @Mock
-    private TrafficBalanceStateWriteThroughService trafficBalanceStateWriteThroughService;
-
-    @Mock
     private TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
 
     @Mock
     private TrafficPolicyCheckLayerService trafficPolicyCheckLayerService;
 
     @Mock
-    private TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
-
-    @Mock
     private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
-    @Mock
-    private TrafficDbDeductFallbackService trafficDbDeductFallbackService;
-
-    @Mock
-    private TrafficDeductFallbackMetrics trafficDeductFallbackMetrics;
-
-    @Mock
-    private TrafficInFlightDedupeService trafficInFlightDedupeService;
-
     @InjectMocks
-    private TrafficDeductOrchestratorService trafficDeductOrchestratorService;
+    private TrafficDeductOrchestratorService service;
 
-    @Nested
-    class OrchestrateTest {
+    @BeforeEach
+    void setUp() {
+        lenient().when(trafficPolicyCheckLayerService.evaluate(any(TrafficPayloadReqDto.class)))
+                .thenReturn(policyCheckFromLua(0L, TrafficLuaStatus.OK));
+    }
 
-        @BeforeEach
-        void setUp() {
-            lenient().when(trafficPolicyCheckLayerService.evaluate(any(TrafficPayloadReqDto.class)))
-                    .thenReturn(policyCheckFromLua(0L, TrafficLuaStatus.OK));
-        }
+    @Test
+    @DisplayName("통합 Lua 결과의 개인/공유/QoS 차감량으로 최종 결과를 조립한다")
+    void orchestratesUnifiedDeductResult() {
+        TrafficPayloadReqDto payload = payload(100L);
+        TrafficLuaDeductExecutionResult initialResult = unifiedResult(30L, 40L, 30L, TrafficLuaStatus.OK);
+        when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(TrafficFailureStage.DEDUCT)
+        )).thenReturn(initialResult);
+        when(trafficHydrateService.recoverIfNeeded(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(initialResult)
+        )).thenReturn(initialResult);
 
-        @Test
-        void successWhenIndividualHandlesAll() {
-            // given
-            TrafficPayloadReqDto payload = payload(103L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(103L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(103L, TrafficLuaStatus.OK));
+        TrafficDeductResultResDto result = service.orchestrate(payload);
 
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
+        assertAll(
+                () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
+                () -> assertEquals(100L, result.getDeductedTotalBytes()),
+                () -> assertEquals(30L, result.getDeductedIndividualBytes()),
+                () -> assertEquals(40L, result.getDeductedSharedBytes()),
+                () -> assertEquals(30L, result.getDeductedQosBytes()),
+                () -> assertEquals(0L, result.getApiRemainingData())
+        );
+        verify(trafficRecentUsageBucketService).recordUsage(TrafficPoolType.INDIVIDUAL, payload, 30L);
+        verify(trafficRecentUsageBucketService).recordUsage(TrafficPoolType.SHARED, payload, 40L);
+        verify(trafficSharedPoolThresholdAlarmService).checkAndEnqueueIfReached(22L);
+    }
 
-            // then
-            verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
-            verify(trafficPolicyCheckLayerService).evaluate(eq(payload));
-            verify(trafficHydrateRefillAdapterService)
-                    .executeIndividualWithRecovery(eq(payload), eq(103L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never())
-                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
-            verifyNoInteractions(trafficDbDeductFallbackService);
-            verifyNoInteractions(trafficDeductFallbackMetrics);
-            verifyNoInteractions(trafficInFlightDedupeService);
-            verify(trafficRecentUsageBucketService).recordUsage(
-                    com.pooli.traffic.domain.enums.TrafficPoolType.INDIVIDUAL,
-                    payload,
-                    103L
-            );
-            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
-            verifyNoInteractions(trafficBalanceStateWriteThroughService);
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(103L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(0L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.OK, result.getLastLuaStatus())
-            );
-        }
+    @Test
+    @DisplayName("정책 차단 상태면 차감 Lua를 호출하지 않고 NOT_DEDUCTED로 종료한다")
+    void returnsNotDeductedWhenPolicyBlocks() {
+        TrafficPayloadReqDto payload = payload(100L);
+        when(trafficPolicyCheckLayerService.evaluate(payload))
+                .thenReturn(policyCheckFromLua(0L, TrafficLuaStatus.BLOCKED_REPEAT));
 
-        @Test
-        void individualNoBalanceThenSharedCompensation() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(4L, TrafficLuaStatus.NO_BALANCE));
-            when(trafficHydrateRefillAdapterService.executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(96L, TrafficLuaStatus.OK));
+        TrafficDeductResultResDto result = service.orchestrate(payload);
 
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
+        assertAll(
+                () -> assertEquals(TrafficFinalStatus.NOT_DEDUCTED, result.getFinalStatus()),
+                () -> assertEquals(0L, result.getDeductedTotalBytes()),
+                () -> assertEquals(100L, result.getApiRemainingData()),
+                () -> assertEquals(TrafficLuaStatus.BLOCKED_REPEAT, result.getLastLuaStatus())
+        );
+        verify(trafficDeductLuaExecutor, never())
+                .executeUnifiedWithRetry(any(), any(Long.class), any(), any());
+        verify(trafficHydrateService, never())
+                .recoverIfNeeded(any(), any(Long.class), any(), any());
+    }
 
-            // then
-            verify(trafficHydrateRefillAdapterService)
-                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService)
-                    .executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class));
-            verify(trafficRecentUsageBucketService).recordUsage(
-                    com.pooli.traffic.domain.enums.TrafficPoolType.INDIVIDUAL,
-                    payload,
-                    4L
-            );
-            verify(trafficRecentUsageBucketService).recordUsage(
-                    com.pooli.traffic.domain.enums.TrafficPoolType.SHARED,
-                    payload,
-                    96L
-            );
-            verify(trafficBalanceStateWriteThroughService).markSharedMetaConsumed(22L, 96L);
-            verify(trafficSharedPoolThresholdAlarmService).checkAndEnqueueIfReached(22L);
+    @Test
+    @DisplayName("hydrate invalid 결과의 failureReason을 최종 결과에 전달한다")
+    void propagatesHydrateInvalidFailureReason() {
+        TrafficPayloadReqDto payload = payload(100L);
+        TrafficLuaDeductExecutionResult initialResult =
+                unifiedResult(0L, 0L, 0L, TrafficLuaStatus.HYDRATE_INDIVIDUAL);
+        TrafficLuaDeductExecutionResult invalidResult = TrafficLuaDeductExecutionResult.builder()
+                .indivDeducted(0L)
+                .sharedDeducted(0L)
+                .qosDeducted(0L)
+                .status(TrafficLuaStatus.ERROR)
+                .failureReason("STALE_TARGET_MONTH")
+                .build();
+        when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(TrafficFailureStage.DEDUCT)
+        )).thenReturn(initialResult);
+        when(trafficHydrateService.recoverIfNeeded(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(initialResult)
+        )).thenReturn(invalidResult);
 
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(100L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(0L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.OK, result.getLastLuaStatus())
-            );
-        }
+        TrafficDeductResultResDto result = service.orchestrate(payload);
 
-        @Test
-        void successWhenSharedDeductedButThresholdAlarmThrowsException() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(4L, TrafficLuaStatus.NO_BALANCE));
-            when(trafficHydrateRefillAdapterService.executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(96L, TrafficLuaStatus.OK));
-            doThrow(new IllegalStateException("alarm enqueue failed"))
-                    .when(trafficSharedPoolThresholdAlarmService)
-                    .checkAndEnqueueIfReached(22L);
+        assertAll(
+                () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
+                () -> assertEquals(TrafficLuaStatus.ERROR, result.getLastLuaStatus()),
+                () -> assertEquals("STALE_TARGET_MONTH", result.getFailureReason())
+        );
+    }
 
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
+    @Test
+    @DisplayName("정책 검증 retryable 장애는 결과 DTO로 종료하지 않고 예외로 전파한다")
+    void throwsWhenPolicyCheckFailsRetryable() {
+        TrafficPayloadReqDto payload = payload(100L);
+        TrafficStageFailureException stageFailure = TrafficStageFailureException.retryableFailure(
+                TrafficFailureStage.POLICY_CHECK,
+                new QueryTimeoutException("policy redis timeout")
+        );
+        when(trafficPolicyCheckLayerService.evaluate(payload))
+                .thenReturn(TrafficPolicyCheckLayerResult.retryableFailure(
+                        TrafficPolicyCheckFailureCause.POLICY_CHECK_RETRYABLE,
+                        stageFailure
+                ));
 
-            // then
-            verify(trafficHydrateRefillAdapterService)
-                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService)
-                    .executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class));
-            verify(trafficBalanceStateWriteThroughService).markSharedMetaConsumed(22L, 96L);
-            verify(trafficSharedPoolThresholdAlarmService).checkAndEnqueueIfReached(22L);
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(100L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(0L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.OK, result.getLastLuaStatus())
-            );
-        }
+        TrafficStageFailureException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+                TrafficStageFailureException.class,
+                () -> service.orchestrate(payload)
+        );
 
-        @Test
-        void successWhenSharedMetaWriteThroughThrowsException() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(4L, TrafficLuaStatus.NO_BALANCE));
-            when(trafficHydrateRefillAdapterService.executeSharedWithRecovery(eq(payload), eq(96L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(96L, TrafficLuaStatus.OK));
-            doThrow(new DataAccessResourceFailureException("meta write through failed"))
-                    .when(trafficBalanceStateWriteThroughService)
-                    .markSharedMetaConsumed(22L, 96L);
+        assertEquals(stageFailure, thrown);
+        verify(trafficDeductLuaExecutor, never())
+                .executeUnifiedWithRetry(any(), any(Long.class), any(), any());
+        verify(trafficHydrateService, never())
+                .recoverIfNeeded(any(), any(Long.class), any(), any());
+    }
 
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
+    @Test
+    @DisplayName("ensureLoaded non-retryable 실패는 원 예외로 전파한다")
+    void throwsWhenEnsureLoadedFailureIsNonRetryable() {
+        TrafficPayloadReqDto payload = payload(100L);
+        QueryTimeoutException exception = new QueryTimeoutException("policy check failed");
+        doThrow(exception).when(trafficLinePolicyHydrationService).ensureLoaded(11L);
+        when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(exception)).thenReturn(false);
 
-            // then
-            verify(trafficBalanceStateWriteThroughService).markSharedMetaConsumed(22L, 96L);
-            verify(trafficSharedPoolThresholdAlarmService).checkAndEnqueueIfReached(22L);
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(100L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(0L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.OK, result.getLastLuaStatus())
-            );
-        }
+        QueryTimeoutException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+                QueryTimeoutException.class,
+                () -> service.orchestrate(payload)
+        );
 
-        @Test
-        void noSharedWhenResidualIsZeroEvenNoBalance() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(100L, TrafficLuaStatus.NO_BALANCE));
-
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // then
-            verify(trafficHydrateRefillAdapterService)
-                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never())
-                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
-            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
-            verifyNoInteractions(trafficBalanceStateWriteThroughService);
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(100L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(0L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.NO_BALANCE, result.getLastLuaStatus())
-            );
-        }
-
-        @Test
-        void noSharedWhenIndividualStatusIsNotNoBalance() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(30L, TrafficLuaStatus.HIT_DAILY_LIMIT));
-
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // then
-            verify(trafficHydrateRefillAdapterService)
-                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never())
-                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
-            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
-            verifyNoInteractions(trafficBalanceStateWriteThroughService);
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(30L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(70L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.HIT_DAILY_LIMIT, result.getLastLuaStatus())
-            );
-        }
-
-        @Test
-        void partialSuccessWhenIndividualBlocked() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(0L, TrafficLuaStatus.BLOCKED_IMMEDIATE));
-
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // then
-            verify(trafficHydrateRefillAdapterService)
-                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never())
-                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
-            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
-            verifyNoInteractions(trafficBalanceStateWriteThroughService);
-
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(0L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(100L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.BLOCKED_IMMEDIATE, result.getLastLuaStatus())
-            );
-        }
-
-        @Test
-        void failedOnErrorStatus() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(-1L, TrafficLuaStatus.ERROR));
-
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // then
-            verify(trafficHydrateRefillAdapterService)
-                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never())
-                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
-            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
-            verifyNoInteractions(trafficBalanceStateWriteThroughService);
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
-                    () -> assertEquals(0L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(100L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.ERROR, result.getLastLuaStatus())
-            );
-        }
-
-        @Test
-        void successWhenApiTotalDataIsZero() {
-            // given
-            TrafficPayloadReqDto payload = payload(0L);
-
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // then
-            verifyNoInteractions(trafficHydrateRefillAdapterService);
-            verifyNoInteractions(trafficRecentUsageBucketService);
-            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
-            verifyNoInteractions(trafficBalanceStateWriteThroughService);
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(0L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(0L, result.getApiRemainingData()),
-                    () -> assertNull(result.getLastLuaStatus())
-            );
-        }
-
-        @Test
-        void successWhenApiTotalDataIsNegative() {
-            // given
-            TrafficPayloadReqDto payload = payload(-10L);
-
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // then
-            verifyNoInteractions(trafficHydrateRefillAdapterService);
-            verifyNoInteractions(trafficRecentUsageBucketService);
-            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
-            verifyNoInteractions(trafficBalanceStateWriteThroughService);
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(0L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(0L, result.getApiRemainingData()),
-                    () -> assertNull(result.getLastLuaStatus())
-            );
-        }
-
-        @Test
-        void failedWhenAdapterThrowsException() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
-                    .thenThrow(new RuntimeException("adapter failed"));
-
-            // when + then
-            assertThrows(RuntimeException.class, () -> trafficDeductOrchestratorService.orchestrate(payload));
-            verify(trafficHydrateRefillAdapterService)
-                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verify(trafficHydrateRefillAdapterService, never())
-                    .executeSharedWithRecovery(eq(payload), anyLong(), any(TrafficDeductExecutionContext.class));
-            verifyNoInteractions(trafficRecentUsageBucketService);
-            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
-            verifyNoInteractions(trafficBalanceStateWriteThroughService);
-        }
-
-        @Test
-        void blocksBeforeDeductWhenPolicyCheckBlocked() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            when(trafficPolicyCheckLayerService.evaluate(eq(payload)))
-                    .thenReturn(policyCheckFromLua(0L, TrafficLuaStatus.BLOCKED_IMMEDIATE));
-
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // then
-            verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
-            verify(trafficPolicyCheckLayerService).evaluate(eq(payload));
-            verifyNoInteractions(trafficHydrateRefillAdapterService);
-            verifyNoInteractions(trafficDbDeductFallbackService);
-            verifyNoInteractions(trafficRecentUsageBucketService);
-            verifyNoInteractions(trafficSharedPoolThresholdAlarmService);
-            verifyNoInteractions(trafficBalanceStateWriteThroughService);
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.PARTIAL_SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(0L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(100L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.BLOCKED_IMMEDIATE, result.getLastLuaStatus())
-            );
-        }
-
-        @Test
-        void executesDbFallbackWhenPolicyCheckIsFallbackEligible() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            RuntimeException policyFailure = new RuntimeException("policy check redis timeout");
-            when(trafficPolicyCheckLayerService.evaluate(eq(payload)))
-                    .thenReturn(TrafficPolicyCheckLayerResult.retryableFailure(
-                            TrafficPolicyCheckFailureCause.POLICY_CHECK_RETRYABLE,
-                            policyFailure
-                    ));
-            when(trafficDbDeductFallbackService.deduct(
-                    eq(TrafficPoolType.INDIVIDUAL),
-                    eq(payload),
-                    eq(100L),
-                    any(TrafficDeductExecutionContext.class)
-            )).thenReturn(luaResult(40L, TrafficLuaStatus.NO_BALANCE));
-            when(trafficDbDeductFallbackService.deduct(
-                    eq(TrafficPoolType.SHARED),
-                    eq(payload),
-                    eq(60L),
-                    any(TrafficDeductExecutionContext.class)
-            )).thenReturn(luaResult(60L, TrafficLuaStatus.OK));
-
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // then
-            verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
-            verify(trafficPolicyCheckLayerService).evaluate(eq(payload));
-            verifyNoInteractions(trafficHydrateRefillAdapterService);
-            verify(trafficDbDeductFallbackService).deduct(
-                    eq(TrafficPoolType.INDIVIDUAL),
-                    eq(payload),
-                    eq(100L),
-                    any(TrafficDeductExecutionContext.class)
-            );
-            verify(trafficDbDeductFallbackService).deduct(
-                    eq(TrafficPoolType.SHARED),
-                    eq(payload),
-                    eq(60L),
-                    any(TrafficDeductExecutionContext.class)
-            );
-            verify(trafficDeductFallbackMetrics).incrementDbFallback("INDIVIDUAL", "policy_check_retryable_failure");
-            verify(trafficDeductFallbackMetrics).incrementDbFallback("SHARED", "policy_check_retryable_failure");
-            verify(trafficInFlightDedupeService, times(2)).markDbFallback("trace-001");
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(100L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(0L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.OK, result.getLastLuaStatus())
-            );
-        }
-
-        @Test
-        void executesDbFallbackWhenEnsureLoadedFailsRetryable() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            DataAccessResourceFailureException ensureLoadedFailure = new DataAccessResourceFailureException("redis timeout");
-            RuntimeException unwrapped = new RuntimeException("redis timeout");
-            doThrow(ensureLoadedFailure)
-                    .when(trafficLinePolicyHydrationService)
-                    .ensureLoaded(11L);
-            when(trafficRefillOutboxSupportService.unwrapRuntimeException(ensureLoadedFailure)).thenReturn(unwrapped);
-            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)).thenReturn(true);
-            when(trafficDbDeductFallbackService.deduct(
-                    eq(TrafficPoolType.INDIVIDUAL),
-                    eq(payload),
-                    eq(100L),
-                    any(TrafficDeductExecutionContext.class)
-            )).thenReturn(luaResult(100L, TrafficLuaStatus.OK));
-
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // then
-            verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
-            verifyNoInteractions(trafficPolicyCheckLayerService);
-            verifyNoInteractions(trafficHydrateRefillAdapterService);
-            verify(trafficDbDeductFallbackService).deduct(
-                    eq(TrafficPoolType.INDIVIDUAL),
-                    eq(payload),
-                    eq(100L),
-                    any(TrafficDeductExecutionContext.class)
-            );
-            verify(trafficDeductFallbackMetrics).incrementDbFallback("INDIVIDUAL", "policy_check_retryable_failure");
-            verify(trafficInFlightDedupeService).markDbFallback("trace-001");
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.SUCCESS, result.getFinalStatus()),
-                    () -> assertEquals(100L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(0L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.OK, result.getLastLuaStatus())
-            );
-        }
-
-        @Test
-        void rethrowsWhenPolicyCheckStageFailureIsNonRetryable() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            TrafficStageFailureException stageFailure =
-                    TrafficStageFailureException.nonRetryableFailure(
-                            TrafficFailureStage.POLICY_CHECK,
-                            new QueryTimeoutException("policy check redis down")
-                    );
-            when(trafficPolicyCheckLayerService.evaluate(eq(payload))).thenThrow(stageFailure);
-
-            // when + then
-            TrafficStageFailureException thrown = assertThrows(
-                    TrafficStageFailureException.class,
-                    () -> trafficDeductOrchestratorService.orchestrate(payload)
-            );
-            assertAll(
-                    () -> assertSame(stageFailure, thrown),
-                    () -> assertEquals(TrafficFailureStage.POLICY_CHECK, thrown.getStage())
-            );
-            verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
-            verify(trafficPolicyCheckLayerService).evaluate(eq(payload));
-            verifyNoInteractions(trafficHydrateRefillAdapterService);
-            verifyNoInteractions(trafficDbDeductFallbackService);
-            verifyNoInteractions(trafficDeductFallbackMetrics);
-            verifyNoInteractions(trafficInFlightDedupeService);
-        }
-
-        @Test
-        void rethrowsWhenDeductStageRedisFailureOccursAfterPolicyCheck() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            QueryTimeoutException timeoutException = new QueryTimeoutException("deduct redis down");
-            TrafficStageFailureException stageFailure =
-                    TrafficStageFailureException.retryableFailure(
-                            TrafficFailureStage.DEDUCT,
-                            timeoutException
-                    );
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
-                    .thenThrow(stageFailure);
-
-            // when + then
-            TrafficStageFailureException thrown = assertThrows(
-                    TrafficStageFailureException.class,
-                    () -> trafficDeductOrchestratorService.orchestrate(payload)
-            );
-            assertAll(
-                    () -> assertSame(stageFailure, thrown),
-                    () -> assertEquals(TrafficFailureStage.DEDUCT, thrown.getStage())
-            );
-            verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
-            verify(trafficPolicyCheckLayerService).evaluate(eq(payload));
-            verify(trafficHydrateRefillAdapterService)
-                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            verifyNoInteractions(trafficDbDeductFallbackService);
-            verifyNoInteractions(trafficDeductFallbackMetrics);
-            verifyNoInteractions(trafficInFlightDedupeService);
-        }
-
-        @Test
-        void rethrowsWhenEnsureLoadedFailsNonRetryable() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            ApplicationException ensureLoadedFailure = new ApplicationException(CommonErrorCode.INTERNAL_SERVER_ERROR);
-            RuntimeException unwrapped = new RuntimeException("not redis infra failure");
-            doThrow(ensureLoadedFailure)
-                    .when(trafficLinePolicyHydrationService)
-                    .ensureLoaded(11L);
-            when(trafficRefillOutboxSupportService.unwrapRuntimeException(ensureLoadedFailure)).thenReturn(unwrapped);
-            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)).thenReturn(false);
-
-            // when + then
-            assertThrows(ApplicationException.class, () -> trafficDeductOrchestratorService.orchestrate(payload));
-            verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
-            verifyNoInteractions(trafficPolicyCheckLayerService);
-            verifyNoInteractions(trafficHydrateRefillAdapterService);
-            verifyNoInteractions(trafficDbDeductFallbackService);
-        }
-
-        @Test
-        void skipsPreCheckAndUsesAdapterWhenPreCheckMinimumFieldsAreMissing() {
-            // given
-            TrafficPayloadReqDto payload = payload(100L);
-            payload.setAppId(null);
-            when(trafficHydrateRefillAdapterService.executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class)))
-                    .thenReturn(luaResult(-1L, TrafficLuaStatus.ERROR));
-
-            // when
-            TrafficDeductResultResDto result = trafficDeductOrchestratorService.orchestrate(payload);
-
-            // then
-            verifyNoInteractions(trafficLinePolicyHydrationService);
-            verifyNoInteractions(trafficPolicyCheckLayerService);
-            verifyNoInteractions(trafficDbDeductFallbackService);
-            verify(trafficHydrateRefillAdapterService)
-                    .executeIndividualWithRecovery(eq(payload), eq(100L), any(TrafficDeductExecutionContext.class));
-            assertAll(
-                    () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
-                    () -> assertEquals(0L, result.getDeductedTotalBytes()),
-                    () -> assertEquals(100L, result.getApiRemainingData()),
-                    () -> assertEquals(TrafficLuaStatus.ERROR, result.getLastLuaStatus())
-            );
-        }
+        assertEquals(exception, thrown);
     }
 
     private TrafficPayloadReqDto payload(long apiTotalData) {
@@ -615,20 +202,24 @@ class TrafficDeductOrchestratorServiceTest {
                 .traceId("trace-001")
                 .lineId(11L)
                 .familyId(22L)
-                .appId(33)
+                .appId(7)
                 .apiTotalData(apiTotalData)
-                .enqueuedAt(System.currentTimeMillis())
-                .build();
-    }
-
-    private TrafficLuaExecutionResult luaResult(long answer, TrafficLuaStatus status) {
-        return TrafficLuaExecutionResult.builder()
-                .answer(answer)
-                .status(status)
                 .build();
     }
 
     private TrafficPolicyCheckLayerResult policyCheckFromLua(long answer, TrafficLuaStatus status) {
-        return TrafficPolicyCheckLayerResult.fromLuaResult(luaResult(answer, status));
+        return TrafficPolicyCheckLayerResult.fromLuaResult(TrafficLuaExecutionResult.builder()
+                .answer(answer)
+                .status(status)
+                .build());
+    }
+
+    private TrafficLuaDeductExecutionResult unifiedResult(long individual, long shared, long qos, TrafficLuaStatus status) {
+        return TrafficLuaDeductExecutionResult.builder()
+                .indivDeducted(individual)
+                .sharedDeducted(shared)
+                .qosDeducted(qos)
+                .status(status)
+                .build();
     }
 }

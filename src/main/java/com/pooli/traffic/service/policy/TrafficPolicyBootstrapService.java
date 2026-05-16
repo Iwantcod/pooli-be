@@ -2,8 +2,8 @@ package com.pooli.traffic.service.policy;
 
 import static java.util.Map.entry;
 
-import java.time.Instant;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.HashSet;
@@ -13,8 +13,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
@@ -22,8 +23,6 @@ import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -62,12 +61,11 @@ public class TrafficPolicyBootstrapService {
             entry(7, "APP_POLICY_WHITELIST_POLICY")
     );
 
-    private static final RedisScript<Long> LOCK_RELEASE_SCRIPT = createLockReleaseScript();
-
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
     private final PolicyBackOfficeMapper policyBackOfficeMapper;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
+    private final TrafficLuaScriptInfraService trafficLuaScriptInfraService;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
     @PostConstruct
@@ -253,24 +251,9 @@ public class TrafficPolicyBootstrapService {
      */
     private void releaseLock(String lockKey, String lockOwner) {
         try {
-            cacheStringRedisTemplate.execute(LOCK_RELEASE_SCRIPT, List.of(lockKey), lockOwner);
+            trafficLuaScriptInfraService.executeLockRelease(lockKey, lockOwner);
         } catch (Exception e) {
             log.warn("traffic_policy_bootstrap_lock_release_failed lockKey={}", lockKey, e);
         }
-    }
-
-    /**
-     * lock 해제를 위한 소유자 검증 Lua를 생성합니다.
-     */
-    private static RedisScript<Long> createLockReleaseScript() {
-        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
-        script.setScriptText("""
-                if redis.call('GET', KEYS[1]) == ARGV[1] then
-                  return redis.call('DEL', KEYS[1])
-                end
-                return 0
-                """);
-        script.setResultType(Long.class);
-        return script;
     }
 }

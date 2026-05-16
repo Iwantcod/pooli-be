@@ -9,7 +9,6 @@ import com.pooli.traffic.domain.TrafficPolicyCheckLayerResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPolicyCheckFailureCause;
-import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
@@ -29,11 +28,11 @@ import org.springframework.stereotype.Service;
  * <p>책임 범위:
  * 1) 차단성 정책 검증 Lua 실행
  * 2) GLOBAL_POLICY_HYDRATE 보정 재시도
- * 3) retryable 인프라 예외의 fallbackEligible 판정
+ * 3) retryable 인프라 예외의 pending/reclaim 대상 판정
  *
  * <p>비포함 범위:
  * - line 정책 ensureLoaded 호출
- * - DB fallback 실제 실행
+ * - retryable 실패 이후의 stream pending/reclaim 처리
  */
 @Slf4j
 @Service
@@ -53,7 +52,6 @@ public class TrafficPolicyCheckLayerService {
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficPolicyBootstrapService trafficPolicyBootstrapService;
-    private final TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     /**
@@ -65,10 +63,9 @@ public class TrafficPolicyCheckLayerService {
             TrafficLuaExecutionResult luaResult = executePolicyCheckWithGlobalRecovery(payload);
             return TrafficPolicyCheckLayerResult.fromLuaResult(luaResult);
         } catch (ApplicationException | DataAccessException e) {
-            RuntimeException unwrapped = trafficRefillOutboxSupportService.unwrapRuntimeException(e);
-            if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrapped)) {
+            if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(e)) {
                 TrafficStageFailureException stageFailure =
-                        TrafficStageFailureException.retryableFailure(failureStage, unwrapped);
+                        TrafficStageFailureException.retryableFailure(failureStage, e);
                 log.warn(
                         "{} traceId={} failureCause={}",
                         failureStage.retryableFailureLogKey(),

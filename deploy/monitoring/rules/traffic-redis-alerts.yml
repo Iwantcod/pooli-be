@@ -1,0 +1,75 @@
+# Traffic Redis 가용성 alert rule 파일입니다.
+# 목적:
+# - Spring worker들이 노출한 raw metric으로 Redis 실패율을 Prometheus에서 계산합니다.
+# - Spring 애플리케이션은 경보 판단을 하지 않고 metric만 노출합니다.
+# - retryable infra failure(timeout/connection)만 실패율에 포함하고 non_retryable은 제외합니다.
+groups:
+  # Redis 가용성 관련 alert를 하나의 rule group으로 묶습니다.
+  - name: traffic-redis-availability
+    rules:
+      # warning: 5분 기준 retryable 실패율이 10% 이상이면 발생합니다.
+      - alert: TrafficRedisWarningFailureRate
+        expr: |
+          # 분자: timeout/connection 실패율, 분모: 전체 Redis 명령 시도율입니다.
+          # `sum by (redis)`로 cache/streams Redis를 각각 독립 계산합니다.
+          (
+            sum by (redis) (rate(traffic_redis_failures_total{kind=~"timeout|connection"}[5m]))
+            /
+            # 요청이 없는 구간의 0 나누기를 막기 위해 최소 분모를 1로 둡니다.
+            clamp_min(sum by (redis) (rate(traffic_redis_ops_total[5m])), 1)
+          ) >= 0.10
+          # 오탐 방지를 위해 최근 1분 요청 수가 Redis 종류별 100건 이상일 때만 alert를 평가합니다.
+          and on (redis)
+          sum by (redis) (increase(traffic_redis_ops_total[1m])) >= 100
+        # 조건이 1분 동안 유지되어야 warning alert가 firing 됩니다.
+        for: 1m
+        labels:
+          # Alertmanager route/Discord 메시지에서 사용할 심각도 label입니다.
+          severity: warning
+        annotations:
+          # Discord 제목/본문에 사용할 사람이 읽는 설명입니다.
+          summary: "Traffic Redis warning failure rate"
+          description: "{{ $labels.redis }} Redis retryable failure rate is at least 10% over 5 minutes."
+
+      # critical: 1분 기준 retryable 실패율이 30% 이상이면 발생합니다.
+      - alert: TrafficRedisCriticalFailureRate
+        expr: |
+          # cache/streams Redis별 1분 retryable 실패율을 계산합니다.
+          (
+            sum by (redis) (rate(traffic_redis_failures_total{kind=~"timeout|connection"}[1m]))
+            /
+            clamp_min(sum by (redis) (rate(traffic_redis_ops_total[1m])), 1)
+          ) >= 0.30
+          # traffic이 충분한 Redis 종류만 평가합니다.
+          and on (redis)
+          sum by (redis) (increase(traffic_redis_ops_total[1m])) >= 100
+        # 짧은 장애에도 빠르게 반응하되 순간 노이즈는 줄이기 위해 30초 유지 조건을 둡니다.
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traffic Redis critical failure rate"
+          description: "{{ $labels.redis }} Redis retryable failure rate is at least 30% over 1 minute."
+
+      # global-down: 높은 실패율과 연속 PING 실패가 동시에 관측되면 발생합니다.
+      - alert: TrafficRedisGlobalDown
+        expr: |
+          # 1분 retryable 실패율이 70% 이상인지 먼저 확인합니다.
+          (
+            sum by (redis) (rate(traffic_redis_failures_total{kind=~"timeout|connection"}[1m]))
+            /
+            clamp_min(sum by (redis) (rate(traffic_redis_ops_total[1m])), 1)
+          ) >= 0.70
+          # 같은 Redis 종류에서 worker PING이 5회 이상 연속 실패해야 합니다.
+          and on (redis)
+          traffic_redis_ping_failures >= 5
+          # 요청량이 너무 낮은 구간에서는 global-down도 평가하지 않습니다.
+          and on (redis)
+          sum by (redis) (increase(traffic_redis_ops_total[1m])) >= 100
+        # 조건이 30초 유지되면 firing 됩니다.
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traffic Redis global down"
+          description: "{{ $labels.redis }} Redis retryable failure rate is at least 70% and PING failed 5 times consecutively."
