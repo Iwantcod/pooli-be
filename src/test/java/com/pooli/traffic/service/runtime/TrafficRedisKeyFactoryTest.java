@@ -34,6 +34,10 @@ class TrafficRedisKeyFactoryTest {
 
         assertEquals("policy:1", trafficRedisKeyFactory.policyKey(1L));
         assertEquals("dedupe:run:trace-001", trafficRedisKeyFactory.dedupeRunKey("trace-001"));
+        assertEquals(
+                "shared_pool_contribution:metadata:trace-001",
+                trafficRedisKeyFactory.sharedPoolContributionMetadataKey("trace-001")
+        );
     }
 
     @Test
@@ -44,6 +48,10 @@ class TrafficRedisKeyFactoryTest {
                 "pooli:dedupe:run:trace-001",
                 trafficRedisKeyFactory.dedupeRunKey("  trace-001  ")
         );
+        assertEquals(
+                "pooli:shared_pool_contribution:metadata:trace-001",
+                trafficRedisKeyFactory.sharedPoolContributionMetadataKey("  trace-001  ")
+        );
     }
 
     @Test
@@ -51,6 +59,10 @@ class TrafficRedisKeyFactoryTest {
         TrafficRedisKeyFactory trafficRedisKeyFactory = keyFactoryWithNamespace("pooli");
 
         assertThrows(IllegalArgumentException.class, () -> trafficRedisKeyFactory.dedupeRunKey("   "));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> trafficRedisKeyFactory.sharedPoolContributionMetadataKey("   ")
+        );
     }
 
     private TrafficRedisKeyFactory keyFactoryWithNamespace(String namespace) {
@@ -59,4 +71,3 @@ class TrafficRedisKeyFactoryTest {
         return new TrafficRedisKeyFactory(appRedisProperties, new TrafficRedisRuntimePolicy());
     }
 }
-

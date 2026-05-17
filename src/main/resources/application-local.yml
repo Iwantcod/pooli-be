@@ -77,6 +77,8 @@ app:
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
   traffic:
+    redis-healthcheck:
+      interval-ms: ${TRAFFIC_REDIS_HEALTHCHECK_INTERVAL_MS:2000}
     deduct:
       redis-retry:
         max-attempts: ${TRAFFIC_DEDUCT_REDIS_RETRY_MAX_ATTEMPTS:3}

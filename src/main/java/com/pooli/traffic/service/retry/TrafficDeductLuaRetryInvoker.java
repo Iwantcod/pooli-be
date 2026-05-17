@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.traffic.domain.TrafficLuaExecutionResult;
-import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 
 import lombok.RequiredArgsConstructor;
@@ -26,7 +25,6 @@ public class TrafficDeductLuaRetryInvoker {
 
     private static final String RETRY_LAST_FAILURE_CONTEXT_KEY = "traffic_deduct_lua_retry_last_failure";
 
-    private final TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     /**
@@ -54,15 +52,13 @@ public class TrafficDeductLuaRetryInvoker {
                     resolveLastRetryableFailure()
             );
         } catch (ApplicationException | DataAccessException exception) {
-            // [4] 프레임워크/인프라 예외를 RuntimeException으로 풀어
-            //     분류기(TrafficRedisFailureClassifier)가 판정 가능한 형태로 정규화합니다.
-            RuntimeException unwrappedException = trafficRefillOutboxSupportService.unwrapRuntimeException(exception);
+            // [4] 분류기가 cause chain 전체를 확인하므로 wrapper 예외를 그대로 전달합니다.
             int attemptCount = resolveAttemptCount(1);
 
             // [5] non-retryable이면 Retry 프레임워크로 던지지 않고 즉시 실패 DTO를 반환합니다.
-            if (!trafficRedisFailureClassifier.isRetryableInfrastructureFailure(unwrappedException)) {
+            if (!trafficRedisFailureClassifier.isRetryableInfrastructureFailure(exception)) {
                 return TrafficDeductLuaRetryExecutionResult.nonRetryableFailure(
-                        unwrappedException,
+                        exception,
                         attemptCount,
                         resolveLastRetryableFailure()
                 );
@@ -70,8 +66,8 @@ public class TrafficDeductLuaRetryInvoker {
 
             // [6] retryable 실패면 마지막 실패를 컨텍스트에 저장하고
             //     RetryableInfrastructureException으로 래핑해 @Retryable 재시도를 트리거합니다.
-            rememberLastRetryableFailure(unwrappedException);
-            throw new RetryableInfrastructureException(unwrappedException, attemptCount);
+            rememberLastRetryableFailure(exception);
+            throw new RetryableInfrastructureException(exception, attemptCount);
         }
     }
 

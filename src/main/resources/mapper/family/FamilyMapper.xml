@@ -20,8 +20,7 @@
 	       ELSE FALSE
 	     END AS isEnable,
 	     f.family_id AS familyId,
-	     f.pool_total_data AS sharedPoolTotalData,
-	     f.pool_remaining_data AS sharedPoolRemainingData
+	     f.pool_total_data AS sharedPoolTotalData
 	   FROM FAMILY_LINE fl
 	   JOIN FAMILY f ON f.family_id = fl.family_id
 	   WHERE fl.line_id = #{lineId}
@@ -37,7 +36,7 @@
 	    u.user_name           AS userName,
 	    l.phone               AS phone,
 	    p.plan_name           AS planName,
-	    l.remaining_data      AS remainingData,
+	    l.total_data          AS remainingData,
 	    p.basic_data_amount   AS basicDataAmount,
 	    fl.role               AS role,
 	    CASE
@@ -45,7 +44,7 @@
 	      ELSE ll.shared_data_limit
 	    END AS sharedPoolTotalAmount,
 	    CASE
-	      WHEN COALESCE(ll.is_shared_limit_active, FALSE) = FALSE THEN f.pool_remaining_data
+	      WHEN COALESCE(ll.is_shared_limit_active, FALSE) = FALSE THEN 0
 	      WHEN ll.shared_data_limit = -1 THEN -1
 	      ELSE GREATEST(
 	             ll.shared_data_limit - COALESCE(fsu.monthly_shared_usage, 0),

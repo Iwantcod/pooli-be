@@ -1,157 +1,163 @@
 package com.pooli.traffic.service.outbox;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.dao.QueryTimeoutException;
-import org.springframework.data.redis.core.script.RedisScript;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pooli.traffic.service.retry.TrafficRedisCasRetryExecutionResult;
-import com.pooli.traffic.service.retry.TrafficRedisCasRetryInvoker;
-import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
+import com.pooli.traffic.domain.enums.TrafficPolicyLuaScriptType;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficPolicyVersionedRedisServiceTest {
 
-    @Mock
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Mock
-    private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
+    private TrafficPolicyLuaScriptInfraService trafficPolicyLuaScriptInfraService;
 
-    @Mock
-    private TrafficRedisCasRetryInvoker trafficRedisCasRetryInvoker;
-
-    @Mock
-    private RedisScript<Long> valueCasScript;
-
-    @InjectMocks
     private TrafficPolicyVersionedRedisService trafficPolicyVersionedRedisService;
 
     @BeforeEach
-    void setUpScripts() {
-        ReflectionTestUtils.setField(trafficPolicyVersionedRedisService, "valueCasScript", valueCasScript);
+    void setUp() {
+        trafficPolicyVersionedRedisService = new TrafficPolicyVersionedRedisService(
+                objectMapper,
+                trafficPolicyLuaScriptInfraService
+        );
     }
 
     @Nested
-    @DisplayName("executeCas 분류/매핑 계약")
-    class ExecuteCasContractTest {
+    @DisplayName("Lua infra 위임 계약")
+    class LuaInfraDelegationTest {
 
         @Test
-        @DisplayName("retry 결과의 마지막 예외가 connection 계열이면 CONNECTION_FAILURE")
-        void returnsConnectionFailureWhenRecoveredFailureIsConnectionRelated() {
-            DataAccessResourceFailureException connectionFailure = new DataAccessResourceFailureException("redis down");
-            when(trafficRedisCasRetryInvoker.execute(eq(valueCasScript), anyList(), any(Object[].class)))
-                    .thenReturn(TrafficRedisCasRetryExecutionResult.failure(connectionFailure));
-            when(trafficRedisFailureClassifier.isConnectionFailure(connectionFailure)).thenReturn(true);
+        @DisplayName("value/version Hash CAS는 policy value script로 위임")
+        void delegatesVersionedValueCas() {
+            when(trafficPolicyLuaScriptInfraService.executeLongScript(
+                    eq(TrafficPolicyLuaScriptType.POLICY_VALUE_CAS),
+                    eq(List.of("policy:key")),
+                    any(Object[].class)
+            )).thenReturn(PolicySyncResult.SUCCESS);
 
-            PolicySyncResult result = trafficPolicyVersionedRedisService.syncVersionedValue("policy:key", "payload", 10L);
-
-            assertEquals(PolicySyncResult.CONNECTION_FAILURE, result);
-            verify(trafficRedisFailureClassifier).isConnectionFailure(connectionFailure);
-        }
-
-        @Test
-        @DisplayName("retry 결과의 마지막 예외가 비-connection이면 RETRYABLE_FAILURE")
-        void returnsRetryableFailureWhenRecoveredFailureIsNonConnection() {
-            QueryTimeoutException timeoutFailure = new QueryTimeoutException("redis timeout");
-            when(trafficRedisCasRetryInvoker.execute(eq(valueCasScript), anyList(), any(Object[].class)))
-                    .thenReturn(TrafficRedisCasRetryExecutionResult.failure(timeoutFailure));
-            when(trafficRedisFailureClassifier.isConnectionFailure(timeoutFailure)).thenReturn(false);
-
-            PolicySyncResult result = trafficPolicyVersionedRedisService.syncVersionedValue("policy:key", "payload", 11L);
-
-            assertEquals(PolicySyncResult.RETRYABLE_FAILURE, result);
-            verify(trafficRedisFailureClassifier).isConnectionFailure(timeoutFailure);
-        }
-
-        @Test
-        @DisplayName("raw result가 1이면 SUCCESS")
-        void mapsRawResultOneToSuccess() {
-            when(trafficRedisCasRetryInvoker.execute(eq(valueCasScript), anyList(), any(Object[].class)))
-                    .thenReturn(TrafficRedisCasRetryExecutionResult.success(1L));
-
-            PolicySyncResult result = trafficPolicyVersionedRedisService.syncVersionedValue("policy:key", "payload", 12L);
-
-            assertEquals(PolicySyncResult.SUCCESS, result);
-        }
-
-        @Test
-        @DisplayName("raw result가 0이면 STALE_REJECTED")
-        void mapsRawResultZeroToStaleRejected() {
-            when(trafficRedisCasRetryInvoker.execute(eq(valueCasScript), anyList(), any(Object[].class)))
-                    .thenReturn(TrafficRedisCasRetryExecutionResult.success(0L));
-
-            PolicySyncResult result = trafficPolicyVersionedRedisService.syncVersionedValue("policy:key", "payload", 13L);
-
-            assertEquals(PolicySyncResult.STALE_REJECTED, result);
-        }
-
-        @Test
-        @DisplayName("raw result가 null이면 RETRYABLE_FAILURE")
-        void mapsNullRawResultToRetryableFailure() {
-            when(trafficRedisCasRetryInvoker.execute(eq(valueCasScript), anyList(), any(Object[].class)))
-                    .thenReturn(TrafficRedisCasRetryExecutionResult.success(null));
-
-            PolicySyncResult result = trafficPolicyVersionedRedisService.syncVersionedValue("policy:key", "payload", 14L);
-
-            assertEquals(PolicySyncResult.RETRYABLE_FAILURE, result);
-        }
-
-        @Test
-        @DisplayName("raw result가 예상 범위 밖이면 RETRYABLE_FAILURE")
-        void mapsUnexpectedRawResultToRetryableFailure() {
-            when(trafficRedisCasRetryInvoker.execute(eq(valueCasScript), anyList(), any(Object[].class)))
-                    .thenReturn(TrafficRedisCasRetryExecutionResult.success(99L));
-
-            PolicySyncResult result = trafficPolicyVersionedRedisService.syncVersionedValue("policy:key", "payload", 15L);
-
-            assertEquals(PolicySyncResult.RETRYABLE_FAILURE, result);
-        }
-
-        @Test
-        @DisplayName("retry invoker가 DataAccessException을 직접 던져도 기존 분류 계약을 유지")
-        void classifiesDataAccessExceptionThrownByRetryInvoker() {
-            DataAccessResourceFailureException connectionFailure = new DataAccessResourceFailureException("redis down");
-            when(trafficRedisCasRetryInvoker.execute(eq(valueCasScript), anyList(), any(Object[].class)))
-                    .thenThrow(connectionFailure);
-            when(trafficRedisFailureClassifier.isConnectionFailure(connectionFailure)).thenReturn(true);
-
-            PolicySyncResult result = trafficPolicyVersionedRedisService.syncVersionedValue("policy:key", "payload", 16L);
-
-            assertEquals(PolicySyncResult.CONNECTION_FAILURE, result);
-            verify(trafficRedisFailureClassifier).isConnectionFailure(connectionFailure);
-        }
-
-        @Test
-        @DisplayName("예상하지 못한 일반 예외는 기존처럼 호출자에게 재전파")
-        void rethrowsUnexpectedRuntimeException() {
-            IllegalStateException unexpected = new IllegalStateException("unexpected");
-            when(trafficRedisCasRetryInvoker.execute(eq(valueCasScript), anyList(), any(Object[].class)))
-                    .thenThrow(unexpected);
-
-            IllegalStateException thrown = assertThrows(
-                    IllegalStateException.class,
-                    () -> trafficPolicyVersionedRedisService.syncVersionedValue("policy:key", "payload", 17L)
+            PolicySyncResult result = trafficPolicyVersionedRedisService.syncVersionedValue(
+                    "policy:key",
+                    "1",
+                    10L
             );
 
-            assertEquals("unexpected", thrown.getMessage());
+            assertEquals(PolicySyncResult.SUCCESS, result);
+            verify(trafficPolicyLuaScriptInfraService).executeLongScript(
+                    TrafficPolicyLuaScriptType.POLICY_VALUE_CAS,
+                    List.of("policy:key"),
+                    "10",
+                    "1"
+            );
+        }
+
+        @Test
+        @DisplayName("repeat block snapshot CAS는 snapshot script로 위임")
+        void delegatesRepeatBlockSnapshotCas() {
+            when(trafficPolicyLuaScriptInfraService.executeLongScript(
+                    eq(TrafficPolicyLuaScriptType.REPEAT_BLOCK_SNAPSHOT_CAS),
+                    eq(List.of("repeat:block:key")),
+                    any(Object[].class)
+            )).thenReturn(PolicySyncResult.STALE_REJECTED);
+
+            Map<String, String> repeatHash = new LinkedHashMap<>();
+            repeatHash.put("MON:start", "0");
+            repeatHash.put("MON:end", "3600");
+
+            PolicySyncResult result = trafficPolicyVersionedRedisService.syncRepeatBlockSnapshot(
+                    "repeat:block:key",
+                    repeatHash,
+                    11L
+            );
+
+            assertEquals(PolicySyncResult.STALE_REJECTED, result);
+            verify(trafficPolicyLuaScriptInfraService).executeLongScript(
+                    TrafficPolicyLuaScriptType.REPEAT_BLOCK_SNAPSHOT_CAS,
+                    List.of("repeat:block:key"),
+                    "11",
+                    "{\"MON:start\":\"0\",\"MON:end\":\"3600\"}"
+            );
+        }
+
+        @Test
+        @DisplayName("app policy 단건 CAS는 single script로 위임")
+        void delegatesAppPolicySingleCas() {
+            when(trafficPolicyLuaScriptInfraService.executeLongScript(
+                    eq(TrafficPolicyLuaScriptType.APP_POLICY_SINGLE_CAS),
+                    eq(List.of("app:data:key", "app:speed:key", "app:white:key")),
+                    any(Object[].class)
+            )).thenReturn(PolicySyncResult.SUCCESS);
+
+            PolicySyncResult result = trafficPolicyVersionedRedisService.syncAppPolicySingle(
+                    "app:data:key",
+                    "app:speed:key",
+                    "app:white:key",
+                    301,
+                    true,
+                    1_000L,
+                    2_500,
+                    false,
+                    12L
+            );
+
+            assertEquals(PolicySyncResult.SUCCESS, result);
+            verify(trafficPolicyLuaScriptInfraService).executeLongScript(
+                    TrafficPolicyLuaScriptType.APP_POLICY_SINGLE_CAS,
+                    List.of("app:data:key", "app:speed:key", "app:white:key"),
+                    "12",
+                    "301",
+                    "1",
+                    "1000",
+                    "2500",
+                    "0"
+            );
+        }
+
+        @Test
+        @DisplayName("app policy snapshot CAS는 snapshot script로 위임")
+        void delegatesAppPolicySnapshotCas() {
+            when(trafficPolicyLuaScriptInfraService.executeLongScript(
+                    eq(TrafficPolicyLuaScriptType.APP_POLICY_SNAPSHOT_CAS),
+                    eq(List.of("app:data:key", "app:speed:key", "app:white:key")),
+                    any(Object[].class)
+            )).thenReturn(PolicySyncResult.RETRYABLE_FAILURE);
+
+            PolicySyncResult result = trafficPolicyVersionedRedisService.syncAppPolicySnapshot(
+                    "app:data:key",
+                    "app:speed:key",
+                    "app:white:key",
+                    Map.of("301", "1000"),
+                    Map.of("301", "2500"),
+                    Set.of("301"),
+                    13L
+            );
+
+            assertEquals(PolicySyncResult.RETRYABLE_FAILURE, result);
+            verify(trafficPolicyLuaScriptInfraService).executeLongScript(
+                    TrafficPolicyLuaScriptType.APP_POLICY_SNAPSHOT_CAS,
+                    List.of("app:data:key", "app:speed:key", "app:white:key"),
+                    "13",
+                    "{\"301\":\"1000\"}",
+                    "{\"301\":\"2500\"}",
+                    "[\"301\"]"
+            );
         }
     }
 }

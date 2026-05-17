@@ -28,15 +28,23 @@ public class TrafficDeductDoneLog {
 
     private Integer appId;
 
+    private LocalDateTime enqueuedAt;
+
     private Long apiTotalData;
 
-    private Long deductedTotalBytes;
+    private Long deductedIndividualBytes;
+
+    private Long deductedSharedBytes;
+
+    private Long deductedQosBytes;
 
     private Long apiRemainingData;
 
     private String finalStatus;
 
     private String lastLuaStatus;
+
+    private String failureReason;
 
     private LocalDateTime createdAt;
     private LocalDateTime startedAt;
@@ -48,4 +56,20 @@ public class TrafficDeductDoneLog {
     private LocalDateTime restoreStatusUpdatedAt;
     private Integer restoreRetryCount;
     private String restoreLastErrorMessage;
+
+    /**
+     * `deducted_total_bytes` 저장 컬럼 제거에 따라 분리 필드 합산값을 파생 반환합니다.
+     */
+    public Long getDeductedTotalBytes() {
+        return safeNonNegative(deductedIndividualBytes)
+                + safeNonNegative(deductedSharedBytes)
+                + safeNonNegative(deductedQosBytes);
+    }
+
+    private long safeNonNegative(Long value) {
+        if (value == null || value <= 0L) {
+            return 0L;
+        }
+        return value;
+    }
 }

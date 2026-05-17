@@ -11,19 +11,29 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum TrafficLuaScriptType {
     BLOCK_POLICY_CHECK("block_policy_check", "lua/traffic/block_policy_check.lua"),
-    DEDUCT_INDIVIDUAL("deduct_indiv", "lua/traffic/deduct_indiv.lua"),
-    DEDUCT_SHARED("deduct_shared", "lua/traffic/deduct_shared.lua"),
-    REFILL_GATE("refill_gate", "lua/traffic/refill_gate.lua"),
-    LOCK_HEARTBEAT("lock_heartbeat", "lua/traffic/lock_heartbeat.lua"),
+    DEDUCT_UNIFIED("deduct_unified", "lua/traffic/deduct_unified.lua"),
+    HYDRATE_INDIVIDUAL_SNAPSHOT(
+            "hydrate_individual_snapshot",
+            "lua/traffic/hydrate_individual_snapshot.lua"
+    ),
+    HYDRATE_SHARED_SNAPSHOT("hydrate_shared_snapshot", "lua/traffic/hydrate_shared_snapshot.lua"),
     LOCK_RELEASE("lock_release", "lua/traffic/lock_release.lua"),
     IN_FLIGHT_CREATE_IF_ABSENT("in_flight_create_if_absent", "lua/traffic/in_flight_create_if_absent.lua"),
     IN_FLIGHT_INCREMENT_RETRY_WITH_INIT(
             "in_flight_increment_retry_with_init",
             "lua/traffic/in_flight_increment_retry_with_init.lua"
     ),
-    IN_FLIGHT_INCREMENT_PROCESSED_WITH_INIT(
-            "in_flight_increment_processed_with_init",
-            "lua/traffic/in_flight_increment_processed_with_init.lua"
+    SHARED_POOL_CONTRIBUTION_APPLY(
+            "shared_pool_contribution_apply",
+            "lua/traffic/shared_pool_contribution_apply.lua"
+    ),
+    SHARED_POOL_CONTRIBUTION_RECOVER(
+            "shared_pool_contribution_recover",
+            "lua/traffic/shared_pool_contribution_recover.lua"
+    ),
+    SHARED_POOL_CONTRIBUTION_CLEANUP(
+            "shared_pool_contribution_cleanup",
+            "lua/traffic/shared_pool_contribution_cleanup.lua"
     );
 
     private final String scriptName;

@@ -44,7 +44,7 @@ import com.pooli.traffic.domain.entity.TrafficDeductDoneLog;
 import com.pooli.traffic.service.outbox.RedisOutboxRetryScheduler;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
-import com.pooli.traffic.service.runtime.TrafficQuotaCacheService;
+import com.pooli.traffic.service.runtime.TrafficRemainingBalanceCacheService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
@@ -114,7 +114,7 @@ class TrafficFlowLocalAcceptanceTest {
     private RedisOutboxRetryScheduler redisOutboxRetryScheduler;
 
     @MockitoSpyBean
-    private TrafficQuotaCacheService trafficQuotaCacheService;
+    private TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
 
     @MockitoSpyBean
     private TrafficLuaScriptInfraService trafficLuaScriptInfraService;
@@ -137,15 +137,14 @@ class TrafficFlowLocalAcceptanceTest {
         assertThat(lineCount).isNotNull();
         assertThat(lineCount).isEqualTo(4);
 
-        // 공통 초기값: family 잔량 100, line(1~4) 잔량 200.
+        // 공통 초기값: family hydrate source 100, line(1~4) hydrate source 200.
         jdbcTemplate.update(
-                "UPDATE FAMILY SET pool_remaining_data = ?, pool_total_data = ?, updated_at = NOW(6) WHERE family_id = ?",
-                RESET_FAMILY_REMAINING,
+                "UPDATE FAMILY SET pool_total_data = ?, updated_at = NOW(6) WHERE family_id = ?",
                 RESET_FAMILY_REMAINING,
                 FAMILY_ID
         );
         jdbcTemplate.update(
-                "UPDATE LINE SET remaining_data = ?, updated_at = NOW(6) WHERE line_id IN (" + TARGET_LINE_IDS + ")",
+                "UPDATE LINE SET total_data = ?, updated_at = NOW(6) WHERE line_id IN (" + TARGET_LINE_IDS + ")",
                 RESET_LINE_REMAINING
         );
 
@@ -178,8 +177,8 @@ class TrafficFlowLocalAcceptanceTest {
     // ---------------------------------------------------------------------
 
     @Test
-    @DisplayName("[REG-01] 기본 흐름: 개인풀 차감 요청은 DB 잔량에서 refill 후 정상 차감된다")
-    void shouldDeductIndividualBalanceAfterHydrateAndRefill() throws Exception {
+    @DisplayName("[REG-01] 기본 흐름: 개인풀 차감 요청은 DB 잔량 hydrate 후 정상 차감된다")
+    void shouldDeductIndividualBalanceAfterHydrate() throws Exception {
         long before = readLineRemaining(LINE_ID);
 
         String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
@@ -241,60 +240,6 @@ class TrafficFlowLocalAcceptanceTest {
         String secondTraceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
         assertDoneLog(secondTraceId, 50L, 0L, "SUCCESS", "OK");
         await("daily usage adds full request when daily policy disabled", () -> readLongValue(dailyUsageKey) == 80L);
-    }
-
-    @Test
-    @DisplayName("[OUTBOX-01] 첫 Redis 리필 반영 실패 후 Outbox 재시도 스케줄러 수동 호출로 복구된다")
-    void shouldRecoverRefillUsingOutboxRetrySchedulerAfterFirstRedisApplyFailure() throws Exception {
-        // 기존 잔여 outbox를 제거해 이번 시나리오의 상태 전이를 명확하게 검증한다.
-        jdbcTemplate.update("DELETE FROM TRAFFIC_REDIS_OUTBOX WHERE event_type = 'REFILL'");
-
-        YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
-        String balanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(LINE_ID, targetMonth);
-        cacheStringRedisTemplate.delete(balanceKey);
-
-        // 리필-재차감(2차 Lua) 호출 1회만 강제로 실패시켜 outbox FAIL 경로를 재현한다.
-        // 현재 구현은 실시간 경로에서 applyRefillWithIdempotency를 호출하지 않으므로
-        // 리필이 포함된 Lua 호출(인자 refill_amount > 0)을 실패 지점으로 잡는다.
-        AtomicBoolean firstRefillRetryAttempt = new AtomicBoolean(true);
-        doAnswer(invocation -> {
-            List<String> args = invocation.getArgument(1);
-            boolean refillRetryCall = args != null && args.size() > 7 && !"0".equals(args.get(7));
-            if (refillRetryCall && firstRefillRetryAttempt.compareAndSet(true, false)) {
-                throw new IllegalStateException("forced_failure_on_refill_retry_lua");
-            }
-            return invocation.callRealMethod();
-        }).when(trafficLuaScriptInfraService).executeDeductIndividual(anyList(), anyList());
-
-        try {
-            String traceId = enqueueTrafficRequest(LINE_ID, FAMILY_ID, APP_ID, 50L);
-            // 개인풀 리필 Redis 반영 실패가 발생해도, 현재 오케스트레이터는 공유풀 보완 차감을 이어서 수행한다.
-            assertDoneLog(traceId, 50L, 0L, "SUCCESS", "OK");
-
-            Long individualOutboxId = awaitRefillOutboxIdByTraceIdAndPoolType(traceId, "INDIVIDUAL");
-            Long sharedOutboxId = awaitRefillOutboxIdByTraceIdAndPoolType(traceId, "SHARED");
-            assertThat(individualOutboxId).isNotNull();
-            assertThat(sharedOutboxId).isNotNull();
-
-            // 강제 실패 대상인 개인풀 outbox는 FAIL 상태로 남아야 한다.
-            assertThat(readOutboxStatus(individualOutboxId)).isEqualTo("FAIL");
-            assertThat(readOutboxRetryCount(individualOutboxId)).isEqualTo(0);
-            // 공유풀 outbox는 정상 반영되어 즉시 SUCCESS가 되어야 한다.
-            assertThat(readOutboxStatus(sharedOutboxId)).isEqualTo("SUCCESS");
-
-            // 사용자 요청대로 재시도 스케줄러 메서드를 수동 호출해 실제 재처리를 검증한다.
-            redisOutboxRetryScheduler.runRetryCycle();
-
-            await("outbox status should become SUCCESS after manual retry cycle", () ->
-                    "SUCCESS".equals(readOutboxStatus(individualOutboxId))
-            );
-            await("redis balance should be refilled after outbox retry", () ->
-                    readHashAmount(balanceKey) > 0L
-            );
-        } finally {
-            // Spy 설정이 다른 시나리오에 영향을 주지 않도록 테스트 종료 시 초기화한다.
-            reset(trafficLuaScriptInfraService, trafficQuotaCacheService);
-        }
     }
 
     // ---------------------------------------------------------------------
@@ -577,7 +522,7 @@ class TrafficFlowLocalAcceptanceTest {
     }
 
     @Test
-    @DisplayName("[B-11-1] app speed cap이 걸린 상태에서 잔량이 부족하면 NO_BALANCE로 리필 경로를 연다")
+    @DisplayName("[B-11-1] app speed cap이 걸린 상태에서 잔량과 QoS가 부족하면 NO_BALANCE로 종료한다")
     void shouldReturnNoBalanceWhenSpeedCappedButBalanceIsInsufficient() throws Exception {
         upsertAppPolicy(LINE_ID, APP_ID, -1L, 1, true, false);
         setLineRemaining(LINE_ID, 0L);
@@ -588,7 +533,6 @@ class TrafficFlowLocalAcceptanceTest {
         String indivBalanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(LINE_ID, currentMonth);
         // 테스트 목적: Redis 잔량(50) < speed cap(60) 상태를 명시적으로 만들어 NO_BALANCE 분기를 검증한다.
         cacheStringRedisTemplate.opsForHash().put(indivBalanceKey, "amount", "50");
-        cacheStringRedisTemplate.opsForHash().put(indivBalanceKey, "is_empty", "0");
         cacheStringRedisTemplate.opsForHash().put(indivBalanceKey, "qos", "0");
         primeSpeedBucket(LINE_ID, 65L);
 
@@ -1014,7 +958,7 @@ class TrafficFlowLocalAcceptanceTest {
 
     private void setLineRemaining(long lineId, long amount) {
         jdbcTemplate.update(
-                "UPDATE LINE SET remaining_data = ?, updated_at = NOW(6) WHERE line_id = ?",
+                "UPDATE LINE SET total_data = ?, updated_at = NOW(6) WHERE line_id = ?",
                 amount,
                 lineId
         );
@@ -1022,8 +966,7 @@ class TrafficFlowLocalAcceptanceTest {
 
     private void setFamilyRemaining(long familyId, long amount) {
         jdbcTemplate.update(
-                "UPDATE FAMILY SET pool_remaining_data = ?, pool_total_data = ?, updated_at = NOW(6) WHERE family_id = ?",
-                amount,
+                "UPDATE FAMILY SET pool_total_data = ?, updated_at = NOW(6) WHERE family_id = ?",
                 amount,
                 familyId
         );
@@ -1140,7 +1083,7 @@ class TrafficFlowLocalAcceptanceTest {
 
     private long readLineRemaining(long lineId) {
         Long value = jdbcTemplate.queryForObject(
-                "SELECT remaining_data FROM LINE WHERE line_id = ? AND deleted_at IS NULL",
+                "SELECT total_data FROM LINE WHERE line_id = ? AND deleted_at IS NULL",
                 Long.class,
                 lineId
         );
@@ -1150,7 +1093,7 @@ class TrafficFlowLocalAcceptanceTest {
 
     private long readFamilyRemaining(long familyId) {
         Long value = jdbcTemplate.queryForObject(
-                "SELECT pool_remaining_data FROM FAMILY WHERE family_id = ? AND deleted_at IS NULL",
+                "SELECT pool_total_data FROM FAMILY WHERE family_id = ? AND deleted_at IS NULL",
                 Long.class,
                 familyId
         );
@@ -1177,37 +1120,6 @@ class TrafficFlowLocalAcceptanceTest {
             return 0L;
         }
         return Long.parseLong(amount);
-    }
-
-    private Long awaitRefillOutboxIdByTraceIdAndPoolType(String traceId, String poolType) throws Exception {
-        long startedAt = System.currentTimeMillis();
-        long timeoutMs = 5_000L;
-        while (System.currentTimeMillis() - startedAt < timeoutMs) {
-            Long outboxId = findLatestRefillOutboxIdByTraceIdAndPoolType(traceId, poolType);
-            if (outboxId != null) {
-                return outboxId;
-            }
-            TimeUnit.MILLISECONDS.sleep(100);
-        }
-        throw new AssertionError("Timeout while waiting refill outbox: traceId=" + traceId + ", poolType=" + poolType);
-    }
-
-    private Long findLatestRefillOutboxIdByTraceIdAndPoolType(String traceId, String poolType) {
-        List<Long> ids = jdbcTemplate.queryForList(
-                """
-                SELECT id
-                FROM TRAFFIC_REDIS_OUTBOX
-                WHERE event_type = 'REFILL'
-                  AND payload LIKE ?
-                  AND payload LIKE ?
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                Long.class,
-                "%\\\"traceId\\\":\\\"" + traceId + "\\\"%",
-                "%\\\"poolType\\\":\\\"" + poolType + "\\\"%"
-        );
-        return ids.isEmpty() ? null : ids.getFirst();
     }
 
     private String readOutboxStatus(long outboxId) {
@@ -1239,7 +1151,9 @@ class TrafficFlowLocalAcceptanceTest {
                     family_id,
                     app_id,
                     api_total_data,
-                    deducted_total_bytes,
+                    deducted_individual_bytes,
+                    deducted_shared_bytes,
+                    deducted_qos_bytes,
                     api_remaining_data,
                     final_status,
                     last_lua_status,
@@ -1264,7 +1178,9 @@ class TrafficFlowLocalAcceptanceTest {
                         .familyId(rs.getLong("family_id"))
                         .appId(rs.getInt("app_id"))
                         .apiTotalData(rs.getLong("api_total_data"))
-                        .deductedTotalBytes(rs.getLong("deducted_total_bytes"))
+                        .deductedIndividualBytes(rs.getLong("deducted_individual_bytes"))
+                        .deductedSharedBytes(rs.getLong("deducted_shared_bytes"))
+                        .deductedQosBytes(rs.getLong("deducted_qos_bytes"))
                         .apiRemainingData(rs.getLong("api_remaining_data"))
                         .finalStatus(rs.getString("final_status"))
                         .lastLuaStatus(rs.getString("last_lua_status"))

@@ -32,5 +32,9 @@ class TrafficRedisRuntimePolicyTest {
         assertEquals(1_773_269_999L, dailyExpireAt);
         assertEquals(1_775_833_199L, monthlyExpireAt);
     }
-}
 
+    @Test
+    void hydrateLockTtlIsTenSeconds() {
+        assertEquals(10_000L, TrafficRedisRuntimePolicy.LOCK_TTL_MS);
+    }
+}

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.traffic.mapper.TrafficBalanceSnapshotSourceMapper">
+
+    <select id="selectIndividualBalanceSnapshot" resultType="com.pooli.traffic.domain.TrafficIndividualBalanceSnapshot">
+        SELECT
+            l.line_id AS lineId,
+            l.total_data AS amount,
+            p.qos_speed_limit AS qosSpeedLimit,
+            l.last_balance_refreshed_at AS lastBalanceRefreshedAt
+        FROM LINE l
+        JOIN PLAN p ON p.plan_id = l.plan_id
+        WHERE l.line_id = #{lineId}
+          AND l.deleted_at IS NULL
+          AND p.deleted_at IS NULL
+    </select>
+
+    <update id="refreshIndividualBalanceIfBeforeTargetMonth">
+        UPDATE LINE l
+        JOIN PLAN p ON p.plan_id = l.plan_id
+        SET l.total_data = p.basic_data_amount,
+            l.last_balance_refreshed_at = #{targetMonthStart},
+            l.updated_at = NOW(6)
+        WHERE l.line_id = #{lineId}
+          AND l.deleted_at IS NULL
+          AND p.deleted_at IS NULL
+          AND l.last_balance_refreshed_at &lt; #{targetMonthStart}
+    </update>
+
+    <select id="selectSharedBalanceSnapshot" resultType="com.pooli.traffic.domain.TrafficSharedBalanceSnapshot">
+        SELECT
+            family_id AS familyId,
+            pool_total_data AS amount,
+            last_balance_refreshed_at AS lastBalanceRefreshedAt
+        FROM FAMILY
+        WHERE family_id = #{familyId}
+          AND deleted_at IS NULL
+    </select>
+
+    <update id="refreshSharedBalanceIfBeforeTargetMonth">
+        UPDATE FAMILY f
+        SET f.pool_total_data = (
+                SELECT COALESCE(SUM(p.shared_pool_amount), 0)
+                FROM FAMILY_LINE fl
+                JOIN LINE l ON l.line_id = fl.line_id
+                JOIN PLAN p ON p.plan_id = l.plan_id
+                WHERE fl.family_id = #{familyId}
+                  AND l.deleted_at IS NULL
+                  AND p.deleted_at IS NULL
+            ),
+            f.last_balance_refreshed_at = #{targetMonthStart},
+            f.updated_at = NOW(6)
+        WHERE f.family_id = #{familyId}
+          AND f.deleted_at IS NULL
+          AND f.last_balance_refreshed_at &lt; #{targetMonthStart}
+    </update>
+
+</mapper>

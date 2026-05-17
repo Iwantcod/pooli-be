@@ -20,9 +20,4 @@ public interface TrafficDeductDoneLogMapper {
      * 완료 로그를 신규로 삽입합니다.
      */
     int insert(TrafficDeductDoneLog doneLog);
-
-    /**
-     * traceId 확보 non-retryable 종결 로그를 신규로 삽입합니다.
-     */
-    int insertNonRetryableFailure(TrafficDeductDoneLog doneLog);
 }

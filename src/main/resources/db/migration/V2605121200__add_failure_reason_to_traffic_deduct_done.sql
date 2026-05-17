@@ -1,0 +1,2 @@
+ALTER TABLE TRAFFIC_DEDUCT_DONE
+    ADD COLUMN failure_reason VARCHAR(255) NULL AFTER last_lua_status;

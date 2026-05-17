@@ -19,7 +19,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -40,12 +42,15 @@ class TrafficRetryInvokerTest {
             .withBean("cacheStringRedisTemplate", StringRedisTemplate.class, () -> mock(StringRedisTemplate.class));
 
     private final ApplicationContextRunner dedupeDeleteContextRunner = new ApplicationContextRunner()
-            .withUserConfiguration(TrafficRetryConfig.class, TrafficInFlightDedupeDeleteRetryInvoker.class)
+            .withUserConfiguration(
+                    TrafficRetryConfig.class,
+                    TrafficInFlightDedupeDeleteRetryInvoker.class,
+                    DedupeDeleteRetryTestConfig.class
+            )
             .withPropertyValues(
                     "app.traffic.deduct.redis-retry.max-attempts=3",
                     "app.traffic.deduct.redis-retry.backoff-ms=0"
-            )
-            .withBean(TrafficInFlightDedupeService.class, () -> mock(TrafficInFlightDedupeService.class));
+            );
 
     @Nested
     @DisplayName("TrafficRedisCasRetryInvoker")
@@ -172,6 +177,15 @@ class TrafficRetryInvokerTest {
                 assertSame(failure, result.lastFailure());
                 verify(dedupeService, times(4)).delete("trace-exhausted");
             });
+        }
+    }
+
+    @TestConfiguration
+    static class DedupeDeleteRetryTestConfig {
+
+        @Bean
+        TrafficInFlightDedupeService trafficInFlightDedupeService() {
+            return mock(TrafficInFlightDedupeService.class);
         }
     }
 }

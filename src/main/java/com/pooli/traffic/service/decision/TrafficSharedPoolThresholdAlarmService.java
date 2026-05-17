@@ -17,6 +17,7 @@ import com.pooli.traffic.domain.outbox.payload.SharedPoolThresholdOutboxPayload;
 import com.pooli.traffic.mapper.TrafficSharedThresholdAlarmLogMapper;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.runtime.TrafficFamilyMetaCacheService;
+import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 import lombok.RequiredArgsConstructor;
@@ -36,6 +37,7 @@ public class TrafficSharedPoolThresholdAlarmService {
     private static final int THRESHOLD_10 = 10;
 
     private final TrafficFamilyMetaCacheService trafficFamilyMetaCacheService;
+    private final TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficSharedThresholdAlarmLogMapper trafficSharedThresholdAlarmLogMapper;
     private final RedisOutboxRecordService redisOutboxRecordService;
@@ -59,7 +61,12 @@ public class TrafficSharedPoolThresholdAlarmService {
         }
 
         YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
-        long actualRemainingData = normalizeNonNegative(familyMeta.getDbRemainingData());
+        Long actualRemaining = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(familyId);
+        if (actualRemaining == null) {
+            return;
+        }
+
+        long actualRemainingData = normalizeNonNegative(actualRemaining);
         int remainingPercent = clampPercent(actualRemainingData, poolTotalData);
 
         List<Integer> thresholds = resolveThresholds(familyMeta);

@@ -28,6 +28,8 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 
 import com.pooli.common.config.AppStreamsProperties;
 import com.pooli.monitoring.metrics.TrafficDlqMetrics;
+import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficStreamInfraServiceTest {
@@ -44,6 +46,12 @@ class TrafficStreamInfraServiceTest {
     @Mock
     private TrafficDlqMetrics trafficDlqMetrics;
 
+    @Mock
+    private TrafficRedisAvailabilityMetrics trafficRedisAvailabilityMetrics;
+
+    @Mock
+    private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
+
     private AppStreamsProperties appStreamsProperties;
     private TrafficStreamInfraService trafficStreamInfraService;
 
@@ -57,7 +65,9 @@ class TrafficStreamInfraServiceTest {
         trafficStreamInfraService = new TrafficStreamInfraService(
                 streamsStringRedisTemplate,
                 appStreamsProperties,
-                trafficDlqMetrics
+                trafficDlqMetrics,
+                trafficRedisAvailabilityMetrics,
+                trafficRedisFailureClassifier
         );
 
         lenient().when(streamsStringRedisTemplate.getStringSerializer()).thenReturn(RedisSerializer.string());

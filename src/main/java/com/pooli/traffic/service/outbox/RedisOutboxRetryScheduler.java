@@ -7,10 +7,8 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import com.pooli.traffic.domain.outbox.OutboxEventType;
 import com.pooli.traffic.domain.outbox.OutboxRetryResult;
 import com.pooli.traffic.domain.outbox.RedisOutboxRecord;
-import com.pooli.traffic.domain.outbox.payload.RefillOutboxPayload;
 import com.pooli.traffic.service.outbox.strategy.OutboxEventRetryStrategy;
 import com.pooli.traffic.service.outbox.strategy.OutboxRetryStrategyRegistry;
 
@@ -40,7 +38,6 @@ public class RedisOutboxRetryScheduler {
 
     private final RedisOutboxRecordService redisOutboxRecordService;
     private final OutboxRetryStrategyRegistry outboxRetryStrategyRegistry;
-    private final TrafficRefillOutboxSupportService trafficRefillOutboxSupportService;
 
     @Scheduled(fixedDelayString = "${app.traffic.outbox.retry.fixed-delay-ms:5000}")
     public void runRetryCycle() {
@@ -84,10 +81,6 @@ public class RedisOutboxRetryScheduler {
         OutboxRetryResult retryResult = strategy.execute(record);
         if (retryResult == OutboxRetryResult.SUCCESS) {
             redisOutboxRecordService.markSuccess(record.getId());
-            if (record.getEventType() == OutboxEventType.REFILL) {
-                RefillOutboxPayload payload = redisOutboxRecordService.readPayload(record, RefillOutboxPayload.class);
-                clearIdempotencyBestEffort(record.getId(), payload);
-            }
             return;
         }
 
@@ -97,8 +90,7 @@ public class RedisOutboxRetryScheduler {
     /**
      * retry_count 상한 초과 레코드를 처리합니다.
      * - 재시도는 수행하지 않습니다.
-     * - REFILL은 DB 반납을 1회 수행하고 REVERT 터미널 상태로 종료합니다.
-     * - 비-REFILL은 FINAL_FAIL 터미널 상태로 종료합니다.
+     * - FINAL_FAIL 터미널 상태로 종료합니다.
      */
     private void handleRetryCapExceeded(RedisOutboxRecord record, int retryCount) {
         log.error(
@@ -108,32 +100,6 @@ public class RedisOutboxRetryScheduler {
                 retryCount
         );
 
-        if (record.getEventType() == OutboxEventType.REFILL) {
-            RefillOutboxPayload payload = redisOutboxRecordService.readPayload(record, RefillOutboxPayload.class);
-            trafficRefillOutboxSupportService.compensateRefillOnce(record.getId(), payload);
-            return;
-        }
-
         redisOutboxRecordService.markFinalFail(record.getId());
-    }
-
-    /**
-     * REFILL 성공 이후 멱등키 정리는 best-effort로 수행합니다.
-     * 정리 실패는 후처리 오류이므로 Outbox 성공 상태를 되돌리지 않습니다.
-     */
-    private void clearIdempotencyBestEffort(Long outboxId, RefillOutboxPayload payload) {
-        if (payload == null || payload.getUuid() == null || payload.getUuid().isBlank()) {
-            return;
-        }
-        try {
-            trafficRefillOutboxSupportService.clearIdempotency(payload.getUuid());
-        } catch (RuntimeException e) {
-            log.warn(
-                    "traffic_outbox_refill_idempotency_clear_failed_but_success_preserved outboxId={} uuid={}",
-                    outboxId,
-                    payload.getUuid(),
-                    e
-            );
-        }
     }
 }

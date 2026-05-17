@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 
+import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +27,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.data.redis.core.script.RedisScript;
 
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.policy.domain.dto.response.PolicyActivationSnapshotResDto;
@@ -43,6 +43,9 @@ class TrafficPolicyBootstrapServiceTest {
 
     @Mock
     private TrafficRedisKeyFactory trafficRedisKeyFactory;
+
+    @Mock
+    private TrafficLuaScriptInfraService trafficLuaScriptInfraService;
 
     @Mock
     private TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
@@ -86,7 +89,7 @@ class TrafficPolicyBootstrapServiceTest {
 
             // then
             verify(cacheStringRedisTemplate, never()).executePipelined(any(org.springframework.data.redis.core.SessionCallback.class));
-            verify(cacheStringRedisTemplate, never()).execute(any(RedisScript.class), any(), anyString());
+            verify(trafficLuaScriptInfraService, never()).executeLockRelease(anyString(), anyString());
         }
 
         @Test
@@ -106,8 +109,8 @@ class TrafficPolicyBootstrapServiceTest {
             when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
             when(cacheStringRedisTemplate.executePipelined(any(org.springframework.data.redis.core.SessionCallback.class)))
                     .thenReturn(List.of());
-            when(cacheStringRedisTemplate.execute(any(RedisScript.class), eq(List.of(lockKey)), anyString()))
-                    .thenReturn(1L);
+            when(trafficLuaScriptInfraService.executeLockRelease(eq(lockKey), anyString()))
+                    .thenReturn(true);
 
             // when
             trafficPolicyBootstrapService.bootstrapOnStartup();
@@ -115,8 +118,8 @@ class TrafficPolicyBootstrapServiceTest {
             // then
             verify(cacheStringRedisTemplate, times(1))
                     .executePipelined(any(org.springframework.data.redis.core.SessionCallback.class));
-            verify(cacheStringRedisTemplate, times(1))
-                    .execute(any(RedisScript.class), eq(List.of(lockKey)), anyString());
+            verify(trafficLuaScriptInfraService, times(1))
+                    .executeLockRelease(eq(lockKey), anyString());
         }
     }
 
@@ -167,8 +170,8 @@ class TrafficPolicyBootstrapServiceTest {
             when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
             when(cacheStringRedisTemplate.executePipelined(any(org.springframework.data.redis.core.SessionCallback.class)))
                     .thenReturn(List.of());
-            when(cacheStringRedisTemplate.execute(any(RedisScript.class), eq(List.of(lockKey)), anyString()))
-                    .thenReturn(1L);
+            when(trafficLuaScriptInfraService.executeLockRelease(eq(lockKey), anyString()))
+                    .thenReturn(true);
 
             // when
             trafficPolicyBootstrapService.hydrateOnDemand();
@@ -176,8 +179,8 @@ class TrafficPolicyBootstrapServiceTest {
             // then
             verify(cacheStringRedisTemplate, times(1))
                     .executePipelined(any(org.springframework.data.redis.core.SessionCallback.class));
-            verify(cacheStringRedisTemplate, times(1))
-                    .execute(any(RedisScript.class), eq(List.of(lockKey)), anyString());
+            verify(trafficLuaScriptInfraService, times(1))
+                    .executeLockRelease(eq(lockKey), anyString());
         }
     }
 

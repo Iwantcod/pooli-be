@@ -28,6 +28,11 @@ public interface RedisOutboxMapper {
     );
 
     /**
+     * 같은 trace_id로 이미 접수된 공유풀 기여 Outbox 레코드를 조회합니다.
+     */
+    RedisOutboxRecord selectSharedPoolContributionByTraceId(@Param("traceId") String traceId);
+
+    /**
      * 레코드를 PROCESSING 상태로 전이합니다.
      */
     int markProcessing(@Param("id") Long id);
@@ -61,8 +66,8 @@ public interface RedisOutboxMapper {
     );
 
     /**
-     * REFILL 레코드를 REVERT로 CAS 전이합니다.
-     * 이미 터미널 상태(SUCCESS/REVERT/FINAL_FAIL)면 0을 반환합니다.
+     * 레코드를 CANCELED 터미널 상태로 전이합니다.
      */
-    int markRevertIfCompensable(@Param("id") Long id);
+    int markCanceled(@Param("id") Long id);
+
 }

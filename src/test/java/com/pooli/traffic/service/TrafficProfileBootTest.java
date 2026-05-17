@@ -39,7 +39,6 @@ import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.RedisOutboxRetryScheduler;
 import com.pooli.traffic.service.outbox.TrafficInFlightDedupeDeleteOutboxService;
 import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
-import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.outbox.strategy.OutboxRetryStrategyRegistry;
 import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
@@ -215,7 +214,6 @@ class TrafficProfileBootTest {
                 .withBean(TrafficInFlightDedupeDeleteOutboxService.class,
                         () -> mock(TrafficInFlightDedupeDeleteOutboxService.class))
                 .withBean(OutboxRetryStrategyRegistry.class, () -> mock(OutboxRetryStrategyRegistry.class))
-                .withBean(TrafficRefillOutboxSupportService.class, () -> mock(TrafficRefillOutboxSupportService.class))
                 .withBean(MeterRegistry.class, SimpleMeterRegistry::new);
     }
 

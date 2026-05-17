@@ -25,6 +25,7 @@ import com.pooli.traffic.domain.outbox.OutboxEventType;
 import com.pooli.traffic.mapper.TrafficSharedThresholdAlarmLogMapper;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.runtime.TrafficFamilyMetaCacheService;
+import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +35,9 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
 
     @Mock
     private TrafficFamilyMetaCacheService trafficFamilyMetaCacheService;
+
+    @Mock
+    private TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
 
     @Mock
     private TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
@@ -58,7 +62,7 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
     }
 
     @Test
-    @DisplayName("잔량 퍼센트가 50% 이하이면 50% 임계치 Outbox를 생성한다")
+    @DisplayName("Redis amount 기준 잔량 퍼센트가 50% 이하이면 50% 임계치 Outbox를 생성한다")
     void createsOutboxWhenFiftyPercentReached() {
         // given
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(java.time.ZoneId.of("Asia/Seoul"));
@@ -66,11 +70,11 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
                 TrafficFamilyMetaSnapshot.builder()
                         .familyId(22L)
                         .poolTotalData(1_000L)
-                        .dbRemainingData(400L)
                         .familyThreshold(0L)
                         .thresholdActive(false)
                         .build()
         );
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(22L)).thenReturn(400L);
 
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(anyLong(), anyString(), anyInt()))
                 .thenReturn(0);
@@ -97,11 +101,11 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
                 TrafficFamilyMetaSnapshot.builder()
                         .familyId(22L)
                         .poolTotalData(1_000L)
-                        .dbRemainingData(250L)
                         .familyThreshold(30L)
                         .thresholdActive(true)
                         .build()
         );
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(22L)).thenReturn(250L);
 
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(anyLong(), anyString(), anyInt()))
                 .thenReturn(0);
@@ -116,7 +120,7 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
     }
 
     @Test
-    @DisplayName("커스텀 임계치가 30이고 도달 시 30 임계치 outbox가 1회 생성된다(값 기준 매핑 전제)")
+    @DisplayName("Redis amount 기준 30% 도달 시 30 임계치 outbox가 1회 생성된다")
     void createsSingleThreshold30OutboxWhenCustomIsThirty() {
         // given
         when(trafficRedisRuntimePolicy.zoneId()).thenReturn(java.time.ZoneId.of("Asia/Seoul"));
@@ -124,11 +128,11 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
                 TrafficFamilyMetaSnapshot.builder()
                         .familyId(22L)
                         .poolTotalData(1_000L)
-                        .dbRemainingData(250L)
                         .familyThreshold(30L)
                         .thresholdActive(true)
                         .build()
         );
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(22L)).thenReturn(250L);
         // 나머지 임계치는 이번 케이스 검증 대상이 아니므로 생성되지 않게 고정한다.
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(anyLong(), anyString(), anyInt())).thenReturn(0);
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(eq(22L), anyString(), eq(30))).thenReturn(1);
@@ -155,11 +159,11 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
                 TrafficFamilyMetaSnapshot.builder()
                         .familyId(22L)
                         .poolTotalData(1_000L)
-                        .dbRemainingData(0L)
                         .familyThreshold(0L)
                         .thresholdActive(true)
                         .build()
         );
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(22L)).thenReturn(0L);
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(anyLong(), anyString(), anyInt())).thenReturn(0);
         when(trafficSharedThresholdAlarmLogMapper.insertIgnore(eq(22L), anyString(), eq(0))).thenReturn(1);
 
@@ -174,5 +178,88 @@ class TrafficSharedPoolThresholdAlarmServiceTest {
                 any(),
                 eq(TEST_TRACE_ID)
         );
+    }
+
+    @Test
+    @DisplayName("Redis amount 기준 커스텀 25% 임계치에 도달하면 custom Outbox를 생성한다")
+    void createsCustomThresholdOutboxWhenReached() {
+        // given
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(java.time.ZoneId.of("Asia/Seoul"));
+        when(trafficFamilyMetaCacheService.getOrLoad(22L)).thenReturn(
+                TrafficFamilyMetaSnapshot.builder()
+                        .familyId(22L)
+                        .poolTotalData(1_000L)
+                        .familyThreshold(25L)
+                        .thresholdActive(true)
+                        .build()
+        );
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(22L)).thenReturn(240L);
+        when(trafficSharedThresholdAlarmLogMapper.insertIgnore(anyLong(), anyString(), anyInt())).thenReturn(0);
+        when(trafficSharedThresholdAlarmLogMapper.insertIgnore(eq(22L), anyString(), eq(25))).thenReturn(1);
+
+        // when
+        trafficSharedPoolThresholdAlarmService.checkAndEnqueueIfReached(22L);
+
+        // then
+        verify(trafficSharedThresholdAlarmLogMapper, times(1))
+                .insertIgnore(eq(22L), anyString(), eq(25));
+        verify(redisOutboxRecordService, times(1)).createPending(
+                eq(OutboxEventType.SHARED_POOL_THRESHOLD_REACHED),
+                any(),
+                eq(TEST_TRACE_ID)
+        );
+    }
+
+    @Test
+    @DisplayName("Redis amount 기준 잔량 퍼센트가 10% 이하이면 10% 임계치 Outbox를 생성한다")
+    void createsOutboxWhenTenPercentReached() {
+        // given
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(java.time.ZoneId.of("Asia/Seoul"));
+        when(trafficFamilyMetaCacheService.getOrLoad(22L)).thenReturn(
+                TrafficFamilyMetaSnapshot.builder()
+                        .familyId(22L)
+                        .poolTotalData(1_000L)
+                        .familyThreshold(0L)
+                        .thresholdActive(false)
+                        .build()
+        );
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(22L)).thenReturn(100L);
+        when(trafficSharedThresholdAlarmLogMapper.insertIgnore(anyLong(), anyString(), anyInt())).thenReturn(0);
+        when(trafficSharedThresholdAlarmLogMapper.insertIgnore(eq(22L), anyString(), eq(10))).thenReturn(1);
+
+        // when
+        trafficSharedPoolThresholdAlarmService.checkAndEnqueueIfReached(22L);
+
+        // then
+        verify(trafficSharedThresholdAlarmLogMapper, times(1))
+                .insertIgnore(eq(22L), anyString(), eq(10));
+        verify(redisOutboxRecordService, times(1)).createPending(
+                eq(OutboxEventType.SHARED_POOL_THRESHOLD_REACHED),
+                any(),
+                eq(TEST_TRACE_ID)
+        );
+    }
+
+    @Test
+    @DisplayName("Redis amount를 조회할 수 없으면 DB fallback 없이 임계치 판단을 중단한다")
+    void skipsThresholdWhenRedisAmountUnavailable() {
+        // given
+        when(trafficRedisRuntimePolicy.zoneId()).thenReturn(java.time.ZoneId.of("Asia/Seoul"));
+        when(trafficFamilyMetaCacheService.getOrLoad(22L)).thenReturn(
+                TrafficFamilyMetaSnapshot.builder()
+                        .familyId(22L)
+                        .poolTotalData(1_000L)
+                        .familyThreshold(0L)
+                        .thresholdActive(false)
+                        .build()
+        );
+        when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(22L)).thenReturn(null);
+
+        // when
+        trafficSharedPoolThresholdAlarmService.checkAndEnqueueIfReached(22L);
+
+        // then
+        verify(trafficSharedThresholdAlarmLogMapper, never()).insertIgnore(anyLong(), anyString(), anyInt());
+        verify(redisOutboxRecordService, never()).createPending(any(), any(), any());
     }
 }

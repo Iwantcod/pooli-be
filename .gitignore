@@ -40,6 +40,8 @@ out/
 
 .env
 .env.bak
+discord_webhook_url
+deploy/monitoring/secrets/
 
 /docs/plan/
 

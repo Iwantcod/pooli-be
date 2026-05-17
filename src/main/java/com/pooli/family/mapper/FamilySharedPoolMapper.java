@@ -20,9 +20,14 @@ public interface FamilySharedPoolMapper {
     SharedPoolDomain selectFamilySharedPool(@Param("familyId") Long familyId);
 
     // POST /api/shared-pools 용 (데이터 담기) - 3개 쿼리가 하나의 트랜잭션으로 묶임
-    void updateLineRemainingData(@Param("lineId") Long lineId, @Param("amount") Long amount);
-    void updateFamilyPoolData(@Param("familyId") Long familyId, @Param("amount") Long amount);
-    void insertContribution(@Param("familyId") Long familyId, @Param("lineId") Long lineId, @Param("amount") Long amount);
+    int updateLineRemainingData(@Param("lineId") Long lineId, @Param("amount") Long amount);
+    int updateFamilyPoolData(@Param("familyId") Long familyId, @Param("amount") Long amount);
+    void insertContribution(
+            @Param("familyId") Long familyId,
+            @Param("lineId") Long lineId,
+            @Param("amount") Long amount,
+            @Param("usageDate") LocalDate usageDate
+    );
 
     // GET /api/shared-pools/detail/remaining-amount 용
     SharedPoolDomain selectSharedPoolDetail(@Param("familyId") Long familyId, @Param("lineId") Long lineId);

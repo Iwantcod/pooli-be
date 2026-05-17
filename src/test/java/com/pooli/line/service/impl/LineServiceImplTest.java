@@ -32,6 +32,7 @@ import com.pooli.line.domain.dto.response.LineSimpleResDto;
 import com.pooli.line.domain.dto.response.LineUserSummaryResDto;
 import com.pooli.line.error.LineErrorCode;
 import com.pooli.line.mapper.LineMapper;
+import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
 
 @ExtendWith(MockitoExtension.class)
 class LineServiceImplTest {
@@ -41,6 +42,9 @@ class LineServiceImplTest {
 
     @Mock
     private SecurityContextRepository securityContextRepository;
+
+    @Mock
+    private TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
 
     @InjectMocks
     private LineServiceImpl lineService;
@@ -134,18 +138,43 @@ class LineServiceImplTest {
     }
 
     @Test
-    @DisplayName("개별 임계치 조회: 값 반환")
+    @DisplayName("개별 임계치 조회: LINE total_data와 Redis amount 기준 사용량을 최소값으로 반환")
     void getIndividualThreshold_success_returnsDto() {
         AuthUserDetails principal = principalWithUserIdAndLineId(1L, 10L);
         IndividualThresholdResDto dto = IndividualThresholdResDto.builder()
             .individualThreshold(3000L)
             .isThresholdActive(true)
+            .thresholdMinValue(900L)
+            .thresholdMaxValue(10_000L)
             .build();
         when(lineMapper.selectIndividualThresholdByLineId(10L)).thenReturn(dto);
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L)).thenReturn(6_000L);
 
         IndividualThresholdResDto result = lineService.getIndividualThreshold(principal);
 
-        assertThat(result).isEqualTo(dto);
+        assertThat(result.getIndividualThreshold()).isEqualTo(3000L);
+        assertThat(result.getIsThresholdActive()).isTrue();
+        assertThat(result.getThresholdMinValue()).isEqualTo(4_000L);
+        assertThat(result.getThresholdMaxValue()).isEqualTo(10_000L);
+    }
+
+    @Test
+    @DisplayName("개별 임계치 조회: Redis amount 조회 불가 시 DB fallback 없이 최소값 null")
+    void getIndividualThreshold_whenRedisUnavailable_returnsNullMinValue() {
+        AuthUserDetails principal = principalWithUserIdAndLineId(1L, 10L);
+        IndividualThresholdResDto dto = IndividualThresholdResDto.builder()
+            .individualThreshold(3000L)
+            .isThresholdActive(true)
+            .thresholdMinValue(900L)
+            .thresholdMaxValue(10_000L)
+            .build();
+        when(lineMapper.selectIndividualThresholdByLineId(10L)).thenReturn(dto);
+        when(trafficRemainingBalanceQueryService.resolveIndividualActualRemaining(10L)).thenReturn(null);
+
+        IndividualThresholdResDto result = lineService.getIndividualThreshold(principal);
+
+        assertThat(result.getThresholdMinValue()).isNull();
+        assertThat(result.getThresholdMaxValue()).isEqualTo(10_000L);
     }
 
     @Test
