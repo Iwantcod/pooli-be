@@ -396,8 +396,8 @@ public class TrafficStreamConsumerRunnerTest {
             inOrder.verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-hydrate-invalid", "6-1");
             inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
             assertTrue(dlqReasonCaptor.getValue().contains("STALE_TARGET_MONTH"));
-            verify(trafficDeductDoneLogService, never())
-                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
+            verify(trafficDeductCompletionPersistenceService, never())
+                    .persistCompletion(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
             verify(trafficRecordStageMetricsPort).incrementResult("dlq");
         }
 
@@ -431,8 +431,8 @@ public class TrafficStreamConsumerRunnerTest {
             assertTrue(dlqReasonCaptor.getValue().contains("invalid/failure result"));
             assertTrue(dlqReasonCaptor.getValue().contains("finalStatus=FAILED"));
             assertTrue(dlqReasonCaptor.getValue().contains("lastLuaStatus=ERROR"));
-            verify(trafficDeductDoneLogService, never())
-                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
+            verify(trafficDeductCompletionPersistenceService, never())
+                    .persistCompletion(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
         }
 
         @Test
@@ -524,8 +524,8 @@ public class TrafficStreamConsumerRunnerTest {
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verify(trafficInFlightDedupeService).incrementRetryOnReclaim("trace-reclaim-exceeded");
             verifyNoInteractions(trafficDeductOrchestratorService);
-            verify(trafficDeductDoneLogService, never())
-                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
+            verify(trafficDeductCompletionPersistenceService, never())
+                    .persistCompletion(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
 
             InOrder inOrder = inOrder(
                     trafficStreamInfraService,
@@ -557,8 +557,8 @@ public class TrafficStreamConsumerRunnerTest {
             verify(trafficStreamInfraService).writeDlq(eq(payloadJson), any(), eq("12-1"));
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verifyNoInteractions(trafficDeductOrchestratorService);
-            verify(trafficDeductDoneLogService, never())
-                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
+            verify(trafficDeductCompletionPersistenceService, never())
+                    .persistCompletion(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
         }
 
         @Test
@@ -628,8 +628,8 @@ public class TrafficStreamConsumerRunnerTest {
 
             assertTrue(reasonCaptor.getValue().contains("누적 차감량 불변식 위반"));
             verifyNoInteractions(trafficDeductOrchestratorService);
-            verify(trafficDeductDoneLogService, never())
-                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
+            verify(trafficDeductCompletionPersistenceService, never())
+                    .persistCompletion(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
         }
 
         @Test
@@ -655,8 +655,8 @@ public class TrafficStreamConsumerRunnerTest {
 
             assertTrue(dlqReasonCaptor.getValue().contains("non-retryable failure"));
             assertTrue(dlqReasonCaptor.getValue().contains("IllegalArgumentException"));
-            verify(trafficDeductDoneLogService, never())
-                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
+            verify(trafficDeductCompletionPersistenceService, never())
+                    .persistCompletion(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
             verify(trafficRecordStageMetricsPort).incrementResult("dlq");
         }
 
