@@ -2,9 +2,9 @@ package com.pooli.traffic.acceptance;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.lang.reflect.Method;
 import java.time.YearMonth;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -21,7 +21,6 @@ import org.springframework.data.redis.connection.stream.StreamRecords;
 
 import com.pooli.traffic.domain.TrafficStreamFields;
 import com.pooli.traffic.domain.entity.TrafficDeductDoneLog;
-import com.pooli.traffic.service.invoke.TrafficStreamMessageSource;
 
 /**
  * traceId 기반 dedupe 상태와 done log 존재 여부가 NEW/RECLAIM record 처리에 미치는 영향을 검증합니다.
@@ -55,10 +54,7 @@ class TrafficDataIdempotencyAcceptanceTest extends TrafficAcceptanceTestSupport 
         prepareIdempotencyScenario(lineId, familyId, 100L, 100L);
         putDedupeState(traceId, 30L, 0L, 0L, 0);
 
-        invokeHandleRecord(
-                createRecord("1-0", payloadJson(traceId, lineId, familyId, appId, 50L)),
-                TrafficStreamMessageSource.RECLAIM
-        );
+        enqueueReclaimTrafficPayload(traceId, lineId, familyId, appId, 50L);
 
         assertDoneLog(traceId, 50L, 0L, 0L, 0L, "SUCCESS", "OK");
         assertRedisState(lineId, familyId, appId, 80L, 100L, 20L, 20L, 0L);
@@ -78,10 +74,7 @@ class TrafficDataIdempotencyAcceptanceTest extends TrafficAcceptanceTestSupport 
         prepareIdempotencyScenario(lineId, familyId, 100L, 100L);
         putDedupeState(traceId, 50L, 0L, 0L, 0);
 
-        invokeHandleRecord(
-                createRecord("2-0", payloadJson(traceId, lineId, familyId, appId, 50L)),
-                TrafficStreamMessageSource.RECLAIM
-        );
+        enqueueReclaimTrafficPayload(traceId, lineId, familyId, appId, 50L);
 
         assertDoneLog(traceId, 50L, 0L, 0L, 0L, "SUCCESS", "OK");
         assertRedisState(lineId, familyId, appId, 100L, 100L, 0L, 0L, 0L);
@@ -101,10 +94,7 @@ class TrafficDataIdempotencyAcceptanceTest extends TrafficAcceptanceTestSupport 
         prepareIdempotencyScenario(lineId, familyId, 0L, 100L);
         putDedupeState(traceId, 20L, 0L, 0L, 0);
 
-        invokeHandleRecord(
-                createRecord("3-0", payloadJson(traceId, lineId, familyId, appId, 50L)),
-                TrafficStreamMessageSource.RECLAIM
-        );
+        enqueueReclaimTrafficPayload(traceId, lineId, familyId, appId, 50L);
 
         assertDoneLog(traceId, 20L, 30L, 0L, 0L, "SUCCESS", "OK");
         assertRedisState(lineId, familyId, appId, 0L, 70L, 30L, 30L, 30L);
@@ -124,10 +114,7 @@ class TrafficDataIdempotencyAcceptanceTest extends TrafficAcceptanceTestSupport 
         prepareIdempotencyScenario(lineId, familyId, 100L, 100L);
         putDedupeState(traceId, 60L, 0L, 0L, 0);
 
-        invokeHandleRecord(
-                createRecord("4-0", payloadJson(traceId, lineId, familyId, appId, 50L)),
-                TrafficStreamMessageSource.RECLAIM
-        );
+        enqueueReclaimTrafficPayload(traceId, lineId, familyId, appId, 50L);
 
         Map<String, String> dlq = awaitDlqRecordContaining(traceId);
         assertThat(dlq.get("reason")).contains("누적 차감량 불변식 위반");
@@ -160,10 +147,8 @@ class TrafficDataIdempotencyAcceptanceTest extends TrafficAcceptanceTestSupport 
         long individualBalanceAfterFirstRun = readIndividualBalanceAmount(lineId);
         long dailyUsageAfterFirstRun = readDailyTotalUsage(lineId);
 
-        invokeHandleRecord(
-                createRecord("5-0", payloadJson(traceId, lineId, familyId, appId, 50L)),
-                TrafficStreamMessageSource.NEW
-        );
+        enqueueRawTrafficPayload(traceId, lineId, familyId, appId, 50L);
+        await("duplicate dedupe delete outbox is recorded", () -> countDedupeDeleteOutboxRows(traceId) >= 2);
 
         assertDoneLogCount(traceId, 1);
         assertThat(readIndividualBalanceAmount(lineId)).isEqualTo(individualBalanceAfterFirstRun);
@@ -189,10 +174,8 @@ class TrafficDataIdempotencyAcceptanceTest extends TrafficAcceptanceTestSupport 
         long individualBalanceAfterFirstRun = readIndividualBalanceAmount(lineId);
         long dailyUsageAfterFirstRun = readDailyTotalUsage(lineId);
 
-        invokeHandleRecord(
-                createRecord("6-0", payloadJson(traceId, lineId, familyId, appId, 50L)),
-                TrafficStreamMessageSource.RECLAIM
-        );
+        enqueueReclaimTrafficPayload(traceId, lineId, familyId, appId, 50L);
+        await("reclaimed duplicate dedupe delete outbox is recorded", () -> countDedupeDeleteOutboxRows(traceId) >= 2);
 
         assertDoneLogCount(traceId, 1);
         assertThat(readIndividualBalanceAmount(lineId)).isEqualTo(individualBalanceAfterFirstRun);
@@ -213,10 +196,7 @@ class TrafficDataIdempotencyAcceptanceTest extends TrafficAcceptanceTestSupport 
         prepareIdempotencyScenario(lineId, familyId, 100L, 100L);
         putDedupeState(traceId, 0L, 0L, 0L, 5);
 
-        invokeHandleRecord(
-                createRecord("7-0", payloadJson(traceId, lineId, familyId, appId, 50L)),
-                TrafficStreamMessageSource.RECLAIM
-        );
+        enqueueReclaimTrafficPayload(traceId, lineId, familyId, appId, 50L);
 
         Map<String, String> dlq = awaitDlqRecordContaining(traceId);
         assertThat(dlq.get("reason")).contains("reclaim retry exceeded");
@@ -288,17 +268,44 @@ class TrafficDataIdempotencyAcceptanceTest extends TrafficAcceptanceTestSupport 
     /**
      * stream consumer를 통해 처리될 raw payload를 실제 request stream에 적재합니다.
      */
-    private void enqueueRawTrafficPayload(
+    private RecordId enqueueRawTrafficPayload(
             String traceId,
             long lineId,
             long familyId,
             int appId,
             long apiTotalData
     ) {
-        streamsStringRedisTemplate.opsForStream().add(
+        return streamsStringRedisTemplate.opsForStream().add(
                 StreamRecords.string(Map.of(TrafficStreamFields.PAYLOAD, payloadJson(traceId, lineId, familyId, appId, apiTotalData)))
                         .withStreamKey(appStreamsProperties.getKeyTrafficRequest())
         );
+    }
+
+    /**
+     * 실제 request stream record를 consumer group pending으로 남긴 뒤 runner reclaim loop가 처리하게 합니다.
+     */
+    private void enqueueReclaimTrafficPayload(
+            String traceId,
+            long lineId,
+            long familyId,
+            int appId,
+            long apiTotalData
+    ) {
+        boolean wasRunning = trafficStreamConsumerRunner.isRunning();
+        if (wasRunning) {
+            trafficStreamConsumerRunner.stop();
+        }
+
+        try {
+            trafficStreamInfraService.ensureConsumerGroup();
+            RecordId recordId = enqueueRawTrafficPayload(traceId, lineId, familyId, appId, apiTotalData);
+            List<MapRecord<String, String, String>> pendingRecords = trafficStreamInfraService.readBlocking(1);
+            assertThat(pendingRecords)
+                    .extracting(record -> record.getId().getValue())
+                    .contains(recordId.getValue());
+        } finally {
+            trafficStreamConsumerRunner.start();
+        }
     }
 
     /**
@@ -315,35 +322,6 @@ class TrafficDataIdempotencyAcceptanceTest extends TrafficAcceptanceTestSupport 
                   "enqueuedAt": %d
                 }
                 """.formatted(traceId, lineId, familyId, appId, apiTotalData, System.currentTimeMillis());
-    }
-
-    /**
-     * consumer 내부 처리 메서드를 직접 호출하기 위해 지정 record id를 가진 MapRecord fixture를 만듭니다.
-     */
-    private MapRecord<String, String, String> createRecord(String recordId, String payloadJson) {
-        return MapRecord
-                .<String, String, String>create(
-                        appStreamsProperties.getKeyTrafficRequest(),
-                        Map.of(TrafficStreamFields.PAYLOAD, payloadJson)
-                )
-                .withId(RecordId.of(recordId));
-    }
-
-    /**
-     * NEW/RECLAIM 분기만 직접 검증하기 위해 consumer의 record 처리 메서드를 reflection으로 호출합니다.
-     */
-    private void invokeHandleRecord(
-            MapRecord<String, String, String> record,
-            TrafficStreamMessageSource messageSource
-    ) {
-        try {
-            Method handleRecordMethod = trafficStreamConsumerRunner.getClass()
-                    .getDeclaredMethod("handleRecord", MapRecord.class, TrafficStreamMessageSource.class);
-            handleRecordMethod.setAccessible(true);
-            handleRecordMethod.invoke(trafficStreamConsumerRunner, record, messageSource);
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     /**
