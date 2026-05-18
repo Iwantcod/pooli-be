@@ -34,6 +34,19 @@ public class TrafficInFlightDedupeDeleteOutboxService {
      */
     public long createPending(String traceId, String sourceRecordId) {
         long outboxId = createPendingRecord(traceId, sourceRecordId);
+        attemptImmediateDeleteAndMarkResult(outboxId, traceId);
+
+        // [8] 호출부(consumer)는 outboxId를 사용해 처리 순서 검증/추적을 이어갑니다.
+        return outboxId;
+    }
+
+    /**
+     * 이미 생성된 dedupe key 삭제 Outbox의 즉시 삭제를 시도하고 결과 상태를 기록합니다.
+     */
+    public void attemptImmediateDeleteAndMarkResult(long outboxId, String traceId) {
+        if (traceId == null || traceId.isBlank()) {
+            throw new IllegalArgumentException("traceId must not be blank");
+        }
         String normalizedTraceId = traceId.trim();
 
         // [5] 즉시 삭제는 Retry 어댑터에 위임합니다. (초기 1회 + 재시도 최대 3회)
@@ -67,8 +80,6 @@ public class TrafficInFlightDedupeDeleteOutboxService {
             // 즉시 재시도 실패는 FAIL로만 전이하고 retry_count는 증가시키지 않는다.
             redisOutboxRecordService.markFail(outboxId);
         }
-        // [8] 호출부(consumer)는 outboxId를 사용해 처리 순서 검증/추적을 이어갑니다.
-        return outboxId;
     }
 
     /**
