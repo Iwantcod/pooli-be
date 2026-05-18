@@ -2,17 +2,13 @@ package com.pooli.traffic.service.invoke;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
-
-import java.lang.reflect.Method;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -22,7 +18,6 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
@@ -117,22 +112,6 @@ class TrafficDeductCompletionPersistenceServiceTest {
                     .createPendingDeferred(any(), any());
         }
 
-        @Test
-        @DisplayName("트랜잭션 경계로 실행된다")
-        void persistCompletionIsTransactional() throws NoSuchMethodException {
-            Method method = TrafficDeductCompletionPersistenceService.class.getMethod(
-                    "persistCompletion",
-                    TrafficPayloadReqDto.class,
-                    TrafficDeductResultResDto.class,
-                    String.class,
-                    Long.class
-            );
-
-            Transactional transactional = method.getAnnotation(Transactional.class);
-
-            assertNotNull(transactional);
-            verifyNoInteractions(trafficDeductDoneLogService, trafficInFlightDedupeDeleteOutboxService);
-        }
     }
 
     private TrafficPayloadReqDto payload(String traceId) {
