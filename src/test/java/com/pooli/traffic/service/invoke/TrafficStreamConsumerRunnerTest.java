@@ -866,8 +866,8 @@ public class TrafficStreamConsumerRunnerTest {
 
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verifyNoInteractions(trafficDeductOrchestratorService);
-            verify(trafficDeductDoneLogService, never())
-                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
+            verify(trafficDeductCompletionPersistenceService, never())
+                    .persistCompletion(any(), any(TrafficDeductResultResDto.class), eq("8-5"), anyLong());
             verify(trafficInFlightDedupeDeleteOutboxService, never()).createPending(any(), any());
             verify(trafficInFlightDedupeDeleteOutboxService, never()).createPendingDeferred(any(), any());
             verify(trafficInFlightDedupeService, never()).incrementRetryOnReclaim(any());
