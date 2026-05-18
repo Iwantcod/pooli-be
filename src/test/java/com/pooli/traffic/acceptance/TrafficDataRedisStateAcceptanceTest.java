@@ -241,8 +241,7 @@ class TrafficDataRedisStateAcceptanceTest extends TrafficAcceptanceTestSupport {
         Map<String, String> dlq = awaitDlqRecord();
         assertNoDoneLog(traceId);
         assertThat(dlq.get("reason")).isEqualTo("invalid/failure result: STALE_TARGET_MONTH");
-        assertThat(readIndividualBalanceAmountForMonth(lineId, previousMonth)).isEqualTo(0L);
-        assertUsageCountersForDate(lineId, appId, previousDate, previousMonth, 0L, 0L, 0L);
+        assertPreviousMonthRedisKeysNotCreated(lineId, appId, previousDate, previousMonth);
         assertRdbSources(lineId, familyId, DEFAULT_INDIVIDUAL_SOURCE_BYTES, DEFAULT_SHARED_SOURCE_BYTES);
     }
 
@@ -295,26 +294,6 @@ class TrafficDataRedisStateAcceptanceTest extends TrafficAcceptanceTestSupport {
     }
 
     /**
-     * 요청 날짜/월이 현재와 다를 때 해당 날짜/월 Redis usage key를 직접 검증합니다.
-     */
-    private void assertUsageCountersForDate(
-            long lineId,
-            int appId,
-            LocalDate usageDate,
-            YearMonth usageMonth,
-            long expectedDailyTotalUsage,
-            long expectedDailyAppUsage,
-            long expectedMonthlySharedUsage
-    ) {
-        assertThat(readStringCounter(trafficRedisKeyFactory.dailyTotalUsageKey(lineId, usageDate)))
-                .isEqualTo(expectedDailyTotalUsage);
-        assertThat(readHashCounter(trafficRedisKeyFactory.dailyAppUsageKey(lineId, usageDate), "app:" + appId))
-                .isEqualTo(expectedDailyAppUsage);
-        assertThat(readStringCounter(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, usageMonth)))
-                .isEqualTo(expectedMonthlySharedUsage);
-    }
-
-    /**
      * Redis hydrate와 차감이 RDB source 값을 직접 변경하지 않았는지 검증합니다.
      */
     private void assertRdbSources(
@@ -338,10 +317,22 @@ class TrafficDataRedisStateAcceptanceTest extends TrafficAcceptanceTestSupport {
     }
 
     /**
-     * 특정 월 개인풀 amount를 읽어 stale 요청이 과거 월 key를 만들지 않았는지 검증합니다.
+     * stale target 월 요청이 과거 월 Redis key를 생성하지 않았는지 검증합니다.
      */
-    private long readIndividualBalanceAmountForMonth(long lineId, YearMonth targetMonth) {
-        return readHashCounter(trafficRedisKeyFactory.remainingIndivAmountKey(lineId, targetMonth), "amount");
+    private void assertPreviousMonthRedisKeysNotCreated(
+            long lineId,
+            int appId,
+            LocalDate usageDate,
+            YearMonth usageMonth
+    ) {
+        assertRedisKeyNotCreated(trafficRedisKeyFactory.remainingIndivAmountKey(lineId, usageMonth));
+        assertRedisKeyNotCreated(trafficRedisKeyFactory.dailyTotalUsageKey(lineId, usageDate));
+        assertRedisKeyNotCreated(trafficRedisKeyFactory.dailyAppUsageKey(lineId, usageDate));
+        assertRedisKeyNotCreated(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, usageMonth));
+    }
+
+    private void assertRedisKeyNotCreated(String key) {
+        assertThat(cacheStringRedisTemplate.hasKey(key)).isFalse();
     }
 
     /**
