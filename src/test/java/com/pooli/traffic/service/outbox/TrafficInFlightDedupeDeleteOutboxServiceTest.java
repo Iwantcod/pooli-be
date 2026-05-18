@@ -1,6 +1,7 @@
 package com.pooli.traffic.service.outbox;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -85,6 +86,70 @@ class TrafficInFlightDedupeDeleteOutboxServiceTest {
         verify(redisOutboxRecordService).markFail(103L);
         verify(redisOutboxRecordService, never()).markSuccess(anyLong());
         verify(redisOutboxRecordService, never()).markFailWithRetryIncrement(anyLong());
+    }
+
+    @Test
+    @DisplayName("outbox 생성 후 즉시 삭제 예외가 발생해도 생성된 outboxId를 반환한다")
+    void createPendingReturnsOutboxIdWhenImmediateDeleteThrows() {
+        when(redisOutboxRecordService.createPending(eq(OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY), any(), eq("trace-007")))
+                .thenReturn(107L);
+        when(trafficInFlightDedupeDeleteRetryInvoker.delete("trace-007"))
+                .thenThrow(new RuntimeException("redis unavailable"));
+
+        long outboxId = assertDoesNotThrow(
+                () -> trafficInFlightDedupeDeleteOutboxService.createPending("trace-007", "7-0")
+        );
+
+        assertEquals(107L, outboxId);
+        verify(trafficInFlightDedupeDeleteRetryInvoker).delete("trace-007");
+        verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+        verify(redisOutboxRecordService, never()).markFail(anyLong());
+    }
+
+    @Test
+    @DisplayName("지연 삭제 요청은 outbox만 적재하고 즉시 삭제를 호출하지 않는다")
+    void createPendingDeferredDoesNotInvokeImmediateDelete() {
+        when(redisOutboxRecordService.createPending(eq(OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY), any(), eq("trace-004")))
+                .thenReturn(104L);
+
+        long outboxId = trafficInFlightDedupeDeleteOutboxService.createPendingDeferred("trace-004", "4-0");
+
+        assertEquals(104L, outboxId);
+        verify(trafficInFlightDedupeDeleteRetryInvoker, never()).delete(any());
+        verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+        verify(redisOutboxRecordService, never()).markFail(anyLong());
+    }
+
+    @Test
+    @DisplayName("이미 생성된 outbox의 즉시 삭제가 성공하면 SUCCESS로 전이한다")
+    void attemptImmediateDeleteAndMarkResultMarksSuccess() {
+        when(trafficInFlightDedupeDeleteRetryInvoker.delete("trace-005"))
+                .thenReturn(TrafficInFlightDedupeDeleteRetryExecutionResult.success(1, null));
+
+        trafficInFlightDedupeDeleteOutboxService.attemptImmediateDeleteAndMarkResult(105L, " trace-005 ");
+
+        verify(trafficInFlightDedupeDeleteRetryInvoker).delete("trace-005");
+        verify(redisOutboxRecordService).markSuccess(105L);
+        verify(redisOutboxRecordService, never()).markFail(anyLong());
+        verify(redisOutboxRecordService, never()).createPending(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("이미 생성된 outbox의 즉시 삭제가 실패하면 retry_count 증가 없이 FAIL로 전이한다")
+    void attemptImmediateDeleteAndMarkResultMarksFailWithoutRetryIncrement() {
+        when(trafficInFlightDedupeDeleteRetryInvoker.delete("trace-006"))
+                .thenReturn(TrafficInFlightDedupeDeleteRetryExecutionResult.failure(
+                        new RuntimeException("redis timeout"),
+                        4
+                ));
+
+        trafficInFlightDedupeDeleteOutboxService.attemptImmediateDeleteAndMarkResult(106L, "trace-006");
+
+        verify(trafficInFlightDedupeDeleteRetryInvoker).delete("trace-006");
+        verify(redisOutboxRecordService).markFail(106L);
+        verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+        verify(redisOutboxRecordService, never()).markFailWithRetryIncrement(anyLong());
+        verify(redisOutboxRecordService, never()).createPending(any(), any(), any());
     }
 
     @Test

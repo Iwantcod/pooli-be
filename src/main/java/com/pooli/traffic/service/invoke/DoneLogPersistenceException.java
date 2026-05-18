@@ -1,7 +1,7 @@
 package com.pooli.traffic.service.invoke;
 
 /**
- * done log 저장 실패를 식별하기 위한 래핑 예외입니다.<br>
+ * 정상 완료 영속 처리 실패를 식별하기 위한 래핑 예외입니다.<br>
  * TrafficStreamConsumerRunner 내부 흐름 제어용 예외입니다.
  */
 final class DoneLogPersistenceException extends RuntimeException {
