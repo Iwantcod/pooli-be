@@ -417,9 +417,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
                 long dedupeStartNs = System.nanoTime();
                 try {
-                    // done log precheck는 reclaim 경로에서만 수행한다.
-                    if (messageSource == TrafficStreamMessageSource.RECLAIM
-                            && trafficDeductDoneLogService.existsByTraceId(traceId)) {
+                    // 이미 완료 로그가 있으면 유입 출처와 관계없이 추가 차감 없이 ACK한다.
+                    if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
                         trafficInFlightDedupeDeleteOutboxService.createPending(traceId, recordId);
                         acknowledgeWithMetrics(record.getId());
                         log.info("traffic_stream_record_already_done recordId={}", recordId);
@@ -430,6 +429,19 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     TrafficInFlightIdempotencyEntryResult entryResult =
                             trafficInFlightDedupeService.createOrGet(traceId);
                     dedupeCleanupRequired = true;
+                    if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
+                        trafficInFlightDedupeDeleteOutboxService.createPending(traceId, recordId);
+                        acknowledgeWithMetrics(record.getId());
+                        log.info("traffic_stream_record_already_done_after_dedupe recordId={}", recordId);
+                        resultTag = RESULT_DEDUPED;
+                        return;
+                    }
+                    if (messageSource == TrafficStreamMessageSource.NEW && !entryResult.created()) {
+                        acknowledgeWithMetrics(record.getId());
+                        log.info("traffic_stream_record_inflight_duplicate_new recordId={}", recordId);
+                        resultTag = RESULT_DEDUPED;
+                        return;
+                    }
                     TrafficInFlightIdempotencyEntry entry = entryResult.entry();
                     processedIndividualDataBefore = normalizeNonNegative(entry == null ? null : entry.processedIndividualData());
                     processedSharedDataBefore = normalizeNonNegative(entry == null ? null : entry.processedSharedData());
@@ -534,7 +546,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     );
                 }
 
-                trafficInFlightDedupeDeleteOutboxService.createPending(traceId, recordId);
+                trafficInFlightDedupeDeleteOutboxService.createPendingDeferred(traceId, recordId);
                 acknowledgeWithMetrics(record.getId());
 
                 trafficGeneratorMetrics.incrementProcessed();

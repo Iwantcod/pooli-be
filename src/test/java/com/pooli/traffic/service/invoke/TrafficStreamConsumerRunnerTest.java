@@ -191,8 +191,8 @@ public class TrafficStreamConsumerRunnerTest {
                     .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("1-0"), latencyCaptor.capture());
             assertTrue(latencyCaptor.getValue() >= 0L);
             verify(trafficStreamInfraService).acknowledge(record.getId());
-            verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-001", "1-0");
-            verify(trafficDeductDoneLogService, never()).existsByTraceId(any());
+            verify(trafficInFlightDedupeDeleteOutboxService).createPendingDeferred("trace-001", "1-0");
+            verify(trafficDeductDoneLogService, times(2)).existsByTraceId("trace-001");
 
             String doneLog = findDoneLog(listAppender);
             assertTrue(doneLog.contains("trace_id=trace-001"));
@@ -293,7 +293,7 @@ public class TrafficStreamConsumerRunnerTest {
             invokeHandleRecord(record);
 
             verify(trafficStreamInfraService).acknowledge(record.getId());
-            verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-dup", "3-0");
+            verify(trafficInFlightDedupeDeleteOutboxService).createPendingDeferred("trace-dup", "3-0");
 
             String doneLog = findDoneLog(listAppender);
             assertTrue(doneLog.startsWith("traffic_stream_record_done_duplicate"));
@@ -303,7 +303,7 @@ public class TrafficStreamConsumerRunnerTest {
                             .map(ILoggingEvent::getFormattedMessage)
                             .anyMatch(message -> message.startsWith("traffic_stream_duplicate_deduction_absorbed"))
             );
-            verify(trafficDeductDoneLogService, never()).existsByTraceId(any());
+            verify(trafficDeductDoneLogService, times(2)).existsByTraceId("trace-dup");
 
             detachAppender(listAppender);
         }
@@ -337,7 +337,7 @@ public class TrafficStreamConsumerRunnerTest {
                     ArgumentCaptor.forClass(TrafficDeductResultResDto.class);
             verify(trafficDeductDoneLogService).saveIfAbsent(any(), resultCaptor.capture(), eq("6-0"), anyLong());
             verify(trafficStreamInfraService).acknowledge(record.getId());
-            verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-blocked", "6-0");
+            verify(trafficInFlightDedupeDeleteOutboxService).createPendingDeferred("trace-blocked", "6-0");
             assertEquals(TrafficFinalStatus.NOT_DEDUCTED, resultCaptor.getValue().getFinalStatus());
             assertEquals(TrafficLuaStatus.BLOCKED_IMMEDIATE, resultCaptor.getValue().getLastLuaStatus());
 
@@ -547,15 +547,16 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-pending"))
                     .thenReturn(existingEntryResult("trace-pending", 0L));
+            when(trafficInFlightDedupeService.incrementRetryOnReclaim("trace-pending")).thenReturn(1);
             when(trafficDeductOrchestratorService.orchestrate(any()))
                     .thenThrow(new QueryTimeoutException("redis timeout"));
             when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(any())).thenReturn(true);
 
-            invokeHandleRecord(record);
+            invokeHandleRecord(record, TrafficStreamMessageSource.RECLAIM);
 
             verify(trafficStreamInfraService, never()).acknowledge(record.getId());
             verify(trafficInFlightDedupeService).createOrGet("trace-pending");
-            verify(trafficDeductDoneLogService, never()).existsByTraceId(any());
+            verify(trafficDeductDoneLogService, times(2)).existsByTraceId("trace-pending");
         }
 
         @Test
@@ -567,15 +568,16 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-state-absent"))
                     .thenReturn(existingEntryResult("trace-state-absent", 100L));
+            when(trafficInFlightDedupeService.incrementRetryOnReclaim("trace-state-absent")).thenReturn(1);
             when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("5-2"), anyLong()))
                     .thenReturn(true);
 
-            invokeHandleRecord(record);
+            invokeHandleRecord(record, TrafficStreamMessageSource.RECLAIM);
 
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verify(trafficInFlightDedupeService).createOrGet("trace-state-absent");
             verifyNoInteractions(trafficDeductOrchestratorService);
-            verify(trafficDeductDoneLogService, never()).existsByTraceId(any());
+            verify(trafficDeductDoneLogService, times(2)).existsByTraceId("trace-state-absent");
         }
 
         @Test
@@ -588,8 +590,9 @@ public class TrafficStreamConsumerRunnerTest {
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
             when(trafficInFlightDedupeService.createOrGet("trace-overflow"))
                     .thenReturn(existingEntryResult("trace-overflow", 120L));
+            when(trafficInFlightDedupeService.incrementRetryOnReclaim("trace-overflow")).thenReturn(1);
 
-            invokeHandleRecord(record);
+            invokeHandleRecord(record, TrafficStreamMessageSource.RECLAIM);
 
             InOrder inOrder = inOrder(trafficStreamInfraService, trafficInFlightDedupeDeleteOutboxService);
             inOrder.verify(trafficStreamInfraService).writeDlq(eq(payloadJson), reasonCaptor.capture(), eq("5-3"));
@@ -661,7 +664,7 @@ public class TrafficStreamConsumerRunnerTest {
             );
             inOrder.verify(trafficDeductDoneLogService)
                     .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("7-0"), anyLong());
-            inOrder.verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-order", "7-0");
+            inOrder.verify(trafficInFlightDedupeDeleteOutboxService).createPendingDeferred("trace-order", "7-0");
             inOrder.verify(trafficStreamInfraService).acknowledge(record.getId());
         }
 
@@ -759,23 +762,43 @@ public class TrafficStreamConsumerRunnerTest {
         }
 
         @Test
-        @DisplayName("skips done log precheck on NEW source")
-        void skipDoneLogPrecheckOnNewSource() {
+        @DisplayName("acks without orchestration when done log exists for NEW source")
+        void acknowledgeNewSourceWithoutOrchestrationWhenDoneLogExists() {
             String payloadJson = "{\"traceId\":\"trace-new-source\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("8-4", payloadJson);
 
             when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
-            when(trafficInFlightDedupeService.createOrGet("trace-new-source"))
-                    .thenReturn(existingEntryResult("trace-new-source", 100L));
-            when(trafficDeductDoneLogService.saveIfAbsent(any(), any(TrafficDeductResultResDto.class), eq("8-4"), anyLong()))
-                    .thenReturn(true);
+            when(trafficDeductDoneLogService.existsByTraceId("trace-new-source")).thenReturn(true);
 
             invokeHandleRecord(record, TrafficStreamMessageSource.NEW);
 
-            verify(trafficDeductDoneLogService, never()).existsByTraceId(any());
+            verify(trafficDeductDoneLogService).existsByTraceId("trace-new-source");
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-new-source", "8-4");
+            verifyNoInteractions(trafficInFlightDedupeService);
             verifyNoInteractions(trafficDeductOrchestratorService);
+        }
+
+        @Test
+        @DisplayName("acks duplicate NEW record when in-flight dedupe already exists")
+        void acknowledgeDuplicateNewSourceWhenInFlightDedupeAlreadyExists() {
+            String payloadJson = "{\"traceId\":\"trace-new-inflight\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
+            MapRecord<String, String, String> record = createRecord("8-5", payloadJson);
+
+            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
+            when(trafficInFlightDedupeService.createOrGet("trace-new-inflight"))
+                    .thenReturn(existingEntryResult("trace-new-inflight", 40L));
+
+            invokeHandleRecord(record, TrafficStreamMessageSource.NEW);
+
+            verify(trafficStreamInfraService).acknowledge(record.getId());
+            verifyNoInteractions(trafficDeductOrchestratorService);
+            verify(trafficDeductDoneLogService, never())
+                    .saveIfAbsent(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
+            verify(trafficInFlightDedupeDeleteOutboxService, never()).createPending(any(), any());
+            verify(trafficInFlightDedupeDeleteOutboxService, never()).createPendingDeferred(any(), any());
+            verify(trafficInFlightDedupeService, never()).incrementRetryOnReclaim(any());
+            verify(trafficRecordStageMetricsPort).incrementResult("deduped");
         }
     }
 

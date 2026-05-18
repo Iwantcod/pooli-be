@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -20,6 +21,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
+import org.springframework.data.domain.Range;
+import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -39,6 +42,12 @@ import com.pooli.traffic.service.invoke.TrafficStreamConsumerRunner;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
+/**
+ * 트래픽 차감 인수테스트가 실제 Spring context, RDB, Redis, Stream을 같은 방식으로 사용하도록 돕는 공통 기반 클래스입니다.
+ *
+ * <p>각 테스트가 fixture 준비, 요청 enqueue, 비동기 consumer 결과 대기, Redis/RDB 상태 검증을 직접 반복하지 않도록
+ * acceptance 전용 데이터 범위와 공통 helper를 한곳에서 관리합니다.</p>
+ */
 @Tag("local-only")
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.MOCK,
@@ -140,13 +149,11 @@ abstract class TrafficAcceptanceTestSupport {
     }
 
     /**
-     * 클래스 단위 테스트가 끝난 뒤 consumer를 멈추고 acceptance 전용 stream key를 제거합니다.
+     * 클래스 단위 테스트가 끝난 뒤 acceptance 전용 stream key를 제거합니다.
+     * Spring test context가 acceptance 클래스 사이에서 재사용될 수 있으므로 공유 consumer bean은 멈추지 않습니다.
      */
     @AfterAll
     void cleanupAcceptanceStreams() {
-        if (trafficStreamConsumerRunner.isRunning()) {
-            trafficStreamConsumerRunner.stop();
-        }
         deleteStreamsKey(appStreamsProperties.getKeyTrafficRequest());
         deleteStreamsKey(appStreamsProperties.getKeyTrafficDlq());
     }
@@ -367,6 +374,47 @@ abstract class TrafficAcceptanceTestSupport {
     }
 
     /**
+     * DLQ 또는 validation 실패 시나리오에서 차감 완료 row가 생성되지 않았음을 검증합니다.
+     */
+    protected void assertNoDoneLog(String traceId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM TRAFFIC_DEDUCT_DONE WHERE trace_id = ?",
+                Integer.class,
+                traceId
+        );
+        assertThat(count).isZero();
+    }
+
+    /**
+     * consumer가 처리 불가능한 요청을 DLQ stream에 남길 때까지 기다린 뒤 첫 record payload를 반환합니다.
+     */
+    protected Map<String, String> awaitDlqRecord() throws Exception {
+        long startedAt = System.currentTimeMillis();
+        long timeoutMs = 7_000L;
+        while (System.currentTimeMillis() - startedAt < timeoutMs) {
+            List<MapRecord<String, Object, Object>> records = streamsStringRedisTemplate.opsForStream()
+                    .range(appStreamsProperties.getKeyTrafficDlq(), Range.unbounded());
+            if (records != null && !records.isEmpty()) {
+                return records.getFirst().getValue().entrySet().stream()
+                        .collect(Collectors.toMap(
+                                entry -> String.valueOf(entry.getKey()),
+                                entry -> String.valueOf(entry.getValue())
+                        ));
+            }
+            TimeUnit.MILLISECONDS.sleep(100);
+        }
+        throw new AssertionError("Timeout while waiting DLQ record");
+    }
+
+    /**
+     * API validation처럼 consumer까지 가지 않아야 하는 시나리오에서 stream 적재 여부를 확인합니다.
+     */
+    protected long streamRecordCount(String streamKey) {
+        Long size = streamsStringRedisTemplate.opsForStream().size(streamKey);
+        return size == null ? 0L : size;
+    }
+
+    /**
      * acceptance 테스트가 소유한 DB 데이터를 제거한 뒤 가족/회선 fixture를 다시 upsert합니다.
      */
     private void resetDatabaseFixture() {
@@ -388,6 +436,7 @@ abstract class TrafficAcceptanceTestSupport {
         jdbcTemplate.update("DELETE FROM APP_POLICY WHERE line_id BETWEEN ? AND ?", LINE_ID_1, LINE_ID_12);
         jdbcTemplate.update("DELETE FROM LINE_LIMIT WHERE line_id BETWEEN ? AND ?", LINE_ID_1, LINE_ID_12);
         jdbcTemplate.update("DELETE FROM TRAFFIC_DEDUCT_DONE WHERE line_id BETWEEN ? AND ?", LINE_ID_1, LINE_ID_12);
+        jdbcTemplate.update("DELETE FROM TRAFFIC_SHARED_THRESHOLD_ALARM_LOG WHERE family_id BETWEEN ? AND ?", FAMILY_ID_1, FAMILY_ID_3);
         jdbcTemplate.update("DELETE FROM TRAFFIC_REDIS_OUTBOX");
         jdbcTemplate.update("DELETE FROM FAMILY_LINE WHERE line_id BETWEEN ? AND ?", LINE_ID_1, LINE_ID_12);
     }
@@ -706,6 +755,9 @@ abstract class TrafficAcceptanceTestSupport {
         return logs.isEmpty() ? null : logs.getFirst();
     }
 
+    /**
+     * 로컬 DB의 필수 기준 데이터 중 acceptance fixture가 참조할 user/plan/app id 묶음입니다.
+     */
     protected record FixtureIds(long userId, int planId, int appId) {
     }
 }

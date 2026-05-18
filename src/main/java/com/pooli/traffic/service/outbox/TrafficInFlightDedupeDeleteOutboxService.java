@@ -33,27 +33,8 @@ public class TrafficInFlightDedupeDeleteOutboxService {
      * @return 생성된 Outbox ID
      */
     public long createPending(String traceId, String sourceRecordId) {
-        // [1] outbox 공통 식별자(traceId) 유효성 검증: blank는 즉시 차단합니다.
-        if (traceId == null || traceId.isBlank()) {
-            throw new IllegalArgumentException("traceId must not be blank");
-        }
-
-        // [2] traceId를 trim 정규화해 payload/DB 저장/로그에서 동일 식별자를 사용합니다.
+        long outboxId = createPendingRecord(traceId, sourceRecordId);
         String normalizedTraceId = traceId.trim();
-
-        // [3] 삭제 요청 이벤트 payload를 구성합니다.
-        InFlightDedupeDeleteOutboxPayload payload = InFlightDedupeDeleteOutboxPayload.builder()
-                .uuid(normalizedTraceId)
-                .sourceRecordId(sourceRecordId)
-                .requestedAtEpochMillis(System.currentTimeMillis())
-                .build();
-
-        // [4] Outbox PENDING 레코드를 먼저 저장해 스케줄러 재시도 기반의 복구 경로를 확보합니다.
-        long outboxId = redisOutboxRecordService.createPending(
-                OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY,
-                payload,
-                normalizedTraceId
-        );
 
         // [5] 즉시 삭제는 Retry 어댑터에 위임합니다. (초기 1회 + 재시도 최대 3회)
         TrafficInFlightDedupeDeleteRetryExecutionResult retryExecutionResult =
@@ -88,6 +69,39 @@ public class TrafficInFlightDedupeDeleteOutboxService {
         }
         // [8] 호출부(consumer)는 outboxId를 사용해 처리 순서 검증/추적을 이어갑니다.
         return outboxId;
+    }
+
+    /**
+     * dedupe key 삭제 요청을 Outbox에만 적재하고 즉시 삭제는 수행하지 않습니다.
+     * 정상 done-log 저장 직후에는 같은 traceId의 동시 중복 메시지가 아직 처리 중일 수 있어
+     * dedupe key를 retry scheduler 시점까지 유지해야 초과 차감을 방지할 수 있습니다.
+     */
+    public long createPendingDeferred(String traceId, String sourceRecordId) {
+        return createPendingRecord(traceId, sourceRecordId);
+    }
+
+    private long createPendingRecord(String traceId, String sourceRecordId) {
+        // [1] outbox 공통 식별자(traceId) 유효성 검증: blank는 즉시 차단합니다.
+        if (traceId == null || traceId.isBlank()) {
+            throw new IllegalArgumentException("traceId must not be blank");
+        }
+
+        // [2] traceId를 trim 정규화해 payload/DB 저장/로그에서 동일 식별자를 사용합니다.
+        String normalizedTraceId = traceId.trim();
+
+        // [3] 삭제 요청 이벤트 payload를 구성합니다.
+        InFlightDedupeDeleteOutboxPayload payload = InFlightDedupeDeleteOutboxPayload.builder()
+                .uuid(normalizedTraceId)
+                .sourceRecordId(sourceRecordId)
+                .requestedAtEpochMillis(System.currentTimeMillis())
+                .build();
+
+        // [4] Outbox PENDING 레코드를 먼저 저장해 스케줄러 재시도 기반의 복구 경로를 확보합니다.
+        return redisOutboxRecordService.createPending(
+                OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY,
+                payload,
+                normalizedTraceId
+        );
     }
 
     private String classifyReason(RuntimeException exception) {

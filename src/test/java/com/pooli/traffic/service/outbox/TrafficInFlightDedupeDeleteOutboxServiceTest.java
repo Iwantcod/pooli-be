@@ -88,6 +88,20 @@ class TrafficInFlightDedupeDeleteOutboxServiceTest {
     }
 
     @Test
+    @DisplayName("지연 삭제 요청은 outbox만 적재하고 즉시 삭제를 호출하지 않는다")
+    void createPendingDeferredDoesNotInvokeImmediateDelete() {
+        when(redisOutboxRecordService.createPending(eq(OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY), any(), eq("trace-004")))
+                .thenReturn(104L);
+
+        long outboxId = trafficInFlightDedupeDeleteOutboxService.createPendingDeferred("trace-004", "4-0");
+
+        assertEquals(104L, outboxId);
+        verify(trafficInFlightDedupeDeleteRetryInvoker, never()).delete(any());
+        verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+        verify(redisOutboxRecordService, never()).markFail(anyLong());
+    }
+
+    @Test
     @DisplayName("traceId가 비어 있으면 outbox 적재를 차단한다")
     void rejectBlankTraceId() {
         assertThrows(
