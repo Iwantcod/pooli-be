@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -727,29 +728,32 @@ abstract class TrafficAcceptanceTestSupport {
                 ORDER BY traffic_deduct_done_id DESC
                 LIMIT 1
                 """,
-                (rs, rowNum) -> TrafficDeductDoneLog.builder()
-                        .trafficDeductDoneId(rs.getLong("traffic_deduct_done_id"))
-                        .traceId(rs.getString("trace_id"))
-                        .recordId(rs.getString("record_id"))
-                        .lineId(rs.getLong("line_id"))
-                        .familyId(rs.getLong("family_id"))
-                        .appId(rs.getInt("app_id"))
-                        .apiTotalData(rs.getLong("api_total_data"))
-                        .deductedIndividualBytes(rs.getLong("deducted_individual_bytes"))
-                        .deductedSharedBytes(rs.getLong("deducted_shared_bytes"))
-                        .deductedQosBytes(rs.getLong("deducted_qos_bytes"))
-                        .apiRemainingData(rs.getLong("api_remaining_data"))
-                        .finalStatus(rs.getString("final_status"))
-                        .lastLuaStatus(rs.getString("last_lua_status"))
-                        .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
-                        .startedAt(rs.getTimestamp("started_at").toLocalDateTime())
-                        .finishedAt(rs.getTimestamp("finished_at").toLocalDateTime())
-                        .latency(rs.getObject("latency", Long.class))
-                        .restoreStatus(rs.getString("restore_status"))
-                        .restoreStatusUpdatedAt(rs.getTimestamp("restore_status_updated_at").toLocalDateTime())
-                        .restoreRetryCount(rs.getInt("restore_retry_count"))
-                        .restoreLastErrorMessage(rs.getString("restore_last_error_message"))
-                        .build(),
+                (rs, rowNum) -> {
+                    Timestamp restoreStatusUpdatedAt = rs.getTimestamp("restore_status_updated_at");
+                    return TrafficDeductDoneLog.builder()
+                            .trafficDeductDoneId(rs.getLong("traffic_deduct_done_id"))
+                            .traceId(rs.getString("trace_id"))
+                            .recordId(rs.getString("record_id"))
+                            .lineId(rs.getLong("line_id"))
+                            .familyId(rs.getLong("family_id"))
+                            .appId(rs.getInt("app_id"))
+                            .apiTotalData(rs.getLong("api_total_data"))
+                            .deductedIndividualBytes(rs.getLong("deducted_individual_bytes"))
+                            .deductedSharedBytes(rs.getLong("deducted_shared_bytes"))
+                            .deductedQosBytes(rs.getLong("deducted_qos_bytes"))
+                            .apiRemainingData(rs.getLong("api_remaining_data"))
+                            .finalStatus(rs.getString("final_status"))
+                            .lastLuaStatus(rs.getString("last_lua_status"))
+                            .createdAt(rs.getTimestamp("created_at").toLocalDateTime())
+                            .startedAt(rs.getTimestamp("started_at").toLocalDateTime())
+                            .finishedAt(rs.getTimestamp("finished_at").toLocalDateTime())
+                            .latency(rs.getObject("latency", Long.class))
+                            .restoreStatus(rs.getString("restore_status"))
+                            .restoreStatusUpdatedAt(restoreStatusUpdatedAt == null ? null : restoreStatusUpdatedAt.toLocalDateTime())
+                            .restoreRetryCount(rs.getInt("restore_retry_count"))
+                            .restoreLastErrorMessage(rs.getString("restore_last_error_message"))
+                            .build();
+                },
                 traceId
         );
         return logs.isEmpty() ? null : logs.getFirst();
