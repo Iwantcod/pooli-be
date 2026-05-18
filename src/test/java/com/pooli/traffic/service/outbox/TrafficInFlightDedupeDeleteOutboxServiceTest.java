@@ -1,6 +1,7 @@
 package com.pooli.traffic.service.outbox;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -85,6 +86,24 @@ class TrafficInFlightDedupeDeleteOutboxServiceTest {
         verify(redisOutboxRecordService).markFail(103L);
         verify(redisOutboxRecordService, never()).markSuccess(anyLong());
         verify(redisOutboxRecordService, never()).markFailWithRetryIncrement(anyLong());
+    }
+
+    @Test
+    @DisplayName("outbox 생성 후 즉시 삭제 예외가 발생해도 생성된 outboxId를 반환한다")
+    void createPendingReturnsOutboxIdWhenImmediateDeleteThrows() {
+        when(redisOutboxRecordService.createPending(eq(OutboxEventType.DELETE_IN_FLIGHT_DEDUPE_KEY), any(), eq("trace-007")))
+                .thenReturn(107L);
+        when(trafficInFlightDedupeDeleteRetryInvoker.delete("trace-007"))
+                .thenThrow(new RuntimeException("redis unavailable"));
+
+        long outboxId = assertDoesNotThrow(
+                () -> trafficInFlightDedupeDeleteOutboxService.createPending("trace-007", "7-0")
+        );
+
+        assertEquals(107L, outboxId);
+        verify(trafficInFlightDedupeDeleteRetryInvoker).delete("trace-007");
+        verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+        verify(redisOutboxRecordService, never()).markFail(anyLong());
     }
 
     @Test

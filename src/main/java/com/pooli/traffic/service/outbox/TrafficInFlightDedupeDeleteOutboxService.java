@@ -34,7 +34,16 @@ public class TrafficInFlightDedupeDeleteOutboxService {
      */
     public long createPending(String traceId, String sourceRecordId) {
         long outboxId = createPendingRecord(traceId, sourceRecordId);
-        attemptImmediateDeleteAndMarkResult(outboxId, traceId);
+        try {
+            attemptImmediateDeleteAndMarkResult(outboxId, traceId);
+        } catch (RuntimeException immediateDeleteException) {
+            log.warn(
+                    "traffic_inflight_dedupe_delete_immediate_after_create_failed outboxId={} traceId={} recovery=scheduler_retry",
+                    outboxId,
+                    traceId,
+                    immediateDeleteException
+            );
+        }
 
         // [8] 호출부(consumer)는 outboxId를 사용해 처리 순서 검증/추적을 이어갑니다.
         return outboxId;
