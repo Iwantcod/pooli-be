@@ -61,8 +61,6 @@ import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
                 "app.streams.worker-queue-capacity=32",
                 "app.streams.read-count=8",
                 "app.streams.block-ms=100",
-                "app.streams.reclaim-interval-ms=100",
-                "app.streams.reclaim-min-idle-ms=0",
                 "app.streams.key-traffic-dlq=traffic:deduct:dlq:acceptance"
         }
 )

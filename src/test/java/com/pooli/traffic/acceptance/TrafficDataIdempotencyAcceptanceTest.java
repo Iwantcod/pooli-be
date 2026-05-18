@@ -18,6 +18,7 @@ import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamRecords;
+import org.springframework.test.context.TestPropertySource;
 
 import com.pooli.traffic.domain.TrafficStreamFields;
 import com.pooli.traffic.domain.entity.TrafficDeductDoneLog;
@@ -27,6 +28,14 @@ import com.pooli.traffic.domain.entity.TrafficDeductDoneLog;
  *
  * <p>이미 처리된 바이트의 remaining 계산, 중복 done log 흡수, reclaim retry 한계, invariant 위반 DLQ 경로를 다룹니다.</p>
  */
+@TestPropertySource(properties = {
+        "app.streams.key-traffic-request=traffic:deduct:request:acceptance:idempotency",
+        "app.streams.group-traffic=traffic-deduct-acceptance-idempotency-cg",
+        "app.streams.consumer-name=traffic-deduct-acceptance-idempotency-consumer",
+        "app.streams.key-traffic-dlq=traffic:deduct:dlq:acceptance:idempotency",
+        "app.streams.reclaim-interval-ms=100",
+        "app.streams.reclaim-min-idle-ms=0"
+})
 class TrafficDataIdempotencyAcceptanceTest extends TrafficAcceptanceTestSupport {
 
     private final Set<String> traceIdsToCleanup = new LinkedHashSet<>();
