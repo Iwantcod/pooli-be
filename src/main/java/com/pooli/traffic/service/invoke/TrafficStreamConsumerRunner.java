@@ -80,6 +80,8 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final TrafficInFlightDedupeService trafficInFlightDedupeService;
     // 완료 로그 서비스(traceId UNIQUE idempotency)
     private final TrafficDeductDoneLogService trafficDeductDoneLogService;
+    // 정상 완료 영속 변경(done log + dedupe delete outbox)을 하나의 트랜잭션으로 저장하는 서비스
+    private final TrafficDeductCompletionPersistenceService trafficDeductCompletionPersistenceService;
     // pending reclaim/retry/DLQ 분기 서비스
     private final TrafficStreamReclaimService trafficStreamReclaimService;
     // in-flight dedupe key 삭제 요청 outbox 적재 서비스
@@ -521,16 +523,22 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     return;
                 }
 
-                boolean saved;
+                TrafficDeductCompletionPersistenceService.CompletionPersistenceResult persistenceResult;
                 long mysqlSaveStartNs = System.nanoTime();
                 try {
-                    saved = trafficDeductDoneLogService.saveIfAbsent(payload, cumulativeResult, recordId, latency);
+                    persistenceResult = trafficDeductCompletionPersistenceService.persistCompletion(
+                            payload,
+                            cumulativeResult,
+                            recordId,
+                            latency
+                    );
                 } catch (Exception saveException) {
-                    throw new DoneLogPersistenceException("traffic_done_log_save_failed", saveException);
+                    throw new DoneLogPersistenceException("traffic_completion_persist_failed", saveException);
                 } finally {
                     trafficRecordStageMetricsPort.recordStageLatency(STAGE_DONE_LOG_SAVE, elapsedSinceNs(mysqlSaveStartNs));
                 }
 
+                boolean saved = persistenceResult.saved();
                 if (!saved && messageSource == TrafficStreamMessageSource.NEW) {
                     log.warn(
                             "traffic_stream_duplicate_deduction_absorbed trace_id={} record_id={} source={} "
@@ -546,7 +554,20 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     );
                 }
 
-                trafficInFlightDedupeDeleteOutboxService.createPendingDeferred(traceId, recordId);
+                try {
+                    trafficInFlightDedupeDeleteOutboxService.attemptImmediateDeleteAndMarkResult(
+                            persistenceResult.outboxId(),
+                            traceId
+                    );
+                } catch (RuntimeException dedupeDeleteException) {
+                    log.warn(
+                            "traffic_stream_dedupe_delete_immediate_after_commit_failed trace_id={} record_id={} outbox_id={}",
+                            traceId,
+                            recordId,
+                            persistenceResult.outboxId(),
+                            dedupeDeleteException
+                    );
+                }
                 acknowledgeWithMetrics(record.getId());
 
                 trafficGeneratorMetrics.incrementProcessed();
@@ -577,9 +598,9 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                 );
             } catch (DoneLogPersistenceException e) {
                 long latency = System.currentTimeMillis() - consumeStartTimeMs;
-                // done log 저장 실패 시 ACK하면 재처리 기회를 잃으므로 pending을 유지한다.
+                // 완료 저장 트랜잭션 실패 시 ACK하면 재처리 기회를 잃으므로 pending을 유지한다.
                 log.error(
-                        "traffic_stream_record_done_log_save_failed recordId={} traceId={} latency={}",
+                        "traffic_stream_record_completion_persist_failed recordId={} traceId={} latency={}",
                         recordId,
                         traceId,
                         latency,
