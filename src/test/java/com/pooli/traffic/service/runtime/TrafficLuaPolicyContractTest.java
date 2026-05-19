@@ -112,6 +112,10 @@ class TrafficLuaPolicyContractTest {
         assertTrue(script.contains("sharedDeducted"));
         assertTrue(script.contains("qosDeducted"));
         assertTrue(script.contains("finishedAtEpochMillis"));
+        assertTrue(script.contains("redis.call(\"TIME\")"));
+        assertTrue(script.contains("\"SPEED_LIMIT_TIMEOUT\""));
+        assertTrue(script.contains("qos_speed_limit_next_available_key"));
+        assertFalse(script.contains("speed_bucket_key"));
         assertTrue(script.contains("\"GLOBAL_POLICY_HYDRATE\""));
         assertTrue(script.contains("\"HYDRATE_INDIVIDUAL\""));
         assertTrue(script.contains("\"HYDRATE_SHARED\""));
@@ -165,7 +169,24 @@ class TrafficLuaPolicyContractTest {
                 script,
                 "local indiv_deducted = individual_unlimited and pool_target or math.min(individual_amount, pool_target)",
                 "local shared_deducted = shared_unlimited and shared_target or math.min(shared_amount, shared_target)",
-                "local qos_deducted = math.min(qos_limit, qos_target)"
+                "local qos_bytes_per_sec = read_non_negative_counter(individual_remaining_key, \"qos\")",
+                "qos_deducted = qos_target"
+        );
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 timeout을 Redis 상태 변경 전에 반환한다")
+    void unifiedDeductChecksSpeedLimitTimeoutBeforeMutations() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                script,
+                "local speed_limited_bytes = 0",
+                "return as_json(0, 0, 0, \"SPEED_LIMIT_TIMEOUT\", finished_at_epoch_millis)",
+                "redis.call(\"SET\", qos_speed_limit_next_available_key, finished_at_epoch_millis)",
+                "if redis.call(\"EXISTS\", dedupe_key) == 0 then",
+                "redis.call(\"HINCRBY\", individual_remaining_key, \"amount\", -indiv_deducted)",
+                "redis.call(\"INCRBY\", daily_total_usage_key, total_deducted)"
         );
     }
 

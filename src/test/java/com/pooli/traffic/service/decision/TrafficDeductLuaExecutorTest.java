@@ -89,11 +89,7 @@ class TrafficDeductLuaExecutorTest {
         when(trafficRedisKeyFactory.appDataDailyLimitKey(11L)).thenReturn("app-data-limit");
         when(trafficRedisKeyFactory.dailyAppUsageKey(11L, java.time.LocalDate.of(2026, 3, 1))).thenReturn("daily-app-usage");
         when(trafficRedisKeyFactory.appSpeedLimitKey(11L)).thenReturn("app-speed-limit");
-        when(trafficRedisKeyFactory.speedBucketIndividualAppKey(
-                org.mockito.ArgumentMatchers.eq(11L),
-                org.mockito.ArgumentMatchers.eq(7),
-                org.mockito.ArgumentMatchers.anyLong()
-        )).thenReturn("speed-bucket");
+        when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(11L, 7)).thenReturn("qos-speed-next-available");
         when(trafficRedisKeyFactory.dedupeRunKey("trace-001")).thenReturn("dedupe");
     }
 
