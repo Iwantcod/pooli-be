@@ -29,6 +29,9 @@ public enum TrafficLuaStatus {
     /** 앱 속도 제한 정책으로 현재 tick의 처리량이 제한된 상태입니다. */
     HIT_APP_SPEED,
 
+    /** 속도 제한 처리 완료 예상 시각이 허용 대기 시간을 초과해 기각된 상태입니다. */
+    SPEED_LIMIT_TIMEOUT,
+
     /** 잔량 차감 없이 QoS 허용량으로 요청량을 처리한 상태입니다. */
     QOS,
 

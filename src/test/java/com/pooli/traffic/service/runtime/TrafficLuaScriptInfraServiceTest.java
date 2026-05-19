@@ -22,10 +22,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics;
+import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
+import com.pooli.traffic.domain.enums.TrafficLuaScriptType;
+import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficLuaScriptInfraServiceTest {
@@ -101,5 +105,33 @@ class TrafficLuaScriptInfraServiceTest {
         );
 
         verify(spyService).releaseHydrateLock(any());
+    }
+
+    @Test
+    @DisplayName("통합 차감 Lua JSON의 finishedAtEpochMillis를 결과 객체로 전달한다")
+    void parseUnifiedDeductResultPreservesFinishedAtEpochMillis() {
+        String rawJson = """
+                {
+                  "indivDeducted": 10,
+                  "sharedDeducted": 20,
+                  "qosDeducted": 30,
+                  "finishedAtEpochMillis": 1710000000123,
+                  "status": "SPEED_LIMIT_TIMEOUT"
+                }
+                """;
+
+        TrafficLuaDeductExecutionResult result = (TrafficLuaDeductExecutionResult) ReflectionTestUtils.invokeMethod(
+                service,
+                "parseUnifiedDeductResult",
+                rawJson,
+                TrafficLuaScriptType.DEDUCT_UNIFIED
+        );
+
+        assertThat(result).isNotNull();
+        assertThat(result.getIndivDeducted()).isEqualTo(10L);
+        assertThat(result.getSharedDeducted()).isEqualTo(20L);
+        assertThat(result.getQosDeducted()).isEqualTo(30L);
+        assertThat(result.getFinishedAtEpochMillis()).isEqualTo(1710000000123L);
+        assertThat(result.getStatus()).isEqualTo(TrafficLuaStatus.SPEED_LIMIT_TIMEOUT);
     }
 }

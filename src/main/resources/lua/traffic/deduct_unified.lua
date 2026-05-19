@@ -7,11 +7,12 @@
 -- 3) 정책 제한으로 target이 0이 된 경우는 HIT_*를, 정책 영향 없이 차감할 수 없는 경우는 NO_BALANCE를 반환한다.
 
 -- Redis Lua가 Java DTO로 역직렬화할 JSON 응답을 만든다.
-local function as_json(indiv_deducted, shared_deducted, qos_deducted, status)
+local function as_json(indiv_deducted, shared_deducted, qos_deducted, status, finished_at_epoch_millis)
   return cjson.encode({
     indivDeducted = indiv_deducted,
     sharedDeducted = shared_deducted,
     qosDeducted = qos_deducted,
+    finishedAtEpochMillis = finished_at_epoch_millis or 0,
     status = status
   })
 end

@@ -458,6 +458,7 @@ public class TrafficLuaScriptInfraService {
                     .indivDeducted(parsedResult.getIndivDeducted())
                     .sharedDeducted(parsedResult.getSharedDeducted())
                     .qosDeducted(parsedResult.getQosDeducted())
+                    .finishedAtEpochMillis(parsedResult.getFinishedAtEpochMillis())
                     .status(parsedResult.getStatus())
                     .build();
         } catch (JsonProcessingException e) {

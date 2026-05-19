@@ -20,5 +20,6 @@ public class TrafficLuaDeductResDto {
     private long indivDeducted;
     private long sharedDeducted;
     private long qosDeducted;
+    private Long finishedAtEpochMillis;
     private TrafficLuaStatus status;
 }

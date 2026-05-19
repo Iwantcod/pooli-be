@@ -111,6 +111,7 @@ class TrafficLuaPolicyContractTest {
         assertTrue(script.contains("indivDeducted"));
         assertTrue(script.contains("sharedDeducted"));
         assertTrue(script.contains("qosDeducted"));
+        assertTrue(script.contains("finishedAtEpochMillis"));
         assertTrue(script.contains("\"GLOBAL_POLICY_HYDRATE\""));
         assertTrue(script.contains("\"HYDRATE_INDIVIDUAL\""));
         assertTrue(script.contains("\"HYDRATE_SHARED\""));
