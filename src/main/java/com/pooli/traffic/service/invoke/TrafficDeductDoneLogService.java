@@ -92,7 +92,7 @@ public class TrafficDeductDoneLogService {
                 .lastLuaStatus(result.getLastLuaStatus() == null ? null : result.getLastLuaStatus().name())
                 .failureReason(result.getFailureReason())
                 .startedAt(startedAt)
-                .finishedAt(defaultNowIfNull(result.getFinishedAt()))
+                .finishedAt(result.getFinishedAt())
                 .latency(normalizeLatency(latency))
                 .build();
 

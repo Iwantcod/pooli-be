@@ -10,6 +10,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,9 +36,13 @@ import com.pooli.traffic.domain.enums.TrafficPoolType;
 import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
 import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficDeductOrchestratorServiceTest {
+
+    private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
+    private static final long FINISHED_AT_EPOCH_MILLIS = 1_710_000_000_123L;
 
     @Mock
     private TrafficDeductLuaExecutor trafficDeductLuaExecutor;
@@ -57,6 +65,9 @@ class TrafficDeductOrchestratorServiceTest {
     @Mock
     private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
+    @Mock
+    private TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
+
     @InjectMocks
     private TrafficDeductOrchestratorService service;
 
@@ -64,6 +75,7 @@ class TrafficDeductOrchestratorServiceTest {
     void setUp() {
         lenient().when(trafficPolicyCheckLayerService.evaluate(any(TrafficPayloadReqDto.class)))
                 .thenReturn(policyCheckFromLua(0L, TrafficLuaStatus.OK));
+        lenient().when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ASIA_SEOUL);
     }
 
     @Test
@@ -92,7 +104,8 @@ class TrafficDeductOrchestratorServiceTest {
                 () -> assertEquals(30L, result.getDeductedIndividualBytes()),
                 () -> assertEquals(40L, result.getDeductedSharedBytes()),
                 () -> assertEquals(30L, result.getDeductedQosBytes()),
-                () -> assertEquals(0L, result.getApiRemainingData())
+                () -> assertEquals(0L, result.getApiRemainingData()),
+                () -> assertEquals(expectedFinishedAt(), result.getFinishedAt())
         );
         verify(trafficRecentUsageBucketService).recordUsage(TrafficPoolType.INDIVIDUAL, payload, 30L);
         verify(trafficRecentUsageBucketService).recordUsage(TrafficPoolType.SHARED, payload, 40L);
@@ -132,6 +145,7 @@ class TrafficDeductOrchestratorServiceTest {
                 .qosDeducted(0L)
                 .status(TrafficLuaStatus.ERROR)
                 .failureReason("STALE_TARGET_MONTH")
+                .finishedAtEpochMillis(FINISHED_AT_EPOCH_MILLIS)
                 .build();
         when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
                 eq(payload),
@@ -152,6 +166,36 @@ class TrafficDeductOrchestratorServiceTest {
                 () -> assertEquals(TrafficFinalStatus.FAILED, result.getFinalStatus()),
                 () -> assertEquals(TrafficLuaStatus.ERROR, result.getLastLuaStatus()),
                 () -> assertEquals("STALE_TARGET_MONTH", result.getFailureReason())
+        );
+    }
+
+    @Test
+    @DisplayName("속도 제한 timeout은 NOT_DEDUCTED와 Lua 완료 시각으로 종료한다")
+    void returnsNotDeductedWithLuaFinishedAtWhenSpeedLimitTimeout() {
+        TrafficPayloadReqDto payload = payload(100L);
+        TrafficLuaDeductExecutionResult initialResult =
+                unifiedResult(0L, 0L, 0L, TrafficLuaStatus.SPEED_LIMIT_TIMEOUT);
+        when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(TrafficFailureStage.DEDUCT)
+        )).thenReturn(initialResult);
+        when(trafficHydrateService.recoverIfNeeded(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(initialResult)
+        )).thenReturn(initialResult);
+
+        TrafficDeductResultResDto result = service.orchestrate(payload);
+
+        assertAll(
+                () -> assertEquals(TrafficFinalStatus.NOT_DEDUCTED, result.getFinalStatus()),
+                () -> assertEquals(TrafficLuaStatus.SPEED_LIMIT_TIMEOUT, result.getLastLuaStatus()),
+                () -> assertEquals(0L, result.getDeductedTotalBytes()),
+                () -> assertEquals(100L, result.getApiRemainingData()),
+                () -> assertEquals(expectedFinishedAt(), result.getFinishedAt())
         );
     }
 
@@ -220,6 +264,11 @@ class TrafficDeductOrchestratorServiceTest {
                 .sharedDeducted(shared)
                 .qosDeducted(qos)
                 .status(status)
+                .finishedAtEpochMillis(FINISHED_AT_EPOCH_MILLIS)
                 .build();
+    }
+
+    private LocalDateTime expectedFinishedAt() {
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(FINISHED_AT_EPOCH_MILLIS), ASIA_SEOUL);
     }
 }
