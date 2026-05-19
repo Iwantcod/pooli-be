@@ -101,7 +101,7 @@ class TrafficPolicyVersionedRedisServiceTest {
         void delegatesAppPolicySingleCas() {
             when(trafficPolicyLuaScriptInfraService.executeLongScript(
                     eq(TrafficPolicyLuaScriptType.APP_POLICY_SINGLE_CAS),
-                    eq(List.of("app:data:key", "app:speed:key", "app:white:key")),
+                    eq(List.of("app:data:key", "app:speed:key", "app:white:key", "qos:speed:next:key")),
                     any(Object[].class)
             )).thenReturn(PolicySyncResult.SUCCESS);
 
@@ -109,6 +109,7 @@ class TrafficPolicyVersionedRedisServiceTest {
                     "app:data:key",
                     "app:speed:key",
                     "app:white:key",
+                    "qos:speed:next:key",
                     301,
                     true,
                     1_000L,
@@ -120,7 +121,7 @@ class TrafficPolicyVersionedRedisServiceTest {
             assertEquals(PolicySyncResult.SUCCESS, result);
             verify(trafficPolicyLuaScriptInfraService).executeLongScript(
                     TrafficPolicyLuaScriptType.APP_POLICY_SINGLE_CAS,
-                    List.of("app:data:key", "app:speed:key", "app:white:key"),
+                    List.of("app:data:key", "app:speed:key", "app:white:key", "qos:speed:next:key"),
                     "12",
                     "301",
                     "1",
@@ -135,7 +136,7 @@ class TrafficPolicyVersionedRedisServiceTest {
         void delegatesAppPolicySnapshotCas() {
             when(trafficPolicyLuaScriptInfraService.executeLongScript(
                     eq(TrafficPolicyLuaScriptType.APP_POLICY_SNAPSHOT_CAS),
-                    eq(List.of("app:data:key", "app:speed:key", "app:white:key")),
+                    eq(List.of("app:data:key", "app:speed:key", "app:white:key", "qos:speed:next:301", "qos:speed:next:302")),
                     any(Object[].class)
             )).thenReturn(PolicySyncResult.RETRYABLE_FAILURE);
 
@@ -143,6 +144,7 @@ class TrafficPolicyVersionedRedisServiceTest {
                     "app:data:key",
                     "app:speed:key",
                     "app:white:key",
+                    List.of("qos:speed:next:301", "qos:speed:next:302"),
                     Map.of("301", "1000"),
                     Map.of("301", "2500"),
                     Set.of("301"),
@@ -152,7 +154,7 @@ class TrafficPolicyVersionedRedisServiceTest {
             assertEquals(PolicySyncResult.RETRYABLE_FAILURE, result);
             verify(trafficPolicyLuaScriptInfraService).executeLongScript(
                     TrafficPolicyLuaScriptType.APP_POLICY_SNAPSHOT_CAS,
-                    List.of("app:data:key", "app:speed:key", "app:white:key"),
+                    List.of("app:data:key", "app:speed:key", "app:white:key", "qos:speed:next:301", "qos:speed:next:302"),
                     "13",
                     "{\"301\":\"1000\"}",
                     "{\"301\":\"2500\"}",

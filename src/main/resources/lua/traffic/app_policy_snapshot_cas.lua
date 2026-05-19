@@ -12,6 +12,11 @@ if currentRaw then
 end
 
 redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+for i = 4, #KEYS do
+  if KEYS[i] and KEYS[i] ~= '' then
+    redis.call('DEL', KEYS[i])
+  end
+end
 
 local dataPayload = cjson.decode(ARGV[2])
 for field, value in pairs(dataPayload) do

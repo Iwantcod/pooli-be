@@ -1,7 +1,9 @@
 package com.pooli.traffic.service.policy;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +38,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 정책 변경 시 Redis 정책 키를 즉시 동기화(write-through)하는 서비스입니다.
  * 방안 B 규칙에 맞춰 모든 정책 키를 version CAS로 반영합니다.
+ * 앱 정책 비활성화/삭제와 스냅샷 재동기화 시에는 QoS/앱 속도 제한 예약 키도 함께 정리합니다.
  */
 @Slf4j
 @Service
@@ -143,6 +146,7 @@ public class TrafficPolicyWriteThroughService {
 
     /**
      * 앱 정책(일 제한/속도 제한/화이트리스트)을 Redis 정책 키에 동기화합니다.
+     * 비활성화 요청이면 해당 회선+앱 예약 키도 같은 CAS Lua에서 삭제합니다.
      */
     public void syncAppPolicy(
             long lineId,
@@ -168,7 +172,7 @@ public class TrafficPolicyWriteThroughService {
     }
 
     /**
-     * 앱 정책 삭제 시 Redis의 관련 키 조각(limit/speed/whitelist)을 제거합니다.
+     * 앱 정책 삭제 시 Redis의 관련 키 조각(limit/speed/whitelist)과 회선+앱 예약 키를 제거합니다.
      */
     public void evictAppPolicy(long lineId, int appId) {
         long version = nowEpochMillis();
@@ -187,7 +191,7 @@ public class TrafficPolicyWriteThroughService {
     }
 
     /**
-     * 앱 정책 스냅샷을 Redis에 일괄 반영합니다.
+     * 앱 정책 스냅샷을 Redis에 일괄 반영하고, 스냅샷에 포함된 앱들의 예약 키를 정리합니다.
      */
     public void syncAppPolicySnapshot(long lineId, List<AppPolicy> appPolicies) {
         long version = nowEpochMillis();
@@ -267,7 +271,8 @@ public class TrafficPolicyWriteThroughService {
     }
 
     /**
-     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 동기화 메서드입니다.
+     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 앱 정책 동기화 메서드입니다.
+     * 단건 비활성화는 정책 hash/set 제거와 예약 키 삭제를 같은 CAS Lua에서 처리합니다.
      */
     public PolicySyncResult syncAppPolicyUntracked(
             long lineId,
@@ -281,6 +286,7 @@ public class TrafficPolicyWriteThroughService {
         String appDataDailyLimitKey = trafficRedisKeyFactory.appDataDailyLimitKey(lineId);
         String appSpeedLimitKey = trafficRedisKeyFactory.appSpeedLimitKey(lineId);
         String appWhitelistKey = trafficRedisKeyFactory.appWhitelistKey(lineId);
+        String qosSpeedLimitNextAvailableKey = trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(lineId, appId);
 
         long normalizedDataLimit = dataLimit == null ? -1L : dataLimit;
         int normalizedSpeedLimit = normalizeAppSpeedLimitForRedis(speedLimit);
@@ -291,6 +297,7 @@ public class TrafficPolicyWriteThroughService {
                         appDataDailyLimitKey,
                         appSpeedLimitKey,
                         appWhitelistKey,
+                        qosSpeedLimitNextAvailableKey,
                         appId,
                         isActive,
                         normalizedDataLimit,
@@ -302,14 +309,16 @@ public class TrafficPolicyWriteThroughService {
     }
 
     /**
-     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 동기화 메서드입니다.
+     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 앱 정책 제거 메서드입니다.
+     * 단건 비활성화 동기화 경로를 재사용해 정책 조각과 예약 키를 함께 삭제합니다.
      */
     public PolicySyncResult evictAppPolicyUntracked(long lineId, int appId, long version) {
         return syncAppPolicyUntracked(lineId, appId, false, -1L, -1, false, version);
     }
 
     /**
-     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 동기화 메서드입니다.
+     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 앱 정책 스냅샷 동기화 메서드입니다.
+     * lineId 기준 전체 예약 키 삭제는 Redis pattern 삭제 대신 전달된 앱 목록의 단건 예약 키 삭제로 제한합니다.
      */
     public PolicySyncResult syncAppPolicySnapshotUntracked(long lineId, List<AppPolicy> appPolicies, long version) {
         String appDataDailyLimitKey = trafficRedisKeyFactory.appDataDailyLimitKey(lineId);
@@ -319,12 +328,14 @@ public class TrafficPolicyWriteThroughService {
         Map<String, String> dataLimitHash = new HashMap<>();
         Map<String, String> speedLimitHash = new HashMap<>();
         Set<String> whitelistMembers = new HashSet<>();
+        Set<Integer> appIdsToClearReservation = new LinkedHashSet<>();
 
         if (appPolicies != null) {
             for (AppPolicy appPolicy : appPolicies) {
                 if (appPolicy == null || appPolicy.getApplicationId() == null) {
                     continue;
                 }
+                appIdsToClearReservation.add(appPolicy.getApplicationId());
                 if (!Boolean.TRUE.equals(appPolicy.getIsActive())) {
                     continue;
                 }
@@ -341,6 +352,10 @@ public class TrafficPolicyWriteThroughService {
                 }
             }
         }
+        List<String> qosSpeedLimitNextAvailableKeys = new ArrayList<>();
+        for (Integer appId : appIdsToClearReservation) {
+            qosSpeedLimitNextAvailableKeys.add(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(lineId, appId));
+        }
 
         return executeWithRetry(
                 "app_policy_snapshot_sync_untracked lineId=" + lineId,
@@ -348,6 +363,7 @@ public class TrafficPolicyWriteThroughService {
                         appDataDailyLimitKey,
                         appSpeedLimitKey,
                         appWhitelistKey,
+                        qosSpeedLimitNextAvailableKeys,
                         dataLimitHash,
                         speedLimitHash,
                         whitelistMembers,

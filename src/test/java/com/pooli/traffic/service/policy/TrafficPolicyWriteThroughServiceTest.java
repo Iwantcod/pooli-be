@@ -142,8 +142,9 @@ class TrafficPolicyWriteThroughServiceTest {
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+            when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(101L, 301)).thenReturn("pooli:qos_speed_limit_next_available:101:301");
             when(trafficPolicyVersionedRedisService.syncAppPolicySingle(
-                    anyString(), anyString(), anyString(), anyInt(), anyBoolean(), anyLong(), anyInt(), anyBoolean(), anyLong()
+                    anyString(), anyString(), anyString(), anyString(), anyInt(), anyBoolean(), anyLong(), anyInt(), anyBoolean(), anyLong()
             )).thenReturn(PolicySyncResult.SUCCESS);
 
             // when
@@ -170,6 +171,7 @@ class TrafficPolicyWriteThroughServiceTest {
                     eq("pooli:app_data_daily_limit:101"),
                     eq("pooli:app_speed_limit:101"),
                     eq("pooli:app_whitelist:101"),
+                    eq("pooli:qos_speed_limit_next_available:101:301"),
                     eq(301),
                     eq(true),
                     eq(1_000L),
@@ -188,8 +190,9 @@ class TrafficPolicyWriteThroughServiceTest {
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+            when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(101L, 301)).thenReturn("pooli:qos_speed_limit_next_available:101:301");
             when(trafficPolicyVersionedRedisService.syncAppPolicySingle(
-                    anyString(), anyString(), anyString(), anyInt(), anyBoolean(), anyLong(), anyInt(), anyBoolean(), anyLong()
+                    anyString(), anyString(), anyString(), anyString(), anyInt(), anyBoolean(), anyLong(), anyInt(), anyBoolean(), anyLong()
             )).thenReturn(PolicySyncResult.SUCCESS);
 
             // when
@@ -200,6 +203,7 @@ class TrafficPolicyWriteThroughServiceTest {
                     eq("pooli:app_data_daily_limit:101"),
                     eq("pooli:app_speed_limit:101"),
                     eq("pooli:app_whitelist:101"),
+                    eq("pooli:qos_speed_limit_next_available:101:301"),
                     eq(301),
                     eq(true),
                     eq(1_000L),
@@ -223,8 +227,10 @@ class TrafficPolicyWriteThroughServiceTest {
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+            when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(101L, 301)).thenReturn("pooli:qos_speed_limit_next_available:101:301");
+            when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(101L, 302)).thenReturn("pooli:qos_speed_limit_next_available:101:302");
             when(trafficPolicyVersionedRedisService.syncAppPolicySnapshot(
-                    anyString(), anyString(), anyString(), any(), any(), any(), anyLong()
+                    anyString(), anyString(), anyString(), any(), any(), any(), any(), anyLong()
             )).thenReturn(PolicySyncResult.SUCCESS);
 
             AppPolicy activeWhitelisted = AppPolicy.builder()
@@ -266,6 +272,10 @@ class TrafficPolicyWriteThroughServiceTest {
                     eq("pooli:app_data_daily_limit:101"),
                     eq("pooli:app_speed_limit:101"),
                     eq("pooli:app_whitelist:101"),
+                    eq(List.of(
+                            "pooli:qos_speed_limit_next_available:101:301",
+                            "pooli:qos_speed_limit_next_available:101:302"
+                    )),
                     eq(Map.of("limit:301", "1024")),
                     eq(Map.of("speed:301", "256000")),
                     eq(Set.of("301")),
@@ -282,8 +292,9 @@ class TrafficPolicyWriteThroughServiceTest {
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+            when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(101L, 302)).thenReturn("pooli:qos_speed_limit_next_available:101:302");
             when(trafficPolicyVersionedRedisService.syncAppPolicySnapshot(
-                    anyString(), anyString(), anyString(), any(), any(), any(), anyLong()
+                    anyString(), anyString(), anyString(), any(), any(), any(), any(), anyLong()
             )).thenReturn(PolicySyncResult.SUCCESS);
 
             AppPolicy inactive = AppPolicy.builder()
@@ -300,6 +311,7 @@ class TrafficPolicyWriteThroughServiceTest {
                     eq("pooli:app_data_daily_limit:101"),
                     eq("pooli:app_speed_limit:101"),
                     eq("pooli:app_whitelist:101"),
+                    eq(List.of("pooli:qos_speed_limit_next_available:101:302")),
                     eq(Map.of()),
                     eq(Map.of()),
                     eq(Set.of()),

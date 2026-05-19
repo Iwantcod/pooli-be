@@ -191,6 +191,49 @@ class TrafficLuaPolicyContractTest {
     }
 
     @Test
+    @DisplayName("앱 정책 CAS Lua는 정책 제거 시 QoS/속도 예약 키를 함께 삭제한다")
+    void appPolicyCasScriptsDeleteSpeedReservationKeys() throws IOException {
+        String singleScript = Files.readString(
+                Path.of("src/main/resources/lua/traffic/app_policy_single_cas.lua"),
+                StandardCharsets.UTF_8
+        );
+        String snapshotScript = Files.readString(
+                Path.of("src/main/resources/lua/traffic/app_policy_snapshot_cas.lua"),
+                StandardCharsets.UTF_8
+        );
+
+        assertAppearsInOrder(
+                singleScript,
+                "if isActive == '1' then",
+                "else",
+                "redis.call('HDEL', KEYS[1], limitField)",
+                "redis.call('HDEL', KEYS[2], speedField)",
+                "redis.call('DEL', KEYS[4])"
+        );
+        assertAppearsInOrder(
+                snapshotScript,
+                "redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])",
+                "for i = 4, #KEYS do",
+                "redis.call('DEL', KEYS[i])",
+                "local dataPayload = cjson.decode(ARGV[2])"
+        );
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 앱 속도 전역 정책이 활성일 때만 앱 예약 대상을 계산한다")
+    void unifiedDeductChecksGlobalAppSpeedPolicyBeforeReservation() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                script,
+                "local app_speed_limited = false",
+                "if is_policy_enabled(policy_app_speed_key) then",
+                "app_speed_limited = true",
+                "if app_speed_limited and qos_deducted > 0 then"
+        );
+    }
+
+    @Test
     @DisplayName("통합 deduct Lua는 amount 누락 직접 HYDRATE 트리거를 제거하고 -1 sentinel은 유지한다")
     void unifiedDeductRemovesAmountMissingHydrateTriggerAndKeepsUnlimitedSentinel() throws IOException {
         String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
