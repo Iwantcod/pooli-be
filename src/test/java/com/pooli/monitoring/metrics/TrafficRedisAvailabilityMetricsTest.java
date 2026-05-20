@@ -40,6 +40,27 @@ class TrafficRedisAvailabilityMetricsTest {
     }
 
     @Test
+    @DisplayName("XDEL counters distinguish zero deletes and exception failures")
+    void xdelCountersDistinguishZeroDeletesAndExceptionFailures() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        TrafficRedisAvailabilityMetrics metrics = new TrafficRedisAvailabilityMetrics(meterRegistry);
+
+        metrics.incrementXdelZeroCount();
+        metrics.incrementXdelFailureCount();
+
+        assertThat(meterRegistry.find("traffic_redis_xdel_zero_total")
+                .tag("redis", "streams")
+                .counter()
+                .count()
+        ).isEqualTo(1.0);
+        assertThat(meterRegistry.find("traffic_redis_xdel_failures_total")
+                .tag("redis", "streams")
+                .counter()
+                .count()
+        ).isEqualTo(1.0);
+    }
+
+    @Test
     @DisplayName("PING gauge tracks up state and consecutive failures")
     void pingGaugeTracksUpAndConsecutiveFailures() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
@@ -62,4 +83,3 @@ class TrafficRedisAvailabilityMetricsTest {
                 .isZero();
     }
 }
-

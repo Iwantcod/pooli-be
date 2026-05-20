@@ -18,6 +18,7 @@ import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -117,7 +118,6 @@ public class TrafficStreamConsumerRunnerTest {
         appStreamsProperties.setReclaimIntervalMs(200L);
         appStreamsProperties.setReclaimMinIdleMs(15_000L);
         appStreamsProperties.setShutdownAwaitMs(300L);
-        appStreamsProperties.setMaxRetry(5);
         TrafficPayloadValidationService trafficPayloadValidationService =
                 new TrafficPayloadValidationService(validator);
 
@@ -166,6 +166,7 @@ public class TrafficStreamConsumerRunnerTest {
             String payloadJson = "{\"traceId\":\"trace-001\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
             MapRecord<String, String, String> record = createRecord("1-0", payloadJson);
             AtomicReference<String> mdcTraceIdAtOrchestrator = new AtomicReference<>();
+            LocalDateTime luaFinishedAt = LocalDateTime.of(2026, 5, 19, 10, 15, 30, 123_000_000);
             TrafficDeductResultResDto orchestratorResult = TrafficDeductResultResDto.builder()
                     .traceId("trace-001")
                     .apiTotalData(100L)
@@ -174,6 +175,8 @@ public class TrafficStreamConsumerRunnerTest {
                     .deductedSharedBytes(0L)
                     .apiRemainingData(0L)
                     .lastLuaStatus(TrafficLuaStatus.OK)
+                    .createdAt(luaFinishedAt.minusSeconds(1))
+                    .finishedAt(luaFinishedAt)
                     .build();
             ListAppender<ILoggingEvent> listAppender = attachAppender();
 
@@ -194,10 +197,13 @@ public class TrafficStreamConsumerRunnerTest {
             invokeHandleRecord(record);
 
             ArgumentCaptor<Long> latencyCaptor = ArgumentCaptor.forClass(Long.class);
+            ArgumentCaptor<TrafficDeductResultResDto> resultCaptor =
+                    ArgumentCaptor.forClass(TrafficDeductResultResDto.class);
             assertEquals("trace-001", mdcTraceIdAtOrchestrator.get());
             assertNull(MDC.get("traceId"));
             verify(trafficDeductCompletionPersistenceService)
-                    .persistCompletion(any(), any(TrafficDeductResultResDto.class), eq("1-0"), latencyCaptor.capture());
+                    .persistCompletion(any(), resultCaptor.capture(), eq("1-0"), latencyCaptor.capture());
+            assertEquals(luaFinishedAt, resultCaptor.getValue().getFinishedAt());
             assertTrue(latencyCaptor.getValue() >= 0L);
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verify(trafficInFlightDedupeDeleteOutboxService).attemptImmediateDeleteAndMarkResult(101L, "trace-001");

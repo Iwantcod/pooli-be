@@ -1,5 +1,6 @@
 package com.pooli.traffic.service.decision;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 import com.pooli.common.exception.ApplicationException;
@@ -8,6 +9,7 @@ import com.pooli.traffic.domain.enums.TrafficPolicyCheckFailureCause;
 import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
 import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
@@ -40,6 +42,7 @@ public class TrafficDeductOrchestratorService {
     private final TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
     private final TrafficPolicyCheckLayerService trafficPolicyCheckLayerService;
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
+    private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
     /**
      * 이벤트 1건의 목표 데이터량(apiTotalData)을 처리하고 최종 상태를 반환합니다.
@@ -97,7 +100,8 @@ public class TrafficDeductOrchestratorService {
                         apiRemainingData,
                         policyCheckResult.getStatus(),
                         null,
-                        startedAt
+                        startedAt,
+                        LocalDateTime.now(trafficRedisRuntimePolicy.zoneId())
                 );
             } else {
                 // [분기 2] 정책 허용(또는 선검증 생략) 케이스는 개인/공유/QoS 통합 Lua를 1회 호출합니다.
@@ -118,6 +122,7 @@ public class TrafficDeductOrchestratorService {
                         deductExecutionContext,
                         initialResult
                 );
+                LocalDateTime finishedAt = resolveFinishedAtFromLua(unifiedResult);
                 lastLuaStatus = unifiedResult.getStatus();
                 failureReason = unifiedResult.getFailureReason();
 
@@ -133,9 +138,21 @@ public class TrafficDeductOrchestratorService {
                 if (sharedDeducted > 0) {
                     safeCheckAndEnqueueSharedThresholdAlarm(payload);
                 }
+                return buildOrchestrateResult(
+                        payload,
+                        apiTotalData,
+                        deductedIndividualBytes,
+                        deductedSharedBytes,
+                        deductedQosBytes,
+                        apiRemainingData,
+                        lastLuaStatus,
+                        failureReason,
+                        startedAt,
+                        finishedAt
+                );
             }
         }
-        // 단건 처리 결과를 최종 응답 DTO로 조립합니다.
+        // 요청량이 0 이하로 정규화된 no-op 요청은 Lua를 호출하지 않고 즉시 성공으로 조립합니다.
         return buildOrchestrateResult(
                 payload,
                 apiTotalData,
@@ -145,7 +162,8 @@ public class TrafficDeductOrchestratorService {
                 apiRemainingData,
                 lastLuaStatus,
                 failureReason,
-                startedAt
+                startedAt,
+                LocalDateTime.now(trafficRedisRuntimePolicy.zoneId())
         );
     }
 
@@ -278,7 +296,8 @@ public class TrafficDeductOrchestratorService {
             long apiRemainingData,
             TrafficLuaStatus lastLuaStatus,
             String failureReason,
-            LocalDateTime startedAt
+            LocalDateTime startedAt,
+            LocalDateTime finishedAt
     ) {
         return TrafficDeductResultResDto.builder()
                 .traceId(payload == null ? null : payload.getTraceId())
@@ -298,7 +317,18 @@ public class TrafficDeductOrchestratorService {
                 .lastLuaStatus(lastLuaStatus)
                 .failureReason(failureReason)
                 .createdAt(startedAt)
-                .finishedAt(LocalDateTime.now())
+                .finishedAt(finishedAt)
                 .build();
+    }
+
+    private LocalDateTime resolveFinishedAtFromLua(TrafficLuaDeductExecutionResult luaResult) {
+        Long finishedAtEpochMillis = luaResult == null ? null : luaResult.getFinishedAtEpochMillis();
+        if (finishedAtEpochMillis == null) {
+            throw new IllegalStateException("traffic_lua_finished_at_epoch_millis_missing");
+        }
+        return LocalDateTime.ofInstant(
+                Instant.ofEpochMilli(finishedAtEpochMillis),
+                trafficRedisRuntimePolicy.zoneId()
+        );
     }
 }

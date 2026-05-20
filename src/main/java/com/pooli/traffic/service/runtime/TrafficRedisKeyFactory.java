@@ -80,6 +80,13 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * QoS와 앱 속도 제한이 공유하는 회선+앱 단위 다음 처리 가능 시각 예약 키입니다.
+     */
+    public String qosSpeedLimitNextAvailableKey(long lineId, int appId) {
+        return namespaced("qos_speed_limit_next_available:" + lineId + ":" + appId);
+    }
+
+    /**
       * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
      */
     public String appWhitelistKey(long lineId) {

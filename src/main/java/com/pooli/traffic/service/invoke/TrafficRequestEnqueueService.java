@@ -8,6 +8,7 @@ import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.connection.RedisStreamCommands.XAddOptions;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -148,7 +149,9 @@ public class TrafficRequestEnqueueService {
             RecordId recordId = streamsStringRedisTemplate.opsForStream().add(
                     StreamRecords.string(
                             Map.of(TrafficStreamFields.PAYLOAD, payloadJson)
-                    ).withStreamKey(appStreamsProperties.getKeyTrafficRequest())
+                    ).withStreamKey(appStreamsProperties.getKeyTrafficRequest()),
+                    XAddOptions.maxlen(appStreamsProperties.requireTrafficRequestMaxLength())
+                            .approximateTrimming(true)
             );
 
             if (recordId == null) {

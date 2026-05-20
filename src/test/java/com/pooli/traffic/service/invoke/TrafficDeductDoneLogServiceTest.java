@@ -43,6 +43,8 @@ public class TrafficDeductDoneLogServiceTest {
 
     private static final long ENQUEUED_AT_EPOCH_MILLIS = 1_700_000_000_000L;
     private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
+    private static final LocalDateTime STARTED_AT = LocalDateTime.of(2026, 5, 19, 10, 0, 0);
+    private static final LocalDateTime FINISHED_AT = LocalDateTime.of(2026, 5, 19, 10, 0, 3, 123_000_000);
 
     @Mock
     private TrafficDeductDoneLogMapper trafficDeductDoneLogMapper;
@@ -114,6 +116,7 @@ public class TrafficDeductDoneLogServiceTest {
             assertEquals(30L, savedLog.getDeductedIndividualBytes());
             assertEquals(60L, savedLog.getDeductedSharedBytes());
             assertEquals(90L, savedLog.getDeductedTotalBytes());
+            assertEquals(FINISHED_AT, savedLog.getFinishedAt());
             assertNull(savedLog.getFailureReason());
             assertEquals(latency, savedLog.getLatency());
             assertNull(savedLog.getRestoreStatus());
@@ -158,6 +161,32 @@ public class TrafficDeductDoneLogServiceTest {
             assertEquals(0L, savedLog.getDeductedSharedBytes());
             assertEquals(0L, savedLog.getDeductedTotalBytes());
             assertEquals(100L, savedLog.getApiRemainingData());
+        }
+
+        @Test
+        @DisplayName("속도 제한 timeout은 NOT_DEDUCTED와 SPEED_LIMIT_TIMEOUT 및 결과 완료 시각을 저장한다")
+        void storesSpeedLimitTimeoutAsNotDeductedWithFinishedAt() {
+            // given
+            when(trafficDeductDoneLogMapper.insert(any(TrafficDeductDoneLog.class))).thenReturn(1);
+
+            // when
+            boolean saved = trafficDeductDoneLogService.saveIfAbsent(
+                    payload(),
+                    result(TrafficFinalStatus.NOT_DEDUCTED, TrafficLuaStatus.SPEED_LIMIT_TIMEOUT, 0L, 0L, 100L),
+                    "1-2",
+                    55L
+            );
+
+            // then
+            assertTrue(saved);
+            ArgumentCaptor<TrafficDeductDoneLog> captor = ArgumentCaptor.forClass(TrafficDeductDoneLog.class);
+            verify(trafficDeductDoneLogMapper).insert(captor.capture());
+            TrafficDeductDoneLog savedLog = captor.getValue();
+            assertEquals(TrafficFinalStatus.NOT_DEDUCTED.name(), savedLog.getFinalStatus());
+            assertEquals(TrafficLuaStatus.SPEED_LIMIT_TIMEOUT.name(), savedLog.getLastLuaStatus());
+            assertEquals(0L, savedLog.getDeductedTotalBytes());
+            assertEquals(100L, savedLog.getApiRemainingData());
+            assertEquals(FINISHED_AT, savedLog.getFinishedAt());
         }
 
         @Test
@@ -327,8 +356,8 @@ public class TrafficDeductDoneLogServiceTest {
                 .apiRemainingData(apiRemainingData)
                 .finalStatus(finalStatus)
                 .lastLuaStatus(lastLuaStatus)
-                .createdAt(LocalDateTime.now().minusSeconds(1))
-                .finishedAt(LocalDateTime.now())
+                .createdAt(STARTED_AT)
+                .finishedAt(FINISHED_AT)
                 .build();
     }
 }

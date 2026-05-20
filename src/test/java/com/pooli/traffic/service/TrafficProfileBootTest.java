@@ -29,6 +29,7 @@ import com.pooli.monitoring.metrics.TrafficRequestMetrics;
 import com.pooli.traffic.config.TrafficSchedulingConfig;
 import com.pooli.traffic.controller.TrafficController;
 import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
+import com.pooli.traffic.service.invoke.TrafficDeductCompletionPersistenceService;
 import com.pooli.traffic.service.invoke.TrafficDeductDoneLogService;
 import com.pooli.traffic.service.invoke.TrafficPayloadValidationService;
 import com.pooli.traffic.service.invoke.TrafficRequestEnqueueService;
@@ -205,6 +206,8 @@ class TrafficProfileBootTest {
                 .withBean(TrafficDeductOrchestratorService.class, () -> mock(TrafficDeductOrchestratorService.class))
                 .withBean(TrafficInFlightDedupeService.class, () -> mock(TrafficInFlightDedupeService.class))
                 .withBean(TrafficDeductDoneLogService.class, () -> mock(TrafficDeductDoneLogService.class))
+                .withBean(TrafficDeductCompletionPersistenceService.class,
+                        () -> mock(TrafficDeductCompletionPersistenceService.class))
                 .withBean(TrafficRedisKeyFactory.class, () -> mock(TrafficRedisKeyFactory.class))
                 .withBean(TrafficRedisFailureClassifier.class, () -> mock(TrafficRedisFailureClassifier.class))
                 .withBean(TrafficGeneratorMetrics.class, () -> mock(TrafficGeneratorMetrics.class))
@@ -241,7 +244,6 @@ class TrafficProfileBootTest {
         properties.setReclaimIntervalMs(1000L);
         properties.setReclaimMinIdleMs(15_000L);
         properties.setShutdownAwaitMs(1_000L);
-        properties.setMaxRetry(5);
         return properties;
     }
 

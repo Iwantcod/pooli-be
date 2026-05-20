@@ -84,6 +84,20 @@ public class TrafficRedisAvailabilityMetrics {
         ).increment();
     }
 
+    public void incrementXdelZeroCount() {
+        meterRegistry.counter(
+                "traffic_redis_xdel_zero_total",
+                "redis", RedisTarget.STREAMS.tagValue()
+        ).increment();
+    }
+
+    public void incrementXdelFailureCount() {
+        meterRegistry.counter(
+                "traffic_redis_xdel_failures_total",
+                "redis", RedisTarget.STREAMS.tagValue()
+        ).increment();
+    }
+
     /**
      * 능동 PING 결과를 gauge 상태 holder에 반영합니다.
      *

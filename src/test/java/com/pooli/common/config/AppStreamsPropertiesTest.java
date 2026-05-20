@@ -54,4 +54,24 @@ class AppStreamsPropertiesTest {
 
         assertThrows(TrafficStreamBootstrapException.class, properties::resolveReclaimMinIdleMs);
     }
+
+    @Test
+    @DisplayName("traffic request stream max length가 양수면 그대로 반환한다")
+    void returnsTrafficRequestMaxLengthWhenPositive() {
+        AppStreamsProperties properties = new AppStreamsProperties();
+        properties.setTrafficRequestMaxLength(500_000L);
+
+        long maxLength = properties.requireTrafficRequestMaxLength();
+
+        assertEquals(500_000L, maxLength);
+    }
+
+    @Test
+    @DisplayName("traffic request stream max length가 0 이하이면 예외를 던진다")
+    void throwsWhenTrafficRequestMaxLengthIsNotPositive() {
+        AppStreamsProperties properties = new AppStreamsProperties();
+        properties.setTrafficRequestMaxLength(0L);
+
+        assertThrows(TrafficStreamBootstrapException.class, properties::requireTrafficRequestMaxLength);
+    }
 }

@@ -1,5 +1,6 @@
 package com.pooli.traffic.service.outbox;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * 정책 키를 version CAS 규칙으로 Redis에 반영하는 서비스입니다.
+ * 앱 정책 CAS 스크립트에는 정책 hash/set 키와 함께 QoS/앱 속도 제한 예약 키를 전달합니다.
  */
 @Service
 @Profile({"local", "api", "traffic"})
@@ -51,11 +53,13 @@ public class TrafficPolicyVersionedRedisService {
 
     /**
      * 앱 정책 단건을 app_data/app_speed/whitelist 키에 CAS 규칙으로 반영합니다.
+     * 비활성화 스크립트 경로에서는 함께 전달한 회선+앱 예약 키를 삭제합니다.
      */
     public PolicySyncResult syncAppPolicySingle(
             String appDataKey,
             String appSpeedKey,
             String appWhitelistKey,
+            String qosSpeedLimitNextAvailableKey,
             int appId,
             boolean isActive,
             long dataLimit,
@@ -65,7 +69,7 @@ public class TrafficPolicyVersionedRedisService {
     ) {
         return trafficPolicyLuaScriptInfraService.executeLongScript(
                 TrafficPolicyLuaScriptType.APP_POLICY_SINGLE_CAS,
-                List.of(appDataKey, appSpeedKey, appWhitelistKey),
+                List.of(appDataKey, appSpeedKey, appWhitelistKey, qosSpeedLimitNextAvailableKey),
                 String.valueOf(version),
                 String.valueOf(appId),
                 isActive ? "1" : "0",
@@ -77,19 +81,29 @@ public class TrafficPolicyVersionedRedisService {
 
     /**
      * 앱 정책 스냅샷을 CAS 규칙으로 전체 재작성합니다.
+     * 추가 KEYS로 전달한 회선+앱 예약 키들은 스냅샷 재작성과 같은 Lua 원자 구간에서 삭제됩니다.
      */
     public PolicySyncResult syncAppPolicySnapshot(
             String appDataKey,
             String appSpeedKey,
             String appWhitelistKey,
+            List<String> qosSpeedLimitNextAvailableKeys,
             Map<String, String> dataLimitHash,
             Map<String, String> speedLimitHash,
             Set<String> whitelistMembers,
             long version
     ) {
+        List<String> keys = new ArrayList<>();
+        keys.add(appDataKey);
+        keys.add(appSpeedKey);
+        keys.add(appWhitelistKey);
+        if (qosSpeedLimitNextAvailableKeys != null) {
+            keys.addAll(qosSpeedLimitNextAvailableKeys);
+        }
+
         return trafficPolicyLuaScriptInfraService.executeLongScript(
                 TrafficPolicyLuaScriptType.APP_POLICY_SNAPSHOT_CAS,
-                List.of(appDataKey, appSpeedKey, appWhitelistKey),
+                keys,
                 String.valueOf(version),
                 toJson(dataLimitHash == null ? Map.of() : dataLimitHash),
                 toJson(speedLimitHash == null ? Map.of() : speedLimitHash),

@@ -102,13 +102,13 @@ app:
     worker-queue-capacity: ${STREAMS_WORKER_QUEUE_CAPACITY:600}
     worker-rejection-policy: ${STREAMS_WORKER_REJECTION_POLICY:abort}
     read-count: ${STREAMS_READ_COUNT:200}
+    traffic-request-max-length: ${STREAMS_TRAFFIC_REQUEST_MAX_LENGTH:500000}
     metrics-pending-scan-count: ${STREAMS_METRICS_PENDING_SCAN_COUNT:100}
     block-ms: ${STREAMS_BLOCK_MS:50}
     reclaim-pending-scan-count: ${STREAMS_RECLAIM_PENDING_SCAN_COUNT:100}
     reclaim-interval-ms: ${STREAMS_RECLAIM_INTERVAL_MS:2000}
     reclaim-min-idle-ms: ${STREAMS_RECLAIM_MIN_IDLE_MS:15000}
     shutdown-await-ms: ${STREAMS_SHUTDOWN_AWAIT_MS:10000}
-    max-retry: ${STREAMS_MAX_RETRY:5}
     key-traffic-dlq: ${STREAMS_KEY_TRAFFIC_DLQ:traffic:deduct:dlq}
   policy:
     bootstrap:

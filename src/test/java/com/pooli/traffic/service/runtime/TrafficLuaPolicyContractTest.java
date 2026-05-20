@@ -111,6 +111,11 @@ class TrafficLuaPolicyContractTest {
         assertTrue(script.contains("indivDeducted"));
         assertTrue(script.contains("sharedDeducted"));
         assertTrue(script.contains("qosDeducted"));
+        assertTrue(script.contains("finishedAtEpochMillis"));
+        assertTrue(script.contains("redis.call(\"TIME\")"));
+        assertTrue(script.contains("\"SPEED_LIMIT_TIMEOUT\""));
+        assertTrue(script.contains("qos_speed_limit_next_available_key"));
+        assertFalse(script.contains("speed_bucket_key"));
         assertTrue(script.contains("\"GLOBAL_POLICY_HYDRATE\""));
         assertTrue(script.contains("\"HYDRATE_INDIVIDUAL\""));
         assertTrue(script.contains("\"HYDRATE_SHARED\""));
@@ -164,7 +169,68 @@ class TrafficLuaPolicyContractTest {
                 script,
                 "local indiv_deducted = individual_unlimited and pool_target or math.min(individual_amount, pool_target)",
                 "local shared_deducted = shared_unlimited and shared_target or math.min(shared_amount, shared_target)",
-                "local qos_deducted = math.min(qos_limit, qos_target)"
+                "local qos_bytes_per_sec = read_non_negative_counter(individual_remaining_key, \"qos\")",
+                "qos_deducted = qos_target"
+        );
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 timeout을 Redis 상태 변경 전에 반환한다")
+    void unifiedDeductChecksSpeedLimitTimeoutBeforeMutations() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                script,
+                "local speed_limited_bytes = 0",
+                "return as_json(0, 0, 0, \"SPEED_LIMIT_TIMEOUT\", finished_at_epoch_millis)",
+                "redis.call(\"SET\", qos_speed_limit_next_available_key, finished_at_epoch_millis)",
+                "if redis.call(\"EXISTS\", dedupe_key) == 0 then",
+                "redis.call(\"HINCRBY\", individual_remaining_key, \"amount\", -indiv_deducted)",
+                "redis.call(\"INCRBY\", daily_total_usage_key, total_deducted)"
+        );
+    }
+
+    @Test
+    @DisplayName("앱 정책 CAS Lua는 정책 제거 시 QoS/속도 예약 키를 함께 삭제한다")
+    void appPolicyCasScriptsDeleteSpeedReservationKeys() throws IOException {
+        String singleScript = Files.readString(
+                Path.of("src/main/resources/lua/traffic/app_policy_single_cas.lua"),
+                StandardCharsets.UTF_8
+        );
+        String snapshotScript = Files.readString(
+                Path.of("src/main/resources/lua/traffic/app_policy_snapshot_cas.lua"),
+                StandardCharsets.UTF_8
+        );
+
+        assertAppearsInOrder(
+                singleScript,
+                "if isActive == '1' then",
+                "else",
+                "redis.call('HDEL', KEYS[1], limitField)",
+                "redis.call('HDEL', KEYS[2], speedField)",
+                "redis.call('DEL', KEYS[4])"
+        );
+        assertAppearsInOrder(
+                snapshotScript,
+                "local validKeys = {}",
+                "for i = 1, #KEYS do",
+                "validKeys[#validKeys + 1] = KEYS[i]",
+                "redis.call('DEL', unpack(validKeys))",
+                "local dataPayload = cjson.decode(ARGV[2])"
+        );
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 앱 속도 전역 정책이 활성일 때만 앱 예약 대상을 계산한다")
+    void unifiedDeductChecksGlobalAppSpeedPolicyBeforeReservation() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                script,
+                "local app_speed_limited = false",
+                "if is_policy_enabled(policy_app_speed_key) then",
+                "app_speed_limited = true",
+                "if app_speed_limited and qos_deducted > 0 then"
         );
     }
 

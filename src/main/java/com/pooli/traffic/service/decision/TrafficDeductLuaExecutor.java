@@ -2,7 +2,6 @@ package com.pooli.traffic.service.decision;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
 
@@ -158,11 +157,9 @@ public class TrafficDeductLuaExecutor {
             long requestedDataBytes,
             int whitelistBypassFlag
     ) {
-        // 사용량 집계 key는 enqueuedAt 기준 날짜를 사용하고, 속도 버킷만 현재 초를 사용합니다.
-        LocalDateTime now = LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
+        // 사용량 집계 key는 enqueuedAt 기준 날짜를 사용합니다.
         LocalDate targetDate = resolveTargetDate(payload);
         YearMonth targetUsageMonth = YearMonth.from(targetDate);
-        long nowEpochSecond = now.atZone(trafficRedisRuntimePolicy.zoneId()).toEpochSecond();
         long dailyExpireAt = trafficRedisRuntimePolicy.resolveDailyExpireAtEpochSeconds(targetDate);
         long monthlyExpireAt = trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetUsageMonth);
 
@@ -177,10 +174,9 @@ public class TrafficDeductLuaExecutor {
         String appDataDailyLimitKey = trafficRedisKeyFactory.appDataDailyLimitKey(payload.getLineId());
         String dailyAppUsageKey = trafficRedisKeyFactory.dailyAppUsageKey(payload.getLineId(), targetDate);
         String appSpeedLimitKey = trafficRedisKeyFactory.appSpeedLimitKey(payload.getLineId());
-        String speedBucketKey = trafficRedisKeyFactory.speedBucketIndividualAppKey(
+        String qosSpeedLimitNextAvailableKey = trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(
                 payload.getLineId(),
-                payload.getAppId(),
-                nowEpochSecond
+                payload.getAppId()
         );
         String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(payload.getTraceId());
 
@@ -199,13 +195,12 @@ public class TrafficDeductLuaExecutor {
                 appDataDailyLimitKey,
                 dailyAppUsageKey,
                 appSpeedLimitKey,
-                speedBucketKey,
+                qosSpeedLimitNextAvailableKey,
                 dedupeKey
         );
         List<String> args = List.of(
                 String.valueOf(requestedDataBytes),
                 String.valueOf(payload.getAppId()),
-                String.valueOf(nowEpochSecond),
                 String.valueOf(dailyExpireAt),
                 String.valueOf(monthlyExpireAt),
                 String.valueOf(whitelistBypassFlag),

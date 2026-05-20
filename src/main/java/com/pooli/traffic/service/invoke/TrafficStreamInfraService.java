@@ -147,18 +147,55 @@ public class TrafficStreamInfraService {
      * 처리 완료된 Stream record를 ACK 처리합니다.
      *
      * <p>1. traffic request stream key와 group 이름으로 `XACK`를 실행합니다.
-     * <br>2. Redis 호출 시도/실패 metric을 streams Redis tag로 기록합니다.
-     * <br>3. Redis가 null을 반환하면 ACK 건수 0으로 보정합니다.
+     * <br>2. ACK 성공 시 같은 record id를 `XDEL`로 삭제합니다.
+     * <br>3. Redis 호출 시도/실패 metric을 streams Redis tag로 기록합니다.
+     * <br>4. Redis가 null을 반환하면 ACK 건수 0으로 보정합니다.
      */
     public long acknowledge(RecordId recordId) {
+        String streamKey = appStreamsProperties.getKeyTrafficRequest();
+        String group = appStreamsProperties.getGroupTraffic();
+
+        // 1. 먼저 XACK로 consumer group의 PEL에서 record를 제거한다.
+        //    XACK 실패는 메시지 완료 처리 실패로 보아 호출부로 그대로 전파한다.
         Long acknowledged = executeStreamsOperation(() ->
                 streamOps().acknowledge(
-                        appStreamsProperties.getKeyTrafficRequest(),
-                        appStreamsProperties.getGroupTraffic(),
+                        streamKey,
+                        group,
                         recordId
                 )
         );
-        return acknowledged == null ? 0L : acknowledged;
+
+        // 2. RedisTemplate이 null을 반환하면 ACK되지 않은 것과 같은 0건으로 보정한다.
+        long acknowledgedCount = acknowledged == null ? 0L : acknowledged;
+
+        if (acknowledgedCount <= 0L) {
+            // 3. ACK된 record가 없으면 아직 완료 상태로 확정할 수 없으므로 XDEL을 시도하지 않는다.
+            log.warn("traffic_stream_ack_zero streamKey={} group={} recordId={}", streamKey, group, recordId.getValue());
+            return acknowledgedCount;
+        }
+
+        // 4. ACK가 성공한 뒤에만 stream entry 삭제를 best-effort로 시도한다.
+        deleteAcknowledgedRecord(streamKey, group, recordId);
+        return acknowledgedCount;
+    }
+
+    private void deleteAcknowledgedRecord(String streamKey, String group, RecordId recordId) {
+        try {
+            // ACK는 이미 완료되었으므로 XDEL 결과는 관측/정리 목적이며 ACK 결과를 바꾸지 않는다.
+            Long deleted = executeStreamsOperation(() ->
+                    streamOps().delete(streamKey, recordId)
+            );
+            long deletedCount = deleted == null ? 0L : deleted;
+            if (deletedCount <= 0L) {
+                trafficRedisAvailabilityMetrics.incrementXdelZeroCount();
+                // 다른 경로에서 이미 삭제되었거나 Redis가 삭제 대상을 찾지 못한 경우로 보고 경고만 남긴다.
+                log.warn("traffic_stream_xdel_zero streamKey={} group={} recordId={}", streamKey, group, recordId.getValue());
+            }
+        } catch (RuntimeException e) {
+            trafficRedisAvailabilityMetrics.incrementXdelFailureCount();
+            // ACK는 되돌릴 수 없으므로 XDEL 실패는 완료 흐름을 깨지 않고 운영 로그로만 남긴다.
+            log.warn("traffic_stream_xdel_failed streamKey={} group={} recordId={}", streamKey, group, recordId.getValue(), e);
+        }
     }
 
     /**
