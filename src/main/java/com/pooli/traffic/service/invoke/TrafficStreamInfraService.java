@@ -187,10 +187,12 @@ public class TrafficStreamInfraService {
             );
             long deletedCount = deleted == null ? 0L : deleted;
             if (deletedCount <= 0L) {
+                trafficRedisAvailabilityMetrics.incrementXdelZeroCount();
                 // 다른 경로에서 이미 삭제되었거나 Redis가 삭제 대상을 찾지 못한 경우로 보고 경고만 남긴다.
                 log.warn("traffic_stream_xdel_zero streamKey={} group={} recordId={}", streamKey, group, recordId.getValue());
             }
         } catch (RuntimeException e) {
+            trafficRedisAvailabilityMetrics.incrementXdelFailureCount();
             // ACK는 되돌릴 수 없으므로 XDEL 실패는 완료 흐름을 깨지 않고 운영 로그로만 남긴다.
             log.warn("traffic_stream_xdel_failed streamKey={} group={} recordId={}", streamKey, group, recordId.getValue(), e);
         }

@@ -210,6 +210,7 @@ class TrafficStreamInfraServiceTest {
 
         Assertions.assertThat(acknowledged).isEqualTo(1L);
         verify(streamOperations).delete("traffic:deduct:request", recordId);
+        verify(trafficRedisAvailabilityMetrics).incrementXdelFailureCount();
     }
 
     @Test
@@ -226,6 +227,7 @@ class TrafficStreamInfraServiceTest {
 
         Assertions.assertThat(acknowledged).isEqualTo(1L);
         verify(streamOperations).delete("traffic:deduct:request", recordId);
+        verify(trafficRedisAvailabilityMetrics).incrementXdelZeroCount();
     }
 
     @Test
