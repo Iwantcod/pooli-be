@@ -42,6 +42,7 @@ public class AppStreamsProperties {
     private int workerQueueCapacity;
     private String workerRejectionPolicy;
     private int readCount;
+    private long trafficRequestMaxLength;
     private int metricsPendingScanCount;
     private long blockMs;
     private int reclaimPendingScanCount;
@@ -53,9 +54,11 @@ public class AppStreamsProperties {
      */
     private long reclaimWorstProcessingMs;
     private long shutdownAwaitMs;
-    private int maxRetry;
     private String keyTrafficDlq;
 
+    /**
+     * 요청 Stream key를 공백 제거 후 반환합니다.
+     */
     public String requireTrafficRequestStreamKey() {
         return requireText(
                 "app.streams.key-traffic-request",
@@ -64,6 +67,9 @@ public class AppStreamsProperties {
         );
     }
 
+    /**
+     * consumer group 이름을 공백 제거 후 반환합니다.
+     */
     public String requireTrafficGroup() {
         return requireText(
                 "app.streams.group-traffic",
@@ -72,6 +78,12 @@ public class AppStreamsProperties {
         );
     }
 
+    /**
+     * consumer name을 검증해 부팅 가능한 고유 인스턴스 이름으로 반환합니다.
+     *
+     * <p>미해결 placeholder, 공유 기본값, group/stream key와 같은 값을 차단해
+     * 여러 인스턴스가 같은 consumer name으로 pending 소유권을 공유하지 않도록 합니다.
+     */
     public String requireConsumerNameForBootstrap() {
         String normalizedConsumerName = requireText(
                 "app.streams.consumer-name",
@@ -120,6 +132,9 @@ public class AppStreamsProperties {
         return normalizedConsumerName;
     }
 
+    /**
+     * worker queue 용량이 양수인지 검증하고 반환합니다.
+     */
     public int requireWorkerQueueCapacity() {
         int normalizedCapacity = workerQueueCapacity;
         if (normalizedCapacity <= 0) {
@@ -131,6 +146,12 @@ public class AppStreamsProperties {
         return normalizedCapacity;
     }
 
+    /**
+     * worker rejection 정책 문자열을 enum으로 변환합니다.
+     *
+     * <p>설정값은 대소문자와 hyphen/underscore 차이를 허용하고, 지원하지 않는 값은
+     * 부팅 설정 오류로 즉시 차단합니다.
+     */
     public WorkerRejectionPolicy requireWorkerRejectionPolicy() {
         String normalizedPolicy = requireText(
                 "app.streams.worker-rejection-policy",
@@ -153,6 +174,9 @@ public class AppStreamsProperties {
         }
     }
 
+    /**
+     * Stream read count가 양수인지 검증하고 반환합니다.
+     */
     public int requireReadCount() {
         if (readCount <= 0) {
             throw invalidBootstrapConfig(
@@ -163,6 +187,22 @@ public class AppStreamsProperties {
         return readCount;
     }
 
+    /**
+     * request stream XADD MAXLEN 기준값이 양수인지 검증하고 반환합니다.
+     */
+    public long requireTrafficRequestMaxLength() {
+        if (trafficRequestMaxLength <= 0L) {
+            throw invalidBootstrapConfig(
+                    "app.streams.traffic-request-max-length",
+                    "traffic request stream max length must be greater than 0."
+            );
+        }
+        return trafficRequestMaxLength;
+    }
+
+    /**
+     * reclaim 대상 pending scan count가 양수인지 검증하고 반환합니다.
+     */
     public int requireReclaimPendingScanCount() {
         if (reclaimPendingScanCount <= 0) {
             throw invalidBootstrapConfig(
@@ -173,6 +213,9 @@ public class AppStreamsProperties {
         return reclaimPendingScanCount;
     }
 
+    /**
+     * Stream blocking read timeout이 양수인지 검증하고 반환합니다.
+     */
     public long requireBlockMs() {
         if (blockMs <= 0L) {
             throw invalidBootstrapConfig(
@@ -183,6 +226,9 @@ public class AppStreamsProperties {
         return blockMs;
     }
 
+    /**
+     * reclaim scheduler 실행 간격이 양수인지 검증하고 반환합니다.
+     */
     public long requireReclaimIntervalMs() {
         if (reclaimIntervalMs <= 0L) {
             throw invalidBootstrapConfig(
@@ -193,6 +239,9 @@ public class AppStreamsProperties {
         return reclaimIntervalMs;
     }
 
+    /**
+     * reclaim min-idle 설정값이 0 이상인지 검증하고 반환합니다.
+     */
     public long requireReclaimMinIdleMs() {
         if (reclaimMinIdleMs < 0L) {
             throw invalidBootstrapConfig(
@@ -215,6 +264,9 @@ public class AppStreamsProperties {
         return calculateReclaimMinIdleFromWorstProcessing(reclaimWorstProcessingMs);
     }
 
+    /**
+     * worker shutdown 대기 시간이 0 이상인지 검증하고 반환합니다.
+     */
     public long requireShutdownAwaitMs() {
         if (shutdownAwaitMs < 0L) {
             throw invalidBootstrapConfig(
@@ -225,16 +277,9 @@ public class AppStreamsProperties {
         return shutdownAwaitMs;
     }
 
-    public int requireMaxRetry() {
-        if (maxRetry < 0) {
-            throw invalidBootstrapConfig(
-                    "app.streams.max-retry",
-                    "max retry must be 0 or greater."
-            );
-        }
-        return maxRetry;
-    }
-
+    /**
+     * 문자열 설정값을 trim하고 비어 있으면 부팅 설정 예외를 생성합니다.
+     */
     private String requireText(String propertyName, String value, String detail) {
         String normalized = normalize(value);
         if (!StringUtils.hasText(normalized)) {
@@ -243,6 +288,9 @@ public class AppStreamsProperties {
         return normalized;
     }
 
+    /**
+     * null은 유지하고 문자열 값만 trim합니다.
+     */
     private String normalize(String value) {
         if (value == null) {
             return null;
@@ -274,6 +322,9 @@ public class AppStreamsProperties {
                 / RECLAIM_MIN_IDLE_MULTIPLIER_DENOMINATOR;
     }
 
+    /**
+     * 설정명과 세부 사유를 포함한 Streams 부팅 설정 예외를 생성합니다.
+     */
     private TrafficStreamBootstrapException invalidBootstrapConfig(String propertyName, String detail) {
         return new TrafficStreamBootstrapException("Invalid " + propertyName + ": " + detail);
     }

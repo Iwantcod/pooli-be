@@ -118,7 +118,6 @@ public class TrafficStreamConsumerRunnerTest {
         appStreamsProperties.setReclaimIntervalMs(200L);
         appStreamsProperties.setReclaimMinIdleMs(15_000L);
         appStreamsProperties.setShutdownAwaitMs(300L);
-        appStreamsProperties.setMaxRetry(5);
         TrafficPayloadValidationService trafficPayloadValidationService =
                 new TrafficPayloadValidationService(validator);
 

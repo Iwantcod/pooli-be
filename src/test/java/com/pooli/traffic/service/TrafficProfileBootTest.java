@@ -244,7 +244,6 @@ class TrafficProfileBootTest {
         properties.setReclaimIntervalMs(1000L);
         properties.setReclaimMinIdleMs(15_000L);
         properties.setShutdownAwaitMs(1_000L);
-        properties.setMaxRetry(5);
         return properties;
     }
 
