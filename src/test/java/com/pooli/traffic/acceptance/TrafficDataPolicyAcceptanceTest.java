@@ -197,7 +197,7 @@ class TrafficDataPolicyAcceptanceTest extends TrafficAcceptanceTestSupport {
         int appId = fixtureIds.appId();
         long requestBytes = 1_300_000L;
         int speedBytesPerSecond = 625_000;
-        long expectedDurationMs = 2_080L;
+        long expectedDurationMs = (requestBytes * 1_000 + speedBytesPerSecond - 1) / speedBytesPerSecond;
         preparePolicyScenario(lineId, familyId, 0L, 2_000_000L);
         setGlobalPolicy(POLICY_APP_SPEED, true);
         setAppSpeedLimit(lineId, appId, speedBytesPerSecond);
