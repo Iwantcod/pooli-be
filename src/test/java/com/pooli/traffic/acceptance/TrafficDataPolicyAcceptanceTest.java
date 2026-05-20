@@ -26,6 +26,7 @@ class TrafficDataPolicyAcceptanceTest extends TrafficAcceptanceTestSupport {
     private static final int POLICY_LINE_LIMIT_SHARED = 3;
     private static final int POLICY_LINE_LIMIT_DAILY = 4;
     private static final int POLICY_APP_DATA = 5;
+    private static final int POLICY_APP_SPEED = 6;
     private static final int POLICY_APP_WHITELIST = 7;
 
     /**
@@ -182,6 +183,38 @@ class TrafficDataPolicyAcceptanceTest extends TrafficAcceptanceTestSupport {
 
         assertDoneLog(traceId, 0L, 0L, 0L, 50L, "NOT_DEDUCTED", "HIT_APP_DAILY_LIMIT");
         assertRedisState(lineId, familyId, appId, 100L, 100L, 0L, 20L, 0L);
+        assertRdbSourcesUnchanged(lineId, familyId);
+    }
+
+    /**
+     * 앱 속도 제한은 회선+앱 단일 예약 키에 요청 완료 예정 시각을 기록합니다.
+     */
+    @Test
+    @DisplayName("[POL-09] 앱 속도 제한은 요청 시각 이후 완료 예정 시각으로 예약 키를 갱신한다")
+    void shouldUpdateAppSpeedReservationAfterRequestTime() throws Exception {
+        long lineId = LINE_ID_1;
+        long familyId = FAMILY_ID_1;
+        int appId = fixtureIds.appId();
+        long requestBytes = 1_300_000L;
+        int speedBytesPerSecond = 625_000;
+        long expectedDurationMs = 2_080L;
+        preparePolicyScenario(lineId, familyId, 0L, 2_000_000L);
+        setGlobalPolicy(POLICY_APP_SPEED, true);
+        setAppSpeedLimit(lineId, appId, speedBytesPerSecond);
+        deleteAppSpeedReservation(lineId, appId);
+
+        long beforeRequestEpochMillis = System.currentTimeMillis();
+        String traceId = enqueueTrafficRequest(lineId, familyId, appId, requestBytes);
+
+        var doneLog = assertDoneLog(traceId, 0L, requestBytes, 0L, 0L, "SUCCESS", "HIT_APP_SPEED");
+        long reservationEpochMillis = readAppSpeedReservation(lineId, appId);
+        long finishedAtEpochMillis = doneLog.getFinishedAt()
+                .atZone(trafficRedisRuntimePolicy.zoneId())
+                .toInstant()
+                .toEpochMilli();
+        assertThat(reservationEpochMillis).isEqualTo(finishedAtEpochMillis);
+        assertThat(reservationEpochMillis).isGreaterThanOrEqualTo(beforeRequestEpochMillis + expectedDurationMs);
+        assertRedisState(lineId, familyId, appId, 0L, 700_000L, requestBytes, requestBytes, requestBytes);
         assertRdbSourcesUnchanged(lineId, familyId);
     }
 
@@ -766,6 +799,35 @@ class TrafficDataPolicyAcceptanceTest extends TrafficAcceptanceTestSupport {
     private void setAppDailyLimit(long lineId, int appId, long limit) {
         cacheStringRedisTemplate.opsForHash()
                 .put(trafficRedisKeyFactory.appDataDailyLimitKey(lineId), "limit:" + appId, String.valueOf(limit));
+    }
+
+    /**
+     * 앱별 speed limit snapshot을 Redis hash field에 설정합니다.
+     */
+    private void setAppSpeedLimit(long lineId, int appId, int speedBytesPerSecond) {
+        cacheStringRedisTemplate.opsForHash()
+                .put(
+                        trafficRedisKeyFactory.appSpeedLimitKey(lineId),
+                        "speed:" + appId,
+                        String.valueOf(speedBytesPerSecond)
+                );
+    }
+
+    /**
+     * 기존 예약 값이 현재 테스트의 완료 예정 시각 계산에 영향을 주지 않도록 제거합니다.
+     */
+    private void deleteAppSpeedReservation(long lineId, int appId) {
+        cacheStringRedisTemplate.delete(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(lineId, appId));
+    }
+
+    /**
+     * 앱 속도 제한 예약 키의 epoch millis 값을 읽습니다.
+     */
+    private long readAppSpeedReservation(long lineId, int appId) {
+        String value = cacheStringRedisTemplate.opsForValue()
+                .get(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(lineId, appId));
+        assertThat(value).isNotBlank();
+        return Long.parseLong(value);
     }
 
     /**
