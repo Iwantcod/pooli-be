@@ -11,11 +11,14 @@ if currentRaw then
   end
 end
 
-redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
-for i = 4, #KEYS do
+local validKeys = {}
+for i = 1, #KEYS do
   if KEYS[i] and KEYS[i] ~= '' then
-    redis.call('DEL', KEYS[i])
+    validKeys[#validKeys + 1] = KEYS[i]
   end
+end
+if #validKeys > 0 then
+  redis.call('DEL', unpack(validKeys))
 end
 
 local dataPayload = cjson.decode(ARGV[2])

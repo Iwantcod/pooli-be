@@ -212,9 +212,10 @@ class TrafficLuaPolicyContractTest {
         );
         assertAppearsInOrder(
                 snapshotScript,
-                "redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])",
-                "for i = 4, #KEYS do",
-                "redis.call('DEL', KEYS[i])",
+                "local validKeys = {}",
+                "for i = 1, #KEYS do",
+                "validKeys[#validKeys + 1] = KEYS[i]",
+                "redis.call('DEL', unpack(validKeys))",
                 "local dataPayload = cjson.decode(ARGV[2])"
         );
     }
