@@ -607,6 +607,7 @@ abstract class TrafficAcceptanceTestSupport {
             keys.add(trafficRedisKeyFactory.remainingIndivAmountKey(lineId, currentMonth));
             keys.add(trafficRedisKeyFactory.dailyTotalUsageKey(lineId, today));
             keys.add(trafficRedisKeyFactory.dailyAppUsageKey(lineId, today));
+            keys.add(trafficRedisKeyFactory.dailySharedUsageKey(lineId, today));
             keys.add(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth));
             keys.add(trafficRedisKeyFactory.dailyTotalLimitKey(lineId));
             keys.add(trafficRedisKeyFactory.monthlySharedLimitKey(lineId));

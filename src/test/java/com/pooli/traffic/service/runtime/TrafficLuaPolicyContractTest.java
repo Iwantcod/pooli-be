@@ -191,6 +191,26 @@ class TrafficLuaPolicyContractTest {
     }
 
     @Test
+    @DisplayName("통합 deduct Lua는 공유풀 차감이 있을 때만 일별 공유풀 사용량 hash를 적재한다")
+    void unifiedDeductRecordsDailySharedUsageOnlyForSharedDeduction() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("local daily_shared_usage_key = KEYS[16]"));
+        assertTrue(script.contains("local family_id = tonumber(ARGV[7] or \"-1\")"));
+        assertTrue(script.contains("if not daily_shared_usage_key or daily_shared_usage_key == \"\" then"));
+        assertTrue(script.contains("if not family_id or family_id <= 0 then"));
+        assertAppearsInOrder(
+                script,
+                "if shared_deducted > 0 then",
+                "redis.call(\"HINCRBY\", daily_shared_usage_key, \"usage_amount\", shared_deducted)",
+                "redis.call(\"HSET\", daily_shared_usage_key, \"family_id\", family_id)",
+                "redis.call(\"EXPIREAT\", daily_shared_usage_key, daily_expire_at)"
+        );
+        assertFalse(script.contains("redis.call(\"HINCRBY\", daily_shared_usage_key, \"usage_amount\", indiv_deducted)"));
+        assertFalse(script.contains("redis.call(\"HINCRBY\", daily_shared_usage_key, \"usage_amount\", qos_deducted)"));
+    }
+
+    @Test
     @DisplayName("통합 deduct Lua는 timeout을 Redis 상태 변경 전에 반환한다")
     void unifiedDeductChecksSpeedLimitTimeoutBeforeMutations() throws IOException {
         String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);

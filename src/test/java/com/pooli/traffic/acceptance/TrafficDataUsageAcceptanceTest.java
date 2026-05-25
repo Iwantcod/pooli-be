@@ -53,6 +53,7 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
         assertDoneLog(traceId, 50L, 0L, 0L, 0L, "SUCCESS", "OK");
         assertUsageCounters(lineId, appId, 50L, 50L, 0L);
         assertDailyAppUsageBySource(lineId, appId, 50L, 0L, 0L);
+        assertDailySharedUsage(lineId, 0L, 0L);
         assertRedisBalances(lineId, familyId, 30L, 100L);
     }
 
@@ -72,6 +73,7 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
         assertDoneLog(traceId, 0L, 50L, 0L, 0L, "SUCCESS", "OK");
         assertUsageCounters(lineId, appId, 50L, 50L, 50L);
         assertDailyAppUsageBySource(lineId, appId, 0L, 50L, 0L);
+        assertDailySharedUsage(lineId, 50L, familyId);
         assertRedisBalances(lineId, familyId, 0L, 30L);
     }
 
@@ -91,6 +93,7 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
         assertDoneLog(traceId, 30L, 20L, 0L, 0L, "SUCCESS", "OK");
         assertUsageCounters(lineId, appId, 50L, 50L, 20L);
         assertDailyAppUsageBySource(lineId, appId, 30L, 20L, 0L);
+        assertDailySharedUsage(lineId, 20L, familyId);
         assertRedisBalances(lineId, familyId, 0L, 60L);
     }
 
@@ -110,6 +113,7 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
         assertDoneLog(traceId, 0L, 0L, 50L, 0L, "SUCCESS", "QOS");
         assertUsageCounters(lineId, appId, 50L, 50L, 0L);
         assertDailyAppUsageBySource(lineId, appId, 0L, 0L, 50L);
+        assertDailySharedUsage(lineId, 0L, 0L);
         assertRedisBalances(lineId, familyId, 0L, 0L);
     }
 
@@ -181,7 +185,9 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
 
         assertDoneLog(traceId, 10L, 40L, 0L, 0L, "SUCCESS", "OK");
         assertUsageCountersForDate(lineId, appId, targetDate, targetMonth, 50L, 50L, 40L);
+        assertDailySharedUsageForDate(lineId, targetDate, 40L, familyId);
         assertUsageCountersForDate(lineId, appId, today, currentMonth, 0L, 0L, 0L);
+        assertDailySharedUsageForDate(lineId, today, 0L, 0L);
         assertRedisBalancesForMonth(lineId, familyId, targetMonth, 0L, 40L);
     }
 
@@ -311,6 +317,23 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
         assertThat(readDailyAppUsageBySource(lineId, appId, "qos")).isEqualTo(expectedQosUsage);
     }
 
+    private void assertDailySharedUsage(long lineId, long expectedUsageAmount, long expectedFamilyId) {
+        LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
+        assertDailySharedUsageForDate(lineId, today, expectedUsageAmount, expectedFamilyId);
+    }
+
+    private void assertDailySharedUsageForDate(
+            long lineId,
+            LocalDate usageDate,
+            long expectedUsageAmount,
+            long expectedFamilyId
+    ) {
+        String usageKey = trafficRedisKeyFactory.dailySharedUsageKey(lineId, usageDate);
+
+        assertThat(readHashCounter(usageKey, "usage_amount")).isEqualTo(expectedUsageAmount);
+        assertThat(readHashCounter(usageKey, "family_id")).isEqualTo(expectedFamilyId);
+    }
+
     /**
      * 지정 날짜/월 기준 usage key를 직접 읽어 enqueuedAt 기반 key 선택 결과를 검증합니다.
      */
@@ -423,6 +446,7 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
     private void deleteUsageKeysForDate(long lineId, LocalDate usageDate) {
         cacheStringRedisTemplate.delete(trafficRedisKeyFactory.dailyTotalUsageKey(lineId, usageDate));
         cacheStringRedisTemplate.delete(trafficRedisKeyFactory.dailyAppUsageKey(lineId, usageDate));
+        cacheStringRedisTemplate.delete(trafficRedisKeyFactory.dailySharedUsageKey(lineId, usageDate));
     }
 
     /**

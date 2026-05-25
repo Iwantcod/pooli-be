@@ -27,6 +27,10 @@ class TrafficRedisKeyFactoryTest {
                 trafficRedisKeyFactory.dailyTotalUsageKey(11L, LocalDate.of(2026, 3, 11))
         );
         assertEquals(
+                "pooli:daily_shared_usage:11:20260311",
+                trafficRedisKeyFactory.dailySharedUsageKey(11L, LocalDate.of(2026, 3, 11))
+        );
+        assertEquals(
                 "pooli:qos_speed_limit_next_available:11:7",
                 trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(11L, 7)
         );

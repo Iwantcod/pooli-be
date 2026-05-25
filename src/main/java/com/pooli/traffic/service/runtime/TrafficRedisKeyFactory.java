@@ -121,6 +121,15 @@ public class TrafficRedisKeyFactory {
     /**
       * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
      */
+    public String dailySharedUsageKey(long lineId, LocalDate targetDate) {
+        // 일별 집계 키는 yyyymmdd suffix를 사용한다.
+        String yyyymmdd = trafficRedisRuntimePolicy.formatYyyyMmDd(targetDate);
+        return namespaced("daily_shared_usage:" + lineId + ":" + yyyymmdd);
+    }
+
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
     public String monthlySharedUsageKey(long lineId, YearMonth targetMonth) {
         // 월별 집계 키는 yyyymm suffix를 사용한다.
         String yyyymm = trafficRedisRuntimePolicy.formatYyyyMm(targetMonth);

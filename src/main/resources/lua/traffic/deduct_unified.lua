@@ -103,7 +103,7 @@ local DEDUPE_PROCESSED_QOS_FIELD = "processed_qos_data"
 local DEDUPE_RETRY_FIELD = "retry_count"
 
 -- KEYS
--- 1~2: 잔량 hash, 3~6: 전역 정책 활성화 hash, 7~13: 제한/사용량, 14: 속도/QoS 예약, 15: in-flight dedupe hash.
+-- 1~2: 잔량 hash, 3~6: 전역 정책 활성화 hash, 7~13: 제한/사용량, 14: 속도/QoS 예약, 15: in-flight dedupe hash, 16: 일별 공유풀 사용량 hash.
 -- KEYS[14]는 기존 초 단위 speed bucket이 아니라 lineId+appId 단일 예약 키다.
 -- 이 키의 value는 "다음 요청이 시작 기준으로 삼아야 할 완료 가능 시각(epoch millis)"이다.
 local individual_remaining_key = KEYS[1]
@@ -121,6 +121,7 @@ local daily_app_usage_key = KEYS[12]
 local app_speed_limit_key = KEYS[13]
 local qos_speed_limit_next_available_key = KEYS[14]
 local dedupe_key = KEYS[15]
+local daily_shared_usage_key = KEYS[16]
 
 -- ARGV
 -- target_data: 이번 Lua 호출에서 추가 처리할 목표량.
@@ -131,6 +132,7 @@ local daily_expire_at = tonumber(ARGV[3])
 local monthly_expire_at = tonumber(ARGV[4])
 local whitelist_bypass_flag = tonumber(ARGV[5] or "0")
 local api_total_data = tonumber(ARGV[6] or "-1")
+local family_id = tonumber(ARGV[7] or "-1")
 
 -- ===== 입력 검증 =====
 -- 필수 key/argument가 누락되거나 음수이면 Redis 상태를 변경하지 않고 ERROR를 반환한다.
@@ -140,10 +142,16 @@ end
 if not shared_remaining_key or shared_remaining_key == "" then
   return as_json(0, 0, 0, "ERROR")
 end
+if not daily_shared_usage_key or daily_shared_usage_key == "" then
+  return as_json(0, 0, 0, "ERROR")
+end
 if not target_data or target_data < 0 then
   return as_json(0, 0, 0, "ERROR")
 end
 if not app_id or app_id < 0 then
+  return as_json(0, 0, 0, "ERROR")
+end
+if not family_id or family_id <= 0 then
   return as_json(0, 0, 0, "ERROR")
 end
 if not daily_expire_at or daily_expire_at <= 0 then
@@ -431,6 +439,9 @@ end
 if shared_deducted > 0 then
   redis.call("INCRBY", monthly_shared_usage_key, shared_deducted)
   redis.call("EXPIREAT", monthly_shared_usage_key, monthly_expire_at)
+  redis.call("HINCRBY", daily_shared_usage_key, "usage_amount", shared_deducted)
+  redis.call("HSET", daily_shared_usage_key, "family_id", family_id)
+  redis.call("EXPIREAT", daily_shared_usage_key, daily_expire_at)
   redis.call("HINCRBY", dedupe_key, DEDUPE_PROCESSED_SHARED_FIELD, shared_deducted)
 end
 
