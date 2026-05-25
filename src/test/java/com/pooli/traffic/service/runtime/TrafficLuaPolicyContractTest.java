@@ -211,6 +211,23 @@ class TrafficLuaPolicyContractTest {
     }
 
     @Test
+    @DisplayName("통합 deduct Lua는 월별 공유 사용량을 hash 계약으로 읽고 누적한다")
+    void unifiedDeductUsesMonthlySharedUsageHash() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("redis.call(\"HGET\", monthly_shared_usage_key, \"usage_amount\")"));
+        assertAppearsInOrder(
+                script,
+                "if shared_deducted > 0 then",
+                "redis.call(\"HINCRBY\", monthly_shared_usage_key, \"usage_amount\", shared_deducted)",
+                "redis.call(\"HSET\", monthly_shared_usage_key, \"family_id\", family_id)",
+                "redis.call(\"EXPIREAT\", monthly_shared_usage_key, monthly_expire_at)"
+        );
+        assertFalse(script.contains("redis.call(\"GET\", monthly_shared_usage_key)"));
+        assertFalse(script.contains("redis.call(\"INCRBY\", monthly_shared_usage_key, shared_deducted)"));
+    }
+
+    @Test
     @DisplayName("통합 deduct Lua는 timeout을 Redis 상태 변경 전에 반환한다")
     void unifiedDeductChecksSpeedLimitTimeoutBeforeMutations() throws IOException {
         String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);

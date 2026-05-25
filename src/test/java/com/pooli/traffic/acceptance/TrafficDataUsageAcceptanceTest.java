@@ -147,7 +147,7 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
         prepareUsageScenario(lineId, familyId, 20L, 40L);
         setDailyTotalUsage(lineId, 7L);
         setDailyAppUsage(lineId, appId, 11L);
-        setMonthlySharedUsage(lineId, 13L);
+        setMonthlySharedUsage(lineId, familyId, 13L);
 
         String traceId = enqueueTrafficRequest(lineId, familyId, appId, 50L);
 
@@ -284,10 +284,12 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
     /**
      * 기존 monthly shared usage가 있는 누적 시나리오를 만들기 위해 현재 월 counter를 설정합니다.
      */
-    private void setMonthlySharedUsage(long lineId, long usage) {
+    private void setMonthlySharedUsage(long lineId, long familyId, long usage) {
         YearMonth currentMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
-        cacheStringRedisTemplate.opsForValue()
-                .set(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth), String.valueOf(usage));
+        cacheStringRedisTemplate.opsForHash().putAll(
+                trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth),
+                Map.of("usage_amount", String.valueOf(usage), "family_id", String.valueOf(familyId))
+        );
     }
 
     /**
@@ -350,7 +352,7 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
                 .isEqualTo(expectedDailyTotalUsage);
         assertThat(readDailyAppUsageForDate(lineId, appId, usageDate))
                 .isEqualTo(expectedDailyAppUsage);
-        assertThat(readStringCounter(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, usageMonth)))
+        assertThat(readHashCounter(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, usageMonth), "usage_amount"))
                 .isEqualTo(expectedMonthlySharedUsage);
     }
 

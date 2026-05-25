@@ -16,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -57,6 +58,9 @@ class DataServiceImplTest {
 
     @Mock
     private ValueOperations<String, String> valueOperations;
+
+    @Mock
+    private HashOperations<String, Object, Object> hashOperations;
 
     @Mock
     private TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
@@ -334,9 +338,13 @@ class DataServiceImplTest {
         when(trafficRedisKeyFactory.monthlySharedUsageKey(1L, targetMonth))
             .thenReturn("pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM")));
         when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
         when(valueOperations.get("pooli:daily_total_usage:1:" + today.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)))
             .thenReturn("25");
-        when(valueOperations.get("pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM"))))
+        when(hashOperations.get(
+                "pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM")),
+                "usage_amount"
+        ))
             .thenReturn("30");
         when(familySharedPoolsService.resolveFamilyMemberActualDisplay(1L))
             .thenReturn(FamilyMembersResDto.FamilyMemberDto.builder()
@@ -377,9 +385,13 @@ class DataServiceImplTest {
         when(trafficRedisKeyFactory.monthlySharedUsageKey(1L, targetMonth))
             .thenReturn("pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM")));
         when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
         when(valueOperations.get("pooli:daily_total_usage:1:" + today.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)))
             .thenReturn("25");
-        when(valueOperations.get("pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM"))))
+        when(hashOperations.get(
+                "pooli:monthly_shared_usage:1:" + targetMonth.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM")),
+                "usage_amount"
+        ))
             .thenReturn("30");
         when(familySharedPoolsService.resolveFamilyMemberActualDisplay(1L))
             .thenReturn(FamilyMembersResDto.FamilyMemberDto.builder()

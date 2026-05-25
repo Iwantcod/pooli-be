@@ -68,6 +68,39 @@ class TrafficRemainingBalanceCacheServiceTest {
     }
 
     @Nested
+    class ReadHashFieldOrDefaultTest {
+
+        @Test
+        void returnsParsedHashField() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get("pooli:monthly_shared_usage:11:202603", "usage_amount")).thenReturn("300");
+
+            long amount = trafficRemainingBalanceCacheService.readHashFieldOrDefault(
+                    "pooli:monthly_shared_usage:11:202603",
+                    "usage_amount",
+                    10L
+            );
+
+            assertEquals(300L, amount);
+        }
+
+        @Test
+        void returnsDefaultWhenHashFieldMalformed() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get("pooli:monthly_shared_usage:11:202603", "usage_amount"))
+                    .thenReturn("not-a-number");
+
+            long amount = trafficRemainingBalanceCacheService.readHashFieldOrDefault(
+                    "pooli:monthly_shared_usage:11:202603",
+                    "usage_amount",
+                    77L
+            );
+
+            assertEquals(77L, amount);
+        }
+    }
+
+    @Nested
     class HydrateSnapshotTest {
 
         @Test

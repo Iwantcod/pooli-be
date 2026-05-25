@@ -462,8 +462,10 @@ class FamilySharedPoolsServiceTest {
         when(trafficRemainingBalanceQueryService.resolveSharedActualRemaining(1L)).thenReturn(2_000L);
         when(trafficRedisKeyFactory.monthlySharedUsageKey(101L, targetMonth)).thenReturn("monthly:101");
         when(trafficRedisKeyFactory.monthlySharedUsageKey(201L, targetMonth)).thenReturn("monthly:201");
-        when(trafficRemainingBalanceCacheService.readValueOrDefault("monthly:101", 0L)).thenReturn(5_000L);
-        when(trafficRemainingBalanceCacheService.readValueOrDefault("monthly:201", 0L)).thenReturn(1_000L);
+        when(trafficRemainingBalanceCacheService.readHashFieldOrDefault("monthly:101", "usage_amount", 0L))
+                .thenReturn(5_000L);
+        when(trafficRemainingBalanceCacheService.readHashFieldOrDefault("monthly:201", "usage_amount", 0L))
+                .thenReturn(1_000L);
 
         SharedPoolMonthlyUsageResDto result = service.getFamilyMonthlySharedUsageTotal(principal);
 

@@ -287,7 +287,7 @@ abstract class TrafficAcceptanceTestSupport {
      * 현재 월 기준 line monthly shared usage counter를 읽습니다.
      */
     protected long readMonthlySharedUsage(long lineId) {
-        return readLongValue(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth()));
+        return readHashLong(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth()), "usage_amount");
     }
 
     /**

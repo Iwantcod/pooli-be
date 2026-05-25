@@ -697,7 +697,14 @@ public class FamilySharedPoolsService {
         String monthlySharedUsageKey = trafficRedisKeyFactory.monthlySharedUsageKey(lineId, targetMonth);
         try {
             // 조회 실패는 화면 보정 실패일 뿐이므로 0을 반환해 DB 집계값을 유지하게 합니다.
-            return Math.max(0L, trafficRemainingBalanceCacheService.readValueOrDefault(monthlySharedUsageKey, 0L));
+            return Math.max(
+                    0L,
+                    trafficRemainingBalanceCacheService.readHashFieldOrDefault(
+                            monthlySharedUsageKey,
+                            "usage_amount",
+                            0L
+                    )
+            );
         } catch (RuntimeException e) {
             log.warn("family_shared_monthly_usage_redis_read_failed lineId={} key={}", lineId, monthlySharedUsageKey, e);
             return 0L;

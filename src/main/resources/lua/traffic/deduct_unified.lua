@@ -303,7 +303,7 @@ if not whitelist_bypass and shared_target > 0 and is_policy_enabled(policy_share
   -- 월별 공유풀 제한은 공유풀 차감량에만 적용한다. QoS 처리량에는 적용하지 않는다.
   local monthly_limit = tonumber(redis.call("HGET", monthly_shared_limit_key, "value") or "-1")
   if monthly_limit >= 0 then
-    local monthly_used = tonumber(redis.call("GET", monthly_shared_usage_key) or "0")
+    local monthly_used = tonumber(redis.call("HGET", monthly_shared_usage_key, "usage_amount") or "0")
     local monthly_remaining = math.max(0, monthly_limit - monthly_used)
     local before_monthly = shared_target
     shared_target = math.min(shared_target, monthly_remaining)
@@ -437,7 +437,8 @@ if shared_deducted > 0 and not shared_unlimited then
   redis.call("HINCRBY", shared_remaining_key, "amount", -shared_deducted)
 end
 if shared_deducted > 0 then
-  redis.call("INCRBY", monthly_shared_usage_key, shared_deducted)
+  redis.call("HINCRBY", monthly_shared_usage_key, "usage_amount", shared_deducted)
+  redis.call("HSET", monthly_shared_usage_key, "family_id", family_id)
   redis.call("EXPIREAT", monthly_shared_usage_key, monthly_expire_at)
   redis.call("HINCRBY", daily_shared_usage_key, "usage_amount", shared_deducted)
   redis.call("HSET", daily_shared_usage_key, "family_id", family_id)
