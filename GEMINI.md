@@ -210,7 +210,7 @@ Mermaid diagrams **must** be included in the following situations:
 
 - **HTML Wrapping Rule (Mandatory)**: To prevent background color inversion in any viewer environment (e.g., dark mode), every Mermaid diagram block MUST be wrapped in an HTML `<div>` with an explicit white background as follows:
 
-  ```
+  ````html
   <div style="background-color: #ffffff; padding: 20px;">
 
   ```mermaid
