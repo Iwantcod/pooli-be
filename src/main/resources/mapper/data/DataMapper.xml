@@ -29,7 +29,7 @@
 	              resultType="com.pooli.data.domain.dto.response.AppDataUsageResDto$AppUsageDto">
           SELECT
               a.application_name AS appName,
-              COALESCE(SUM(d.total_usage_data), 0) AS usedAmount
+              COALESCE(SUM(d.individual_usage_data + d.shared_usage_data + d.qos_usage_data), 0) AS usedAmount
           FROM DAILY_APP_TOTAL_DATA d
           INNER JOIN APPLICATION a
               ON a.application_id = d.application_id
