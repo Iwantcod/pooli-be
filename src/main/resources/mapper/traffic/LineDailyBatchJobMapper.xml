@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.traffic.mapper.LineDailyBatchJobMapper">
+
+    <!-- LINE_DAILY_BATCH_JOB row를 Java metadata 객체로 변환한다. -->
+    <resultMap id="LineDailyBatchJobResultMap" type="com.pooli.traffic.domain.batch.LineDailyBatchJob">
+        <id property="id" column="id"/>
+        <result property="batchName" column="batch_name"/>
+        <result property="usageDate" column="usage_date"/>
+        <result property="status" column="status"/>
+        <result property="statusUpdatedAt" column="status_updated_at"/>
+        <result property="runStartedAt" column="run_started_at"/>
+        <result property="finishedAt" column="finished_at"/>
+        <result property="targetCount" column="target_count"/>
+        <result property="successCount" column="success_count"/>
+        <result property="failedCount" column="failed_count"/>
+        <result property="skippedCount" column="skipped_count"/>
+        <result property="processedCountUpdatedAt" column="processed_count_updated_at"/>
+        <result property="managerInstanceId" column="manager_instance_id"/>
+        <result property="lastErrorCode" column="last_error_code"/>
+        <result property="lastErrorMessage" column="last_error_message"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <!--
+        자동 배치 생성 전 기존 metadata를 확인하는 조회이다.
+        DB unique key를 두지 않는 정책이므로 같은 batch_name + usage_date가 있으면 상태와 무관하게 재사용한다.
+    -->
+    <select id="selectLatestByBatchNameAndUsageDate" resultMap="LineDailyBatchJobResultMap">
+        SELECT
+            id,
+            batch_name,
+            usage_date,
+            status,
+            status_updated_at,
+            run_started_at,
+            finished_at,
+            target_count,
+            success_count,
+            failed_count,
+            skipped_count,
+            processed_count_updated_at,
+            manager_instance_id,
+            last_error_code,
+            last_error_message,
+            created_at,
+            updated_at
+        FROM LINE_DAILY_BATCH_JOB
+        WHERE batch_name = #{batchName}
+          AND usage_date = #{usageDate}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <!-- manager가 신규 자동 실행 metadata를 PENDING 상태로 생성할 때 사용한다. -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO LINE_DAILY_BATCH_JOB (
+            batch_name,
+            usage_date,
+            status,
+            status_updated_at,
+            target_count,
+            success_count,
+            failed_count,
+            skipped_count,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{batchName},
+            #{usageDate},
+            #{status},
+            CURRENT_TIMESTAMP(6),
+            #{targetCount},
+            #{successCount},
+            #{failedCount},
+            #{skippedCount},
+            CURRENT_TIMESTAMP(6),
+            CURRENT_TIMESTAMP(6)
+        )
+    </insert>
+
+</mapper>
