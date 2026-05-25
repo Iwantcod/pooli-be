@@ -845,7 +845,11 @@ class TrafficDataPolicyAcceptanceTest extends TrafficAcceptanceTestSupport {
     private void setDailyAppUsage(long lineId, int appId, long usage) {
         LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
         cacheStringRedisTemplate.opsForHash()
-                .put(trafficRedisKeyFactory.dailyAppUsageKey(lineId, today), "app:" + appId, String.valueOf(usage));
+                .put(
+                        trafficRedisKeyFactory.dailyAppUsageKey(lineId, today),
+                        "app:" + appId + ":individual",
+                        String.valueOf(usage)
+                );
     }
 
     /**

@@ -268,9 +268,19 @@ abstract class TrafficAcceptanceTestSupport {
      * 오늘 날짜 기준 line/app daily usage hash field를 읽습니다.
      */
     protected long readDailyAppUsage(long lineId, int appId) {
+        return readDailyAppUsageBySource(lineId, appId, "individual")
+                + readDailyAppUsageBySource(lineId, appId, "shared")
+                + readDailyAppUsageBySource(lineId, appId, "qos");
+    }
+
+    /**
+     * 오늘 날짜 기준 line/app/source daily usage hash field를 읽습니다.
+     * 하위 acceptance 테스트에서 source별 분리 적재를 직접 검증할 때 사용합니다.
+     */
+    protected long readDailyAppUsageBySource(long lineId, int appId, String source) {
         LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
         String usageKey = trafficRedisKeyFactory.dailyAppUsageKey(lineId, today);
-        return readHashLong(usageKey, "app:" + appId);
+        return readHashLong(usageKey, "app:" + appId + ":" + source);
     }
 
     /**

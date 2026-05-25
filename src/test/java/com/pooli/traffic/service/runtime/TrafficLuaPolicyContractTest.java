@@ -175,6 +175,22 @@ class TrafficLuaPolicyContractTest {
     }
 
     @Test
+    @DisplayName("통합 deduct Lua는 앱별 일일 사용량을 source별 field로 분리하고 합산해 limit을 판단한다")
+    void unifiedDeductUsesSourceSpecificDailyAppUsageFields() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("local app_usage_individual_field = \"app:\" .. app_member .. \":individual\""));
+        assertTrue(script.contains("local app_usage_shared_field = \"app:\" .. app_member .. \":shared\""));
+        assertTrue(script.contains("local app_usage_qos_field = \"app:\" .. app_member .. \":qos\""));
+        assertTrue(script.contains("local app_daily_used = read_daily_app_usage("));
+        assertTrue(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_individual_field, indiv_deducted)"));
+        assertTrue(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_shared_field, shared_deducted)"));
+        assertTrue(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_qos_field, qos_deducted)"));
+        assertFalse(script.contains("local app_usage_field = \"app:\" .. app_member"));
+        assertFalse(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_field, total_deducted)"));
+    }
+
+    @Test
     @DisplayName("통합 deduct Lua는 timeout을 Redis 상태 변경 전에 반환한다")
     void unifiedDeductChecksSpeedLimitTimeoutBeforeMutations() throws IOException {
         String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);

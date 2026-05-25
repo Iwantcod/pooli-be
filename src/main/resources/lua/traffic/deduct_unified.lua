@@ -73,6 +73,12 @@ local function read_non_negative_counter(key, field)
   return value
 end
 
+local function read_daily_app_usage(key, individual_field, shared_field, qos_field)
+  return read_non_negative_counter(key, individual_field)
+      + read_non_negative_counter(key, shared_field)
+      + read_non_negative_counter(key, qos_field)
+end
+
 -- hydrate는 월별 snapshot 준비 여부로 판단한다.
 local function is_hash_snapshot_ready(key, required_fields)
   if redis.call("EXISTS", key) == 0 then
@@ -194,7 +200,9 @@ local individual_unlimited = individual_amount == -1
 
 local whitelist_bypass = whitelist_bypass_flag == 1
 local app_member = tostring(math.floor(app_id))
-local app_usage_field = "app:" .. app_member
+local app_usage_individual_field = "app:" .. app_member .. ":individual"
+local app_usage_shared_field = "app:" .. app_member .. ":shared"
+local app_usage_qos_field = "app:" .. app_member .. ":qos"
 local app_limit_field = "limit:" .. app_member
 local app_speed_field = "speed:" .. app_member
 
@@ -233,7 +241,12 @@ if not whitelist_bypass then
   if is_policy_enabled(policy_app_data_key) then
     local app_daily_limit = tonumber(redis.call("HGET", app_data_daily_limit_key, app_limit_field) or "-1")
     if app_daily_limit >= 0 then
-      local app_daily_used = tonumber(redis.call("HGET", daily_app_usage_key, app_usage_field) or "0")
+      local app_daily_used = read_daily_app_usage(
+        daily_app_usage_key,
+        app_usage_individual_field,
+        app_usage_shared_field,
+        app_usage_qos_field
+      )
       local app_daily_remaining = math.max(0, app_daily_limit - app_daily_used)
       local before_app_daily = policy_target
       policy_target = math.min(policy_target, app_daily_remaining)
@@ -426,10 +439,18 @@ if qos_deducted > 0 then
   redis.call("HINCRBY", dedupe_key, DEDUPE_PROCESSED_QOS_FIELD, qos_deducted)
 end
 
--- 일일 총 사용량과 앱별 일일 사용량은 개인/공유/QoS 전체 처리량을 합산한다.
+-- 일일 총 사용량은 개인/공유/QoS 전체 처리량을 합산하고, 앱별 일일 사용량은 source별 field에 분리 누적한다.
 redis.call("INCRBY", daily_total_usage_key, total_deducted)
 redis.call("EXPIREAT", daily_total_usage_key, daily_expire_at)
-redis.call("HINCRBY", daily_app_usage_key, app_usage_field, total_deducted)
+if indiv_deducted > 0 then
+  redis.call("HINCRBY", daily_app_usage_key, app_usage_individual_field, indiv_deducted)
+end
+if shared_deducted > 0 then
+  redis.call("HINCRBY", daily_app_usage_key, app_usage_shared_field, shared_deducted)
+end
+if qos_deducted > 0 then
+  redis.call("HINCRBY", daily_app_usage_key, app_usage_qos_field, qos_deducted)
+end
 redis.call("EXPIREAT", daily_app_usage_key, daily_expire_at)
 
 -- ===== 12단계: 최종 Lua 상태 확정 =====
