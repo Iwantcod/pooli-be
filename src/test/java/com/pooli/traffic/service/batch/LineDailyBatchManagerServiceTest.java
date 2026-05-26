@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import com.pooli.traffic.domain.batch.BatchName;
 import com.pooli.traffic.domain.batch.LineDailyBatchJob;
 import com.pooli.traffic.domain.batch.LineDailyBatchJobCreateResult;
 import com.pooli.traffic.domain.batch.LineDailyBatchStatus;
+import com.pooli.traffic.mapper.LineDailyBatchTargetMapper;
 
 @ExtendWith(MockitoExtension.class)
 class LineDailyBatchManagerServiceTest {
@@ -29,12 +31,15 @@ class LineDailyBatchManagerServiceTest {
     @Mock
     private LineDailyBatchJobService lineDailyBatchJobService;
 
+    @Mock
+    private LineDailyBatchTargetMapper lineDailyBatchTargetMapper;
+
     @InjectMocks
     private LineDailyBatchManagerService lineDailyBatchManagerService;
 
     @Test
-    @DisplayName("manager는 같은 usage_date로 두 metadata를 준비한 뒤 target insert batch만 RUNNING 전환한다")
-    void preparesBothMetadataAndStartsOnlyTargetInsertBatch() {
+    @DisplayName("manager는 target row를 chunk insert한 뒤 target insert 완료와 usage sync 시작을 순서대로 수행한다")
+    void insertsTargetRowsCompletesTargetInsertAndStartsUsageSync() {
         LineDailyBatchJob targetInsertBatch = batchJob(1L, BatchName.LINE_DAILY_TARGET_INSERT_BATCH);
         LineDailyBatchJob usageSyncBatch = batchJob(2L, BatchName.LINE_DAILY_USAGE_SYNC_BATCH);
         when(lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(
@@ -47,10 +52,18 @@ class LineDailyBatchManagerServiceTest {
         )).thenReturn(new LineDailyBatchJobCreateResult(true, usageSyncBatch));
         when(lineDailyBatchJobService.startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID))
                 .thenReturn(true);
+        when(lineDailyBatchTargetMapper.selectMaxLineIdByUsageDate(USAGE_DATE)).thenReturn(20L);
+        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(20L, 1000))
+                .thenReturn(List.of(30L, 40L));
+        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(40L, 1000))
+                .thenReturn(List.of());
+        when(lineDailyBatchTargetMapper.countByUsageDate(USAGE_DATE)).thenReturn(4L);
+        when(lineDailyBatchJobService.completeRunningTargetInsertBatch(targetInsertBatch, 4L))
+                .thenReturn(true);
 
         lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
 
-        InOrder inOrder = inOrder(lineDailyBatchJobService);
+        InOrder inOrder = inOrder(lineDailyBatchJobService, lineDailyBatchTargetMapper);
         inOrder.verify(lineDailyBatchJobService).createPendingForAutomaticRunIfAbsent(
                 BatchName.LINE_DAILY_TARGET_INSERT_BATCH,
                 USAGE_DATE
@@ -60,15 +73,106 @@ class LineDailyBatchManagerServiceTest {
                 USAGE_DATE
         );
         inOrder.verify(lineDailyBatchJobService).startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID);
+        inOrder.verify(lineDailyBatchTargetMapper).selectMaxLineIdByUsageDate(USAGE_DATE);
+        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(20L, 1000);
+        inOrder.verify(lineDailyBatchTargetMapper).insertIgnoreTargetRows(USAGE_DATE, List.of(30L, 40L));
+        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(40L, 1000);
+        inOrder.verify(lineDailyBatchTargetMapper).countByUsageDate(USAGE_DATE);
+        inOrder.verify(lineDailyBatchJobService).completeRunningTargetInsertBatch(targetInsertBatch, 4L);
+        inOrder.verify(lineDailyBatchJobService).startPendingUsageSyncBatchWithTargetCount(
+                usageSyncBatch,
+                4L,
+                MANAGER_INSTANCE_ID
+        );
         verify(lineDailyBatchJobService, never()).startPendingBatch(usageSyncBatch, MANAGER_INSTANCE_ID);
     }
 
+    @Test
+    @DisplayName("기존 RUNNING target insert batch는 최대 line_id 이후부터 재개한다")
+    void resumesRunningTargetInsertBatchAfterMaxTargetLineId() {
+        LineDailyBatchJob targetInsertBatch =
+                batchJob(1L, BatchName.LINE_DAILY_TARGET_INSERT_BATCH, LineDailyBatchStatus.RUNNING);
+        LineDailyBatchJob usageSyncBatch = batchJob(2L, BatchName.LINE_DAILY_USAGE_SYNC_BATCH);
+        when(lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(
+                BatchName.LINE_DAILY_TARGET_INSERT_BATCH,
+                USAGE_DATE
+        )).thenReturn(new LineDailyBatchJobCreateResult(false, targetInsertBatch));
+        when(lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(
+                BatchName.LINE_DAILY_USAGE_SYNC_BATCH,
+                USAGE_DATE
+        )).thenReturn(new LineDailyBatchJobCreateResult(false, usageSyncBatch));
+        when(lineDailyBatchTargetMapper.selectMaxLineIdByUsageDate(USAGE_DATE)).thenReturn(40L);
+        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(40L, 1000))
+                .thenReturn(List.of(50L));
+        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(50L, 1000))
+                .thenReturn(List.of());
+        when(lineDailyBatchTargetMapper.countByUsageDate(USAGE_DATE)).thenReturn(5L);
+        when(lineDailyBatchJobService.completeRunningTargetInsertBatch(targetInsertBatch, 5L))
+                .thenReturn(true);
+
+        lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
+
+        InOrder inOrder = inOrder(lineDailyBatchJobService, lineDailyBatchTargetMapper);
+        inOrder.verify(lineDailyBatchJobService).startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID);
+        inOrder.verify(lineDailyBatchTargetMapper).selectMaxLineIdByUsageDate(USAGE_DATE);
+        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(40L, 1000);
+        inOrder.verify(lineDailyBatchTargetMapper).insertIgnoreTargetRows(USAGE_DATE, List.of(50L));
+        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(50L, 1000);
+        inOrder.verify(lineDailyBatchTargetMapper).countByUsageDate(USAGE_DATE);
+        inOrder.verify(lineDailyBatchJobService).completeRunningTargetInsertBatch(targetInsertBatch, 5L);
+        inOrder.verify(lineDailyBatchJobService).startPendingUsageSyncBatchWithTargetCount(
+                usageSyncBatch,
+                5L,
+                MANAGER_INSTANCE_ID
+        );
+    }
+
+    @Test
+    @DisplayName("target insert batch RUNNING 전환에 실패하면 target row를 생성하지 않는다")
+    void doesNotInsertTargetsWhenTargetInsertBatchDidNotStart() {
+        LineDailyBatchJob targetInsertBatch = batchJob(1L, BatchName.LINE_DAILY_TARGET_INSERT_BATCH);
+        LineDailyBatchJob usageSyncBatch = batchJob(2L, BatchName.LINE_DAILY_USAGE_SYNC_BATCH);
+        when(lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(
+                BatchName.LINE_DAILY_TARGET_INSERT_BATCH,
+                USAGE_DATE
+        )).thenReturn(new LineDailyBatchJobCreateResult(false, targetInsertBatch));
+        when(lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(
+                BatchName.LINE_DAILY_USAGE_SYNC_BATCH,
+                USAGE_DATE
+        )).thenReturn(new LineDailyBatchJobCreateResult(false, usageSyncBatch));
+        when(lineDailyBatchJobService.startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID))
+                .thenReturn(false);
+
+        lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
+
+        verify(lineDailyBatchTargetMapper, never()).selectMaxLineIdByUsageDate(
+                org.mockito.ArgumentMatchers.any()
+        );
+        verify(lineDailyBatchTargetMapper, never()).selectActiveLineIdsAfter(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyInt()
+        );
+        verify(lineDailyBatchTargetMapper, never()).insertIgnoreTargetRows(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+        verify(lineDailyBatchJobService, never()).startPendingUsageSyncBatchWithTargetCount(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
     private LineDailyBatchJob batchJob(Long id, BatchName batchName) {
+        return batchJob(id, batchName, LineDailyBatchStatus.PENDING);
+    }
+
+    private LineDailyBatchJob batchJob(Long id, BatchName batchName, LineDailyBatchStatus status) {
         return LineDailyBatchJob.builder()
                 .id(id)
                 .batchName(batchName)
                 .usageDate(USAGE_DATE)
-                .status(LineDailyBatchStatus.PENDING)
+                .status(status)
                 .targetCount(0L)
                 .successCount(0L)
                 .failedCount(0L)

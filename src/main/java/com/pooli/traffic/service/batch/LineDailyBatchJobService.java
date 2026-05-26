@@ -74,4 +74,37 @@ public class LineDailyBatchJobService {
         // 3. affected rows 1건만 manager가 이번 실행을 열었다는 신호로 반환한다.
         return updated == 1;
     }
+
+    /**
+     * target insert batch의 target_count와 success_count를 실제 target row 수로 맞춘 뒤 종료한다.
+     */
+    @Transactional
+    public boolean completeRunningTargetInsertBatch(LineDailyBatchJob batchJob, long targetCount) {
+        int updated = lineDailyBatchJobMapper.completeRunningTargetInsertBatch(
+                batchJob.getId(),
+                targetCount
+        );
+        return updated == 1;
+    }
+
+    /**
+     * usage sync batch를 RUNNING으로 열며 worker가 처리할 target_count를 함께 확정한다.
+     */
+    @Transactional
+    public boolean startPendingUsageSyncBatchWithTargetCount(
+            LineDailyBatchJob batchJob,
+            long targetCount,
+            String managerInstanceId
+    ) {
+        if (batchJob.getStatus() != LineDailyBatchStatus.PENDING) {
+            return false;
+        }
+
+        int updated = lineDailyBatchJobMapper.startPendingUsageSyncBatchWithTargetCount(
+                batchJob.getId(),
+                targetCount,
+                managerInstanceId
+        );
+        return updated == 1;
+    }
 }

@@ -71,6 +71,43 @@ class LineDailyBatchTargetMapperSqlContractTest {
         assertFalse(sql.toLowerCase().contains("batch_job_id"));
     }
 
+    @Test
+    @DisplayName("target insert 재개 지점은 usage_date 기준 최대 line_id로 조회한다")
+    void mapperSelectsMaxLineIdByUsageDateForResumePoint() {
+        String sql = mapperXml();
+
+        assertTrue(sql.contains("<select id=\"selectMaxLineIdByUsageDate\""));
+        assertTrue(sql.contains("SELECT COALESCE(MAX(line_id), 0)"));
+        assertTrue(sql.contains("FROM LINE_DAILY_BATCH_TARGET"));
+        assertTrue(sql.contains("WHERE usage_date = #{usageDate}"));
+    }
+
+    @Test
+    @DisplayName("target row 생성은 LINE PK 순서 chunk 조회와 INSERT IGNORE를 사용한다")
+    void mapperInsertsTargetsInChunksWithInsertIgnore() {
+        String sql = mapperXml();
+
+        assertTrue(sql.contains("<select id=\"selectActiveLineIdsAfter\""));
+        assertTrue(sql.contains("FROM LINE"));
+        assertTrue(sql.contains("AND line_id &gt; #{lastLineId}"));
+        assertTrue(sql.contains("ORDER BY line_id"));
+        assertTrue(sql.contains("LIMIT #{limit}"));
+        assertTrue(sql.contains("INSERT IGNORE INTO LINE_DAILY_BATCH_TARGET"));
+    }
+
+    @Test
+    @DisplayName("INSERT IGNORE target row 생성은 기존 row 처리 상태 컬럼을 갱신하지 않는다")
+    void insertIgnoreDoesNotResetExistingTargetStatusColumns() {
+        String sql = mapperXml();
+        String insertSql = sql.substring(sql.indexOf("<insert id=\"insertIgnoreTargetRows\""));
+
+        assertTrue(insertSql.contains("'PENDING'"));
+        assertFalse(insertSql.contains("ON DUPLICATE KEY UPDATE"));
+        assertFalse(insertSql.contains("worker_id"));
+        assertFalse(insertSql.contains("last_error_code"));
+        assertFalse(insertSql.contains("last_error_message"));
+    }
+
     private String mapperXml() {
         return read(MAPPER_XML);
     }

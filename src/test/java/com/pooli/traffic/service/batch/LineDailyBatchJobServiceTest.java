@@ -143,6 +143,70 @@ class LineDailyBatchJobServiceTest {
         );
     }
 
+    @Test
+    @DisplayName("target insert batch 완료 시 target_count와 success_count를 확정한다")
+    void completesRunningTargetInsertBatch() {
+        LineDailyBatchJob pendingDomainAfterStart = batchJob(LineDailyBatchStatus.PENDING);
+        when(lineDailyBatchJobMapper.completeRunningTargetInsertBatch(
+                pendingDomainAfterStart.getId(),
+                3L
+        )).thenReturn(1);
+
+        boolean result = lineDailyBatchJobService.completeRunningTargetInsertBatch(
+                pendingDomainAfterStart,
+                3L
+        );
+
+        assertTrue(result);
+        verify(lineDailyBatchJobMapper).completeRunningTargetInsertBatch(
+                pendingDomainAfterStart.getId(),
+                3L
+        );
+    }
+
+    @Test
+    @DisplayName("usage sync batch는 PENDING일 때만 target_count와 함께 RUNNING 전환한다")
+    void startsPendingUsageSyncBatchWithTargetCount() {
+        LineDailyBatchJob pending = batchJob(LineDailyBatchStatus.PENDING);
+        when(lineDailyBatchJobMapper.startPendingUsageSyncBatchWithTargetCount(
+                pending.getId(),
+                3L,
+                "manager-1"
+        )).thenReturn(1);
+
+        boolean result = lineDailyBatchJobService.startPendingUsageSyncBatchWithTargetCount(
+                pending,
+                3L,
+                "manager-1"
+        );
+
+        assertTrue(result);
+        verify(lineDailyBatchJobMapper).startPendingUsageSyncBatchWithTargetCount(
+                pending.getId(),
+                3L,
+                "manager-1"
+        );
+    }
+
+    @Test
+    @DisplayName("PENDING이 아닌 usage sync batch는 RUNNING 전환 SQL을 실행하지 않는다")
+    void doesNotStartNonPendingUsageSyncBatch() {
+        LineDailyBatchJob running = batchJob(LineDailyBatchStatus.RUNNING);
+
+        boolean result = lineDailyBatchJobService.startPendingUsageSyncBatchWithTargetCount(
+                running,
+                3L,
+                "manager-1"
+        );
+
+        assertFalse(result);
+        verify(lineDailyBatchJobMapper, never()).startPendingUsageSyncBatchWithTargetCount(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
     private LineDailyBatchJob batchJob(LineDailyBatchStatus status) {
         return LineDailyBatchJob.builder()
                 .id(1L)

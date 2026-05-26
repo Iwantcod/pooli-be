@@ -1,6 +1,7 @@
 package com.pooli.traffic.mapper;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -8,8 +9,8 @@ import org.apache.ibatis.annotations.Param;
 import com.pooli.traffic.domain.batch.LineDailyBatchTarget;
 
 /**
- * LINE_DAILY_BATCH_TARGET target set 조회를 담당한다.
- * target row 생성과 worker claim 갱신 SQL은 각 실행 마일스톤에서 별도로 추가한다.
+ * LINE_DAILY_BATCH_TARGET target set 생성/조회를 담당한다.
+ * worker claim 갱신 SQL은 worker 실행 마일스톤에서 별도로 추가한다.
  */
 @Mapper
 public interface LineDailyBatchTargetMapper {
@@ -26,4 +27,25 @@ public interface LineDailyBatchTargetMapper {
      * batch metadata id 없이 usage_date 기준 target set 크기를 조회한다.
      */
     long countByUsageDate(@Param("usageDate") LocalDate usageDate);
+
+    /**
+     * target insert batch 재개 시 이미 확보된 가장 큰 line_id를 조회한다.
+     */
+    long selectMaxLineIdByUsageDate(@Param("usageDate") LocalDate usageDate);
+
+    /**
+     * LINE PK 순서로 target row 생성 대상 line_id chunk를 조회한다.
+     */
+    List<Long> selectActiveLineIdsAfter(
+            @Param("lastLineId") Long lastLineId,
+            @Param("limit") int limit
+    );
+
+    /**
+     * usage_date + line_id unique key 충돌 시 기존 target row 상태를 보존한다.
+     */
+    int insertIgnoreTargetRows(
+            @Param("usageDate") LocalDate usageDate,
+            @Param("lineIds") List<Long> lineIds
+    );
 }

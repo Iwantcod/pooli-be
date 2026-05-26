@@ -1,6 +1,7 @@
 package com.pooli.traffic.service.batch;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -8,6 +9,8 @@ import org.springframework.stereotype.Service;
 import com.pooli.traffic.domain.batch.BatchName;
 import com.pooli.traffic.domain.batch.LineDailyBatchJob;
 import com.pooli.traffic.domain.batch.LineDailyBatchJobCreateResult;
+import com.pooli.traffic.domain.batch.LineDailyBatchStatus;
+import com.pooli.traffic.mapper.LineDailyBatchTargetMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +24,10 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class LineDailyBatchManagerService {
 
+    private static final int TARGET_INSERT_CHUNK_SIZE = 1000;
+
     private final LineDailyBatchJobService lineDailyBatchJobService;
+    private final LineDailyBatchTargetMapper lineDailyBatchTargetMapper;
 
     /**
      * Redis manager lock을 획득한 서버가 target insert 선행 단계를 준비한다.
@@ -38,18 +44,50 @@ public class LineDailyBatchManagerService {
                 BatchName.LINE_DAILY_USAGE_SYNC_BATCH,
                 usageDate
         );
-        // 3. target insert batch만 RUNNING으로 열어 이후 target row 생성 단계가 진행될 수 있게 한다.
+        // 3. PENDING batch는 RUNNING으로 열고, 이미 RUNNING인 batch는 중단된 target insert 재개로 처리한다.
         boolean targetInsertStarted =
                 lineDailyBatchJobService.startPendingBatch(targetInsertBatch, managerInstanceId);
+        boolean targetInsertResumed = targetInsertBatch.getStatus() == LineDailyBatchStatus.RUNNING;
+        if (!targetInsertStarted && !targetInsertResumed) {
+            log.info(
+                    "line_daily_batch_manager_target_insert_not_started usageDate={} managerInstanceId={} "
+                            + "targetInsertBatchId={} targetInsertStatus={}",
+                    usageDate,
+                    managerInstanceId,
+                    targetInsertBatch.getId(),
+                    targetInsertBatch.getStatus()
+            );
+            return;
+        }
+
+        // 4. 기존 target set의 최대 line_id를 재개 지점으로 삼아 중단 이후 chunk부터 이어간다.
+        long lastLineId = lineDailyBatchTargetMapper.selectMaxLineIdByUsageDate(usageDate);
+        insertTargetRowsInChunks(usageDate, lastLineId);
+        long targetCount = lineDailyBatchTargetMapper.countByUsageDate(usageDate);
+        // 5. target insert batch는 생성된 target row 수와 같은 success_count로 완료한다.
+        boolean targetInsertCompleted =
+                lineDailyBatchJobService.completeRunningTargetInsertBatch(targetInsertBatch, targetCount);
+        // 6. target insert가 완료된 뒤에만 usage sync batch를 RUNNING으로 열어 worker 시작 조건을 만족시킨다.
+        boolean usageSyncStarted = targetInsertCompleted
+                && lineDailyBatchJobService.startPendingUsageSyncBatchWithTargetCount(
+                        usageSyncBatch,
+                        targetCount,
+                        managerInstanceId
+                );
 
         log.info(
                 "line_daily_batch_manager_prepared usageDate={} managerInstanceId={} "
-                        + "targetInsertBatchId={} usageSyncBatchId={} targetInsertStarted={}",
+                        + "targetInsertBatchId={} usageSyncBatchId={} targetInsertStarted={} "
+                        + "targetInsertResumed={} targetCount={} targetInsertCompleted={} usageSyncStarted={}",
                 usageDate,
                 managerInstanceId,
                 targetInsertBatch.getId(),
                 usageSyncBatch.getId(),
-                targetInsertStarted
+                targetInsertStarted,
+                targetInsertResumed,
+                targetCount,
+                targetInsertCompleted,
+                usageSyncStarted
         );
     }
 
@@ -62,5 +100,25 @@ public class LineDailyBatchManagerService {
                 lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(batchName, usageDate);
         // 2. caller는 생성 여부보다 이번 실행에서 사용할 metadata row 자체만 필요하다.
         return result.batchJob();
+    }
+
+    /**
+     * LINE table에 target 생성 전용 인덱스를 추가하지 않고 기존 PK 순서로 chunk scan한다.
+     * target insert는 line_id 오름차순 선형 작업이므로, 재개 시 이미 생성된 최대 line_id 이후만 조회한다.
+     * 이 전제는 중간 구간보다 큰 line_id를 수동으로 먼저 생성하지 않는 운영 절차에 의존한다.
+     */
+    private void insertTargetRowsInChunks(LocalDate usageDate, long lastLineId) {
+        while (true) {
+            List<Long> lineIds = lineDailyBatchTargetMapper.selectActiveLineIdsAfter(
+                    lastLineId,
+                    TARGET_INSERT_CHUNK_SIZE
+            );
+            if (lineIds.isEmpty()) {
+                return;
+            }
+
+            lineDailyBatchTargetMapper.insertIgnoreTargetRows(usageDate, lineIds);
+            lastLineId = lineIds.get(lineIds.size() - 1);
+        }
     }
 }

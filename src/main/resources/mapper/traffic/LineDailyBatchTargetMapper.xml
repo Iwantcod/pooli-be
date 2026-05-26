@@ -44,4 +44,46 @@
         WHERE usage_date = #{usageDate}
     </select>
 
+    <!--
+        target insert batch는 line_id 오름차순으로만 진행된다.
+        재개 시 usage_date target set의 최대 line_id를 lastLineId로 사용해 중단 지점 이후부터 이어간다.
+    -->
+    <select id="selectMaxLineIdByUsageDate" resultType="long">
+        SELECT COALESCE(MAX(line_id), 0)
+        FROM LINE_DAILY_BATCH_TARGET
+        WHERE usage_date = #{usageDate}
+    </select>
+
+    <!-- LINE 기본 PK 순서로 target row 생성 대상을 chunk 단위 조회한다. -->
+    <select id="selectActiveLineIdsAfter" resultType="long">
+        SELECT line_id
+        FROM LINE
+        WHERE deleted_at IS NULL
+          AND line_id &gt; #{lastLineId}
+        ORDER BY line_id
+        LIMIT #{limit}
+    </select>
+
+    <!-- INSERT IGNORE로 기존 target row의 status/retry/error 정보를 보존한다. -->
+    <insert id="insertIgnoreTargetRows">
+        INSERT IGNORE INTO LINE_DAILY_BATCH_TARGET (
+            usage_date,
+            line_id,
+            status,
+            status_updated_at,
+            retry_count,
+            created_at
+        ) VALUES
+        <foreach collection="lineIds" item="lineId" separator=",">
+            (
+                #{usageDate},
+                #{lineId},
+                'PENDING',
+                CURRENT_TIMESTAMP(6),
+                0,
+                CURRENT_TIMESTAMP(6)
+            )
+        </foreach>
+    </insert>
+
 </mapper>

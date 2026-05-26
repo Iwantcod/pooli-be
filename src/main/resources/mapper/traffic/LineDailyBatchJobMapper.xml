@@ -90,4 +90,33 @@
           AND status = 'PENDING'
     </update>
 
+    <!-- target insert batch는 실제 target row 수를 line 단위 count로 확정하고 종료한다. -->
+    <update id="completeRunningTargetInsertBatch">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET status = 'COMPLETED',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            finished_at = CURRENT_TIMESTAMP(6),
+            target_count = #{targetCount},
+            success_count = #{targetCount},
+            failed_count = 0,
+            skipped_count = 0,
+            processed_count_updated_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{id}
+          AND batch_name = 'LINE_DAILY_TARGET_INSERT_BATCH'
+          AND status = 'RUNNING'
+    </update>
+
+    <!-- usage sync batch는 target insert 완료 후에만 PENDING에서 RUNNING으로 열린다. -->
+    <update id="startPendingUsageSyncBatchWithTargetCount">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET status = 'RUNNING',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            run_started_at = COALESCE(run_started_at, CURRENT_TIMESTAMP(6)),
+            target_count = #{targetCount},
+            manager_instance_id = #{managerInstanceId}
+        WHERE id = #{id}
+          AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'
+          AND status = 'PENDING'
+    </update>
+
 </mapper>

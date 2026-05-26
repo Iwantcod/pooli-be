@@ -37,4 +37,21 @@ public interface LineDailyBatchJobMapper {
             @Param("status") LineDailyBatchStatus status,
             @Param("managerInstanceId") String managerInstanceId
     );
+
+    /**
+     * target insert batch의 line count를 확정하고 COMPLETED로 종료한다.
+     */
+    int completeRunningTargetInsertBatch(
+            @Param("id") Long id,
+            @Param("targetCount") long targetCount
+    );
+
+    /**
+     * target insert 완료 후 usage sync batch를 RUNNING으로 열고 동일 target_count를 기록한다.
+     */
+    int startPendingUsageSyncBatchWithTargetCount(
+            @Param("id") Long id,
+            @Param("targetCount") long targetCount,
+            @Param("managerInstanceId") String managerInstanceId
+    );
 }

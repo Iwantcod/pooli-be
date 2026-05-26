@@ -73,6 +73,33 @@ class LineDailyBatchJobMapperSqlContractTest {
     }
 
     @Test
+    @DisplayName("target insert batch 완료는 target_count와 success_count를 같은 값으로 확정한다")
+    void completeTargetInsertBatchSetsCountsAndCompletedStatus() {
+        String sql = mapperXml();
+
+        assertTrue(sql.contains("<update id=\"completeRunningTargetInsertBatch\">"));
+        assertTrue(sql.contains("SET status = 'COMPLETED'"));
+        assertTrue(sql.contains("target_count = #{targetCount}"));
+        assertTrue(sql.contains("success_count = #{targetCount}"));
+        assertTrue(sql.contains("failed_count = 0"));
+        assertTrue(sql.contains("AND batch_name = 'LINE_DAILY_TARGET_INSERT_BATCH'"));
+        assertTrue(sql.contains("AND status = 'RUNNING'"));
+    }
+
+    @Test
+    @DisplayName("usage sync batch 시작은 target_count를 설정하고 PENDING row만 RUNNING 전환한다")
+    void startUsageSyncBatchSetsTargetCountAndUsesPendingGuard() {
+        String sql = mapperXml();
+
+        assertTrue(sql.contains("<update id=\"startPendingUsageSyncBatchWithTargetCount\">"));
+        assertTrue(sql.contains("SET status = 'RUNNING'"));
+        assertTrue(sql.contains("target_count = #{targetCount}"));
+        assertTrue(sql.contains("manager_instance_id = #{managerInstanceId}"));
+        assertTrue(sql.contains("AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'"));
+        assertTrue(sql.contains("AND status = 'PENDING'"));
+    }
+
+    @Test
     @DisplayName("LINE_DAILY_BATCH_JOB updated_at 컬럼은 후속 migration으로 제거하고 mapper에서 사용하지 않는다")
     void updatedAtIsDroppedAndNotMapped() {
         String mapper = mapperXml();
