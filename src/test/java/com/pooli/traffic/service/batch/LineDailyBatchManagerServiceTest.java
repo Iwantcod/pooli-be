@@ -1,5 +1,7 @@
 package com.pooli.traffic.service.batch;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -60,9 +62,15 @@ class LineDailyBatchManagerServiceTest {
         when(lineDailyBatchTargetMapper.countByUsageDate(USAGE_DATE)).thenReturn(4L);
         when(lineDailyBatchJobService.completeRunningTargetInsertBatch(targetInsertBatch, 4L))
                 .thenReturn(true);
+        when(lineDailyBatchJobService.startPendingUsageSyncBatchWithTargetCount(
+                usageSyncBatch,
+                4L,
+                MANAGER_INSTANCE_ID
+        )).thenReturn(true);
 
-        lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
+        boolean workerStartAllowed = lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
 
+        assertTrue(workerStartAllowed);
         InOrder inOrder = inOrder(lineDailyBatchJobService, lineDailyBatchTargetMapper);
         inOrder.verify(lineDailyBatchJobService).createPendingForAutomaticRunIfAbsent(
                 BatchName.LINE_DAILY_TARGET_INSERT_BATCH,
@@ -109,9 +117,15 @@ class LineDailyBatchManagerServiceTest {
         when(lineDailyBatchTargetMapper.countByUsageDate(USAGE_DATE)).thenReturn(5L);
         when(lineDailyBatchJobService.completeRunningTargetInsertBatch(targetInsertBatch, 5L))
                 .thenReturn(true);
+        when(lineDailyBatchJobService.startPendingUsageSyncBatchWithTargetCount(
+                usageSyncBatch,
+                5L,
+                MANAGER_INSTANCE_ID
+        )).thenReturn(true);
 
-        lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
+        boolean workerStartAllowed = lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
 
+        assertTrue(workerStartAllowed);
         InOrder inOrder = inOrder(lineDailyBatchJobService, lineDailyBatchTargetMapper);
         inOrder.verify(lineDailyBatchJobService).startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID);
         inOrder.verify(lineDailyBatchTargetMapper).selectMaxLineIdByUsageDate(USAGE_DATE);
@@ -143,8 +157,9 @@ class LineDailyBatchManagerServiceTest {
         when(lineDailyBatchJobService.startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID))
                 .thenReturn(false);
 
-        lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
+        boolean workerStartAllowed = lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
 
+        assertFalse(workerStartAllowed);
         verify(lineDailyBatchTargetMapper, never()).selectMaxLineIdByUsageDate(
                 org.mockito.ArgumentMatchers.any()
         );
@@ -161,6 +176,38 @@ class LineDailyBatchManagerServiceTest {
                 org.mockito.ArgumentMatchers.anyLong(),
                 org.mockito.ArgumentMatchers.any()
         );
+    }
+
+    @Test
+    @DisplayName("usage sync batch RUNNING 전환에 실패하면 worker 시작을 허용하지 않는다")
+    void doesNotAllowWorkerStartWhenUsageSyncBatchDidNotStart() {
+        LineDailyBatchJob targetInsertBatch = batchJob(1L, BatchName.LINE_DAILY_TARGET_INSERT_BATCH);
+        LineDailyBatchJob usageSyncBatch = batchJob(2L, BatchName.LINE_DAILY_USAGE_SYNC_BATCH);
+        when(lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(
+                BatchName.LINE_DAILY_TARGET_INSERT_BATCH,
+                USAGE_DATE
+        )).thenReturn(new LineDailyBatchJobCreateResult(true, targetInsertBatch));
+        when(lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(
+                BatchName.LINE_DAILY_USAGE_SYNC_BATCH,
+                USAGE_DATE
+        )).thenReturn(new LineDailyBatchJobCreateResult(true, usageSyncBatch));
+        when(lineDailyBatchJobService.startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID))
+                .thenReturn(true);
+        when(lineDailyBatchTargetMapper.selectMaxLineIdByUsageDate(USAGE_DATE)).thenReturn(0L);
+        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(0L, 1000))
+                .thenReturn(List.of());
+        when(lineDailyBatchTargetMapper.countByUsageDate(USAGE_DATE)).thenReturn(0L);
+        when(lineDailyBatchJobService.completeRunningTargetInsertBatch(targetInsertBatch, 0L))
+                .thenReturn(true);
+        when(lineDailyBatchJobService.startPendingUsageSyncBatchWithTargetCount(
+                usageSyncBatch,
+                0L,
+                MANAGER_INSTANCE_ID
+        )).thenReturn(false);
+
+        boolean workerStartAllowed = lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
+
+        assertFalse(workerStartAllowed);
     }
 
     private LineDailyBatchJob batchJob(Long id, BatchName batchName) {

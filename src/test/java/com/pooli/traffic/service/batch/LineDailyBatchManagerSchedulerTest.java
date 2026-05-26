@@ -76,8 +76,8 @@ class LineDailyBatchManagerSchedulerTest {
     }
 
     @Test
-    @DisplayName("Redis manager lock 획득 시 manager 작업을 1회 수행하고 lock을 해제한다")
-    void runsManagerWorkOnceWhenLockAcquired() {
+    @DisplayName("Redis manager lock 획득 후 target insert와 usage sync 시작이 완료되면 worker 시작 감지로 진입한다")
+    void startsWorkerAfterManagerWorkAllowsWorkerStart() {
         when(trafficRedisKeyFactory.lineDailyBatchManagerLockKey()).thenReturn(LOCK_KEY);
         when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.setIfAbsent(
@@ -85,6 +85,30 @@ class LineDailyBatchManagerSchedulerTest {
                 anyString(),
                 eq(Duration.ofMillis(LineDailyBatchManagerScheduler.MANAGER_LOCK_TTL_MS))
         )).thenReturn(true);
+        when(lineDailyBatchManagerService.run(eq(USAGE_DATE), anyString())).thenReturn(true);
+        when(trafficLuaScriptInfraService.executeLockRelease(eq(LOCK_KEY), anyString())).thenReturn(true);
+
+        lineDailyBatchManagerScheduler.runForUsageDate(USAGE_DATE);
+
+        ArgumentCaptor<String> managerInstanceIdCaptor = ArgumentCaptor.forClass(String.class);
+        verify(lineDailyBatchManagerService, times(1)).run(eq(USAGE_DATE), managerInstanceIdCaptor.capture());
+        assertTrue(managerInstanceIdCaptor.getValue().startsWith("line-daily-batch:" + USAGE_DATE + ":"));
+        verify(lineDailyBatchWorkerScheduler).startForUsageDate(USAGE_DATE);
+        verify(trafficLuaScriptInfraService, times(1))
+                .executeLockRelease(eq(LOCK_KEY), eq(managerInstanceIdCaptor.getValue()));
+    }
+
+    @Test
+    @DisplayName("Redis manager lock 획득 후 manager 작업이 worker 시작을 허용하지 않으면 worker 시작 감지를 호출하지 않는다")
+    void doesNotStartWorkerWhenManagerWorkDoesNotAllowWorkerStart() {
+        when(trafficRedisKeyFactory.lineDailyBatchManagerLockKey()).thenReturn(LOCK_KEY);
+        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(
+                eq(LOCK_KEY),
+                anyString(),
+                eq(Duration.ofMillis(LineDailyBatchManagerScheduler.MANAGER_LOCK_TTL_MS))
+        )).thenReturn(true);
+        when(lineDailyBatchManagerService.run(eq(USAGE_DATE), anyString())).thenReturn(false);
         when(trafficLuaScriptInfraService.executeLockRelease(eq(LOCK_KEY), anyString())).thenReturn(true);
 
         lineDailyBatchManagerScheduler.runForUsageDate(USAGE_DATE);

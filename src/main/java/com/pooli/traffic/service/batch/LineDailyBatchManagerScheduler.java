@@ -50,7 +50,8 @@ public class LineDailyBatchManagerScheduler {
      * 특정 usageDate에 대해 manager 선출을 1회 시도한다.
      * 1. 고정 Redis lock key와 이번 실행의 owner id를 준비한다.
      * 2. Redis NX lock 획득에 실패하면 manager 작업 대신 worker 시작 감지로 진입한다.
-     * 3. lock 획득 서버만 manager 진입점을 실행하고, finally에서 owner 비교 release를 시도한다.
+     * 3. lock 획득 서버만 manager 진입점을 실행하고, worker 시작 허용 결과가 반환되면 같은 usageDate worker 감지를 시작한다.
+     * 4. manager 작업 성공 여부와 무관하게 finally에서 owner 비교 release를 시도한다.
      */
     void runForUsageDate(LocalDate usageDate) {
         String lockKey = trafficRedisKeyFactory.lineDailyBatchManagerLockKey();
@@ -63,7 +64,10 @@ public class LineDailyBatchManagerScheduler {
         }
 
         try {
-            lineDailyBatchManagerService.run(usageDate, managerInstanceId);
+            boolean workerStartAllowed = lineDailyBatchManagerService.run(usageDate, managerInstanceId);
+            if (workerStartAllowed) {
+                lineDailyBatchWorkerScheduler.startForUsageDate(usageDate);
+            }
         } finally {
             releaseManagerLock(lockKey, managerInstanceId);
         }

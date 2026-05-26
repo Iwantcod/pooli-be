@@ -32,8 +32,9 @@ public class LineDailyBatchManagerService {
     /**
      * Redis manager lock을 획득한 서버가 target insert 선행 단계를 준비한다.
      * usage sync batch는 target insert 완료 전까지 PENDING 상태로만 생성/조회한다.
+     * target insert 완료와 usage sync RUNNING 전환이 모두 성공했을 때만 worker 시작을 허용한다.
      */
-    public void run(LocalDate usageDate, String managerInstanceId) {
+    public boolean run(LocalDate usageDate, String managerInstanceId) {
         // 1. target row 생성을 담당할 batch metadata를 먼저 준비한다.
         LineDailyBatchJob targetInsertBatch = prepareBatchMetadata(
                 BatchName.LINE_DAILY_TARGET_INSERT_BATCH,
@@ -57,7 +58,7 @@ public class LineDailyBatchManagerService {
                     targetInsertBatch.getId(),
                     targetInsertBatch.getStatus()
             );
-            return;
+            return false;
         }
 
         // 4. 기존 target set의 최대 line_id를 재개 지점으로 삼아 중단 이후 chunk부터 이어간다.
@@ -89,6 +90,7 @@ public class LineDailyBatchManagerService {
                 targetInsertCompleted,
                 usageSyncStarted
         );
+        return usageSyncStarted;
     }
 
     /**
