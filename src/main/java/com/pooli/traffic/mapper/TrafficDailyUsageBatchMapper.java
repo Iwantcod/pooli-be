@@ -1,6 +1,7 @@
 package com.pooli.traffic.mapper;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -22,13 +23,10 @@ public interface TrafficDailyUsageBatchMapper {
      * 앱별 일일 사용량을 개인풀, 공유풀, QoS 컬럼으로 최초 삽입한다.
      * 중복 key 발생 시 기존 사용량을 덮어쓰지 않고 배치 정합성 오류로 다룬다.
      */
-    int insertDailyAppUsage(
+    int insertDailyAppUsages(
             @Param("usageDate") LocalDate usageDate,
             @Param("lineId") Long lineId,
-            @Param("applicationId") Integer applicationId,
-            @Param("individualUsageData") Long individualUsageData,
-            @Param("sharedUsageData") Long sharedUsageData,
-            @Param("qosUsageData") Long qosUsageData
+            @Param("appUsages") List<DailyAppUsageBatchInsertRow> appUsages
     );
 
     /**

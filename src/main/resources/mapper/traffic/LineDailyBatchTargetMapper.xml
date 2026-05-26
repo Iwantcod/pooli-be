@@ -129,4 +129,14 @@
           AND status IN ('PENDING', 'RETRYABLE', 'PROCESSING')
     </update>
 
+    <!-- 현재 worker가 PROCESSING으로 보유한 row만 terminal 상태로 전환한다. -->
+    <update id="markTargetTerminalIfProcessing">
+        UPDATE LINE_DAILY_BATCH_TARGET
+        SET status = #{status},
+            status_updated_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{id}
+          AND status = 'PROCESSING'
+          AND worker_id = #{workerId}
+    </update>
+
 </mapper>

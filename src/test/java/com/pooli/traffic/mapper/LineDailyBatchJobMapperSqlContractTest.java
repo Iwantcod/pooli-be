@@ -124,6 +124,20 @@ class LineDailyBatchJobMapperSqlContractTest {
         assertFalse(mapper.contains("column=\"updated_at\""));
     }
 
+    @Test
+    @DisplayName("usage sync 처리 count 증가는 terminal 상태별 count만 증가시킨다")
+    void incrementUsageSyncProcessedCountUsesTerminalStatusCases() {
+        String sql = mapperXml();
+        String updateSql = sql.substring(sql.indexOf("<update id=\"incrementUsageSyncProcessedCount\""));
+
+        assertTrue(updateSql.contains("success_count = success_count + CASE WHEN #{targetStatus} = 'DONE'"));
+        assertTrue(updateSql.contains("skipped_count = skipped_count + CASE WHEN #{targetStatus} = 'SKIPPED'"));
+        assertTrue(updateSql.contains("failed_count = failed_count + CASE WHEN #{targetStatus} = 'FAILED'"));
+        assertTrue(updateSql.contains("processed_count_updated_at = CURRENT_TIMESTAMP(6)"));
+        assertTrue(updateSql.contains("AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'"));
+        assertTrue(updateSql.contains("AND status = 'RUNNING'"));
+    }
+
     private String mapperXml() {
         return read(MAPPER_XML);
     }

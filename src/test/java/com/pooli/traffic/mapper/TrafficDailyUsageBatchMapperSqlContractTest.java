@@ -28,14 +28,15 @@ class TrafficDailyUsageBatchMapperSqlContractTest {
     }
 
     @Test
-    @DisplayName("일별 앱 사용량은 개인/공유/QoS 값을 insert-only 계약으로 저장한다")
+    @DisplayName("일별 앱 사용량은 개인/공유/QoS 값을 multi-value insert-only 계약으로 저장한다")
     void dailyAppUsageUsesInsertOnlyContract() {
-        String sql = insertStatement("insertDailyAppUsage");
+        String sql = insertStatement("insertDailyAppUsages");
 
         assertTrue(sql.contains("INSERT INTO DAILY_APP_TOTAL_DATA"));
-        assertTrue(sql.contains("#{individualUsageData}"));
-        assertTrue(sql.contains("#{sharedUsageData}"));
-        assertTrue(sql.contains("#{qosUsageData}"));
+        assertTrue(sql.contains("<foreach collection=\"appUsages\" item=\"appUsage\" separator=\",\">"));
+        assertTrue(sql.contains("#{appUsage.individualUsageData}"));
+        assertTrue(sql.contains("#{appUsage.sharedUsageData}"));
+        assertTrue(sql.contains("#{appUsage.qosUsageData}"));
         assertFalse(sql.contains("ON DUPLICATE KEY UPDATE"));
         assertFalse(sql.contains("individual_usage_data = individual_usage_data +"));
         assertFalse(sql.contains("shared_usage_data = shared_usage_data +"));

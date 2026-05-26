@@ -146,4 +146,16 @@
           AND status = 'PENDING'
     </update>
 
+    <!-- target row terminal 전환이 성공한 뒤 같은 트랜잭션에서 처리 count를 1 증가시킨다. -->
+    <update id="incrementUsageSyncProcessedCount">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET success_count = success_count + CASE WHEN #{targetStatus} = 'DONE' THEN 1 ELSE 0 END,
+            skipped_count = skipped_count + CASE WHEN #{targetStatus} = 'SKIPPED' THEN 1 ELSE 0 END,
+            failed_count = failed_count + CASE WHEN #{targetStatus} = 'FAILED' THEN 1 ELSE 0 END,
+            processed_count_updated_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{id}
+          AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'
+          AND status = 'RUNNING'
+    </update>
+
 </mapper>

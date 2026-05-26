@@ -30,6 +30,9 @@ class LineDailyUsageSyncWorkerServiceTest {
     @Mock
     private LineDailyUsageRedisReader lineDailyUsageRedisReader;
 
+    @Mock
+    private LineDailyUsageSyncPersistenceService lineDailyUsageSyncPersistenceService;
+
     @InjectMocks
     private LineDailyUsageSyncWorkerService lineDailyUsageSyncWorkerService;
 
@@ -82,5 +85,11 @@ class LineDailyUsageSyncWorkerServiceTest {
         lineDailyUsageSyncWorkerService.run(batchJob);
 
         verify(lineDailyUsageRedisReader).read(target);
+        verify(lineDailyUsageSyncPersistenceService).persistUsageAndCompleteTarget(
+                org.mockito.ArgumentMatchers.eq(batchJob.getId()),
+                org.mockito.ArgumentMatchers.eq(target),
+                org.mockito.ArgumentMatchers.any(LineDailyUsageReadResult.class),
+                anyString()
+        );
     }
 }

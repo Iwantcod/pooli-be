@@ -141,6 +141,18 @@ class LineDailyBatchTargetMapperSqlContractTest {
         assertTrue(updateSql.contains("AND status IN ('PENDING', 'RETRYABLE', 'PROCESSING')"));
     }
 
+    @Test
+    @DisplayName("terminal 전환은 현재 worker가 PROCESSING으로 선점한 row만 갱신한다")
+    void terminalTransitionUsesProcessingAndWorkerGuard() {
+        String sql = mapperXml();
+        String updateSql = sql.substring(sql.indexOf("<update id=\"markTargetTerminalIfProcessing\""));
+
+        assertTrue(updateSql.contains("SET status = #{status}"));
+        assertTrue(updateSql.contains("WHERE id = #{id}"));
+        assertTrue(updateSql.contains("AND status = 'PROCESSING'"));
+        assertTrue(updateSql.contains("AND worker_id = #{workerId}"));
+    }
+
     private String mapperXml() {
         return read(MAPPER_XML);
     }

@@ -29,7 +29,7 @@
         앱별 사용량도 usage_date/line_id/application_id 기준 최초 삽입만 허용한다.
         재처리 중복이 발생하면 기존 개인/공유/QoS 값을 덮어쓰지 않는다.
     -->
-    <insert id="insertDailyAppUsage">
+    <insert id="insertDailyAppUsages">
         INSERT INTO DAILY_APP_TOTAL_DATA (
             usage_date,
             line_id,
@@ -39,16 +39,19 @@
             qos_usage_data,
             created_at,
             updated_at
-        ) VALUES (
-            #{usageDate},
-            #{lineId},
-            #{applicationId},
-            #{individualUsageData},
-            #{sharedUsageData},
-            #{qosUsageData},
-            CURRENT_TIMESTAMP(6),
-            CURRENT_TIMESTAMP(6)
-        )
+        ) VALUES
+        <foreach collection="appUsages" item="appUsage" separator=",">
+            (
+                #{usageDate},
+                #{lineId},
+                #{appUsage.applicationId},
+                #{appUsage.individualUsageData},
+                #{appUsage.sharedUsageData},
+                #{appUsage.qosUsageData},
+                CURRENT_TIMESTAMP(6),
+                CURRENT_TIMESTAMP(6)
+            )
+        </foreach>
     </insert>
 
     <!--

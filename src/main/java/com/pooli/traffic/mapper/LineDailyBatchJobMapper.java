@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Param;
 import com.pooli.traffic.domain.batch.BatchName;
 import com.pooli.traffic.domain.batch.LineDailyBatchJob;
 import com.pooli.traffic.domain.batch.LineDailyBatchStatus;
+import com.pooli.traffic.domain.batch.LineDailyBatchTargetStatus;
 
 /**
  * LINE_DAILY_BATCH_JOB metadata 조회/생성을 담당한다.
@@ -58,5 +59,13 @@ public interface LineDailyBatchJobMapper {
             @Param("id") Long id,
             @Param("targetCount") long targetCount,
             @Param("managerInstanceId") String managerInstanceId
+    );
+
+    /**
+     * target row terminal 전환 성공 후 usage sync batch의 처리 count를 증가시킨다.
+     */
+    int incrementUsageSyncProcessedCount(
+            @Param("id") Long id,
+            @Param("targetStatus") LineDailyBatchTargetStatus targetStatus
     );
 }

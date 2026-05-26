@@ -7,10 +7,11 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.pooli.traffic.domain.batch.LineDailyBatchTarget;
+import com.pooli.traffic.domain.batch.LineDailyBatchTargetStatus;
 
 /**
  * LINE_DAILY_BATCH_TARGET target set 생성/조회를 담당한다.
- * worker claim 갱신 SQL은 worker 실행 마일스톤에서 별도로 추가한다.
+ * worker claim과 terminal 상태 전환은 현재 worker가 보유한 PROCESSING row 기준으로 수행한다.
  */
 @Mapper
 public interface LineDailyBatchTargetMapper {
@@ -63,6 +64,15 @@ public interface LineDailyBatchTargetMapper {
      */
     int markTargetsProcessing(
             @Param("ids") List<Long> ids,
+            @Param("workerId") String workerId
+    );
+
+    /**
+     * 현재 worker가 PROCESSING으로 선점한 row만 terminal 상태로 닫는다.
+     */
+    int markTargetTerminalIfProcessing(
+            @Param("id") Long id,
+            @Param("status") LineDailyBatchTargetStatus status,
             @Param("workerId") String workerId
     );
 }
