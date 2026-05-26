@@ -33,6 +33,7 @@ public class LineDailyBatchManagerScheduler {
     private final TrafficLuaScriptInfraService trafficLuaScriptInfraService;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final LineDailyBatchManagerService lineDailyBatchManagerService;
+    private final LineDailyBatchWorkerScheduler lineDailyBatchWorkerScheduler;
 
     /**
      * 매일 03:00 KST scheduler 진입점이다.
@@ -48,7 +49,7 @@ public class LineDailyBatchManagerScheduler {
     /**
      * 특정 usageDate에 대해 manager 선출을 1회 시도한다.
      * 1. 고정 Redis lock key와 이번 실행의 owner id를 준비한다.
-     * 2. Redis NX lock 획득에 실패하면 manager 작업 없이 종료한다.
+     * 2. Redis NX lock 획득에 실패하면 manager 작업 대신 worker 시작 감지로 진입한다.
      * 3. lock 획득 서버만 manager 진입점을 실행하고, finally에서 owner 비교 release를 시도한다.
      */
     void runForUsageDate(LocalDate usageDate) {
@@ -57,6 +58,7 @@ public class LineDailyBatchManagerScheduler {
         boolean lockAcquired = tryAcquireManagerLock(lockKey, managerInstanceId);
         if (!lockAcquired) {
             log.info("line_daily_batch_manager_lock_skipped usageDate={} lockKey={}", usageDate, lockKey);
+            lineDailyBatchWorkerScheduler.startForUsageDate(usageDate);
             return;
         }
 

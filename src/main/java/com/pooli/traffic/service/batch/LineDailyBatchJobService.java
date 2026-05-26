@@ -55,6 +55,15 @@ public class LineDailyBatchJobService {
     }
 
     /**
+     * worker 시작 감지용 조회이다.
+     * target insert가 usage sync batch를 RUNNING으로 열기 전에는 worker가 target claim을 시작하지 않는다.
+     */
+    @Transactional(readOnly = true)
+    public LineDailyBatchJob findRunningUsageSyncBatch(LocalDate usageDate) {
+        return lineDailyBatchJobMapper.selectRunningUsageSyncBatchByUsageDate(usageDate);
+    }
+
+    /**
      * 이미 준비된 PENDING metadata row를 실제 실행 상태로 전환한다.
      * target insert batch를 여는 용도로 사용하며, PENDING이 아닌 row는 건드리지 않는다.
      */

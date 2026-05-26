@@ -49,14 +49,17 @@ class LineDailyBatchManagerSchedulerTest {
     private LineDailyBatchManagerService lineDailyBatchManagerService;
 
     @Mock
+    private LineDailyBatchWorkerScheduler lineDailyBatchWorkerScheduler;
+
+    @Mock
     private ValueOperations<String, String> valueOperations;
 
     @InjectMocks
     private LineDailyBatchManagerScheduler lineDailyBatchManagerScheduler;
 
     @Test
-    @DisplayName("Redis manager lock 미획득 시 manager 작업을 수행하지 않는다")
-    void skipsManagerWorkWhenLockNotAcquired() {
+    @DisplayName("Redis manager lock 미획득 시 manager 작업 대신 같은 usage_date의 worker 시작 감지로 진입한다")
+    void startsWorkerWhenLockNotAcquired() {
         when(trafficRedisKeyFactory.lineDailyBatchManagerLockKey()).thenReturn(LOCK_KEY);
         when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.setIfAbsent(
@@ -68,6 +71,7 @@ class LineDailyBatchManagerSchedulerTest {
         lineDailyBatchManagerScheduler.runForUsageDate(USAGE_DATE);
 
         verify(lineDailyBatchManagerService, never()).run(eq(USAGE_DATE), anyString());
+        verify(lineDailyBatchWorkerScheduler).startForUsageDate(USAGE_DATE);
         verify(trafficLuaScriptInfraService, never()).executeLockRelease(anyString(), anyString());
     }
 
@@ -88,6 +92,7 @@ class LineDailyBatchManagerSchedulerTest {
         ArgumentCaptor<String> managerInstanceIdCaptor = ArgumentCaptor.forClass(String.class);
         verify(lineDailyBatchManagerService, times(1)).run(eq(USAGE_DATE), managerInstanceIdCaptor.capture());
         assertTrue(managerInstanceIdCaptor.getValue().startsWith("line-daily-batch:" + USAGE_DATE + ":"));
+        verify(lineDailyBatchWorkerScheduler, never()).startForUsageDate(USAGE_DATE);
         verify(trafficLuaScriptInfraService, times(1))
                 .executeLockRelease(eq(LOCK_KEY), eq(managerInstanceIdCaptor.getValue()));
     }

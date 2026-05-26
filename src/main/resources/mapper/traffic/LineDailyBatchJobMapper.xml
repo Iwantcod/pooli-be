@@ -54,6 +54,33 @@
         LIMIT 1
     </select>
 
+    <!-- worker는 scheduler가 계산한 usage_date의 usage sync batch가 RUNNING일 때만 claim loop를 시작한다. -->
+    <select id="selectRunningUsageSyncBatchByUsageDate" resultMap="LineDailyBatchJobResultMap">
+        SELECT
+            id,
+            batch_name,
+            usage_date,
+            status,
+            status_updated_at,
+            run_started_at,
+            finished_at,
+            target_count,
+            success_count,
+            failed_count,
+            skipped_count,
+            processed_count_updated_at,
+            manager_instance_id,
+            last_error_code,
+            last_error_message,
+            created_at
+        FROM LINE_DAILY_BATCH_JOB
+        WHERE batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'
+          AND usage_date = #{usageDate}
+          AND status = 'RUNNING'
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
     <!-- manager가 신규 자동 실행 metadata를 PENDING 상태로 생성할 때 사용한다. -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO LINE_DAILY_BATCH_JOB (

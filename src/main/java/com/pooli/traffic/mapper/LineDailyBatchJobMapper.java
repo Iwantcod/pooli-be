@@ -25,6 +25,11 @@ public interface LineDailyBatchJobMapper {
     );
 
     /**
+     * worker 시작 감지는 scheduler가 계산한 usage_date의 RUNNING usage sync batch만 대상으로 한다.
+     */
+    LineDailyBatchJob selectRunningUsageSyncBatchByUsageDate(@Param("usageDate") LocalDate usageDate);
+
+    /**
      * 신규 자동 실행 metadata를 PENDING 상태로 생성한다.
      */
     int insert(LineDailyBatchJob batchJob);

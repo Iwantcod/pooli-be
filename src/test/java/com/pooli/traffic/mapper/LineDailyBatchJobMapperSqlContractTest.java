@@ -60,6 +60,19 @@ class LineDailyBatchJobMapperSqlContractTest {
     }
 
     @Test
+    @DisplayName("worker 시작 감지 조회는 usage_date 기준 RUNNING usage sync batch만 찾는다")
+    void selectRunningUsageSyncBatchByUsageDateUsesUsageDateAndRunningGuard() {
+        String sql = mapperXml();
+
+        assertTrue(sql.contains("<select id=\"selectRunningUsageSyncBatchByUsageDate\""));
+        assertTrue(sql.contains("WHERE batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'"));
+        assertTrue(sql.contains("AND usage_date = #{usageDate}"));
+        assertTrue(sql.contains("AND status = 'RUNNING'"));
+        assertTrue(sql.contains("ORDER BY id DESC"));
+        assertTrue(sql.contains("LIMIT 1"));
+    }
+
+    @Test
     @DisplayName("target insert batch 시작은 PENDING row만 RUNNING으로 전환한다")
     void startRunningUsesPendingGuard() {
         String sql = mapperXml();
