@@ -41,6 +41,7 @@ class TrafficRedisKeyFactoryTest {
         TrafficRedisKeyFactory trafficRedisKeyFactory = keyFactoryWithNamespace(" ");
 
         assertEquals("policy:1", trafficRedisKeyFactory.policyKey(1L));
+        assertEquals("line_daily_batch:manager_lock", trafficRedisKeyFactory.lineDailyBatchManagerLockKey());
         assertEquals("dedupe:run:trace-001", trafficRedisKeyFactory.dedupeRunKey("trace-001"));
         assertEquals(
                 "shared_pool_contribution:metadata:trace-001",

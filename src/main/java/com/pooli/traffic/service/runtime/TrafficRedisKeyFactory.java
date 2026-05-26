@@ -45,6 +45,13 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * 일별 사용량 동기화 manager 서버 1대를 선출하기 위한 분산락 키입니다.
+     */
+    public String lineDailyBatchManagerLockKey() {
+        return namespaced("line_daily_batch:manager_lock");
+    }
+
+    /**
      * 회선 정책(on-demand hydrate) 완료 여부를 나타내는 준비 키입니다.
      */
     public String linePolicyReadyKey(long lineId) {
