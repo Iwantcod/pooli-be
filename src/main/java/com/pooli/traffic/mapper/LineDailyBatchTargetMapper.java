@@ -30,6 +30,11 @@ public interface LineDailyBatchTargetMapper {
     long countByUsageDate(@Param("usageDate") LocalDate usageDate);
 
     /**
+     * worker가 더 선점할 row가 없을 때 남은 non-terminal row가 있는지 확인한다.
+     */
+    long countNonTerminalByUsageDate(@Param("usageDate") LocalDate usageDate);
+
+    /**
      * target insert batch 재개 시 이미 확보된 가장 큰 line_id를 조회한다.
      */
     long selectMaxLineIdByUsageDate(@Param("usageDate") LocalDate usageDate);

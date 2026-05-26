@@ -222,6 +222,19 @@ class LineDailyBatchJobServiceTest {
         );
     }
 
+    @Test
+    @DisplayName("usage sync batch 완료 CAS는 mapper affected rows 1건일 때만 성공한다")
+    void completesRunningUsageSyncBatchIfCountsMatch() {
+        LineDailyBatchJob running = batchJob(LineDailyBatchStatus.RUNNING);
+        when(lineDailyBatchJobMapper.completeRunningUsageSyncBatchIfCountsMatch(running.getId()))
+                .thenReturn(1);
+
+        boolean result = lineDailyBatchJobService.completeRunningUsageSyncBatchIfCountsMatch(running);
+
+        assertTrue(result);
+        verify(lineDailyBatchJobMapper).completeRunningUsageSyncBatchIfCountsMatch(running.getId());
+    }
+
     private LineDailyBatchJob batchJob(LineDailyBatchStatus status) {
         return LineDailyBatchJob.builder()
                 .id(1L)

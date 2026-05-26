@@ -25,6 +25,7 @@ public class LineDailyBatchWorkerScheduler {
 
     static final long START_CHECK_DELAY_MS = 1000L;
     static final long START_CHECK_JITTER_BOUND_MS = 250L;
+    static final long EMPTY_POLL_DELAY_MS = 60_000L;
 
     private final LineDailyBatchJobService lineDailyBatchJobService;
     private final LineDailyUsageSyncWorkerService lineDailyUsageSyncWorkerService;
@@ -70,8 +71,13 @@ public class LineDailyBatchWorkerScheduler {
             return;
         }
 
-        // 4. 시작 조건이 충족되면 실제 worker loop 책임을 worker service로 넘긴다.
-        lineDailyUsageSyncWorkerService.run(runningBatch);
+        // 4. 시작 조건이 충족되면 worker service를 한 cycle 실행하고 결과에 따라 다음 cycle을 예약한다.
+        LineDailyUsageSyncWorkerRunResult result = lineDailyUsageSyncWorkerService.run(runningBatch);
+        if (result == LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY) {
+            scheduleNextCheck(usageDate, 0L);
+        } else if (result == LineDailyUsageSyncWorkerRunResult.WAIT_FOR_EMPTY_POLL) {
+            scheduleNextCheck(usageDate, EMPTY_POLL_DELAY_MS);
+        }
     }
 
     /**

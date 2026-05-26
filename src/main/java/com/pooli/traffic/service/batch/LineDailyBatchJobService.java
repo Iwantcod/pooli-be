@@ -116,4 +116,13 @@ public class LineDailyBatchJobService {
         );
         return updated == 1;
     }
+
+    /**
+     * usage sync batch의 terminal count 합계가 target_count와 같을 때만 COMPLETED로 닫는다.
+     */
+    @Transactional
+    public boolean completeRunningUsageSyncBatchIfCountsMatch(LineDailyBatchJob batchJob) {
+        int updated = lineDailyBatchJobMapper.completeRunningUsageSyncBatchIfCountsMatch(batchJob.getId());
+        return updated == 1;
+    }
 }

@@ -1,5 +1,6 @@
 package com.pooli.traffic.service.batch;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -20,6 +21,7 @@ import com.pooli.traffic.domain.batch.BatchName;
 import com.pooli.traffic.domain.batch.LineDailyBatchJob;
 import com.pooli.traffic.domain.batch.LineDailyBatchStatus;
 import com.pooli.traffic.domain.batch.LineDailyBatchTarget;
+import com.pooli.traffic.mapper.LineDailyBatchTargetMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,6 +41,12 @@ class LineDailyUsageSyncWorkerServiceTest {
     @Mock
     private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
+    @Mock
+    private LineDailyBatchTargetMapper lineDailyBatchTargetMapper;
+
+    @Mock
+    private LineDailyBatchJobService lineDailyBatchJobService;
+
     @InjectMocks
     private LineDailyUsageSyncWorkerService lineDailyUsageSyncWorkerService;
 
@@ -57,8 +65,9 @@ class LineDailyUsageSyncWorkerServiceTest {
                 org.mockito.ArgumentMatchers.eq(LineDailyUsageSyncWorkerService.WORKER_CLAIM_CHUNK_SIZE)
         )).thenReturn(List.of());
 
-        lineDailyUsageSyncWorkerService.run(batchJob);
+        LineDailyUsageSyncWorkerRunResult result = lineDailyUsageSyncWorkerService.run(batchJob);
 
+        assertEquals(LineDailyUsageSyncWorkerRunResult.STOP, result);
         verify(lineDailyBatchTargetClaimService).claim(
                 org.mockito.ArgumentMatchers.eq(USAGE_DATE),
                 anyString(),
@@ -88,8 +97,9 @@ class LineDailyUsageSyncWorkerServiceTest {
         when(lineDailyUsageRedisReader.read(target))
                 .thenReturn(new LineDailyUsageReadResult(null, List.of(), null));
 
-        lineDailyUsageSyncWorkerService.run(batchJob);
+        LineDailyUsageSyncWorkerRunResult result = lineDailyUsageSyncWorkerService.run(batchJob);
 
+        assertEquals(LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY, result);
         verify(lineDailyUsageRedisReader).read(target);
         verify(lineDailyUsageSyncPersistenceService).persistUsageAndCompleteTarget(
                 org.mockito.ArgumentMatchers.eq(batchJob.getId()),
@@ -161,6 +171,41 @@ class LineDailyUsageSyncWorkerServiceTest {
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any()
         );
+    }
+
+    @Test
+    @DisplayName("선점 row가 없고 non-terminal row가 남아 있으면 1분 empty poll 재예약을 요청한다")
+    void requestsEmptyPollWhenNoClaimedTargetButNonTerminalTargetsRemain() {
+        LineDailyBatchJob batchJob = batchJob();
+        when(lineDailyBatchTargetClaimService.claim(
+                org.mockito.ArgumentMatchers.eq(USAGE_DATE),
+                anyString(),
+                org.mockito.ArgumentMatchers.eq(LineDailyUsageSyncWorkerService.WORKER_CLAIM_CHUNK_SIZE)
+        )).thenReturn(List.of());
+        when(lineDailyBatchTargetMapper.countNonTerminalByUsageDate(USAGE_DATE)).thenReturn(2L);
+
+        LineDailyUsageSyncWorkerRunResult result = lineDailyUsageSyncWorkerService.run(batchJob);
+
+        assertEquals(LineDailyUsageSyncWorkerRunResult.WAIT_FOR_EMPTY_POLL, result);
+        verify(lineDailyBatchJobService, never()).completeRunningUsageSyncBatchIfCountsMatch(batchJob);
+    }
+
+    @Test
+    @DisplayName("선점 row와 non-terminal row가 없으면 usage sync 완료 CAS를 시도한다")
+    void completesUsageSyncBatchWhenNoClaimedTargetAndNoNonTerminalTargetsRemain() {
+        LineDailyBatchJob batchJob = batchJob();
+        when(lineDailyBatchTargetClaimService.claim(
+                org.mockito.ArgumentMatchers.eq(USAGE_DATE),
+                anyString(),
+                org.mockito.ArgumentMatchers.eq(LineDailyUsageSyncWorkerService.WORKER_CLAIM_CHUNK_SIZE)
+        )).thenReturn(List.of());
+        when(lineDailyBatchTargetMapper.countNonTerminalByUsageDate(USAGE_DATE)).thenReturn(0L);
+        when(lineDailyBatchJobService.completeRunningUsageSyncBatchIfCountsMatch(batchJob)).thenReturn(true);
+
+        LineDailyUsageSyncWorkerRunResult result = lineDailyUsageSyncWorkerService.run(batchJob);
+
+        assertEquals(LineDailyUsageSyncWorkerRunResult.STOP, result);
+        verify(lineDailyBatchJobService).completeRunningUsageSyncBatchIfCountsMatch(batchJob);
     }
 
     private LineDailyBatchJob batchJob() {

@@ -138,6 +138,19 @@ class LineDailyBatchJobMapperSqlContractTest {
         assertTrue(updateSql.contains("AND status = 'RUNNING'"));
     }
 
+    @Test
+    @DisplayName("usage sync 완료 CAS는 terminal count 합계가 target_count와 같을 때만 COMPLETED 전환한다")
+    void completeUsageSyncBatchUsesTerminalCountCas() {
+        String sql = mapperXml();
+        String updateSql = sql.substring(sql.indexOf("<update id=\"completeRunningUsageSyncBatchIfCountsMatch\""));
+
+        assertTrue(updateSql.contains("SET status = 'COMPLETED'"));
+        assertTrue(updateSql.contains("finished_at = CURRENT_TIMESTAMP(6)"));
+        assertTrue(updateSql.contains("AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'"));
+        assertTrue(updateSql.contains("AND status = 'RUNNING'"));
+        assertTrue(updateSql.contains("AND target_count = success_count + failed_count + skipped_count"));
+    }
+
     private String mapperXml() {
         return read(MAPPER_XML);
     }

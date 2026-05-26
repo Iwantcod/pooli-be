@@ -72,6 +72,23 @@ class LineDailyBatchTargetMapperSqlContractTest {
     }
 
     @Test
+    @DisplayName("empty poll 조회는 usage_date 기준 non-terminal target row만 집계한다")
+    void mapperCountsNonTerminalTargetsByUsageDate() {
+        String sql = mapperXml();
+        String selectSql = sql.substring(
+                sql.indexOf("<select id=\"countNonTerminalByUsageDate\""),
+                sql.indexOf("</select>", sql.indexOf("<select id=\"countNonTerminalByUsageDate\""))
+        );
+
+        assertTrue(selectSql.contains("FROM LINE_DAILY_BATCH_TARGET"));
+        assertTrue(selectSql.contains("WHERE usage_date = #{usageDate}"));
+        assertTrue(selectSql.contains("status IN ('PENDING', 'PROCESSING', 'RETRYABLE')"));
+        assertFalse(selectSql.contains("'DONE'"));
+        assertFalse(selectSql.contains("'FAILED'"));
+        assertFalse(selectSql.contains("'SKIPPED'"));
+    }
+
+    @Test
     @DisplayName("target insert 재개 지점은 usage_date 기준 최대 line_id로 조회한다")
     void mapperSelectsMaxLineIdByUsageDateForResumePoint() {
         String sql = mapperXml();

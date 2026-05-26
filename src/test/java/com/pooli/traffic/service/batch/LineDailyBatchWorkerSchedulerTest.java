@@ -64,7 +64,7 @@ class LineDailyBatchWorkerSchedulerTest {
     }
 
     @Test
-    @DisplayName("usage sync batch가 RUNNING이면 worker loop를 시작하고 재확인 예약을 만들지 않는다")
+    @DisplayName("usage sync batch가 RUNNING이고 처리할 row가 있으면 즉시 다음 worker cycle을 예약한다")
     void startsWorkerWhenUsageSyncBatchIsRunning() {
         LineDailyBatchWorkerScheduler scheduler = new LineDailyBatchWorkerScheduler(
                 lineDailyBatchJobService,
@@ -78,10 +78,66 @@ class LineDailyBatchWorkerSchedulerTest {
                 .status(LineDailyBatchStatus.RUNNING)
                 .build();
         when(lineDailyBatchJobService.findRunningUsageSyncBatch(USAGE_DATE)).thenReturn(running);
+        when(lineDailyUsageSyncWorkerService.run(running))
+                .thenReturn(LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY);
 
         scheduler.runStartCheckCycle(USAGE_DATE);
 
         verify(lineDailyUsageSyncWorkerService).run(running);
+        verify(taskScheduler).schedule(any(Runnable.class), any(Instant.class));
+    }
+
+    @Test
+    @DisplayName("usage sync batch가 RUNNING이고 non-terminal row만 남아 있으면 1분 뒤 worker cycle을 예약한다")
+    void reschedulesWorkerAfterEmptyPollDelayWhenNonTerminalTargetsRemain() {
+        LineDailyBatchWorkerScheduler scheduler = new LineDailyBatchWorkerScheduler(
+                lineDailyBatchJobService,
+                lineDailyUsageSyncWorkerService,
+                taskScheduler
+        );
+        LineDailyBatchJob running = LineDailyBatchJob.builder()
+                .id(2L)
+                .batchName(BatchName.LINE_DAILY_USAGE_SYNC_BATCH)
+                .usageDate(USAGE_DATE)
+                .status(LineDailyBatchStatus.RUNNING)
+                .build();
+        when(lineDailyBatchJobService.findRunningUsageSyncBatch(USAGE_DATE)).thenReturn(running);
+        when(lineDailyUsageSyncWorkerService.run(running))
+                .thenReturn(LineDailyUsageSyncWorkerRunResult.WAIT_FOR_EMPTY_POLL);
+
+        Instant before = Instant.now();
+        scheduler.runStartCheckCycle(USAGE_DATE);
+        Instant after = Instant.now();
+
+        ArgumentCaptor<Instant> scheduleAtCaptor = ArgumentCaptor.forClass(Instant.class);
+        verify(taskScheduler).schedule(any(Runnable.class), scheduleAtCaptor.capture());
+        assertFalse(scheduleAtCaptor.getValue().isBefore(
+                before.plusMillis(LineDailyBatchWorkerScheduler.EMPTY_POLL_DELAY_MS)
+        ));
+        assertFalse(scheduleAtCaptor.getValue().isAfter(
+                after.plusMillis(LineDailyBatchWorkerScheduler.EMPTY_POLL_DELAY_MS)
+        ));
+    }
+
+    @Test
+    @DisplayName("usage sync batch 완료 판단 이후에는 worker cycle을 재예약하지 않는다")
+    void doesNotRescheduleWorkerWhenWorkerStops() {
+        LineDailyBatchWorkerScheduler scheduler = new LineDailyBatchWorkerScheduler(
+                lineDailyBatchJobService,
+                lineDailyUsageSyncWorkerService,
+                taskScheduler
+        );
+        LineDailyBatchJob running = LineDailyBatchJob.builder()
+                .id(2L)
+                .batchName(BatchName.LINE_DAILY_USAGE_SYNC_BATCH)
+                .usageDate(USAGE_DATE)
+                .status(LineDailyBatchStatus.RUNNING)
+                .build();
+        when(lineDailyBatchJobService.findRunningUsageSyncBatch(USAGE_DATE)).thenReturn(running);
+        when(lineDailyUsageSyncWorkerService.run(running)).thenReturn(LineDailyUsageSyncWorkerRunResult.STOP);
+
+        scheduler.runStartCheckCycle(USAGE_DATE);
+
         verify(taskScheduler, never()).schedule(any(Runnable.class), any(Instant.class));
     }
 
@@ -100,6 +156,7 @@ class LineDailyBatchWorkerSchedulerTest {
                 .status(LineDailyBatchStatus.RUNNING)
                 .build();
         when(lineDailyBatchJobService.findRunningUsageSyncBatch(USAGE_DATE)).thenReturn(running);
+        when(lineDailyUsageSyncWorkerService.run(running)).thenReturn(LineDailyUsageSyncWorkerRunResult.STOP);
 
         Instant before = Instant.now();
         scheduler.startForUsageDate(USAGE_DATE);

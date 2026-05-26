@@ -68,4 +68,9 @@ public interface LineDailyBatchJobMapper {
             @Param("id") Long id,
             @Param("targetStatus") LineDailyBatchTargetStatus targetStatus
     );
+
+    /**
+     * 모든 target row가 terminal count에 반영된 경우에만 usage sync batch를 완료한다.
+     */
+    int completeRunningUsageSyncBatchIfCountsMatch(@Param("id") Long id);
 }

@@ -158,4 +158,16 @@
           AND status = 'RUNNING'
     </update>
 
+    <!-- 모든 terminal count가 target_count와 일치할 때만 usage sync batch를 완료한다. -->
+    <update id="completeRunningUsageSyncBatchIfCountsMatch">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET status = 'COMPLETED',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            finished_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{id}
+          AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'
+          AND status = 'RUNNING'
+          AND target_count = success_count + failed_count + skipped_count
+    </update>
+
 </mapper>

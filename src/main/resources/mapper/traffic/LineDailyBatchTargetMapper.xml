@@ -44,6 +44,14 @@
         WHERE usage_date = #{usageDate}
     </select>
 
+    <!-- 선점 가능한 row가 없을 때 아직 terminal 상태가 아닌 target row가 남았는지 확인한다. -->
+    <select id="countNonTerminalByUsageDate" resultType="long">
+        SELECT COUNT(*)
+        FROM LINE_DAILY_BATCH_TARGET
+        WHERE usage_date = #{usageDate}
+          AND status IN ('PENDING', 'PROCESSING', 'RETRYABLE')
+    </select>
+
     <!--
         target insert batch는 line_id 오름차순으로만 진행된다.
         재개 시 usage_date target set의 최대 line_id를 lastLineId로 사용해 중단 지점 이후부터 이어간다.
