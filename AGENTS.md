@@ -261,6 +261,8 @@ Perform a brief but honest review for:
 
 After each milestone completion (post self-review), report using this standard format:
 
+- Milestone reports MUST be written in Korean.
+
 ```
 ### Milestone Report
 
