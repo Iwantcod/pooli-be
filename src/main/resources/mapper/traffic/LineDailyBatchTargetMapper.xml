@@ -139,4 +139,31 @@
           AND worker_id = #{workerId}
     </update>
 
+    <!-- retry_count 한도 미만인 현재 worker 보유 row만 RETRYABLE로 되돌린다. -->
+    <update id="markTargetRetryableIfProcessing">
+        UPDATE LINE_DAILY_BATCH_TARGET
+        SET status = 'RETRYABLE',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            worker_id = NULL,
+            retry_count = retry_count + 1,
+            last_error_code = #{lastErrorCode},
+            last_error_message = #{lastErrorMessage}
+        WHERE id = #{id}
+          AND status = 'PROCESSING'
+          AND worker_id = #{workerId}
+          AND retry_count &lt; #{maxRetryCount}
+    </update>
+
+    <!-- 현재 worker 보유 row를 retry_count 증가 없이 FAILED terminal 상태로 닫는다. -->
+    <update id="markTargetFailedIfProcessing">
+        UPDATE LINE_DAILY_BATCH_TARGET
+        SET status = 'FAILED',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            last_error_code = #{lastErrorCode},
+            last_error_message = #{lastErrorMessage}
+        WHERE id = #{id}
+          AND status = 'PROCESSING'
+          AND worker_id = #{workerId}
+    </update>
+
 </mapper>

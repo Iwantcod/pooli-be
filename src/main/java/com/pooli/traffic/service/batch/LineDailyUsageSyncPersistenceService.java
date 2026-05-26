@@ -23,6 +23,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class LineDailyUsageSyncPersistenceService {
 
+    static final int MAX_TARGET_RETRY_COUNT = 10;
+    private static final int LAST_ERROR_MESSAGE_MAX_LENGTH = 512;
+
     private final TrafficDailyUsageBatchMapper trafficDailyUsageBatchMapper;
     private final LineDailyBatchTargetMapper lineDailyBatchTargetMapper;
     private final LineDailyBatchJobMapper lineDailyBatchJobMapper;
@@ -55,7 +58,51 @@ public class LineDailyUsageSyncPersistenceService {
     @Transactional
     public void completeFailedTarget(Long batchJobId, LineDailyBatchTarget target, String workerId) {
         // 1. 현재 worker가 PROCESSING으로 보유한 target row를 FAILED로 닫고 failed_count를 증가시킨다.
-        completeTarget(batchJobId, target, LineDailyBatchTargetStatus.FAILED, workerId);
+        completeFailedTarget(batchJobId, target, workerId, "WORKER_FAILED", null);
+    }
+
+    /**
+     * 재시도 가능한 worker 실패를 retry_count 기준으로 RETRYABLE 또는 FAILED로 기록한다.
+     */
+    @Transactional
+    public void recordRetryableFailure(
+            Long batchJobId,
+            LineDailyBatchTarget target,
+            String workerId,
+            String lastErrorCode,
+            String lastErrorMessage
+    ) {
+        // 1. RETRYABLE로 되돌린 횟수가 한도 미만이면 count 증가 없이 다시 선점 가능한 상태로 되돌린다.
+        if (currentRetryCount(target) < MAX_TARGET_RETRY_COUNT) {
+            int updated = lineDailyBatchTargetMapper.markTargetRetryableIfProcessing(
+                    target.getId(),
+                    workerId,
+                    MAX_TARGET_RETRY_COUNT,
+                    lastErrorCode,
+                    truncateLastErrorMessage(lastErrorMessage)
+            );
+            if (updated != 1) {
+                throw new IllegalStateException("Failed to mark retryable target. targetId=" + target.getId());
+            }
+            return;
+        }
+
+        // 2. 이미 RETRYABLE 전환 횟수가 한도에 도달한 row는 retry_count 증가 없이 FAILED로 닫는다.
+        completeFailedTarget(batchJobId, target, workerId, "RETRY_EXHAUSTED", lastErrorMessage);
+    }
+
+    /**
+     * 자동 복구가 불가능한 worker 실패를 retry_count와 무관하게 FAILED로 기록한다.
+     */
+    @Transactional
+    public void recordNonRetryableFailure(
+            Long batchJobId,
+            LineDailyBatchTarget target,
+            String workerId,
+            String lastErrorCode,
+            String lastErrorMessage
+    ) {
+        completeFailedTarget(batchJobId, target, workerId, lastErrorCode, lastErrorMessage);
     }
 
     /**
@@ -125,5 +172,45 @@ public class LineDailyUsageSyncPersistenceService {
         if (countUpdated != 1) {
             throw new IllegalStateException("Failed to increment usage sync count. batchJobId=" + batchJobId);
         }
+    }
+
+    /**
+     * 현재 worker가 PROCESSING으로 보유한 target row만 FAILED로 전환한 뒤 failed_count를 증가시킨다.
+     */
+    private void completeFailedTarget(
+            Long batchJobId,
+            LineDailyBatchTarget target,
+            String workerId,
+            String lastErrorCode,
+            String lastErrorMessage
+    ) {
+        int updated = lineDailyBatchTargetMapper.markTargetFailedIfProcessing(
+                target.getId(),
+                workerId,
+                lastErrorCode,
+                truncateLastErrorMessage(lastErrorMessage)
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("Failed to mark failed target. targetId=" + target.getId());
+        }
+
+        int countUpdated = lineDailyBatchJobMapper.incrementUsageSyncProcessedCount(
+                batchJobId,
+                LineDailyBatchTargetStatus.FAILED
+        );
+        if (countUpdated != 1) {
+            throw new IllegalStateException("Failed to increment usage sync count. batchJobId=" + batchJobId);
+        }
+    }
+
+    private int currentRetryCount(LineDailyBatchTarget target) {
+        return target.getRetryCount() == null ? 0 : target.getRetryCount();
+    }
+
+    private String truncateLastErrorMessage(String lastErrorMessage) {
+        if (lastErrorMessage == null || lastErrorMessage.length() <= LAST_ERROR_MESSAGE_MAX_LENGTH) {
+            return lastErrorMessage;
+        }
+        return lastErrorMessage.substring(0, LAST_ERROR_MESSAGE_MAX_LENGTH);
     }
 }

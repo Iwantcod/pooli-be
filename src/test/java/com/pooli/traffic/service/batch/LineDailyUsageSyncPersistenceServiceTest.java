@@ -150,10 +150,11 @@ class LineDailyUsageSyncPersistenceServiceTest {
     @DisplayName("FAILED terminal 전환 성공 시 failed_count를 증가시킨다")
     void incrementsFailedCountWhenFailedTransitionSucceeds() {
         LineDailyBatchTarget target = target();
-        when(lineDailyBatchTargetMapper.markTargetTerminalIfProcessing(
+        when(lineDailyBatchTargetMapper.markTargetFailedIfProcessing(
                 target.getId(),
-                LineDailyBatchTargetStatus.FAILED,
-                WORKER_ID
+                WORKER_ID,
+                "WORKER_FAILED",
+                null
         )).thenReturn(1);
         when(lineDailyBatchJobMapper.incrementUsageSyncProcessedCount(
                 BATCH_JOB_ID,
@@ -162,6 +163,117 @@ class LineDailyUsageSyncPersistenceServiceTest {
 
         lineDailyUsageSyncPersistenceService.completeFailedTarget(BATCH_JOB_ID, target, WORKER_ID);
 
+        verify(lineDailyBatchJobMapper).incrementUsageSyncProcessedCount(
+                BATCH_JOB_ID,
+                LineDailyBatchTargetStatus.FAILED
+        );
+    }
+
+    @Test
+    @DisplayName("재시도 가능한 실패는 retry_count를 증가시키며 RETRYABLE로 전환하고 failed_count는 증가시키지 않는다")
+    void marksRetryableWithoutIncrementingFailedCountWhenRetryCountIsBelowMax() {
+        LineDailyBatchTarget target = target().toBuilder()
+                .retryCount(9)
+                .build();
+        when(lineDailyBatchTargetMapper.markTargetRetryableIfProcessing(
+                target.getId(),
+                WORKER_ID,
+                LineDailyUsageSyncPersistenceService.MAX_TARGET_RETRY_COUNT,
+                "RETRYABLE_WORKER_FAILURE",
+                "timeout"
+        )).thenReturn(1);
+
+        lineDailyUsageSyncPersistenceService.recordRetryableFailure(
+                BATCH_JOB_ID,
+                target,
+                WORKER_ID,
+                "RETRYABLE_WORKER_FAILURE",
+                "timeout"
+        );
+
+        verify(lineDailyBatchTargetMapper).markTargetRetryableIfProcessing(
+                target.getId(),
+                WORKER_ID,
+                LineDailyUsageSyncPersistenceService.MAX_TARGET_RETRY_COUNT,
+                "RETRYABLE_WORKER_FAILURE",
+                "timeout"
+        );
+        verify(lineDailyBatchJobMapper, never()).incrementUsageSyncProcessedCount(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
+    @DisplayName("retry_count가 한도에 도달한 재시도 가능 실패는 retry_count 증가 없이 FAILED count를 증가시킨다")
+    void marksFailedWithoutRetryIncrementWhenRetryCountReachedMax() {
+        LineDailyBatchTarget target = target().toBuilder()
+                .retryCount(LineDailyUsageSyncPersistenceService.MAX_TARGET_RETRY_COUNT)
+                .build();
+        when(lineDailyBatchTargetMapper.markTargetFailedIfProcessing(
+                target.getId(),
+                WORKER_ID,
+                "RETRY_EXHAUSTED",
+                "timeout"
+        )).thenReturn(1);
+        when(lineDailyBatchJobMapper.incrementUsageSyncProcessedCount(
+                BATCH_JOB_ID,
+                LineDailyBatchTargetStatus.FAILED
+        )).thenReturn(1);
+
+        lineDailyUsageSyncPersistenceService.recordRetryableFailure(
+                BATCH_JOB_ID,
+                target,
+                WORKER_ID,
+                "RETRYABLE_WORKER_FAILURE",
+                "timeout"
+        );
+
+        verify(lineDailyBatchTargetMapper, never()).markTargetRetryableIfProcessing(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+        verify(lineDailyBatchJobMapper).incrementUsageSyncProcessedCount(
+                BATCH_JOB_ID,
+                LineDailyBatchTargetStatus.FAILED
+        );
+    }
+
+    @Test
+    @DisplayName("자동 복구가 불가능한 실패는 retry_count와 무관하게 FAILED count를 증가시킨다")
+    void marksFailedForNonRetryableFailureRegardlessOfRetryCount() {
+        LineDailyBatchTarget target = target().toBuilder()
+                .retryCount(0)
+                .build();
+        when(lineDailyBatchTargetMapper.markTargetFailedIfProcessing(
+                target.getId(),
+                WORKER_ID,
+                "NON_RETRYABLE_WORKER_FAILURE",
+                "invalid redis field"
+        )).thenReturn(1);
+        when(lineDailyBatchJobMapper.incrementUsageSyncProcessedCount(
+                BATCH_JOB_ID,
+                LineDailyBatchTargetStatus.FAILED
+        )).thenReturn(1);
+
+        lineDailyUsageSyncPersistenceService.recordNonRetryableFailure(
+                BATCH_JOB_ID,
+                target,
+                WORKER_ID,
+                "NON_RETRYABLE_WORKER_FAILURE",
+                "invalid redis field"
+        );
+
+        verify(lineDailyBatchTargetMapper, never()).markTargetRetryableIfProcessing(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
         verify(lineDailyBatchJobMapper).incrementUsageSyncProcessedCount(
                 BATCH_JOB_ID,
                 LineDailyBatchTargetStatus.FAILED

@@ -153,6 +153,36 @@ class LineDailyBatchTargetMapperSqlContractTest {
         assertTrue(updateSql.contains("AND worker_id = #{workerId}"));
     }
 
+    @Test
+    @DisplayName("RETRYABLE 전환은 현재 worker가 PROCESSING으로 보유한 row만 retry_count 한도 미만에서 증가시킨다")
+    void retryableTransitionIncrementsRetryCountBelowMaxWithoutFailedTerminalCount() {
+        String sql = mapperXml();
+        String updateSql = sql.substring(sql.indexOf("<update id=\"markTargetRetryableIfProcessing\""));
+
+        assertTrue(updateSql.contains("SET status = 'RETRYABLE'"));
+        assertTrue(updateSql.contains("worker_id = NULL"));
+        assertTrue(updateSql.contains("retry_count = retry_count + 1"));
+        assertTrue(updateSql.contains("last_error_code = #{lastErrorCode}"));
+        assertTrue(updateSql.contains("last_error_message = #{lastErrorMessage}"));
+        assertTrue(updateSql.contains("AND status = 'PROCESSING'"));
+        assertTrue(updateSql.contains("AND worker_id = #{workerId}"));
+        assertTrue(updateSql.contains("AND retry_count &lt; #{maxRetryCount}"));
+    }
+
+    @Test
+    @DisplayName("FAILED 전환은 현재 worker가 PROCESSING으로 보유한 row만 retry_count 증가 없이 닫는다")
+    void failedTransitionDoesNotIncrementRetryCount() {
+        String sql = mapperXml();
+        String updateSql = sql.substring(sql.indexOf("<update id=\"markTargetFailedIfProcessing\""));
+
+        assertTrue(updateSql.contains("SET status = 'FAILED'"));
+        assertTrue(updateSql.contains("last_error_code = #{lastErrorCode}"));
+        assertTrue(updateSql.contains("last_error_message = #{lastErrorMessage}"));
+        assertTrue(updateSql.contains("AND status = 'PROCESSING'"));
+        assertTrue(updateSql.contains("AND worker_id = #{workerId}"));
+        assertFalse(updateSql.contains("retry_count = retry_count + 1"));
+    }
+
     private String mapperXml() {
         return read(MAPPER_XML);
     }

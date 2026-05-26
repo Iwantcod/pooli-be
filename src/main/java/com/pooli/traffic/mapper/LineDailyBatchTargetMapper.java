@@ -75,4 +75,25 @@ public interface LineDailyBatchTargetMapper {
             @Param("status") LineDailyBatchTargetStatus status,
             @Param("workerId") String workerId
     );
+
+    /**
+     * 현재 worker가 PROCESSING으로 보유한 row를 재시도 가능 상태로 되돌리고 retry_count를 증가시킨다.
+     */
+    int markTargetRetryableIfProcessing(
+            @Param("id") Long id,
+            @Param("workerId") String workerId,
+            @Param("maxRetryCount") int maxRetryCount,
+            @Param("lastErrorCode") String lastErrorCode,
+            @Param("lastErrorMessage") String lastErrorMessage
+    );
+
+    /**
+     * 현재 worker가 PROCESSING으로 보유한 row를 FAILED terminal 상태로 닫는다.
+     */
+    int markTargetFailedIfProcessing(
+            @Param("id") Long id,
+            @Param("workerId") String workerId,
+            @Param("lastErrorCode") String lastErrorCode,
+            @Param("lastErrorMessage") String lastErrorMessage
+    );
 }
