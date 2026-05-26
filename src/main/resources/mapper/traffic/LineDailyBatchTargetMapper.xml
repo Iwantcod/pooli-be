@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.traffic.mapper.LineDailyBatchTargetMapper">
+
+    <!-- LINE_DAILY_BATCH_TARGET row를 Java target 객체로 변환한다. -->
+    <resultMap id="LineDailyBatchTargetResultMap" type="com.pooli.traffic.domain.batch.LineDailyBatchTarget">
+        <id property="id" column="id"/>
+        <result property="usageDate" column="usage_date"/>
+        <result property="lineId" column="line_id"/>
+        <result property="status" column="status"/>
+        <result property="statusUpdatedAt" column="status_updated_at"/>
+        <result property="workerId" column="worker_id"/>
+        <result property="retryCount" column="retry_count"/>
+        <result property="lastErrorCode" column="last_error_code"/>
+        <result property="lastErrorMessage" column="last_error_message"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <!-- usage_date + line_id unique key 기준으로 단일 target row를 확인한다. -->
+    <select id="selectByUsageDateAndLineId" resultMap="LineDailyBatchTargetResultMap">
+        SELECT
+            id,
+            usage_date,
+            line_id,
+            status,
+            status_updated_at,
+            worker_id,
+            retry_count,
+            last_error_code,
+            last_error_message,
+            created_at
+        FROM LINE_DAILY_BATCH_TARGET
+        WHERE usage_date = #{usageDate}
+          AND line_id = #{lineId}
+    </select>
+
+    <!-- batch metadata id 없이 usage_date 하나로 target set 크기를 조회한다. -->
+    <select id="countByUsageDate" resultType="long">
+        SELECT COUNT(*)
+        FROM LINE_DAILY_BATCH_TARGET
+        WHERE usage_date = #{usageDate}
+    </select>
+
+</mapper>

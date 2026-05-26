@@ -21,6 +21,8 @@ class LineDailyBatchJobMapperSqlContractTest {
     private static final String MAPPER_XML = "src/main/resources/mapper/traffic/LineDailyBatchJobMapper.xml";
     private static final String MIGRATION_SQL =
             "src/main/resources/db/migration/V2605250400__create_line_daily_batch_job.sql";
+    private static final String DROP_UPDATED_AT_MIGRATION_SQL =
+            "src/main/resources/db/migration/V2605260100__drop_line_daily_batch_job_updated_at.sql";
 
     @Test
     @DisplayName("LINE_DAILY_BATCH_JOB migration은 DB unique key를 만들지 않는다")
@@ -55,6 +57,18 @@ class LineDailyBatchJobMapperSqlContractTest {
         assertTrue(sql.contains("#{successCount}"));
         assertTrue(sql.contains("#{failedCount}"));
         assertTrue(sql.contains("#{skippedCount}"));
+    }
+
+    @Test
+    @DisplayName("LINE_DAILY_BATCH_JOB updated_at 컬럼은 후속 migration으로 제거하고 mapper에서 사용하지 않는다")
+    void updatedAtIsDroppedAndNotMapped() {
+        String mapper = mapperXml();
+        String migration = read(DROP_UPDATED_AT_MIGRATION_SQL);
+
+        assertTrue(migration.contains("ALTER TABLE LINE_DAILY_BATCH_JOB"));
+        assertTrue(migration.contains("DROP COLUMN updated_at"));
+        assertFalse(mapper.contains("property=\"updatedAt\""));
+        assertFalse(mapper.contains("column=\"updated_at\""));
     }
 
     private String mapperXml() {

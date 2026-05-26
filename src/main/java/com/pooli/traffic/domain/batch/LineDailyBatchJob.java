@@ -66,7 +66,4 @@ public class LineDailyBatchJob {
 
     /** metadata row 생성 시각 */
     private LocalDateTime createdAt;
-
-    /** metadata row 최종 수정 시각 */
-    private LocalDateTime updatedAt;
 }

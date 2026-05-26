@@ -23,7 +23,6 @@
         <result property="lastErrorCode" column="last_error_code"/>
         <result property="lastErrorMessage" column="last_error_message"/>
         <result property="createdAt" column="created_at"/>
-        <result property="updatedAt" column="updated_at"/>
     </resultMap>
 
     <!--
@@ -47,8 +46,7 @@
             manager_instance_id,
             last_error_code,
             last_error_message,
-            created_at,
-            updated_at
+            created_at
         FROM LINE_DAILY_BATCH_JOB
         WHERE batch_name = #{batchName}
           AND usage_date = #{usageDate}
@@ -67,8 +65,7 @@
             success_count,
             failed_count,
             skipped_count,
-            created_at,
-            updated_at
+            created_at
         ) VALUES (
             #{batchName},
             #{usageDate},
@@ -78,7 +75,6 @@
             #{successCount},
             #{failedCount},
             #{skippedCount},
-            CURRENT_TIMESTAMP(6),
             CURRENT_TIMESTAMP(6)
         )
     </insert>
