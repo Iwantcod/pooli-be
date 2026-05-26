@@ -79,4 +79,15 @@
         )
     </insert>
 
+    <!-- manager가 target insert batch를 실제 실행 가능 상태로 여는 CAS성 상태 전환이다. -->
+    <update id="updateStatusFromPending">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET status = #{status},
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            run_started_at = COALESCE(run_started_at, CURRENT_TIMESTAMP(6)),
+            manager_instance_id = #{managerInstanceId}
+        WHERE id = #{id}
+          AND status = 'PENDING'
+    </update>
+
 </mapper>

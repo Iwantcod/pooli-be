@@ -53,4 +53,25 @@ public class LineDailyBatchJobService {
 
         return new LineDailyBatchJobCreateResult(true, batchJob);
     }
+
+    /**
+     * 이미 준비된 PENDING metadata row를 실제 실행 상태로 전환한다.
+     * target insert batch를 여는 용도로 사용하며, PENDING이 아닌 row는 건드리지 않는다.
+     */
+    @Transactional
+    public boolean startPendingBatch(LineDailyBatchJob batchJob, String managerInstanceId) {
+        // 1. 호출 시점에 이미 실행/종료된 metadata라면 상태 전환 SQL을 실행하지 않는다.
+        if (batchJob.getStatus() != LineDailyBatchStatus.PENDING) {
+            return false;
+        }
+
+        // 2. DB에서도 PENDING 조건을 다시 확인해 동시 manager 실행 시 중복 RUNNING 전환을 막는다.
+        int updated = lineDailyBatchJobMapper.updateStatusFromPending(
+                batchJob.getId(),
+                LineDailyBatchStatus.RUNNING,
+                managerInstanceId
+        );
+        // 3. affected rows 1건만 manager가 이번 실행을 열었다는 신호로 반환한다.
+        return updated == 1;
+    }
 }

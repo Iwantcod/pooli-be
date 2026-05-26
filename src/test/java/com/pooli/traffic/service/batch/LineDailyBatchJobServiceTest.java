@@ -108,6 +108,41 @@ class LineDailyBatchJobServiceTest {
         assertEquals(0L, inserted.getSkippedCount());
     }
 
+    @Test
+    @DisplayName("PENDING batch만 RUNNING으로 전환한다")
+    void startsPendingBatch() {
+        LineDailyBatchJob pending = batchJob(LineDailyBatchStatus.PENDING);
+        when(lineDailyBatchJobMapper.updateStatusFromPending(
+                pending.getId(),
+                LineDailyBatchStatus.RUNNING,
+                "manager-1"
+        )).thenReturn(1);
+
+        boolean result = lineDailyBatchJobService.startPendingBatch(pending, "manager-1");
+
+        assertTrue(result);
+        verify(lineDailyBatchJobMapper).updateStatusFromPending(
+                pending.getId(),
+                LineDailyBatchStatus.RUNNING,
+                "manager-1"
+        );
+    }
+
+    @Test
+    @DisplayName("PENDING이 아닌 batch는 RUNNING 전환 SQL을 실행하지 않는다")
+    void doesNotStartNonPendingBatch() {
+        LineDailyBatchJob running = batchJob(LineDailyBatchStatus.RUNNING);
+
+        boolean result = lineDailyBatchJobService.startPendingBatch(running, "manager-1");
+
+        assertFalse(result);
+        verify(lineDailyBatchJobMapper, never()).updateStatusFromPending(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
     private LineDailyBatchJob batchJob(LineDailyBatchStatus status) {
         return LineDailyBatchJob.builder()
                 .id(1L)

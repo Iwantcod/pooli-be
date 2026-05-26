@@ -60,6 +60,19 @@ class LineDailyBatchJobMapperSqlContractTest {
     }
 
     @Test
+    @DisplayName("target insert batch 시작은 PENDING row만 RUNNING으로 전환한다")
+    void startRunningUsesPendingGuard() {
+        String sql = mapperXml();
+
+        assertTrue(sql.contains("<update id=\"updateStatusFromPending\">"));
+        assertTrue(sql.contains("SET status = #{status}"));
+        assertTrue(sql.contains("run_started_at = COALESCE(run_started_at, CURRENT_TIMESTAMP(6))"));
+        assertTrue(sql.contains("manager_instance_id = #{managerInstanceId}"));
+        assertTrue(sql.contains("WHERE id = #{id}"));
+        assertTrue(sql.contains("AND status = 'PENDING'"));
+    }
+
+    @Test
     @DisplayName("LINE_DAILY_BATCH_JOB updated_at 컬럼은 후속 migration으로 제거하고 mapper에서 사용하지 않는다")
     void updatedAtIsDroppedAndNotMapped() {
         String mapper = mapperXml();

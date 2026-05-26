@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Param;
 
 import com.pooli.traffic.domain.batch.BatchName;
 import com.pooli.traffic.domain.batch.LineDailyBatchJob;
+import com.pooli.traffic.domain.batch.LineDailyBatchStatus;
 
 /**
  * LINE_DAILY_BATCH_JOB metadata 조회/생성을 담당한다.
@@ -27,4 +28,13 @@ public interface LineDailyBatchJobMapper {
      * 신규 자동 실행 metadata를 PENDING 상태로 생성한다.
      */
     int insert(LineDailyBatchJob batchJob);
+
+    /**
+     * PENDING metadata row만 RUNNING으로 전환한다.
+     */
+    int updateStatusFromPending(
+            @Param("id") Long id,
+            @Param("status") LineDailyBatchStatus status,
+            @Param("managerInstanceId") String managerInstanceId
+    );
 }
