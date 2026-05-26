@@ -48,4 +48,21 @@ public interface LineDailyBatchTargetMapper {
             @Param("usageDate") LocalDate usageDate,
             @Param("lineIds") List<Long> lineIds
     );
+
+    /**
+     * worker가 처리할 target row를 짧은 트랜잭션 안에서 잠금 조회한다.
+     */
+    List<LineDailyBatchTarget> selectClaimableTargetsForUpdate(
+            @Param("usageDate") LocalDate usageDate,
+            @Param("processingLeaseTimeoutSeconds") int processingLeaseTimeoutSeconds,
+            @Param("limit") int limit
+    );
+
+    /**
+     * 잠금 조회한 target row를 PROCESSING으로 선점한다.
+     */
+    int markTargetsProcessing(
+            @Param("ids") List<Long> ids,
+            @Param("workerId") String workerId
+    );
 }

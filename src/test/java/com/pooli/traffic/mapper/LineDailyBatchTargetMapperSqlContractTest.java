@@ -99,13 +99,46 @@ class LineDailyBatchTargetMapperSqlContractTest {
     @DisplayName("INSERT IGNORE target row 생성은 기존 row 처리 상태 컬럼을 갱신하지 않는다")
     void insertIgnoreDoesNotResetExistingTargetStatusColumns() {
         String sql = mapperXml();
-        String insertSql = sql.substring(sql.indexOf("<insert id=\"insertIgnoreTargetRows\""));
+        String insertSql = sql.substring(
+                sql.indexOf("<insert id=\"insertIgnoreTargetRows\""),
+                sql.indexOf("</insert>", sql.indexOf("<insert id=\"insertIgnoreTargetRows\""))
+        );
 
         assertTrue(insertSql.contains("'PENDING'"));
         assertFalse(insertSql.contains("ON DUPLICATE KEY UPDATE"));
         assertFalse(insertSql.contains("worker_id"));
         assertFalse(insertSql.contains("last_error_code"));
         assertFalse(insertSql.contains("last_error_message"));
+    }
+
+    @Test
+    @DisplayName("worker claim 조회는 PENDING, RETRYABLE, lease timeout PROCESSING row를 SKIP LOCKED로 선점한다")
+    void workerClaimSelectsClaimableTargetsWithSkipLocked() {
+        String sql = mapperXml();
+        String claimSql = sql.substring(sql.indexOf("<select id=\"selectClaimableTargetsForUpdate\""));
+
+        assertTrue(claimSql.contains("WHERE usage_date = #{usageDate}"));
+        assertTrue(claimSql.contains("status IN ('PENDING', 'RETRYABLE')"));
+        assertTrue(claimSql.contains("status = 'PROCESSING'"));
+        assertTrue(claimSql.contains("status_updated_at &lt; DATE_SUB("));
+        assertTrue(claimSql.contains("INTERVAL #{processingLeaseTimeoutSeconds} SECOND"));
+        assertTrue(claimSql.contains("ORDER BY status_updated_at ASC, id ASC"));
+        assertTrue(claimSql.contains("LIMIT #{limit}"));
+        assertTrue(claimSql.contains("FOR UPDATE SKIP LOCKED"));
+    }
+
+    @Test
+    @DisplayName("worker claim 전환은 선점 row만 PROCESSING으로 바꾸고 worker_id를 기록한다")
+    void workerClaimUpdateMarksTargetsProcessing() {
+        String sql = mapperXml();
+        String updateSql = sql.substring(sql.indexOf("<update id=\"markTargetsProcessing\""));
+
+        assertTrue(updateSql.contains("SET status = 'PROCESSING'"));
+        assertTrue(updateSql.contains("status_updated_at = CURRENT_TIMESTAMP(6)"));
+        assertTrue(updateSql.contains("worker_id = #{workerId}"));
+        assertTrue(updateSql.contains("WHERE id IN"));
+        assertTrue(updateSql.contains("collection=\"ids\""));
+        assertTrue(updateSql.contains("AND status IN ('PENDING', 'RETRYABLE', 'PROCESSING')"));
     }
 
     private String mapperXml() {

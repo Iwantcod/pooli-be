@@ -86,4 +86,47 @@
         </foreach>
     </insert>
 
+    <!-- worker가 PENDING/RETRYABLE 및 lease timeout이 지난 PROCESSING row를 잠금 선점한다. -->
+    <select id="selectClaimableTargetsForUpdate" resultMap="LineDailyBatchTargetResultMap">
+        SELECT
+            id,
+            usage_date,
+            line_id,
+            status,
+            status_updated_at,
+            worker_id,
+            retry_count,
+            last_error_code,
+            last_error_message,
+            created_at
+        FROM LINE_DAILY_BATCH_TARGET
+        WHERE usage_date = #{usageDate}
+          AND (
+              status IN ('PENDING', 'RETRYABLE')
+              OR (
+                  status = 'PROCESSING'
+                  AND status_updated_at &lt; DATE_SUB(
+                      CURRENT_TIMESTAMP(6),
+                      INTERVAL #{processingLeaseTimeoutSeconds} SECOND
+                  )
+              )
+          )
+        ORDER BY status_updated_at ASC, id ASC
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <!-- 잠금 조회한 row만 PROCESSING으로 전환하고 실제 Redis/MySQL 처리는 lock 해제 후 수행한다. -->
+    <update id="markTargetsProcessing">
+        UPDATE LINE_DAILY_BATCH_TARGET
+        SET status = 'PROCESSING',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            worker_id = #{workerId}
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+          AND status IN ('PENDING', 'RETRYABLE', 'PROCESSING')
+    </update>
+
 </mapper>
