@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.pooli.traffic.domain.batch.BatchName;
 import com.pooli.traffic.domain.batch.LineDailyBatchJob;
 import com.pooli.traffic.domain.batch.LineDailyBatchStatus;
+import com.pooli.traffic.domain.batch.LineDailyBatchTarget;
 
 @ExtendWith(MockitoExtension.class)
 class LineDailyUsageSyncWorkerServiceTest {
@@ -25,6 +26,9 @@ class LineDailyUsageSyncWorkerServiceTest {
 
     @Mock
     private LineDailyBatchTargetClaimService lineDailyBatchTargetClaimService;
+
+    @Mock
+    private LineDailyUsageRedisReader lineDailyUsageRedisReader;
 
     @InjectMocks
     private LineDailyUsageSyncWorkerService lineDailyUsageSyncWorkerService;
@@ -51,5 +55,32 @@ class LineDailyUsageSyncWorkerServiceTest {
                 anyString(),
                 org.mockito.ArgumentMatchers.eq(LineDailyUsageSyncWorkerService.WORKER_CLAIM_CHUNK_SIZE)
         );
+    }
+
+    @Test
+    @DisplayName("선점한 target row별 Redis 사용량 snapshot을 조회한다")
+    void readsRedisUsageSnapshotForClaimedTargets() {
+        LineDailyBatchJob batchJob = LineDailyBatchJob.builder()
+                .id(2L)
+                .batchName(BatchName.LINE_DAILY_USAGE_SYNC_BATCH)
+                .usageDate(USAGE_DATE)
+                .status(LineDailyBatchStatus.RUNNING)
+                .build();
+        LineDailyBatchTarget target = LineDailyBatchTarget.builder()
+                .id(10L)
+                .usageDate(USAGE_DATE)
+                .lineId(11L)
+                .build();
+        when(lineDailyBatchTargetClaimService.claim(
+                org.mockito.ArgumentMatchers.eq(USAGE_DATE),
+                anyString(),
+                org.mockito.ArgumentMatchers.eq(LineDailyUsageSyncWorkerService.WORKER_CLAIM_CHUNK_SIZE)
+        )).thenReturn(List.of(target));
+        when(lineDailyUsageRedisReader.read(target))
+                .thenReturn(new LineDailyUsageReadResult(null, List.of(), null));
+
+        lineDailyUsageSyncWorkerService.run(batchJob);
+
+        verify(lineDailyUsageRedisReader).read(target);
     }
 }
