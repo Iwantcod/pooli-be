@@ -363,4 +363,15 @@ The exploration log may be omitted ONLY for:
 
 ---
 
+## 14. User-Authorized Code Modification Exception
+
+The read-only restriction defined in §1 may be lifted **only when the user explicitly grants permission** within the current conversation.
+
+- When the user states permission (e.g., "코드 수정을 허용합니다", "이번에는 직접 수정해주세요"), code creation, modification, and deletion are permitted for that specific scope and turn.
+- The permission applies **only to the explicitly authorized scope**. It does NOT carry over to unrelated files or subsequent turns unless re-granted.
+- Even when authorized, all other rules (§10 output format, §11 exploration requirement, §12 anti-pattern policy, etc.) continue to apply.
+- After completing the authorized modification, revert to strict read-only mode.
+
+---
+
 End of Gemini analysis-only rules.
