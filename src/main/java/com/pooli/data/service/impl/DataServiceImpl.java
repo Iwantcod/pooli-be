@@ -207,17 +207,19 @@ public class DataServiceImpl implements DataService {
               sharedPoolTotalAmount = normalizeTotalAmount(currentDisplay.getSharedPoolTotalAmount());
               sharedPoolRemainingAmount = normalizeRemainingAmount(currentDisplay.getSharedPoolRemainingAmount());
 
-              // 9. 개인풀 총량과 잔량이 모두 유효하면 총량-잔량 기준 사용량을 최종 표시값으로 사용합니다.
+              // 9. 개인풀 총량과 잔량이 모두 유효하고 유한하면 총량-잔량 기준 사용량을 최종 표시값으로 사용합니다.
               if (personalTotalAmount != null
                       && personalRemainingAmount != null
-                      && personalTotalAmount >= 0L) {
+                      && personalTotalAmount >= 0L
+                      && personalRemainingAmount >= 0L) {
                   personalUsedAmount = Math.max(0L, personalTotalAmount - personalRemainingAmount);
               }
 
-              // 10. 공유풀 총량과 잔량이 모두 유효하면 총량-잔량 기준 사용량을 최종 표시값으로 사용합니다.
+              // 10. 공유풀 총량과 잔량이 모두 유효하고 유한하면 총량-잔량 기준 사용량을 최종 표시값으로 사용합니다.
               if (sharedPoolTotalAmount != null
                       && sharedPoolRemainingAmount != null
-                      && sharedPoolTotalAmount >= 0L) {
+                      && sharedPoolTotalAmount >= 0L
+                      && sharedPoolRemainingAmount >= 0L) {
                   sharedPoolUsedAmount = Math.max(0L, sharedPoolTotalAmount - sharedPoolRemainingAmount);
               }
           }
