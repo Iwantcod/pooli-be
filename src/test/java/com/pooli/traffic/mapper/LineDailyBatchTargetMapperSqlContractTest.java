@@ -76,10 +76,7 @@ class LineDailyBatchTargetMapperSqlContractTest {
     @DisplayName("empty poll 조회는 usage_date 기준 non-terminal target row만 집계한다")
     void mapperCountsNonTerminalTargetsByUsageDate() {
         String sql = mapperXml();
-        int start = sql.indexOf("<select id=\"countNonTerminalByUsageDate\"");
-        int end = sql.indexOf("</select>", start);
-        if (end == -1) fail("</select> not found");
-        String selectSql = sql.substring(start, end + "</select>".length());
+        String selectSql = extractBlock(sql, "<select id=\"countNonTerminalByUsageDate\"", "</select>", "countNonTerminalByUsageDate");
 
         assertTrue(selectSql.contains("FROM LINE_DAILY_BATCH_TARGET"));
         assertTrue(selectSql.contains("WHERE usage_date = #{usageDate}"));
@@ -93,10 +90,7 @@ class LineDailyBatchTargetMapperSqlContractTest {
     @DisplayName("rerun target_count 조회는 usage_date와 status 조건을 사용한다")
     void mapperCountsTargetsByUsageDateAndStatus() {
         String sql = mapperXml();
-        int start = sql.indexOf("<select id=\"countByUsageDateAndStatus\"");
-        int end = sql.indexOf("</select>", start);
-        if (end == -1) fail("</select> not found");
-        String selectSql = sql.substring(start, end + "</select>".length());
+        String selectSql = extractBlock(sql, "<select id=\"countByUsageDateAndStatus\"", "</select>", "countByUsageDateAndStatus");
 
         assertTrue(selectSql.contains("FROM LINE_DAILY_BATCH_TARGET"));
         assertTrue(selectSql.contains("WHERE usage_date = #{usageDate}"));
@@ -131,10 +125,7 @@ class LineDailyBatchTargetMapperSqlContractTest {
     @DisplayName("INSERT IGNORE target row 생성은 기존 row 처리 상태 컬럼을 갱신하지 않는다")
     void insertIgnoreDoesNotResetExistingTargetStatusColumns() {
         String sql = mapperXml();
-        int start = sql.indexOf("<insert id=\"insertIgnoreTargetRows\"");
-        int end = sql.indexOf("</insert>", start);
-        if (end == -1) fail("</insert> not found");
-        String insertSql = sql.substring(start, end + "</insert>".length());
+        String insertSql = extractBlock(sql, "<insert id=\"insertIgnoreTargetRows\"", "</insert>", "insertIgnoreTargetRows");
 
         assertTrue(insertSql.contains("'PENDING'"));
         assertFalse(insertSql.contains("ON DUPLICATE KEY UPDATE"));
@@ -147,10 +138,7 @@ class LineDailyBatchTargetMapperSqlContractTest {
     @DisplayName("worker claim 조회는 PENDING, RETRYABLE, lease timeout PROCESSING row를 SKIP LOCKED로 선점한다")
     void workerClaimSelectsClaimableTargetsWithSkipLocked() {
         String sql = mapperXml();
-        int start = sql.indexOf("<select id=\"selectClaimableTargetsForUpdate\"");
-        int end = sql.indexOf("</select>", start);
-        if (end == -1) fail("</select> not found");
-        String claimSql = sql.substring(start, end + "</select>".length());
+        String claimSql = extractBlock(sql, "<select id=\"selectClaimableTargetsForUpdate\"", "</select>", "selectClaimableTargetsForUpdate");
 
         assertTrue(claimSql.contains("WHERE usage_date = #{usageDate}"));
         assertTrue(claimSql.contains("status IN ('PENDING', 'RETRYABLE')"));
@@ -166,10 +154,7 @@ class LineDailyBatchTargetMapperSqlContractTest {
     @DisplayName("worker claim 전환은 선점 row만 PROCESSING으로 바꾸고 worker_id를 기록한다")
     void workerClaimUpdateMarksTargetsProcessing() {
         String sql = mapperXml();
-        int start = sql.indexOf("<update id=\"markTargetsProcessing\"");
-        int end = sql.indexOf("</update>", start);
-        if (end == -1) fail("</update> not found");
-        String updateSql = sql.substring(start, end + "</update>".length());
+        String updateSql = extractBlock(sql, "<update id=\"markTargetsProcessing\"", "</update>", "markTargetsProcessing");
 
         assertTrue(updateSql.contains("SET status = 'PROCESSING'"));
         assertTrue(updateSql.contains("status_updated_at = CURRENT_TIMESTAMP(6)"));
@@ -183,10 +168,7 @@ class LineDailyBatchTargetMapperSqlContractTest {
     @DisplayName("terminal 전환은 현재 worker가 PROCESSING으로 선점한 row만 갱신한다")
     void terminalTransitionUsesProcessingAndWorkerGuard() {
         String sql = mapperXml();
-        int start = sql.indexOf("<update id=\"markTargetTerminalIfProcessing\"");
-        int end = sql.indexOf("</update>", start);
-        if (end == -1) fail("</update> not found");
-        String updateSql = sql.substring(start, end + "</update>".length());
+        String updateSql = extractBlock(sql, "<update id=\"markTargetTerminalIfProcessing\"", "</update>", "markTargetTerminalIfProcessing");
 
         assertTrue(updateSql.contains("SET status = #{status}"));
         assertTrue(updateSql.contains("WHERE id = #{id}"));
@@ -198,10 +180,7 @@ class LineDailyBatchTargetMapperSqlContractTest {
     @DisplayName("RETRYABLE 전환은 현재 worker가 PROCESSING으로 보유한 row만 retry_count 한도 미만에서 증가시킨다")
     void retryableTransitionIncrementsRetryCountBelowMaxWithoutFailedTerminalCount() {
         String sql = mapperXml();
-        int start = sql.indexOf("<update id=\"markTargetRetryableIfProcessing\"");
-        int end = sql.indexOf("</update>", start);
-        if (end == -1) fail("</update> not found");
-        String updateSql = sql.substring(start, end + "</update>".length());
+        String updateSql = extractBlock(sql, "<update id=\"markTargetRetryableIfProcessing\"", "</update>", "markTargetRetryableIfProcessing");
 
         assertTrue(updateSql.contains("SET status = 'RETRYABLE'"));
         assertTrue(updateSql.contains("worker_id = NULL"));
@@ -217,10 +196,7 @@ class LineDailyBatchTargetMapperSqlContractTest {
     @DisplayName("FAILED 전환은 현재 worker가 PROCESSING으로 보유한 row만 retry_count 증가 없이 닫는다")
     void failedTransitionDoesNotIncrementRetryCount() {
         String sql = mapperXml();
-        int start = sql.indexOf("<update id=\"markTargetFailedIfProcessing\"");
-        int end = sql.indexOf("</update>", start);
-        if (end == -1) fail("</update> not found");
-        String updateSql = sql.substring(start, end + "</update>".length());
+        String updateSql = extractBlock(sql, "<update id=\"markTargetFailedIfProcessing\"", "</update>", "markTargetFailedIfProcessing");
 
         assertTrue(updateSql.contains("SET status = 'FAILED'"));
         assertTrue(updateSql.contains("last_error_code = #{lastErrorCode}"));
@@ -234,10 +210,7 @@ class LineDailyBatchTargetMapperSqlContractTest {
     @DisplayName("rerun은 FAILED target row만 RETRYABLE로 되돌리고 DONE/SKIPPED는 건드리지 않는다")
     void rerunTransitionUpdatesOnlyFailedTargets() {
         String sql = mapperXml();
-        int start = sql.indexOf("<update id=\"markFailedTargetsRetryableByUsageDate\"");
-        int end = sql.indexOf("</update>", start);
-        if (end == -1) fail("</update> not found");
-        String updateSql = sql.substring(start, end + "</update>".length());
+        String updateSql = extractBlock(sql, "<update id=\"markFailedTargetsRetryableByUsageDate\"", "</update>", "markFailedTargetsRetryableByUsageDate");
 
         assertTrue(updateSql.contains("SET status = 'RETRYABLE'"));
         assertTrue(updateSql.contains("worker_id = NULL"));
@@ -245,6 +218,18 @@ class LineDailyBatchTargetMapperSqlContractTest {
         assertTrue(updateSql.contains("AND status = 'FAILED'"));
         assertFalse(updateSql.contains("'DONE'"));
         assertFalse(updateSql.contains("'SKIPPED'"));
+    }
+
+    private String extractBlock(String sql, String startToken, String endToken, String failMsg) {
+        int start = sql.indexOf(startToken);
+        if (start == -1) {
+            fail(failMsg + " - start tag not found: " + startToken);
+        }
+        int end = sql.indexOf(endToken, start);
+        if (end == -1) {
+            fail(failMsg + " - " + endToken + " not found");
+        }
+        return sql.substring(start, end + endToken.length());
     }
 
     private String mapperXml() {
