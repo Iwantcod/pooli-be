@@ -3,6 +3,7 @@ package com.pooli.traffic.service.batch;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -12,6 +13,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -107,6 +109,53 @@ class LineDailyUsageSyncWorkerServiceTest {
                 org.mockito.ArgumentMatchers.any(LineDailyUsageReadResult.class),
                 anyString()
         );
+    }
+
+    @Test
+    @DisplayName("여러 worker cycle은 각자 선점한 target row만 처리한다")
+    void multipleWorkerCyclesProcessOnlyTheirClaimedTargets() {
+        LineDailyBatchJob batchJob = batchJob();
+        LineDailyBatchTarget firstTarget = target().toBuilder()
+                .id(10L)
+                .lineId(101L)
+                .build();
+        LineDailyBatchTarget secondTarget = target().toBuilder()
+                .id(11L)
+                .lineId(102L)
+                .build();
+        LineDailyUsageReadResult firstSnapshot = new LineDailyUsageReadResult(100L, List.of(), null);
+        LineDailyUsageReadResult secondSnapshot = new LineDailyUsageReadResult(200L, List.of(), null);
+        when(lineDailyBatchTargetClaimService.claim(
+                org.mockito.ArgumentMatchers.eq(USAGE_DATE),
+                anyString(),
+                org.mockito.ArgumentMatchers.eq(LineDailyUsageSyncWorkerService.WORKER_CLAIM_CHUNK_SIZE)
+        )).thenReturn(List.of(firstTarget), List.of(secondTarget));
+        when(lineDailyUsageRedisReader.read(firstTarget)).thenReturn(firstSnapshot);
+        when(lineDailyUsageRedisReader.read(secondTarget)).thenReturn(secondSnapshot);
+
+        LineDailyUsageSyncWorkerRunResult firstResult = lineDailyUsageSyncWorkerService.run(batchJob);
+        LineDailyUsageSyncWorkerRunResult secondResult = lineDailyUsageSyncWorkerService.run(batchJob);
+
+        assertEquals(LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY, firstResult);
+        assertEquals(LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY, secondResult);
+        ArgumentCaptor<String> workerIdCaptor = ArgumentCaptor.forClass(String.class);
+        verify(lineDailyUsageSyncPersistenceService).persistUsageAndCompleteTarget(
+                org.mockito.ArgumentMatchers.eq(batchJob.getId()),
+                org.mockito.ArgumentMatchers.eq(firstTarget),
+                org.mockito.ArgumentMatchers.eq(firstSnapshot),
+                workerIdCaptor.capture()
+        );
+        verify(lineDailyUsageSyncPersistenceService).persistUsageAndCompleteTarget(
+                org.mockito.ArgumentMatchers.eq(batchJob.getId()),
+                org.mockito.ArgumentMatchers.eq(secondTarget),
+                org.mockito.ArgumentMatchers.eq(secondSnapshot),
+                workerIdCaptor.capture()
+        );
+        verify(lineDailyUsageRedisReader, times(1)).read(firstTarget);
+        verify(lineDailyUsageRedisReader, times(1)).read(secondTarget);
+        org.assertj.core.api.Assertions.assertThat(workerIdCaptor.getAllValues())
+                .allMatch(workerId -> workerId.startsWith("line-daily-worker:" + USAGE_DATE + ":"))
+                .doesNotHaveDuplicates();
     }
 
     @Test
