@@ -28,6 +28,22 @@ class TrafficDailyUsageBatchMapperSqlContractTest {
     }
 
     @Test
+    @DisplayName("일별 총 사용량 bulk insert는 rows foreach와 empty list no-op 분기를 가진다")
+    void dailyTotalUsagesBulkInsertUsesRowsForeachAndEmptyNoOp() {
+        String sql = insertStatement("insertDailyTotalUsages");
+
+        assertTrue(sql.contains("INSERT INTO DAILY_TOTAL_DATA"));
+        assertTrue(sql.contains("<foreach collection=\"rows\" item=\"row\" separator=\",\">"));
+        assertTrue(sql.contains("#{row.usageDate}"));
+        assertTrue(sql.contains("#{row.lineId}"));
+        assertTrue(sql.contains("#{row.totalUsageData}"));
+        assertTrue(sql.contains("<otherwise>"));
+        assertTrue(sql.contains("WHERE 1 = 0"));
+        assertFalse(sql.contains("ON DUPLICATE KEY UPDATE"));
+        assertFalse(sql.contains("total_usage_data = total_usage_data +"));
+    }
+
+    @Test
     @DisplayName("일별 앱 사용량은 개인/공유/QoS 값을 multi-value insert-only 계약으로 저장한다")
     void dailyAppUsageUsesInsertOnlyContract() {
         String sql = insertStatement("insertDailyAppUsages");
@@ -51,6 +67,25 @@ class TrafficDailyUsageBatchMapperSqlContractTest {
         assertTrue(sql.contains("INSERT INTO FAMILY_SHARED_USAGE_DAILY"));
         assertTrue(sql.contains("#{usageAmount}"));
         assertTrue(sql.contains("contribution_amount"));
+        assertFalse(sql.contains("ON DUPLICATE KEY UPDATE"));
+        assertFalse(sql.contains("contribution_amount ="));
+        assertFalse(sql.contains("contribution_amount +"));
+    }
+
+    @Test
+    @DisplayName("일별 공유풀 사용량 bulk insert는 rows foreach와 empty list no-op 분기를 가진다")
+    void familySharedDailyUsagesBulkInsertUsesRowsForeachAndEmptyNoOp() {
+        String sql = insertStatement("insertFamilySharedDailyUsages");
+
+        assertTrue(sql.contains("INSERT INTO FAMILY_SHARED_USAGE_DAILY"));
+        assertTrue(sql.contains("<foreach collection=\"rows\" item=\"row\" separator=\",\">"));
+        assertTrue(sql.contains("#{row.usageDate}"));
+        assertTrue(sql.contains("#{row.familyId}"));
+        assertTrue(sql.contains("#{row.lineId}"));
+        assertTrue(sql.contains("#{row.usageAmount}"));
+        assertTrue(sql.contains("contribution_amount"));
+        assertTrue(sql.contains("<otherwise>"));
+        assertTrue(sql.contains("WHERE 1 = 0"));
         assertFalse(sql.contains("ON DUPLICATE KEY UPDATE"));
         assertFalse(sql.contains("contribution_amount ="));
         assertFalse(sql.contains("contribution_amount +"));

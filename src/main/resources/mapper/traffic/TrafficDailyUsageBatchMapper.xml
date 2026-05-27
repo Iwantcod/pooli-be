@@ -26,6 +26,49 @@
     </insert>
 
     <!--
+        청크 단위 총 사용량을 한 번에 삽입한다.
+        rows가 비어 있으면 문법 오류가 나는 빈 VALUES 대신 0건 insert no-op SQL을 실행한다.
+    -->
+    <insert id="insertDailyTotalUsages">
+        <choose>
+            <when test="rows != null and rows.size() > 0">
+                INSERT INTO DAILY_TOTAL_DATA (
+                    usage_date,
+                    line_id,
+                    total_usage_data,
+                    created_at,
+                    updated_at
+                ) VALUES
+                <foreach collection="rows" item="row" separator=",">
+                    (
+                        #{row.usageDate},
+                        #{row.lineId},
+                        #{row.totalUsageData},
+                        CURRENT_TIMESTAMP(6),
+                        CURRENT_TIMESTAMP(6)
+                    )
+                </foreach>
+            </when>
+            <otherwise>
+                INSERT INTO DAILY_TOTAL_DATA (
+                    usage_date,
+                    line_id,
+                    total_usage_data,
+                    created_at,
+                    updated_at
+                )
+                SELECT
+                    NULL,
+                    NULL,
+                    NULL,
+                    CURRENT_TIMESTAMP(6),
+                    CURRENT_TIMESTAMP(6)
+                WHERE 1 = 0
+            </otherwise>
+        </choose>
+    </insert>
+
+    <!--
         앱별 사용량도 usage_date/line_id/application_id 기준 최초 삽입만 허용한다.
         재처리 중복이 발생하면 기존 개인/공유/QoS 값을 덮어쓰지 않는다.
     -->
@@ -76,6 +119,57 @@
             CURRENT_TIMESTAMP(6),
             CURRENT_TIMESTAMP(6)
         )
+    </insert>
+
+    <!--
+        청크 단위 공유풀 사용량을 한 번에 삽입한다.
+        contribution_amount는 기여 로직에서 관리하므로 bulk insert 시에도 0으로만 생성한다.
+    -->
+    <insert id="insertFamilySharedDailyUsages">
+        <choose>
+            <when test="rows != null and rows.size() > 0">
+                INSERT INTO FAMILY_SHARED_USAGE_DAILY (
+                    usage_date,
+                    family_id,
+                    line_id,
+                    usage_amount,
+                    contribution_amount,
+                    created_at,
+                    updated_at
+                ) VALUES
+                <foreach collection="rows" item="row" separator=",">
+                    (
+                        #{row.usageDate},
+                        #{row.familyId},
+                        #{row.lineId},
+                        #{row.usageAmount},
+                        0,
+                        CURRENT_TIMESTAMP(6),
+                        CURRENT_TIMESTAMP(6)
+                    )
+                </foreach>
+            </when>
+            <otherwise>
+                INSERT INTO FAMILY_SHARED_USAGE_DAILY (
+                    usage_date,
+                    family_id,
+                    line_id,
+                    usage_amount,
+                    contribution_amount,
+                    created_at,
+                    updated_at
+                )
+                SELECT
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    0,
+                    CURRENT_TIMESTAMP(6),
+                    CURRENT_TIMESTAMP(6)
+                WHERE 1 = 0
+            </otherwise>
+        </choose>
     </insert>
 
 </mapper>

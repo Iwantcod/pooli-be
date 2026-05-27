@@ -20,6 +20,12 @@ public interface TrafficDailyUsageBatchMapper {
     );
 
     /**
+     * 일별 총 사용량 row 목록을 한 번의 multi-value insert로 저장한다.
+     * 중복 key 발생 시 기존 총 사용량을 덮어쓰지 않고 DB 예외로 실패시킨다.
+     */
+    int insertDailyTotalUsages(@Param("rows") List<DailyTotalUsageBatchInsertRow> rows);
+
+    /**
      * 앱별 일일 사용량을 개인풀, 공유풀, QoS 컬럼으로 최초 삽입한다.
      * 중복 key 발생 시 기존 사용량을 덮어쓰지 않고 배치 정합성 오류로 다룬다.
      */
@@ -39,4 +45,10 @@ public interface TrafficDailyUsageBatchMapper {
             @Param("lineId") Long lineId,
             @Param("usageAmount") Long usageAmount
     );
+
+    /**
+     * 공유풀 일일 사용량 row 목록을 한 번의 multi-value insert로 저장한다.
+     * contribution_amount는 공유풀 기여 로직의 책임이므로 모든 row를 0으로 생성한다.
+     */
+    int insertFamilySharedDailyUsages(@Param("rows") List<DailySharedUsageBatchInsertRow> rows);
 }
