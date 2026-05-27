@@ -64,6 +64,17 @@ public class LineDailyBatchJobService {
     }
 
     /**
+     * 운영 재개 요청에서 지정 usage_date의 최신 usage sync batch 상태를 확인한다.
+     */
+    @Transactional(readOnly = true)
+    public LineDailyBatchJob findLatestUsageSyncBatch(LocalDate usageDate) {
+        return lineDailyBatchJobMapper.selectLatestByBatchNameAndUsageDate(
+                BatchName.LINE_DAILY_USAGE_SYNC_BATCH,
+                usageDate
+        );
+    }
+
+    /**
      * 이미 준비된 PENDING metadata row를 실제 실행 상태로 전환한다.
      * target insert batch를 여는 용도로 사용하며, PENDING이 아닌 row는 건드리지 않는다.
      */

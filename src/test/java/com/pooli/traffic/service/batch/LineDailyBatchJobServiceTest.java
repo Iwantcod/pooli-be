@@ -124,6 +124,27 @@ class LineDailyBatchJobServiceTest {
     }
 
     @Test
+    @DisplayName("운영 재개 요청은 usage_date 기준 최신 usage sync batch를 조회한다")
+    void findsLatestUsageSyncBatch() {
+        LineDailyBatchJob running = batchJob(LineDailyBatchStatus.RUNNING)
+                .toBuilder()
+                .batchName(BatchName.LINE_DAILY_USAGE_SYNC_BATCH)
+                .build();
+        when(lineDailyBatchJobMapper.selectLatestByBatchNameAndUsageDate(
+                BatchName.LINE_DAILY_USAGE_SYNC_BATCH,
+                USAGE_DATE
+        )).thenReturn(running);
+
+        LineDailyBatchJob result = lineDailyBatchJobService.findLatestUsageSyncBatch(USAGE_DATE);
+
+        assertSame(running, result);
+        verify(lineDailyBatchJobMapper).selectLatestByBatchNameAndUsageDate(
+                BatchName.LINE_DAILY_USAGE_SYNC_BATCH,
+                USAGE_DATE
+        );
+    }
+
+    @Test
     @DisplayName("PENDING batch만 RUNNING으로 전환한다")
     void startsPendingBatch() {
         LineDailyBatchJob pending = batchJob(LineDailyBatchStatus.PENDING);
