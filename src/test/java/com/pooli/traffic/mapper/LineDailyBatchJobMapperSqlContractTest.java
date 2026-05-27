@@ -47,6 +47,17 @@ class LineDailyBatchJobMapperSqlContractTest {
     }
 
     @Test
+    @DisplayName("metric collector 조회는 최신 usage sync batch 한 건을 찾는다")
+    void selectLatestByBatchNameFindsLatestUsageSyncBatch() {
+        String sql = mapperXml();
+        String selectSql = sql.substring(sql.indexOf("<select id=\"selectLatestByBatchName\""));
+
+        assertTrue(selectSql.contains("WHERE batch_name = #{batchName}"));
+        assertTrue(selectSql.contains("ORDER BY id DESC"));
+        assertTrue(selectSql.contains("LIMIT 1"));
+    }
+
+    @Test
     @DisplayName("신규 metadata row는 PENDING 초기 상태와 count 값을 insert 받는다")
     void insertCreatesInitialMetadataCounts() {
         String sql = mapperXml();
@@ -57,6 +68,19 @@ class LineDailyBatchJobMapperSqlContractTest {
         assertTrue(sql.contains("#{successCount}"));
         assertTrue(sql.contains("#{failedCount}"));
         assertTrue(sql.contains("#{skippedCount}"));
+    }
+
+    @Test
+    @DisplayName("rerun metadata row는 새 RUNNING usage sync batch로 생성한다")
+    void insertRunningRerunUsageSyncBatchCreatesRunningBatch() {
+        String sql = mapperXml();
+        String insertSql = sql.substring(sql.indexOf("<insert id=\"insertRunningRerunUsageSyncBatch\""));
+
+        assertTrue(insertSql.contains("'LINE_DAILY_USAGE_SYNC_BATCH'"));
+        assertTrue(insertSql.contains("'RUNNING'"));
+        assertTrue(insertSql.contains("run_started_at"));
+        assertTrue(insertSql.contains("#{targetCount}"));
+        assertTrue(insertSql.contains("0,\n            0,\n            0"));
     }
 
     @Test

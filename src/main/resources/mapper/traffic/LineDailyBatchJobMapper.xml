@@ -54,6 +54,31 @@
         LIMIT 1
     </select>
 
+    <!-- metric collector가 usage sync batch의 최신 상태를 gauge 값으로 변환할 때 사용한다. -->
+    <select id="selectLatestByBatchName" resultMap="LineDailyBatchJobResultMap">
+        SELECT
+            id,
+            batch_name,
+            usage_date,
+            status,
+            status_updated_at,
+            run_started_at,
+            finished_at,
+            target_count,
+            success_count,
+            failed_count,
+            skipped_count,
+            processed_count_updated_at,
+            manager_instance_id,
+            last_error_code,
+            last_error_message,
+            created_at
+        FROM LINE_DAILY_BATCH_JOB
+        WHERE batch_name = #{batchName}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
     <!-- worker는 scheduler가 계산한 usage_date의 usage sync batch가 RUNNING일 때만 claim loop를 시작한다. -->
     <select id="selectRunningUsageSyncBatchByUsageDate" resultMap="LineDailyBatchJobResultMap">
         SELECT
@@ -102,6 +127,33 @@
             #{successCount},
             #{failedCount},
             #{skippedCount},
+            CURRENT_TIMESTAMP(6)
+        )
+    </insert>
+
+    <!-- rerun은 이전 batch row를 보존하고 새 RUNNING usage sync metadata row를 생성한다. -->
+    <insert id="insertRunningRerunUsageSyncBatch" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO LINE_DAILY_BATCH_JOB (
+            batch_name,
+            usage_date,
+            status,
+            status_updated_at,
+            run_started_at,
+            target_count,
+            success_count,
+            failed_count,
+            skipped_count,
+            created_at
+        ) VALUES (
+            'LINE_DAILY_USAGE_SYNC_BATCH',
+            #{usageDate},
+            'RUNNING',
+            CURRENT_TIMESTAMP(6),
+            CURRENT_TIMESTAMP(6),
+            #{targetCount},
+            0,
+            0,
+            0,
             CURRENT_TIMESTAMP(6)
         )
     </insert>

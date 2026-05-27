@@ -75,6 +75,14 @@ public class LineDailyBatchJobService {
     }
 
     /**
+     * metric collector가 현재 관측할 최신 usage sync batch를 조회한다.
+     */
+    @Transactional(readOnly = true)
+    public LineDailyBatchJob findLatestUsageSyncBatch() {
+        return lineDailyBatchJobMapper.selectLatestByBatchName(BatchName.LINE_DAILY_USAGE_SYNC_BATCH);
+    }
+
+    /**
      * 이미 준비된 PENDING metadata row를 실제 실행 상태로 전환한다.
      * target insert batch를 여는 용도로 사용하며, PENDING이 아닌 row는 건드리지 않는다.
      */
@@ -126,6 +134,25 @@ public class LineDailyBatchJobService {
                 managerInstanceId
         );
         return updated == 1;
+    }
+
+    /**
+     * 운영 rerun 전용 metadata row를 즉시 RUNNING 상태로 생성한다.
+     * 자동 실행 경로의 중복 방어 정책과 분리해 이전 실패 batch row를 이력으로 보존한다.
+     */
+    @Transactional
+    public LineDailyBatchJob createRunningRerunUsageSyncBatch(LocalDate usageDate, long targetCount) {
+        LineDailyBatchJob batchJob = LineDailyBatchJob.builder()
+                .batchName(BatchName.LINE_DAILY_USAGE_SYNC_BATCH)
+                .usageDate(usageDate)
+                .status(LineDailyBatchStatus.RUNNING)
+                .targetCount(targetCount)
+                .successCount(0L)
+                .failedCount(0L)
+                .skippedCount(0L)
+                .build();
+        lineDailyBatchJobMapper.insertRunningRerunUsageSyncBatch(batchJob);
+        return batchJob;
     }
 
     /**

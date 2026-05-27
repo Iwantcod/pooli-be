@@ -145,6 +145,22 @@ class LineDailyBatchJobServiceTest {
     }
 
     @Test
+    @DisplayName("metric collector는 최신 usage sync batch 한 건을 조회한다")
+    void findsLatestUsageSyncBatchWithoutUsageDate() {
+        LineDailyBatchJob running = batchJob(LineDailyBatchStatus.RUNNING)
+                .toBuilder()
+                .batchName(BatchName.LINE_DAILY_USAGE_SYNC_BATCH)
+                .build();
+        when(lineDailyBatchJobMapper.selectLatestByBatchName(BatchName.LINE_DAILY_USAGE_SYNC_BATCH))
+                .thenReturn(running);
+
+        LineDailyBatchJob result = lineDailyBatchJobService.findLatestUsageSyncBatch();
+
+        assertSame(running, result);
+        verify(lineDailyBatchJobMapper).selectLatestByBatchName(BatchName.LINE_DAILY_USAGE_SYNC_BATCH);
+    }
+
+    @Test
     @DisplayName("PENDING batch만 RUNNING으로 전환한다")
     void startsPendingBatch() {
         LineDailyBatchJob pending = batchJob(LineDailyBatchStatus.PENDING);
@@ -241,6 +257,25 @@ class LineDailyBatchJobServiceTest {
                 org.mockito.ArgumentMatchers.anyLong(),
                 org.mockito.ArgumentMatchers.any()
         );
+    }
+
+    @Test
+    @DisplayName("rerun usage sync batch는 RUNNING 상태와 지정 target_count로 새 row를 생성한다")
+    void createsRunningRerunUsageSyncBatch() {
+        LineDailyBatchJob result = lineDailyBatchJobService.createRunningRerunUsageSyncBatch(USAGE_DATE, 5L);
+
+        ArgumentCaptor<LineDailyBatchJob> captor = ArgumentCaptor.forClass(LineDailyBatchJob.class);
+        verify(lineDailyBatchJobMapper).insertRunningRerunUsageSyncBatch(captor.capture());
+        LineDailyBatchJob inserted = captor.getValue();
+
+        assertSame(inserted, result);
+        assertEquals(BatchName.LINE_DAILY_USAGE_SYNC_BATCH, inserted.getBatchName());
+        assertEquals(USAGE_DATE, inserted.getUsageDate());
+        assertEquals(LineDailyBatchStatus.RUNNING, inserted.getStatus());
+        assertEquals(5L, inserted.getTargetCount());
+        assertEquals(0L, inserted.getSuccessCount());
+        assertEquals(0L, inserted.getFailedCount());
+        assertEquals(0L, inserted.getSkippedCount());
     }
 
     @Test

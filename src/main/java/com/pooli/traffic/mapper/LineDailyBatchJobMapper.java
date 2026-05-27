@@ -26,6 +26,11 @@ public interface LineDailyBatchJobMapper {
     );
 
     /**
+     * metric collector는 최신 usage sync batch 한 건을 기준으로 gauge 값을 갱신한다.
+     */
+    LineDailyBatchJob selectLatestByBatchName(@Param("batchName") BatchName batchName);
+
+    /**
      * worker 시작 감지는 scheduler가 계산한 usage_date의 RUNNING usage sync batch만 대상으로 한다.
      */
     LineDailyBatchJob selectRunningUsageSyncBatchByUsageDate(@Param("usageDate") LocalDate usageDate);
@@ -34,6 +39,11 @@ public interface LineDailyBatchJobMapper {
      * 신규 자동 실행 metadata를 PENDING 상태로 생성한다.
      */
     int insert(LineDailyBatchJob batchJob);
+
+    /**
+     * 운영 rerun은 자동 생성 방어 경로와 분리해 새 RUNNING usage sync metadata row를 생성한다.
+     */
+    int insertRunningRerunUsageSyncBatch(LineDailyBatchJob batchJob);
 
     /**
      * PENDING metadata row만 RUNNING으로 전환한다.

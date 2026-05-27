@@ -19,7 +19,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 
 import com.pooli.traffic.domain.batch.LineDailyBatchStatus;
 import com.pooli.traffic.domain.dto.response.LineDailyUsageSyncResumeResDto;
+import com.pooli.traffic.domain.dto.response.LineDailyUsageSyncRerunResDto;
 import com.pooli.traffic.service.batch.LineDailyUsageSyncResumeService;
+import com.pooli.traffic.service.batch.LineDailyUsageSyncRerunService;
 
 @ExtendWith(MockitoExtension.class)
 class AdminTrafficBatchControllerTest {
@@ -28,6 +30,9 @@ class AdminTrafficBatchControllerTest {
 
     @Mock
     private LineDailyUsageSyncResumeService lineDailyUsageSyncResumeService;
+
+    @Mock
+    private LineDailyUsageSyncRerunService lineDailyUsageSyncRerunService;
 
     @InjectMocks
     private AdminTrafficBatchController adminTrafficBatchController;
@@ -60,6 +65,39 @@ class AdminTrafficBatchControllerTest {
         PreAuthorize preAuthorize = method.getAnnotation(PreAuthorize.class);
 
         assertEquals("/daily-usage-sync/{usageDate}/resume", postMapping.value()[0]);
+        assertEquals("@authz.requireAdmin(authentication)", preAuthorize.value());
+    }
+
+    @Test
+    @DisplayName("관리자 usage sync rerun API는 usageDate를 service에 그대로 전달한다")
+    void rerunDailyUsageSyncDelegatesUsageDate() {
+        LineDailyUsageSyncRerunResDto serviceResponse = LineDailyUsageSyncRerunResDto.builder()
+                .previousBatchJobId(2L)
+                .rerunBatchJobId(3L)
+                .usageDate(USAGE_DATE)
+                .previousStatus(LineDailyBatchStatus.FAILED)
+                .targetCount(4L)
+                .rerunAccepted(true)
+                .build();
+        when(lineDailyUsageSyncRerunService.rerun(USAGE_DATE)).thenReturn(serviceResponse);
+
+        ResponseEntity<LineDailyUsageSyncRerunResDto> response =
+                adminTrafficBatchController.rerunDailyUsageSync(USAGE_DATE);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertSame(serviceResponse, response.getBody());
+        verify(lineDailyUsageSyncRerunService).rerun(USAGE_DATE);
+    }
+
+    @Test
+    @DisplayName("관리자 usage sync rerun API 경로와 관리자 권한 조건을 유지한다")
+    void rerunDailyUsageSyncMappingAndAuthorization() throws NoSuchMethodException {
+        var method = AdminTrafficBatchController.class.getMethod("rerunDailyUsageSync", LocalDate.class);
+
+        PostMapping postMapping = method.getAnnotation(PostMapping.class);
+        PreAuthorize preAuthorize = method.getAnnotation(PreAuthorize.class);
+
+        assertEquals("/daily-usage-sync/{usageDate}/rerun", postMapping.value()[0]);
         assertEquals("@authz.requireAdmin(authentication)", preAuthorize.value());
     }
 }

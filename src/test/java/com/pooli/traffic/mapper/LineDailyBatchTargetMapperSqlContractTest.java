@@ -89,6 +89,17 @@ class LineDailyBatchTargetMapperSqlContractTest {
     }
 
     @Test
+    @DisplayName("rerun target_count 조회는 usage_date와 status 조건을 사용한다")
+    void mapperCountsTargetsByUsageDateAndStatus() {
+        String sql = mapperXml();
+        String selectSql = sql.substring(sql.indexOf("<select id=\"countByUsageDateAndStatus\""));
+
+        assertTrue(selectSql.contains("FROM LINE_DAILY_BATCH_TARGET"));
+        assertTrue(selectSql.contains("WHERE usage_date = #{usageDate}"));
+        assertTrue(selectSql.contains("AND status = #{status}"));
+    }
+
+    @Test
     @DisplayName("target insert 재개 지점은 usage_date 기준 최대 line_id로 조회한다")
     void mapperSelectsMaxLineIdByUsageDateForResumePoint() {
         String sql = mapperXml();
@@ -198,6 +209,20 @@ class LineDailyBatchTargetMapperSqlContractTest {
         assertTrue(updateSql.contains("AND status = 'PROCESSING'"));
         assertTrue(updateSql.contains("AND worker_id = #{workerId}"));
         assertFalse(updateSql.contains("retry_count = retry_count + 1"));
+    }
+
+    @Test
+    @DisplayName("rerun은 FAILED target row만 RETRYABLE로 되돌리고 DONE/SKIPPED는 건드리지 않는다")
+    void rerunTransitionUpdatesOnlyFailedTargets() {
+        String sql = mapperXml();
+        String updateSql = sql.substring(sql.indexOf("<update id=\"markFailedTargetsRetryableByUsageDate\""));
+
+        assertTrue(updateSql.contains("SET status = 'RETRYABLE'"));
+        assertTrue(updateSql.contains("worker_id = NULL"));
+        assertTrue(updateSql.contains("WHERE usage_date = #{usageDate}"));
+        assertTrue(updateSql.contains("AND status = 'FAILED'"));
+        assertFalse(updateSql.contains("'DONE'"));
+        assertFalse(updateSql.contains("'SKIPPED'"));
     }
 
     private String mapperXml() {

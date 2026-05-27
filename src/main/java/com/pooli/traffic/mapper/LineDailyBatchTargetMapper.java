@@ -35,6 +35,14 @@ public interface LineDailyBatchTargetMapper {
     long countNonTerminalByUsageDate(@Param("usageDate") LocalDate usageDate);
 
     /**
+     * rerun target_count 확정을 위해 특정 상태 target row 수를 조회한다.
+     */
+    long countByUsageDateAndStatus(
+            @Param("usageDate") LocalDate usageDate,
+            @Param("status") LineDailyBatchTargetStatus status
+    );
+
+    /**
      * target insert batch 재개 시 이미 확보된 가장 큰 line_id를 조회한다.
      */
     long selectMaxLineIdByUsageDate(@Param("usageDate") LocalDate usageDate);
@@ -101,4 +109,9 @@ public interface LineDailyBatchTargetMapper {
             @Param("lastErrorCode") String lastErrorCode,
             @Param("lastErrorMessage") String lastErrorMessage
     );
+
+    /**
+     * 운영 rerun 시작 시 FAILED target row만 다시 worker claim 대상에 포함한다.
+     */
+    int markFailedTargetsRetryableByUsageDate(@Param("usageDate") LocalDate usageDate);
 }
