@@ -142,6 +142,92 @@ class LineDailyBatchManagerServiceTest {
     }
 
     @Test
+    @DisplayName("완료된 target insert batch 재시도는 target row 생성 없이 usage sync batch를 시작한다")
+    void startsUsageSyncWhenTargetInsertBatchAlreadyCompleted() {
+        LineDailyBatchJob targetInsertBatch = batchJob(
+                1L,
+                BatchName.LINE_DAILY_TARGET_INSERT_BATCH,
+                LineDailyBatchStatus.COMPLETED
+        ).toBuilder()
+                .targetCount(5L)
+                .successCount(5L)
+                .build();
+        LineDailyBatchJob usageSyncBatch = batchJob(2L, BatchName.LINE_DAILY_USAGE_SYNC_BATCH);
+        when(lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(
+                BatchName.LINE_DAILY_TARGET_INSERT_BATCH,
+                USAGE_DATE
+        )).thenReturn(new LineDailyBatchJobCreateResult(false, targetInsertBatch));
+        when(lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(
+                BatchName.LINE_DAILY_USAGE_SYNC_BATCH,
+                USAGE_DATE
+        )).thenReturn(new LineDailyBatchJobCreateResult(false, usageSyncBatch));
+        when(lineDailyBatchJobService.startPendingUsageSyncBatchWithTargetCount(
+                usageSyncBatch,
+                5L,
+                MANAGER_INSTANCE_ID
+        )).thenReturn(true);
+
+        boolean workerStartAllowed = lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
+
+        assertTrue(workerStartAllowed);
+        verify(lineDailyBatchJobService, never()).startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID);
+        verify(lineDailyBatchTargetMapper, never()).selectMaxLineIdByUsageDate(
+                org.mockito.ArgumentMatchers.any()
+        );
+        verify(lineDailyBatchTargetMapper, never()).insertIgnoreTargetRows(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+        verify(lineDailyBatchJobService, never()).completeRunningTargetInsertBatch(targetInsertBatch, 5L);
+        verify(lineDailyBatchJobService).startPendingUsageSyncBatchWithTargetCount(
+                usageSyncBatch,
+                5L,
+                MANAGER_INSTANCE_ID
+        );
+    }
+
+    @Test
+    @DisplayName("완료된 target insert batch 재시도에서 usage sync batch가 이미 RUNNING이면 worker 시작을 허용한다")
+    void allowsWorkerStartWhenTargetInsertCompletedAndUsageSyncAlreadyRunning() {
+        LineDailyBatchJob targetInsertBatch = batchJob(
+                1L,
+                BatchName.LINE_DAILY_TARGET_INSERT_BATCH,
+                LineDailyBatchStatus.COMPLETED
+        ).toBuilder()
+                .targetCount(5L)
+                .successCount(5L)
+                .build();
+        LineDailyBatchJob usageSyncBatch =
+                batchJob(2L, BatchName.LINE_DAILY_USAGE_SYNC_BATCH, LineDailyBatchStatus.RUNNING);
+        when(lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(
+                BatchName.LINE_DAILY_TARGET_INSERT_BATCH,
+                USAGE_DATE
+        )).thenReturn(new LineDailyBatchJobCreateResult(false, targetInsertBatch));
+        when(lineDailyBatchJobService.createPendingForAutomaticRunIfAbsent(
+                BatchName.LINE_DAILY_USAGE_SYNC_BATCH,
+                USAGE_DATE
+        )).thenReturn(new LineDailyBatchJobCreateResult(false, usageSyncBatch));
+
+        boolean workerStartAllowed = lineDailyBatchManagerService.run(USAGE_DATE, MANAGER_INSTANCE_ID);
+
+        assertTrue(workerStartAllowed);
+        verify(lineDailyBatchJobService, never()).startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID);
+        verify(lineDailyBatchTargetMapper, never()).selectMaxLineIdByUsageDate(
+                org.mockito.ArgumentMatchers.any()
+        );
+        verify(lineDailyBatchTargetMapper, never()).insertIgnoreTargetRows(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+        verify(lineDailyBatchJobService, never()).completeRunningTargetInsertBatch(targetInsertBatch, 5L);
+        verify(lineDailyBatchJobService, never()).startPendingUsageSyncBatchWithTargetCount(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
     @DisplayName("target insert batch RUNNING 전환에 실패하면 target row를 생성하지 않는다")
     void doesNotInsertTargetsWhenTargetInsertBatchDidNotStart() {
         LineDailyBatchJob targetInsertBatch = batchJob(1L, BatchName.LINE_DAILY_TARGET_INSERT_BATCH);

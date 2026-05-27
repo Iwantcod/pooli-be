@@ -32,7 +32,7 @@ public class LineDailyBatchManagerService {
     /**
      * Redis manager lock을 획득한 서버가 target insert 선행 단계를 준비한다.
      * usage sync batch는 target insert 완료 전까지 PENDING 상태로만 생성/조회한다.
-     * target insert 완료와 usage sync RUNNING 전환이 모두 성공했을 때만 worker 시작을 허용한다.
+     * target insert 완료 또는 완료 이력 확인 후 usage sync가 RUNNING이 되면 worker 시작을 허용한다.
      */
     public boolean run(LocalDate usageDate, String managerInstanceId) {
         // 1. target row 생성을 담당할 batch metadata를 먼저 준비한다.
@@ -45,49 +45,68 @@ public class LineDailyBatchManagerService {
                 BatchName.LINE_DAILY_USAGE_SYNC_BATCH,
                 usageDate
         );
-        // 3. PENDING batch는 RUNNING으로 열고, 이미 RUNNING인 batch는 중단된 target insert 재개로 처리한다.
-        boolean targetInsertStarted =
-                lineDailyBatchJobService.startPendingBatch(targetInsertBatch, managerInstanceId);
-        boolean targetInsertResumed = targetInsertBatch.getStatus() == LineDailyBatchStatus.RUNNING;
-        if (!targetInsertStarted && !targetInsertResumed) {
-            log.info(
-                    "line_daily_batch_manager_target_insert_not_started usageDate={} managerInstanceId={} "
-                            + "targetInsertBatchId={} targetInsertStatus={}",
-                    usageDate,
-                    managerInstanceId,
-                    targetInsertBatch.getId(),
-                    targetInsertBatch.getStatus()
-            );
-            return false;
+
+        // 3. 이미 완료된 target insert는 재시도 시 target row 생성 단계를 건너뛰고 usage sync 단계로 진행한다.
+        boolean targetInsertAlreadyCompleted = targetInsertBatch.getStatus() == LineDailyBatchStatus.COMPLETED;
+        boolean targetInsertStarted = false;
+        boolean targetInsertResumed = false;
+        boolean targetInsertCompleted = targetInsertAlreadyCompleted;
+        long targetCount = targetInsertBatch.getTargetCount();
+        if (!targetInsertAlreadyCompleted) {
+            // 4. PENDING batch는 RUNNING으로 열고, 이미 RUNNING인 batch는 중단된 target insert 재개로 처리한다.
+            targetInsertStarted = lineDailyBatchJobService.startPendingBatch(targetInsertBatch, managerInstanceId);
+            targetInsertResumed = targetInsertBatch.getStatus() == LineDailyBatchStatus.RUNNING;
+            if (!targetInsertStarted && !targetInsertResumed) {
+                log.info(
+                        "line_daily_batch_manager_target_insert_not_started usageDate={} managerInstanceId={} "
+                                + "targetInsertBatchId={} targetInsertStatus={}",
+                        usageDate,
+                        managerInstanceId,
+                        targetInsertBatch.getId(),
+                        targetInsertBatch.getStatus()
+                );
+                return false;
+            }
+
+            // 5. 기존 target set의 최대 line_id를 재개 지점으로 삼아 중단 이후 chunk부터 이어간다.
+            long lastLineId = lineDailyBatchTargetMapper.selectMaxLineIdByUsageDate(usageDate);
+            insertTargetRowsInChunks(usageDate, lastLineId);
+            targetCount = lineDailyBatchTargetMapper.countByUsageDate(usageDate);
+            // 6. target insert batch는 생성된 target row 수와 같은 success_count로 완료한다.
+            targetInsertCompleted =
+                    lineDailyBatchJobService.completeRunningTargetInsertBatch(targetInsertBatch, targetCount);
         }
 
-        // 4. 기존 target set의 최대 line_id를 재개 지점으로 삼아 중단 이후 chunk부터 이어간다.
-        long lastLineId = lineDailyBatchTargetMapper.selectMaxLineIdByUsageDate(usageDate);
-        insertTargetRowsInChunks(usageDate, lastLineId);
-        long targetCount = lineDailyBatchTargetMapper.countByUsageDate(usageDate);
-        // 5. target insert batch는 생성된 target row 수와 같은 success_count로 완료한다.
-        boolean targetInsertCompleted =
-                lineDailyBatchJobService.completeRunningTargetInsertBatch(targetInsertBatch, targetCount);
-        // 6. target insert가 완료된 뒤에만 usage sync batch를 RUNNING으로 열어 worker 시작 조건을 만족시킨다.
-        boolean usageSyncStarted = targetInsertCompleted
-                && lineDailyBatchJobService.startPendingUsageSyncBatchWithTargetCount(
+        // 7. target insert가 완료된 뒤에만 usage sync batch를 RUNNING으로 열거나 기존 RUNNING 상태를 인정한다.
+        boolean usageSyncAlreadyRunning = usageSyncBatch.getStatus() == LineDailyBatchStatus.RUNNING;
+        boolean usageSyncStarted = false;
+        if (targetInsertCompleted) {
+            if (usageSyncAlreadyRunning) {
+                usageSyncStarted = true;
+            } else if (usageSyncBatch.getStatus() == LineDailyBatchStatus.PENDING) {
+                usageSyncStarted = lineDailyBatchJobService.startPendingUsageSyncBatchWithTargetCount(
                         usageSyncBatch,
                         targetCount,
                         managerInstanceId
                 );
+            }
+        }
 
         log.info(
                 "line_daily_batch_manager_prepared usageDate={} managerInstanceId={} "
                         + "targetInsertBatchId={} usageSyncBatchId={} targetInsertStarted={} "
-                        + "targetInsertResumed={} targetCount={} targetInsertCompleted={} usageSyncStarted={}",
+                        + "targetInsertResumed={} targetInsertAlreadyCompleted={} targetCount={} "
+                        + "targetInsertCompleted={} usageSyncAlreadyRunning={} usageSyncStarted={}",
                 usageDate,
                 managerInstanceId,
                 targetInsertBatch.getId(),
                 usageSyncBatch.getId(),
                 targetInsertStarted,
                 targetInsertResumed,
+                targetInsertAlreadyCompleted,
                 targetCount,
                 targetInsertCompleted,
+                usageSyncAlreadyRunning,
                 usageSyncStarted
         );
         return usageSyncStarted;

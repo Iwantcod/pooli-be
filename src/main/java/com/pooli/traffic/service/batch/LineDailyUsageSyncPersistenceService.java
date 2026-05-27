@@ -23,7 +23,18 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class LineDailyUsageSyncPersistenceService {
 
+    /**
+     * MAX_TARGET_RETRY_COUNT는 target 영속화 작업의 최대 재시도 횟수를 제어합니다.
+     * 값 10은 일시적 장애 복구를 위한 재시도 적극성과 무한 재시도로 인한 시스템 부하 방지 간의 균형(tradeoff)을 고려해 선택되었습니다.
+     * 이 값을 늘리면 지속적 장애 시 worker 리소스 낭비 및 부하를 유의해야 하며, 줄이면 간헐적 오류에도 타겟이 쉽게 실패 처리될 수 있음을 주의해야 합니다.
+     */
     static final int MAX_TARGET_RETRY_COUNT = 10;
+
+    /**
+     * LAST_ERROR_MESSAGE_MAX_LENGTH는 DB에 저장되는 에러 메시지의 최대 길이(truncation limit)를 제어합니다.
+     * 값 512는 불필요한 스택 트레이스로 인한 DB 용량 낭비를 막으면서 디버깅에 필요한 핵심 내용만 남기기에 합리적인 크기(reasonable log size)로 선택되었습니다.
+     * 이 값을 늘리면 DB 스토리지 용량 증가와 컬럼 최대 길이를 확인해야 하며, 줄이면 중요한 에러 원인이 잘려 문제 파악이 어려워질 수 있음을 주의해야 합니다.
+     */
     private static final int LAST_ERROR_MESSAGE_MAX_LENGTH = 512;
 
     private final TrafficDailyUsageBatchMapper trafficDailyUsageBatchMapper;
