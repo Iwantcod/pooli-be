@@ -80,6 +80,15 @@ public interface LineDailyBatchJobMapper {
     );
 
     /**
+     * usage sync batch의 DONE/SKIPPED 처리 count를 bulk terminal 전환 결과만큼 증가시킨다.
+     */
+    int incrementUsageSyncSuccessAndSkippedCount(
+            @Param("batchJobId") Long batchJobId,
+            @Param("successDelta") int successDelta,
+            @Param("skippedDelta") int skippedDelta
+    );
+
+    /**
      * 모든 target row가 terminal count에 반영된 경우에만 usage sync batch를 완료한다.
      */
     int completeRunningUsageSyncBatchIfCountsMatch(@Param("id") Long id);

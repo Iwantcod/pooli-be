@@ -1,14 +1,18 @@
 package com.pooli.traffic.service.batch;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.pooli.traffic.domain.batch.LineDailyBatchJob;
 import com.pooli.traffic.domain.batch.LineDailyBatchTarget;
 import com.pooli.traffic.domain.batch.LineDailyBatchTargetStatus;
 import com.pooli.traffic.mapper.DailyAppUsageBatchInsertRow;
+import com.pooli.traffic.mapper.DailySharedUsageBatchInsertRow;
+import com.pooli.traffic.mapper.DailyTotalUsageBatchInsertRow;
 import com.pooli.traffic.mapper.LineDailyBatchJobMapper;
 import com.pooli.traffic.mapper.LineDailyBatchTargetMapper;
 import com.pooli.traffic.mapper.TrafficDailyUsageBatchMapper;
@@ -61,6 +65,48 @@ public class LineDailyUsageSyncPersistenceService {
         insertUsages(target, usage);
         // 3. insert 이후 target row를 DONE으로 닫고 success_count를 증가시킨다.
         completeTarget(batchJobId, target, LineDailyBatchTargetStatus.DONE, workerId);
+    }
+
+    /**
+     * Redis 조회가 성공한 target chunk 전체를 한 트랜잭션에서 insert하고 DONE/SKIPPED terminal 상태로 닫는다.
+     */
+    @Transactional
+    public void persistUsagesAndCompleteTargets(
+            LineDailyBatchJob batchJob,
+            List<LineDailyTargetWithSnapshot> snapshots,
+            String workerId
+    ) {
+        // 1. 처리할 snapshot이 없으면 DB write 없이 종료한다.
+        if (snapshots.isEmpty()) {
+            return;
+        }
+
+        List<Long> doneIds = new ArrayList<>();
+        List<Long> skippedIds = new ArrayList<>();
+        List<DailyTotalUsageBatchInsertRow> totalUsageRows = new ArrayList<>();
+        List<DailyAppUsageBatchInsertRow> appUsageRows = new ArrayList<>();
+        List<DailySharedUsageBatchInsertRow> sharedUsageRows = new ArrayList<>();
+
+        // 2. Redis snapshot 존재 여부에 따라 target terminal 상태와 테이블별 insert row를 분류한다.
+        for (LineDailyTargetWithSnapshot targetWithSnapshot : snapshots) {
+            LineDailyBatchTarget target = targetWithSnapshot.target();
+            LineDailyUsageReadResult usage = targetWithSnapshot.snapshot();
+            if (!usage.hasAnyUsage()) {
+                skippedIds.add(target.getId());
+                continue;
+            }
+
+            doneIds.add(target.getId());
+            collectUsageRows(target, usage, totalUsageRows, appUsageRows, sharedUsageRows);
+        }
+
+        // 3. 테이블별 사용량 row를 multi-value insert로 저장한다.
+        insertUsageRows(totalUsageRows, appUsageRows, sharedUsageRows);
+        // 4. insert가 모두 성공한 뒤 현재 worker가 보유한 target row만 terminal 상태로 닫는다.
+        markTargetsTerminalInBulk(doneIds, LineDailyBatchTargetStatus.DONE, workerId);
+        markTargetsTerminalInBulk(skippedIds, LineDailyBatchTargetStatus.SKIPPED, workerId);
+        // 5. target terminal 전환 수와 같은 DONE/SKIPPED metadata count를 한 번에 반영한다.
+        incrementUsageSyncSuccessAndSkippedCount(batchJob.getId(), doneIds.size(), skippedIds.size());
     }
 
     /**
@@ -133,17 +179,15 @@ public class LineDailyUsageSyncPersistenceService {
         if (!usage.appUsages().isEmpty()) {
             List<DailyAppUsageBatchInsertRow> appUsages = usage.appUsages().stream()
                     .map(appUsage -> new DailyAppUsageBatchInsertRow(
+                            target.getUsageDate(),
+                            target.getLineId(),
                             appUsage.applicationId(),
                             appUsage.individualUsageData(),
                             appUsage.sharedUsageData(),
                             appUsage.qosUsageData()
                     ))
                     .toList();
-            trafficDailyUsageBatchMapper.insertDailyAppUsages(
-                    target.getUsageDate(),
-                    target.getLineId(),
-                    appUsages
-            );
+            trafficDailyUsageBatchMapper.insertDailyAppUsages(appUsages);
         }
 
         // 3. 공유풀 일별 사용량이 있으면 FAMILY_SHARED_USAGE_DAILY에 insert한다.
@@ -154,6 +198,122 @@ public class LineDailyUsageSyncPersistenceService {
                     target.getLineId(),
                     usage.sharedUsage().usageAmount()
             );
+        }
+    }
+
+    /**
+     * 한 target의 Redis snapshot을 테이블별 bulk insert row 목록으로 변환해 누적한다.
+     */
+    private void collectUsageRows(
+            LineDailyBatchTarget target,
+            LineDailyUsageReadResult usage,
+            List<DailyTotalUsageBatchInsertRow> totalUsageRows,
+            List<DailyAppUsageBatchInsertRow> appUsageRows,
+            List<DailySharedUsageBatchInsertRow> sharedUsageRows
+    ) {
+        // 1. 존재하는 총 사용량만 DAILY_TOTAL_DATA bulk row로 누적한다.
+        if (usage.totalUsageData() != null) {
+            totalUsageRows.add(new DailyTotalUsageBatchInsertRow(
+                    target.getUsageDate(),
+                    target.getLineId(),
+                    usage.totalUsageData()
+            ));
+        }
+
+        // 2. 존재하는 앱별 사용량만 DAILY_APP_TOTAL_DATA bulk row로 누적한다.
+        for (DailyAppUsage appUsage : usage.appUsages()) {
+            appUsageRows.add(new DailyAppUsageBatchInsertRow(
+                    target.getUsageDate(),
+                    target.getLineId(),
+                    appUsage.applicationId(),
+                    appUsage.individualUsageData(),
+                    appUsage.sharedUsageData(),
+                    appUsage.qosUsageData()
+            ));
+        }
+
+        // 3. 존재하는 공유풀 사용량만 FAMILY_SHARED_USAGE_DAILY bulk row로 누적한다.
+        if (usage.sharedUsage() != null) {
+            sharedUsageRows.add(new DailySharedUsageBatchInsertRow(
+                    target.getUsageDate(),
+                    usage.sharedUsage().familyId(),
+                    target.getLineId(),
+                    usage.sharedUsage().usageAmount()
+            ));
+        }
+    }
+
+    /**
+     * 비어 있지 않은 테이블별 row 목록만 bulk insert mapper로 전달한다.
+     */
+    private void insertUsageRows(
+            List<DailyTotalUsageBatchInsertRow> totalUsageRows,
+            List<DailyAppUsageBatchInsertRow> appUsageRows,
+            List<DailySharedUsageBatchInsertRow> sharedUsageRows
+    ) {
+        // 1. 총 사용량, 앱별 사용량, 공유풀 사용량 순서로 insert해 기존 단건 처리 순서를 유지한다.
+        if (!totalUsageRows.isEmpty()) {
+            trafficDailyUsageBatchMapper.insertDailyTotalUsages(totalUsageRows);
+        }
+        if (!appUsageRows.isEmpty()) {
+            trafficDailyUsageBatchMapper.insertDailyAppUsages(appUsageRows);
+        }
+        if (!sharedUsageRows.isEmpty()) {
+            trafficDailyUsageBatchMapper.insertFamilySharedDailyUsages(sharedUsageRows);
+        }
+    }
+
+    /**
+     * 현재 worker가 PROCESSING으로 보유한 target row 목록을 기대 건수와 일치할 때만 terminal 상태로 닫는다.
+     */
+    private void markTargetsTerminalInBulk(
+            List<Long> targetIds,
+            LineDailyBatchTargetStatus terminalStatus,
+            String workerId
+    ) {
+        // 1. 해당 terminal 상태로 전환할 target이 없으면 mapper 호출 없이 종료한다.
+        if (targetIds.isEmpty()) {
+            return;
+        }
+
+        // 2. 현재 worker가 선점한 PROCESSING row만 terminal 상태로 전환한다.
+        int updated = lineDailyBatchTargetMapper.markTargetsTerminalInBulk(
+                targetIds,
+                terminalStatus,
+                workerId
+        );
+        // 3. 일부 row라도 전환되지 않으면 count 불일치를 막기 위해 트랜잭션을 롤백한다.
+        if (updated != targetIds.size()) {
+            throw new IllegalStateException(
+                    "Failed to complete processing targets. status=" + terminalStatus
+                            + ", expected=" + targetIds.size()
+                            + ", actual=" + updated
+            );
+        }
+    }
+
+    /**
+     * bulk terminal 전환 결과와 같은 수만큼 usage sync metadata count를 증가시킨다.
+     */
+    private void incrementUsageSyncSuccessAndSkippedCount(
+            Long batchJobId,
+            int successDelta,
+            int skippedDelta
+    ) {
+        // 1. bulk 처리 target 수가 0이면 count 변경이 필요 없으므로 종료한다.
+        if (successDelta == 0 && skippedDelta == 0) {
+            return;
+        }
+
+        // 2. RUNNING usage sync metadata row의 DONE/SKIPPED count를 한 번에 증가시킨다.
+        int countUpdated = lineDailyBatchJobMapper.incrementUsageSyncSuccessAndSkippedCount(
+                batchJobId,
+                successDelta,
+                skippedDelta
+        );
+        // 3. metadata row가 갱신되지 않으면 target terminal 전환과 함께 롤백한다.
+        if (countUpdated != 1) {
+            throw new IllegalStateException("Failed to increment usage sync count. batchJobId=" + batchJobId);
         }
     }
 

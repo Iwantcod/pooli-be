@@ -15,9 +15,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.pooli.traffic.domain.batch.LineDailyBatchJob;
 import com.pooli.traffic.domain.batch.LineDailyBatchTarget;
 import com.pooli.traffic.domain.batch.LineDailyBatchTargetStatus;
 import com.pooli.traffic.mapper.DailyAppUsageBatchInsertRow;
+import com.pooli.traffic.mapper.DailySharedUsageBatchInsertRow;
+import com.pooli.traffic.mapper.DailyTotalUsageBatchInsertRow;
 import com.pooli.traffic.mapper.LineDailyBatchJobMapper;
 import com.pooli.traffic.mapper.LineDailyBatchTargetMapper;
 import com.pooli.traffic.mapper.TrafficDailyUsageBatchMapper;
@@ -72,11 +75,9 @@ class LineDailyUsageSyncPersistenceServiceTest {
 
         verify(trafficDailyUsageBatchMapper).insertDailyTotalUsage(USAGE_DATE, 10L, 100L);
         verify(trafficDailyUsageBatchMapper).insertDailyAppUsages(
-                USAGE_DATE,
-                10L,
                 List.of(
-                        new DailyAppUsageBatchInsertRow(30, 70L, 20L, 10L),
-                        new DailyAppUsageBatchInsertRow(31, 40L, 5L, 0L)
+                        new DailyAppUsageBatchInsertRow(USAGE_DATE, 10L, 30, 70L, 20L, 10L),
+                        new DailyAppUsageBatchInsertRow(USAGE_DATE, 10L, 31, 40L, 5L, 0L)
                 )
         );
         verify(trafficDailyUsageBatchMapper).insertFamilySharedDailyUsage(USAGE_DATE, 40L, 10L, 20L);
@@ -113,6 +114,13 @@ class LineDailyUsageSyncPersistenceServiceTest {
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any()
         );
+        verify(trafficDailyUsageBatchMapper, never()).insertDailyAppUsages(org.mockito.ArgumentMatchers.any());
+        verify(trafficDailyUsageBatchMapper, never()).insertFamilySharedDailyUsage(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
         verify(lineDailyBatchJobMapper).incrementUsageSyncProcessedCount(
                 BATCH_JOB_ID,
                 LineDailyBatchTargetStatus.SKIPPED
@@ -143,6 +151,92 @@ class LineDailyUsageSyncPersistenceServiceTest {
         verify(lineDailyBatchJobMapper, never()).incrementUsageSyncProcessedCount(
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
+    @DisplayName("bulk 처리에서 사용량이 있는 target은 DONE, 빈 snapshot target은 SKIPPED로 분류하고 count를 합산한다")
+    void persistsUsagesAndCompletesTargetsInBulkWithDoneAndSkippedCounts() {
+        LineDailyBatchJob batchJob = batchJob();
+        LineDailyBatchTarget usageTarget = target();
+        LineDailyBatchTarget skippedTarget = target().toBuilder()
+                .id(2L)
+                .lineId(11L)
+                .build();
+        LineDailyUsageReadResult usage = new LineDailyUsageReadResult(
+                100L,
+                List.of(new DailyAppUsage(30, 70L, 20L, 10L)),
+                new DailySharedUsage(40L, 20L)
+        );
+        LineDailyUsageReadResult emptyUsage = new LineDailyUsageReadResult(null, List.of(), null);
+        when(lineDailyBatchTargetMapper.markTargetsTerminalInBulk(
+                List.of(usageTarget.getId()),
+                LineDailyBatchTargetStatus.DONE,
+                WORKER_ID
+        )).thenReturn(1);
+        when(lineDailyBatchTargetMapper.markTargetsTerminalInBulk(
+                List.of(skippedTarget.getId()),
+                LineDailyBatchTargetStatus.SKIPPED,
+                WORKER_ID
+        )).thenReturn(1);
+        when(lineDailyBatchJobMapper.incrementUsageSyncSuccessAndSkippedCount(BATCH_JOB_ID, 1, 1))
+                .thenReturn(1);
+
+        lineDailyUsageSyncPersistenceService.persistUsagesAndCompleteTargets(
+                batchJob,
+                List.of(
+                        new LineDailyTargetWithSnapshot(usageTarget, usage),
+                        new LineDailyTargetWithSnapshot(skippedTarget, emptyUsage)
+                ),
+                WORKER_ID
+        );
+
+        verify(trafficDailyUsageBatchMapper).insertDailyTotalUsages(
+                List.of(new DailyTotalUsageBatchInsertRow(USAGE_DATE, 10L, 100L))
+        );
+        verify(trafficDailyUsageBatchMapper).insertDailyAppUsages(
+                List.of(new DailyAppUsageBatchInsertRow(USAGE_DATE, 10L, 30, 70L, 20L, 10L))
+        );
+        verify(trafficDailyUsageBatchMapper).insertFamilySharedDailyUsages(
+                List.of(new DailySharedUsageBatchInsertRow(USAGE_DATE, 40L, 10L, 20L))
+        );
+        verify(lineDailyBatchTargetMapper).markTargetsTerminalInBulk(
+                List.of(usageTarget.getId()),
+                LineDailyBatchTargetStatus.DONE,
+                WORKER_ID
+        );
+        verify(lineDailyBatchTargetMapper).markTargetsTerminalInBulk(
+                List.of(skippedTarget.getId()),
+                LineDailyBatchTargetStatus.SKIPPED,
+                WORKER_ID
+        );
+        verify(lineDailyBatchJobMapper).incrementUsageSyncSuccessAndSkippedCount(BATCH_JOB_ID, 1, 1);
+    }
+
+    @Test
+    @DisplayName("bulk target terminal 전환 건수가 기대 건수와 다르면 metadata count를 증가시키지 않고 예외를 던진다")
+    void doesNotIncrementBulkCountWhenTerminalTransitionCountMismatches() {
+        LineDailyBatchTarget target = target();
+        LineDailyUsageReadResult usage = new LineDailyUsageReadResult(100L, List.of(), null);
+        when(lineDailyBatchTargetMapper.markTargetsTerminalInBulk(
+                List.of(target.getId()),
+                LineDailyBatchTargetStatus.DONE,
+                WORKER_ID
+        )).thenReturn(0);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> lineDailyUsageSyncPersistenceService.persistUsagesAndCompleteTargets(
+                        batchJob(),
+                        List.of(new LineDailyTargetWithSnapshot(target, usage)),
+                        WORKER_ID
+                )
+        );
+
+        verify(lineDailyBatchJobMapper, never()).incrementUsageSyncSuccessAndSkippedCount(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyInt()
         );
     }
 
@@ -311,6 +405,13 @@ class LineDailyUsageSyncPersistenceServiceTest {
                 .id(1L)
                 .usageDate(USAGE_DATE)
                 .lineId(10L)
+                .build();
+    }
+
+    private LineDailyBatchJob batchJob() {
+        return LineDailyBatchJob.builder()
+                .id(BATCH_JOB_ID)
+                .usageDate(USAGE_DATE)
                 .build();
     }
 }

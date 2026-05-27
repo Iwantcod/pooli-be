@@ -26,14 +26,10 @@ public interface TrafficDailyUsageBatchMapper {
     int insertDailyTotalUsages(@Param("rows") List<DailyTotalUsageBatchInsertRow> rows);
 
     /**
-     * 앱별 일일 사용량을 개인풀, 공유풀, QoS 컬럼으로 최초 삽입한다.
+     * 앱별 일일 사용량 row 목록을 한 번의 multi-value insert로 저장한다.
      * 중복 key 발생 시 기존 사용량을 덮어쓰지 않고 배치 정합성 오류로 다룬다.
      */
-    int insertDailyAppUsages(
-            @Param("usageDate") LocalDate usageDate,
-            @Param("lineId") Long lineId,
-            @Param("appUsages") List<DailyAppUsageBatchInsertRow> appUsages
-    );
+    int insertDailyAppUsages(@Param("rows") List<DailyAppUsageBatchInsertRow> rows);
 
     /**
      * 공유풀 일일 사용량만 삽입하며 contribution_amount는 배치 책임이 아니므로 0으로만 생성한다.

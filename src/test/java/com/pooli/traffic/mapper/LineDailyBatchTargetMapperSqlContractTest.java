@@ -177,6 +177,19 @@ class LineDailyBatchTargetMapperSqlContractTest {
     }
 
     @Test
+    @DisplayName("bulk terminal 전환은 현재 worker가 PROCESSING으로 선점한 target id 목록만 갱신한다")
+    void bulkTerminalTransitionUsesIdsProcessingAndWorkerGuard() {
+        String sql = mapperXml();
+        String updateSql = extractBlock(sql, "<update id=\"markTargetsTerminalInBulk\"", "</update>", "markTargetsTerminalInBulk");
+
+        assertTrue(updateSql.contains("SET status = #{status}"));
+        assertTrue(updateSql.contains("WHERE id IN"));
+        assertTrue(updateSql.contains("collection=\"ids\""));
+        assertTrue(updateSql.contains("AND status = 'PROCESSING'"));
+        assertTrue(updateSql.contains("AND worker_id = #{workerId}"));
+    }
+
+    @Test
     @DisplayName("RETRYABLE 전환은 현재 worker가 PROCESSING으로 보유한 row만 retry_count 한도 미만에서 증가시킨다")
     void retryableTransitionIncrementsRetryCountBelowMaxWithoutFailedTerminalCount() {
         String sql = mapperXml();

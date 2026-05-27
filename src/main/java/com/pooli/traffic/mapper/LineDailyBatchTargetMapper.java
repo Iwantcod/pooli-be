@@ -90,6 +90,15 @@ public interface LineDailyBatchTargetMapper {
     );
 
     /**
+     * 현재 worker가 PROCESSING으로 선점한 여러 row만 같은 terminal 상태로 닫는다.
+     */
+    int markTargetsTerminalInBulk(
+            @Param("ids") List<Long> ids,
+            @Param("status") LineDailyBatchTargetStatus status,
+            @Param("workerId") String workerId
+    );
+
+    /**
      * 현재 worker가 PROCESSING으로 보유한 row를 재시도 가능 상태로 되돌리고 retry_count를 증가시킨다.
      */
     int markTargetRetryableIfProcessing(

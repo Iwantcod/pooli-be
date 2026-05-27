@@ -210,6 +210,17 @@
           AND status = 'RUNNING'
     </update>
 
+    <!-- bulk terminal 전환이 성공한 DONE/SKIPPED target 수만큼 metadata count를 증가시킨다. -->
+    <update id="incrementUsageSyncSuccessAndSkippedCount">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET success_count = success_count + #{successDelta},
+            skipped_count = skipped_count + #{skippedDelta},
+            processed_count_updated_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{batchJobId}
+          AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'
+          AND status = 'RUNNING'
+    </update>
+
     <!-- 모든 terminal count가 target_count와 일치할 때만 usage sync batch를 완료한다. -->
     <update id="completeRunningUsageSyncBatchIfCountsMatch">
         UPDATE LINE_DAILY_BATCH_JOB

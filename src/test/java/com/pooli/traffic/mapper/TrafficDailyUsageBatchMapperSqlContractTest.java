@@ -49,10 +49,15 @@ class TrafficDailyUsageBatchMapperSqlContractTest {
         String sql = insertStatement("insertDailyAppUsages");
 
         assertTrue(sql.contains("INSERT INTO DAILY_APP_TOTAL_DATA"));
-        assertTrue(sql.contains("<foreach collection=\"appUsages\" item=\"appUsage\" separator=\",\">"));
-        assertTrue(sql.contains("#{appUsage.individualUsageData}"));
-        assertTrue(sql.contains("#{appUsage.sharedUsageData}"));
-        assertTrue(sql.contains("#{appUsage.qosUsageData}"));
+        assertTrue(sql.contains("<foreach collection=\"rows\" item=\"row\" separator=\",\">"));
+        assertTrue(sql.contains("#{row.usageDate}"));
+        assertTrue(sql.contains("#{row.lineId}"));
+        assertTrue(sql.contains("#{row.applicationId}"));
+        assertTrue(sql.contains("#{row.individualUsageData}"));
+        assertTrue(sql.contains("#{row.sharedUsageData}"));
+        assertTrue(sql.contains("#{row.qosUsageData}"));
+        assertTrue(sql.contains("<otherwise>"));
+        assertTrue(sql.contains("WHERE 1 = 0"));
         assertFalse(sql.contains("ON DUPLICATE KEY UPDATE"));
         assertFalse(sql.contains("individual_usage_data = individual_usage_data +"));
         assertFalse(sql.contains("shared_usage_data = shared_usage_data +"));

@@ -163,6 +163,21 @@ class LineDailyBatchJobMapperSqlContractTest {
     }
 
     @Test
+    @DisplayName("bulk usage sync count 증가는 DONE/SKIPPED delta만 한 번에 반영한다")
+    void incrementUsageSyncSuccessAndSkippedCountUsesDeltas() {
+        String sql = mapperXml();
+        String updateSql = sql.substring(sql.indexOf("<update id=\"incrementUsageSyncSuccessAndSkippedCount\""));
+
+        assertTrue(updateSql.contains("success_count = success_count + #{successDelta}"));
+        assertTrue(updateSql.contains("skipped_count = skipped_count + #{skippedDelta}"));
+        assertTrue(updateSql.contains("processed_count_updated_at = CURRENT_TIMESTAMP(6)"));
+        assertTrue(updateSql.contains("WHERE id = #{batchJobId}"));
+        assertTrue(updateSql.contains("AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'"));
+        assertTrue(updateSql.contains("AND status = 'RUNNING'"));
+        assertFalse(updateSql.contains("failed_count = failed_count +"));
+    }
+
+    @Test
     @DisplayName("usage sync 완료 CAS는 terminal count 합계가 target_count와 같을 때만 COMPLETED 전환한다")
     void completeUsageSyncBatchUsesTerminalCountCas() {
         String sql = mapperXml();

@@ -71,30 +71,57 @@
     <!--
         앱별 사용량도 usage_date/line_id/application_id 기준 최초 삽입만 허용한다.
         재처리 중복이 발생하면 기존 개인/공유/QoS 값을 덮어쓰지 않는다.
+        rows가 비어 있으면 문법 오류가 나는 빈 VALUES 대신 0건 insert no-op SQL을 실행한다.
     -->
     <insert id="insertDailyAppUsages">
-        INSERT INTO DAILY_APP_TOTAL_DATA (
-            usage_date,
-            line_id,
-            application_id,
-            individual_usage_data,
-            shared_usage_data,
-            qos_usage_data,
-            created_at,
-            updated_at
-        ) VALUES
-        <foreach collection="appUsages" item="appUsage" separator=",">
-            (
-                #{usageDate},
-                #{lineId},
-                #{appUsage.applicationId},
-                #{appUsage.individualUsageData},
-                #{appUsage.sharedUsageData},
-                #{appUsage.qosUsageData},
-                CURRENT_TIMESTAMP(6),
-                CURRENT_TIMESTAMP(6)
-            )
-        </foreach>
+        <choose>
+            <when test="rows != null and rows.size() > 0">
+                INSERT INTO DAILY_APP_TOTAL_DATA (
+                    usage_date,
+                    line_id,
+                    application_id,
+                    individual_usage_data,
+                    shared_usage_data,
+                    qos_usage_data,
+                    created_at,
+                    updated_at
+                ) VALUES
+                <foreach collection="rows" item="row" separator=",">
+                    (
+                        #{row.usageDate},
+                        #{row.lineId},
+                        #{row.applicationId},
+                        #{row.individualUsageData},
+                        #{row.sharedUsageData},
+                        #{row.qosUsageData},
+                        CURRENT_TIMESTAMP(6),
+                        CURRENT_TIMESTAMP(6)
+                    )
+                </foreach>
+            </when>
+            <otherwise>
+                INSERT INTO DAILY_APP_TOTAL_DATA (
+                    usage_date,
+                    line_id,
+                    application_id,
+                    individual_usage_data,
+                    shared_usage_data,
+                    qos_usage_data,
+                    created_at,
+                    updated_at
+                )
+                SELECT
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    CURRENT_TIMESTAMP(6),
+                    CURRENT_TIMESTAMP(6)
+                WHERE 1 = 0
+            </otherwise>
+        </choose>
     </insert>
 
     <!--
