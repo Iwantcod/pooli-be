@@ -222,7 +222,7 @@ class LineDailyUsageSyncBatchAcceptanceTest extends TrafficAcceptanceTestSupport
      * 배치 Manager 스케줄러를 수동으로 구동하고, 배치 job이 COMPLETED 상태가 될 때까지 폴링 대기합니다.
      */
     private void runBatchAndAwaitCompletion() throws Exception {
-        lineDailyBatchManagerScheduler.runDailyBatchManagerSchedule();
+        lineDailyBatchManagerScheduler.runForUsageDate(usageDate);
 
         long startedAt = System.currentTimeMillis();
         while (System.currentTimeMillis() - startedAt < BATCH_COMPLETION_TIMEOUT_MS) {

@@ -53,7 +53,7 @@ public class LineDailyBatchManagerScheduler {
      * 3. lock 획득 서버만 manager 진입점을 실행하고, worker 시작 허용 결과가 반환되면 같은 usageDate worker 감지를 시작한다.
      * 4. manager 작업 성공 여부와 무관하게 finally에서 owner 비교 release를 시도한다.
      */
-    void runForUsageDate(LocalDate usageDate) {
+    public void runForUsageDate(LocalDate usageDate) {
         String lockKey = trafficRedisKeyFactory.lineDailyBatchManagerLockKey();
         String managerInstanceId = buildManagerInstanceId(usageDate);
         boolean lockAcquired = tryAcquireManagerLock(lockKey, managerInstanceId);
