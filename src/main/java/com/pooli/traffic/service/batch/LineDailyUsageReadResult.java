@@ -18,6 +18,18 @@ record LineDailyUsageReadResult(
         DailySharedUsage sharedUsage
 ) {
 
+    /**
+     * appUsages가 null로 전달된 경우 빈 리스트로 정규화한다.
+     * 이후 {@link #hasAnyUsage()} 등에서 null 역참조 없이 안전하게 사용할 수 있다.
+     */
+    LineDailyUsageReadResult {
+        appUsages = (appUsages != null) ? appUsages : List.of();
+    }
+
+    /**
+     * 세 필드 중 하나라도 유효한 사용량 데이터가 존재하면 {@code true}를 반환한다.
+     * appUsages는 compact constructor에서 항상 non-null이 보장되므로 NPE 위험이 없다.
+     */
     boolean hasAnyUsage() {
         return totalUsageData != null || !appUsages.isEmpty() || sharedUsage != null;
     }

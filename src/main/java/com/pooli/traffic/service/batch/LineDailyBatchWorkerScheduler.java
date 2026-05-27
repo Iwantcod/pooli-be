@@ -58,25 +58,30 @@ public class LineDailyBatchWorkerScheduler {
      * 3. RUNNING batch가 있으면 worker 진입점으로 넘기고 시작 감지 재예약은 중단한다.
      */
     void runStartCheckCycle(LocalDate usageDate) {
-        // 1. 종료 이후 지연 실행된 task가 worker를 깨우지 않도록 방어한다.
-        if (stopped) {
-            return;
-        }
+        try {
+            // 1. 종료 이후 지연 실행된 task가 worker를 깨우지 않도록 방어한다.
+            if (stopped) {
+                return;
+            }
 
-        // 2. manager가 같은 usageDate의 usage sync batch를 RUNNING으로 열었는지 확인한다.
-        LineDailyBatchJob runningBatch = lineDailyBatchJobService.findRunningUsageSyncBatch(usageDate);
-        if (runningBatch == null) {
-            // 3. 아직 시작 조건이 아니면 thread 점유 없이 다음 확인만 예약한다.
+            // 2. manager가 같은 usageDate의 usage sync batch를 RUNNING으로 열었는지 확인한다.
+            LineDailyBatchJob runningBatch = lineDailyBatchJobService.findRunningUsageSyncBatch(usageDate);
+            if (runningBatch == null) {
+                // 3. 아직 시작 조건이 아니면 thread 점유 없이 다음 확인만 예약한다.
+                scheduleNextCheck(usageDate, START_CHECK_DELAY_MS + nextJitterMs());
+                return;
+            }
+
+            // 4. 시작 조건이 충족되면 worker service를 한 cycle 실행하고 결과에 따라 다음 cycle을 예약한다.
+            LineDailyUsageSyncWorkerRunResult result = lineDailyUsageSyncWorkerService.run(runningBatch);
+            if (result == LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY) {
+                scheduleNextCheck(usageDate, 0L);
+            } else if (result == LineDailyUsageSyncWorkerRunResult.WAIT_FOR_EMPTY_POLL) {
+                scheduleNextCheck(usageDate, EMPTY_POLL_DELAY_MS);
+            }
+        } catch (Throwable t) {
+            log.error("Failed to execute worker cycle for usageDate: {}. Retrying after delay.", usageDate, t);
             scheduleNextCheck(usageDate, START_CHECK_DELAY_MS + nextJitterMs());
-            return;
-        }
-
-        // 4. 시작 조건이 충족되면 worker service를 한 cycle 실행하고 결과에 따라 다음 cycle을 예약한다.
-        LineDailyUsageSyncWorkerRunResult result = lineDailyUsageSyncWorkerService.run(runningBatch);
-        if (result == LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY) {
-            scheduleNextCheck(usageDate, 0L);
-        } else if (result == LineDailyUsageSyncWorkerRunResult.WAIT_FOR_EMPTY_POLL) {
-            scheduleNextCheck(usageDate, EMPTY_POLL_DELAY_MS);
         }
     }
 

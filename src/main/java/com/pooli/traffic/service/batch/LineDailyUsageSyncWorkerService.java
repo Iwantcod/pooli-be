@@ -1,7 +1,10 @@
 package com.pooli.traffic.service.batch;
 
 import java.time.LocalDate;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.context.annotation.Profile;
@@ -199,11 +202,13 @@ public class LineDailyUsageSyncWorkerService {
     /**
      * Spring DataAccessException의 cause chain에서 재시도 가능한 DB 인프라 예외를 찾는다.
      * query timeout, lock 획득 실패, deadlock, pessimistic lock 실패, 동시성 실패만 재시도 대상으로 인정한다.
+     * 순환 cause chain은 이미 확인한 예외를 다시 만나면 순회를 중단한다.
      */
     private boolean isRetryableDbException(DataAccessException exception) {
-        // 1. Spring 예외 wrapper 안쪽 cause까지 순회해 실제 lock/timeout 원인을 찾는다.
+        // 1. Spring 예외 wrapper 안쪽 cause까지 순회하되 순환 cause chain은 반복하지 않는다.
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         Throwable current = exception;
-        while (current != null) {
+        while (current != null && seen.add(current)) {
             // 2. 일시적 timeout, deadlock, pessimistic lock 실패, 동시성 실패만 재시도 대상으로 본다.
             if (current instanceof QueryTimeoutException
                     || current instanceof CannotAcquireLockException

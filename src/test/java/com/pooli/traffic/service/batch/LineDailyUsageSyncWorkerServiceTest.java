@@ -1,12 +1,14 @@
 package com.pooli.traffic.service.batch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -17,6 +19,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.QueryTimeoutException;
 
 import com.pooli.traffic.domain.batch.BatchName;
@@ -223,6 +226,38 @@ class LineDailyUsageSyncWorkerServiceTest {
     }
 
     @Test
+    @DisplayName("DB 예외 cause chain이 순환해도 재시도 판단을 종료하고 FAILED로 기록한다")
+    void recordsNonRetryableFailureWhenDataAccessExceptionCauseChainCycles() {
+        LineDailyBatchJob batchJob = batchJob();
+        LineDailyBatchTarget target = target();
+        SelfCausingDataAccessException exception = new SelfCausingDataAccessException();
+        when(lineDailyBatchTargetClaimService.claim(
+                org.mockito.ArgumentMatchers.eq(USAGE_DATE),
+                anyString(),
+                org.mockito.ArgumentMatchers.eq(LineDailyUsageSyncWorkerService.WORKER_CLAIM_CHUNK_SIZE)
+        )).thenReturn(List.of(target));
+        when(lineDailyUsageRedisReader.read(target)).thenThrow(exception);
+        when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(exception)).thenReturn(false);
+
+        assertTimeoutPreemptively(Duration.ofSeconds(1), () -> lineDailyUsageSyncWorkerService.run(batchJob));
+
+        verify(lineDailyUsageSyncPersistenceService).recordNonRetryableFailure(
+                org.mockito.ArgumentMatchers.eq(batchJob.getId()),
+                org.mockito.ArgumentMatchers.eq(target),
+                anyString(),
+                org.mockito.ArgumentMatchers.eq("NON_RETRYABLE_WORKER_FAILURE"),
+                org.mockito.ArgumentMatchers.contains("self-causing")
+        );
+        verify(lineDailyUsageSyncPersistenceService, never()).recordRetryableFailure(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
     @DisplayName("선점 row가 없고 non-terminal row가 남아 있으면 1분 empty poll 재예약을 요청한다")
     void requestsEmptyPollWhenNoClaimedTargetButNonTerminalTargetsRemain() {
         LineDailyBatchJob batchJob = batchJob();
@@ -272,5 +307,26 @@ class LineDailyUsageSyncWorkerServiceTest {
                 .usageDate(USAGE_DATE)
                 .lineId(11L)
                 .build();
+    }
+
+    /**
+     * cause가 자기 자신을 가리키는 비정상 DB 예외를 만들어 cause chain 순환 방어를 검증한다.
+     */
+    private static final class SelfCausingDataAccessException extends DataAccessException {
+
+        /**
+         * 테스트용 self-cause DB 예외 메시지를 초기화한다.
+         */
+        private SelfCausingDataAccessException() {
+            super("self-causing");
+        }
+
+        /**
+         * cause chain 순환 상황을 재현하기 위해 자기 자신을 cause로 반환한다.
+         */
+        @Override
+        public synchronized Throwable getCause() {
+            return this;
+        }
     }
 }
