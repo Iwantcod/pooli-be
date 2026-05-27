@@ -106,10 +106,10 @@ class LineDailyUsageSyncWorkerServiceTest {
 
         assertEquals(LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY, result);
         verify(lineDailyUsageRedisReader).read(target);
-        verify(lineDailyUsageSyncPersistenceService).persistUsageAndCompleteTarget(
-                org.mockito.ArgumentMatchers.eq(batchJob.getId()),
-                org.mockito.ArgumentMatchers.eq(target),
-                org.mockito.ArgumentMatchers.any(LineDailyUsageReadResult.class),
+        verify(lineDailyUsageSyncPersistenceService).persistUsagesAndCompleteTargets(
+                org.mockito.ArgumentMatchers.eq(batchJob),
+                org.mockito.ArgumentMatchers.argThat(snapshots ->
+                        snapshots.size() == 1 && snapshots.get(0).target().equals(target)),
                 anyString()
         );
     }
@@ -142,16 +142,20 @@ class LineDailyUsageSyncWorkerServiceTest {
         assertEquals(LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY, firstResult);
         assertEquals(LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY, secondResult);
         ArgumentCaptor<String> workerIdCaptor = ArgumentCaptor.forClass(String.class);
-        verify(lineDailyUsageSyncPersistenceService).persistUsageAndCompleteTarget(
-                org.mockito.ArgumentMatchers.eq(batchJob.getId()),
-                org.mockito.ArgumentMatchers.eq(firstTarget),
-                org.mockito.ArgumentMatchers.eq(firstSnapshot),
+        verify(lineDailyUsageSyncPersistenceService).persistUsagesAndCompleteTargets(
+                org.mockito.ArgumentMatchers.eq(batchJob),
+                org.mockito.ArgumentMatchers.argThat(snapshots ->
+                        snapshots.size() == 1
+                                && snapshots.get(0).target().equals(firstTarget)
+                                && snapshots.get(0).snapshot().equals(firstSnapshot)),
                 workerIdCaptor.capture()
         );
-        verify(lineDailyUsageSyncPersistenceService).persistUsageAndCompleteTarget(
-                org.mockito.ArgumentMatchers.eq(batchJob.getId()),
-                org.mockito.ArgumentMatchers.eq(secondTarget),
-                org.mockito.ArgumentMatchers.eq(secondSnapshot),
+        verify(lineDailyUsageSyncPersistenceService).persistUsagesAndCompleteTargets(
+                org.mockito.ArgumentMatchers.eq(batchJob),
+                org.mockito.ArgumentMatchers.argThat(snapshots ->
+                        snapshots.size() == 1
+                                && snapshots.get(0).target().equals(secondTarget)
+                                && snapshots.get(0).snapshot().equals(secondSnapshot)),
                 workerIdCaptor.capture()
         );
         verify(lineDailyUsageRedisReader, times(1)).read(firstTarget);
@@ -159,6 +163,96 @@ class LineDailyUsageSyncWorkerServiceTest {
         org.assertj.core.api.Assertions.assertThat(workerIdCaptor.getAllValues())
                 .allMatch(workerId -> workerId.startsWith("line-daily-worker:" + USAGE_DATE + ":"))
                 .doesNotHaveDuplicates();
+    }
+
+    @Test
+    @DisplayName("청크 크기는 2000건으로 선점한다")
+    void claimsTwoThousandTargetsPerWorkerCycle() {
+        assertEquals(2000, LineDailyUsageSyncWorkerService.WORKER_CLAIM_CHUNK_SIZE);
+    }
+
+    @Test
+    @DisplayName("Redis 조회 실패가 섞이면 실패 target만 개별 기록하고 성공 target만 bulk 처리한다")
+    void recordsOnlyFailedTargetIndividuallyAndPersistsSuccessfulSnapshotsInBulk() {
+        LineDailyBatchJob batchJob = batchJob();
+        LineDailyBatchTarget successTarget = target().toBuilder()
+                .id(10L)
+                .lineId(101L)
+                .build();
+        LineDailyBatchTarget failedTarget = target().toBuilder()
+                .id(11L)
+                .lineId(102L)
+                .build();
+        LineDailyUsageReadResult successSnapshot = new LineDailyUsageReadResult(100L, List.of(), null);
+        IllegalStateException exception = new IllegalStateException("missing usage hash");
+        when(lineDailyBatchTargetClaimService.claim(
+                org.mockito.ArgumentMatchers.eq(USAGE_DATE),
+                anyString(),
+                org.mockito.ArgumentMatchers.eq(LineDailyUsageSyncWorkerService.WORKER_CLAIM_CHUNK_SIZE)
+        )).thenReturn(List.of(successTarget, failedTarget));
+        when(lineDailyUsageRedisReader.read(successTarget)).thenReturn(successSnapshot);
+        when(lineDailyUsageRedisReader.read(failedTarget)).thenThrow(exception);
+        when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(exception)).thenReturn(false);
+
+        LineDailyUsageSyncWorkerRunResult result = lineDailyUsageSyncWorkerService.run(batchJob);
+
+        assertEquals(LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY, result);
+        verify(lineDailyUsageSyncPersistenceService).recordNonRetryableFailure(
+                org.mockito.ArgumentMatchers.eq(batchJob.getId()),
+                org.mockito.ArgumentMatchers.eq(failedTarget),
+                anyString(),
+                org.mockito.ArgumentMatchers.eq("NON_RETRYABLE_WORKER_FAILURE"),
+                org.mockito.ArgumentMatchers.contains("missing usage hash")
+        );
+        verify(lineDailyUsageSyncPersistenceService).persistUsagesAndCompleteTargets(
+                org.mockito.ArgumentMatchers.eq(batchJob),
+                org.mockito.ArgumentMatchers.argThat(snapshots ->
+                        snapshots.size() == 1
+                                && snapshots.get(0).target().equals(successTarget)
+                                && snapshots.get(0).snapshot().equals(successSnapshot)),
+                anyString()
+        );
+    }
+
+    @Test
+    @DisplayName("모든 Redis 조회가 실패하면 bulk insert를 호출하지 않는다")
+    void doesNotCallBulkPersistenceWhenAllRedisReadsFail() {
+        LineDailyBatchJob batchJob = batchJob();
+        LineDailyBatchTarget firstTarget = target().toBuilder()
+                .id(10L)
+                .lineId(101L)
+                .build();
+        LineDailyBatchTarget secondTarget = target().toBuilder()
+                .id(11L)
+                .lineId(102L)
+                .build();
+        IllegalStateException firstException = new IllegalStateException("first failure");
+        IllegalStateException secondException = new IllegalStateException("second failure");
+        when(lineDailyBatchTargetClaimService.claim(
+                org.mockito.ArgumentMatchers.eq(USAGE_DATE),
+                anyString(),
+                org.mockito.ArgumentMatchers.eq(LineDailyUsageSyncWorkerService.WORKER_CLAIM_CHUNK_SIZE)
+        )).thenReturn(List.of(firstTarget, secondTarget));
+        when(lineDailyUsageRedisReader.read(firstTarget)).thenThrow(firstException);
+        when(lineDailyUsageRedisReader.read(secondTarget)).thenThrow(secondException);
+        when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(firstException)).thenReturn(false);
+        when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(secondException)).thenReturn(false);
+
+        LineDailyUsageSyncWorkerRunResult result = lineDailyUsageSyncWorkerService.run(batchJob);
+
+        assertEquals(LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY, result);
+        verify(lineDailyUsageSyncPersistenceService, times(2)).recordNonRetryableFailure(
+                org.mockito.ArgumentMatchers.eq(batchJob.getId()),
+                org.mockito.ArgumentMatchers.any(LineDailyBatchTarget.class),
+                anyString(),
+                org.mockito.ArgumentMatchers.eq("NON_RETRYABLE_WORKER_FAILURE"),
+                org.mockito.ArgumentMatchers.anyString()
+        );
+        verify(lineDailyUsageSyncPersistenceService, never()).persistUsagesAndCompleteTargets(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
     }
 
     @Test

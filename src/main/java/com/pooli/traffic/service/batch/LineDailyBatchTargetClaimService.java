@@ -19,7 +19,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class LineDailyBatchTargetClaimService {
 
-    static final int PROCESSING_LEASE_TIMEOUT_SECONDS = 60;
+    static final int PROCESSING_LEASE_TIMEOUT_SECONDS = 300; // 5분
 
     private final LineDailyBatchTargetMapper lineDailyBatchTargetMapper;
 

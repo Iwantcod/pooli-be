@@ -1,6 +1,7 @@
 package com.pooli.traffic.service.batch;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -26,7 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * Usage sync worker loop 진입점이다.
- * target claim 이후 Redis 조회와 MySQL 반영 트랜잭션을 target row 단위로 연결한다.
+ * target claim 이후 Redis 조회 단계와 MySQL bulk 반영 트랜잭션 단계를 분리해 chunk 단위 처리를 조율한다.
  */
 @Slf4j
 @Service
@@ -34,7 +35,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class LineDailyUsageSyncWorkerService {
 
-    static final int WORKER_CLAIM_CHUNK_SIZE = 100;
+    static final int WORKER_CLAIM_CHUNK_SIZE = 2000;
 
     private final LineDailyBatchTargetClaimService lineDailyBatchTargetClaimService;
     private final LineDailyUsageRedisReader lineDailyUsageRedisReader;
@@ -71,12 +72,14 @@ public class LineDailyUsageSyncWorkerService {
             return handleEmptyClaim(batchJob);
         }
 
-        // 5. 선점한 row는 lock이 해제된 뒤 target 단위로 Redis 조회와 MySQL 반영을 수행한다.
-        for (LineDailyBatchTarget target : claimedTargets) {
-            processTarget(batchJob, target, workerId);
+        // 5. 선점한 row는 lock이 해제된 뒤 Redis 조회를 먼저 수행하고, 성공한 snapshot만 bulk 반영 대상으로 모은다.
+        List<LineDailyTargetWithSnapshot> snapshots = readUsageSnapshots(batchJob, claimedTargets, workerId);
+        // 6. Redis 조회에 성공한 target이 있으면 MySQL 반영과 target terminal 전환을 한 트랜잭션에서 bulk 처리한다.
+        if (!snapshots.isEmpty()) {
+            lineDailyUsageSyncPersistenceService.persistUsagesAndCompleteTargets(batchJob, snapshots, workerId);
         }
 
-        // 6. 이번 cycle에서 처리한 row가 있으므로 다음 cycle을 즉시 이어가도록 scheduler에 알린다.
+        // 7. 이번 cycle에서 선점한 row가 있으므로 다음 cycle을 즉시 이어가도록 scheduler에 알린다.
         return LineDailyUsageSyncWorkerRunResult.CONTINUE_IMMEDIATELY;
     }
 
@@ -111,31 +114,38 @@ public class LineDailyUsageSyncWorkerService {
     }
 
     /**
-     * target row 하나를 Redis 조회부터 MySQL 반영까지 처리하고 실패 시 retry 정책에 맞게 상태를 기록한다.
+     * target chunk를 순회하며 Redis snapshot을 조회하고, 조회 성공분만 bulk persistence 입력으로 반환한다.
+     * Redis 조회 실패 target은 기존 retry 정책에 맞게 즉시 개별 실패로 기록한다.
      */
-    private void processTarget(LineDailyBatchJob batchJob, LineDailyBatchTarget target, String workerId) {
-        try {
-            // 1. Redis에서 target line의 일별 총량, 앱별 사용량, 공유풀 사용량 snapshot을 조회한다.
-            LineDailyUsageReadResult snapshot = lineDailyUsageRedisReader.read(target);
-            // 2. 조회 결과가 실제 DB insert 대상인지, 전체 key 없음으로 SKIPPED 대상인지 기록한다.
-            log.info(
-                    "line_daily_usage_sync_worker_read_usage targetId={} usageDate={} lineId={} hasAnyUsage={}",
-                    target.getId(),
-                    target.getUsageDate(),
-                    target.getLineId(),
-                    snapshot.hasAnyUsage()
-            );
-            // 3. MySQL 트랜잭션 안에서 usage insert, target terminal 전환, metadata count 증가를 수행한다.
-            lineDailyUsageSyncPersistenceService.persistUsageAndCompleteTarget(
-                    batchJob.getId(),
-                    target,
-                    snapshot,
-                    workerId
-            );
-        } catch (RuntimeException e) {
-            // 4. Redis 조회 또는 DB 반영 중 실패하면 retry 정책에 맞는 target 상태로 기록한다.
-            recordTargetFailure(batchJob, target, workerId, e);
+    private List<LineDailyTargetWithSnapshot> readUsageSnapshots(
+            LineDailyBatchJob batchJob,
+            List<LineDailyBatchTarget> claimedTargets,
+            String workerId
+    ) {
+        List<LineDailyTargetWithSnapshot> snapshots = new ArrayList<>();
+
+        // 1. Redis 조회는 target별 외부 호출이므로 bulk DB 트랜잭션 밖에서 순차 실행한다.
+        for (LineDailyBatchTarget target : claimedTargets) {
+            try {
+                // 2. Redis에서 target line의 일별 총량, 앱별 사용량, 공유풀 사용량 snapshot을 조회한다.
+                LineDailyUsageReadResult snapshot = lineDailyUsageRedisReader.read(target);
+                // 3. 조회 결과가 실제 DB insert 대상인지, 전체 key 없음으로 SKIPPED 대상인지 기록한다.
+                log.info(
+                        "line_daily_usage_sync_worker_read_usage targetId={} usageDate={} lineId={} hasAnyUsage={}",
+                        target.getId(),
+                        target.getUsageDate(),
+                        target.getLineId(),
+                        snapshot.hasAnyUsage()
+                );
+                // 4. Redis 조회 성공분만 이후 bulk insert/terminal 전환 대상에 포함한다.
+                snapshots.add(new LineDailyTargetWithSnapshot(target, snapshot));
+            } catch (RuntimeException e) {
+                // 5. Redis 조회 실패 target은 bulk 대상에서 제외하고 기존 retry 정책에 맞게 개별 실패로 기록한다.
+                recordTargetFailure(batchJob, target, workerId, e);
+            }
         }
+
+        return snapshots;
     }
 
     /**

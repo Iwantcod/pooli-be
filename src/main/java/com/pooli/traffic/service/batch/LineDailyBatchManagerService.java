@@ -24,7 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class LineDailyBatchManagerService {
 
-    private static final int TARGET_INSERT_CHUNK_SIZE = 1000;
+    private static final int TARGET_INSERT_CHUNK_SIZE = 5000;
 
     private final LineDailyBatchJobService lineDailyBatchJobService;
     private final LineDailyBatchTargetMapper lineDailyBatchTargetMapper;
