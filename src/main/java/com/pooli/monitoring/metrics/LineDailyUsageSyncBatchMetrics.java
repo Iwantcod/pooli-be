@@ -45,9 +45,9 @@ public class LineDailyUsageSyncBatchMetrics {
      */
     @PostConstruct
     void init() {
-        // 1. RUNNING usage sync batch의 failed_count를 실패 알림 조건으로 등록한다.
+        // 1. 최신 usage sync batch의 failed_count를 실패 알림 조건으로 등록한다.
         Gauge.builder("batch_daily_usage_sync_failed_count", failedCount, AtomicLong::get)
-                .description("Failed target count of the latest RUNNING daily usage sync batch")
+                .description("Failed target count of the latest daily usage sync batch")
                 .register(meterRegistry);
         // 2. 최신 usage sync batch 상태를 숫자 코드로 노출해 운영 대시보드에서 상태를 구분한다.
         Gauge.builder("batch_daily_usage_sync_status", statusCode, AtomicLong::get)
@@ -63,7 +63,7 @@ public class LineDailyUsageSyncBatchMetrics {
 
     /**
      * DB의 최신 usage sync batch metadata를 읽어 gauge holder 값을 갱신한다.
-     * RUNNING batch가 아닐 때는 실패 수와 경과 시간을 0으로 내려 이전 실행 값이 남지 않게 한다.
+     * RUNNING batch가 아닐 때는 실패 수를 최신 metadata 기준으로 보존하고 경과 시간만 0으로 내린다.
      * 기본 30초 주기는 Spring 앱 내부의 DB 조회/holder 갱신 주기이며,
      * Prometheus scrape 주기와 AlertManager 평가/알림 주기는 인프라 설정을 따른다.
      */
@@ -79,15 +79,14 @@ public class LineDailyUsageSyncBatchMetrics {
 
         // 3. 최신 batch 상태 코드는 RUNNING 여부와 무관하게 항상 반영한다.
         statusCode.set(statusCode(batchJob.getStatus()));
+        failedCount.set(nonNullCount(batchJob.getFailedCount()));
         if (batchJob.getStatus() != LineDailyBatchStatus.RUNNING) {
-            // 4. terminal 또는 pending batch는 현재 진행 중인 실패/경과 알림 대상이 아니다.
-            failedCount.set(0L);
+            // 4. terminal 또는 pending batch는 현재 진행 중인 경과 시간 알림 대상이 아니다.
             runDurationSeconds.set(0L);
             return;
         }
 
-        // 5. RUNNING batch만 실패 target 수와 실행 경과 시간을 알림용 gauge로 노출한다.
-        failedCount.set(nonNullCount(batchJob.getFailedCount()));
+        // 5. RUNNING batch는 실행 경과 시간을 deadline 알림용 gauge로 노출한다.
         runDurationSeconds.set(runDurationSeconds(batchJob.getRunStartedAt()));
     }
 

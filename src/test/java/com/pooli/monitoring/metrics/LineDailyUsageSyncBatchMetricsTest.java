@@ -50,8 +50,8 @@ class LineDailyUsageSyncBatchMetricsTest {
     }
 
     @Test
-    @DisplayName("RUNNING batch가 아니면 failed_count와 경과 시간은 0으로 둔다")
-    void resetsRuntimeMetricsWhenLatestBatchIsNotRunning() {
+    @DisplayName("RUNNING batch가 아니어도 failed_count는 보존하고 경과 시간만 0으로 둔다")
+    void preservesFailedCountAndResetsRunDurationWhenLatestBatchIsNotRunning() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         LineDailyBatchJobService batchJobService = org.mockito.Mockito.mock(LineDailyBatchJobService.class);
         Clock clock = Clock.fixed(Instant.parse("2026-05-25T21:30:00Z"), KST);
@@ -67,7 +67,7 @@ class LineDailyUsageSyncBatchMetricsTest {
                 new LineDailyUsageSyncBatchMetrics(meterRegistry, batchJobService, clock);
         metrics.init();
 
-        assertThat(meterRegistry.get("batch_daily_usage_sync_failed_count").gauge().value()).isEqualTo(0.0);
+        assertThat(meterRegistry.get("batch_daily_usage_sync_failed_count").gauge().value()).isEqualTo(2.0);
         assertThat(meterRegistry.get("batch_daily_usage_sync_status").gauge().value()).isEqualTo(3.0);
         assertThat(meterRegistry.get("batch_daily_usage_sync_run_duration_seconds").gauge().value()).isEqualTo(0.0);
     }
