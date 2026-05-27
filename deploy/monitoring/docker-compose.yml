@@ -15,7 +15,7 @@ services:
     # 호스트 9090 -> 컨테이너 9090 매핑.
     # 브라우저에서 http://localhost:9090 으로 Prometheus UI에 접근합니다.
 
-    mem_limit: 512m
+    mem_limit: 256m
     # 로컬 테스트 기준 Prometheus 컨테이너 메모리 제한입니다.
 
     cpus: 0.50
