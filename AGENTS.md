@@ -175,12 +175,30 @@ Use this document as the default style and quality guide for JUnit test structur
 
 ---
 
+## 9.1 Testability Must Not Distort Production Design
+
+Testing convenience MUST NOT drive abnormal, artificial, or production-hostile module design.
+
+- Do NOT add mutable fields, reflection hooks, test-only constructors, unnecessary setters, relaxed visibility, or extra indirection solely to make tests easier.
+- Do NOT weaken encapsulation or dependency boundaries for tests.
+- Do NOT introduce a new abstraction just because mocking the current design is inconvenient.
+- Prefer testing through the same public constructor, bean wiring, and dependency contract used by production code.
+- If deterministic tests require time, randomness, IDs, or external effects, model those as legitimate production dependencies only when they are real runtime concerns.
+- If a test requires a structurally awkward change, stop and redesign the production code around the actual runtime responsibility, not around the test setup.
+- During self-review, explicitly check whether any production code was shaped only for test convenience. If yes, simplify or redesign before reporting completion.
+
+---
+
 ## 10. Code Comment Requirement
 
 For code written by the AI agent:
 
-- Prefer code that is simple enough to understand without comments.
-- Use comments kindly and clearly only when they help maintainers understand non-obvious intent, branching reasons, important constraints, or workflow.
+- When creating or modifying a class, write or update Javadoc that explains the class responsibility and role.
+- When creating or modifying a method, write or update Javadoc that explains the method responsibility, role, and important contract.
+- For method bodies, add concise step-by-step comments that describe the logic flow when the method contains meaningful branching, sequencing, transactions, external calls, or state transitions.
+- For DTO, enum, and record types, explain the meaning of each field, enum constant, or record component with comments.
+- Prefer code that is simple enough to understand without excessive comments.
+- Use comments kindly and clearly only when they help maintainers understand intent, branching reasons, important constraints, data meaning, or workflow.
 - Do NOT add comments that merely restate obvious code.
 
 ---
