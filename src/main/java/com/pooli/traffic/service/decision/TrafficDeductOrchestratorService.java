@@ -122,9 +122,9 @@ public class TrafficDeductOrchestratorService {
                         deductExecutionContext,
                         initialResult
                 );
-                LocalDateTime finishedAt = resolveFinishedAtFromLua(unifiedResult);
                 lastLuaStatus = unifiedResult.getStatus();
                 failureReason = unifiedResult.getFailureReason();
+                LocalDateTime finishedAt = resolveFinishedAtFromLua(unifiedResult);
 
                 long indivDeducted = normalizeNonNegative(unifiedResult.getIndivDeducted());
                 long sharedDeducted = normalizeNonNegative(unifiedResult.getSharedDeducted());
@@ -321,9 +321,19 @@ public class TrafficDeductOrchestratorService {
                 .build();
     }
 
+    /**
+     * Lua 결과의 완료 시각을 도메인 시간대로 변환합니다.
+     *
+     * <p>정상 Lua 실행 결과는 `finishedAtEpochMillis`를 반드시 포함해야 합니다.
+     * hydrate invalid처럼 Java 계층에서 합성한 ERROR 결과는 Lua 완료 시각이 없을 수 있으므로,
+     * consumer가 원래 failureReason을 DLQ로 전달할 수 있게 현재 시각을 완료 시각으로 사용합니다.</p>
+     */
     private LocalDateTime resolveFinishedAtFromLua(TrafficLuaDeductExecutionResult luaResult) {
         Long finishedAtEpochMillis = luaResult == null ? null : luaResult.getFinishedAtEpochMillis();
         if (finishedAtEpochMillis == null) {
+            if (luaResult != null && luaResult.getStatus() == TrafficLuaStatus.ERROR) {
+                return LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
+            }
             throw new IllegalStateException("traffic_lua_finished_at_epoch_millis_missing");
         }
         return LocalDateTime.ofInstant(
