@@ -20,7 +20,7 @@ class TrafficSchedulingConfigTest {
     void taskSchedulerPoolSizeIsTwo() {
         String yaml = read(APPLICATION_YAML);
 
-        assertTrue(yaml.contains("task:\n    scheduling:\n      pool:\n        size: 2"));
+        assertTrue(yaml.contains("task:\n    scheduling:\n      pool:\n        size: ${TASK_SCHED_POOL_SIZE:2}"));
     }
 
     private String read(String path) {

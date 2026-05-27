@@ -1,6 +1,10 @@
 package com.pooli.traffic.service.batch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -67,6 +71,61 @@ class LineDailyBatchTargetClaimServiceTest {
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any()
         );
+    }
+
+    /**
+     * 유효하지 않은 workerId가 DB claim query로 전달되지 않는지 검증한다.
+     */
+    @Test
+    @DisplayName("workerId가 null이거나 비어 있으면 claim query 실행 전에 예외를 던진다")
+    void rejectsInvalidWorkerIdBeforeClaimQuery() {
+        IllegalArgumentException nullException = assertThrows(
+                IllegalArgumentException.class,
+                () -> lineDailyBatchTargetClaimService.claim(USAGE_DATE, null, LIMIT)
+        );
+        IllegalArgumentException emptyException = assertThrows(
+                IllegalArgumentException.class,
+                () -> lineDailyBatchTargetClaimService.claim(USAGE_DATE, "", LIMIT)
+        );
+        IllegalArgumentException blankException = assertThrows(
+                IllegalArgumentException.class,
+                () -> lineDailyBatchTargetClaimService.claim(USAGE_DATE, " ", LIMIT)
+        );
+
+        assertTrue(nullException.getMessage().contains("workerId"));
+        assertTrue(emptyException.getMessage().contains("workerId"));
+        assertTrue(blankException.getMessage().contains("workerId"));
+        verify(lineDailyBatchTargetMapper, never()).selectClaimableTargetsForUpdate(
+                any(),
+                anyInt(),
+                anyInt()
+        );
+        verify(lineDailyBatchTargetMapper, never()).markTargetsProcessing(any(), any());
+    }
+
+    /**
+     * 양수가 아닌 limit이 DB claim query로 전달되지 않는지 검증한다.
+     */
+    @Test
+    @DisplayName("limit이 양수가 아니면 claim query 실행 전에 예외를 던진다")
+    void rejectsNonPositiveLimitBeforeClaimQuery() {
+        IllegalArgumentException zeroException = assertThrows(
+                IllegalArgumentException.class,
+                () -> lineDailyBatchTargetClaimService.claim(USAGE_DATE, WORKER_ID, 0)
+        );
+        IllegalArgumentException negativeException = assertThrows(
+                IllegalArgumentException.class,
+                () -> lineDailyBatchTargetClaimService.claim(USAGE_DATE, WORKER_ID, -1)
+        );
+
+        assertTrue(zeroException.getMessage().contains("limit"));
+        assertTrue(negativeException.getMessage().contains("limit"));
+        verify(lineDailyBatchTargetMapper, never()).selectClaimableTargetsForUpdate(
+                any(),
+                anyInt(),
+                anyInt()
+        );
+        verify(lineDailyBatchTargetMapper, never()).markTargetsProcessing(any(), any());
     }
 
     private LineDailyBatchTarget target(Long id) {
