@@ -80,13 +80,6 @@ WHERE family_id BETWEEN 1 AND 4
 -- Include outbox/fallback tables in setup scope.
 DELETE FROM TRAFFIC_REDIS_OUTBOX;
 
-DELETE FROM TRAFFIC_REDIS_USAGE_DELTA
-WHERE line_id BETWEEN 1 AND 16;
-
-DELETE FROM TRAFFIC_DB_SPEED_BUCKET
-WHERE (pool_type = 'INDIVIDUAL' AND owner_id BETWEEN 1 AND 16)
-   OR (pool_type = 'SHARED' AND owner_id BETWEEN 1 AND 4);
-
 -- Optional: legacy SQL done table cleanup (Mongo done-log is separate).
 DELETE FROM TRAFFIC_DEDUCT_DONE
 WHERE line_id BETWEEN 1 AND 16;
@@ -95,7 +88,7 @@ WHERE line_id BETWEEN 1 AND 16;
 -- 2) Base quota reset
 -- ---------------------------------------------------------------------------
 UPDATE LINE
-SET remaining_data = @LINE_FULL_BYTES,
+SET total_data = @LINE_FULL_BYTES,
     deleted_at = NULL,
     updated_at = NOW(6)
 WHERE line_id BETWEEN 1 AND 16;
@@ -103,7 +96,6 @@ WHERE line_id BETWEEN 1 AND 16;
 UPDATE FAMILY
 SET pool_base_data = @FAMILY_SHARED_BYTES,
     pool_total_data = @FAMILY_SHARED_BYTES,
-    pool_remaining_data = @FAMILY_SHARED_BYTES,
     deleted_at = NULL,
     updated_at = NOW(6)
 WHERE family_id BETWEEN 1 AND 4;
@@ -186,7 +178,7 @@ VALUES
 
 -- G4: shared-pool-only users (same family #4, line 13~14)
 UPDATE LINE
-SET remaining_data = 0,
+SET total_data = 0,
     updated_at = NOW(6)
 WHERE line_id IN (13, 14);
 
@@ -202,12 +194,12 @@ COMMIT;
 -- ---------------------------------------------------------------------------
 -- 5) Post-check queries
 -- ---------------------------------------------------------------------------
-SELECT line_id, remaining_data, block_end_at
+SELECT line_id, total_data, block_end_at
 FROM LINE
 WHERE line_id BETWEEN 1 AND 16
 ORDER BY line_id;
 
-SELECT family_id, pool_base_data, pool_total_data, pool_remaining_data
+SELECT family_id, pool_base_data, pool_total_data
 FROM FAMILY
 WHERE family_id BETWEEN 1 AND 4
 ORDER BY family_id;
