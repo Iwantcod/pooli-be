@@ -92,6 +92,20 @@ public class TrafficLinePolicyHydrationService {
     }
 
     /**
+     * 대상 lineId의 정책 ready key가 Redis에 존재하는지 확인합니다.
+     *
+     * <p>ready key는 정책 스냅샷 적재 여부만 의미하며, 잔량 snapshot 준비 여부는 포함하지 않습니다.</p>
+     */
+    public boolean isLoaded(long lineId) {
+        if (lineId <= 0) {
+            return false;
+        }
+
+        // ready key 존재 여부만 확인하고, 누락 시 실제 적재는 ensureLoaded 호출자가 결정합니다.
+        return isReady(trafficRedisKeyFactory.linePolicyReadyKey(lineId));
+    }
+
+    /**
      * DB 스냅샷을 읽어 회선 정책 키를 Redis에 반영합니다.
      */
     private void hydrateSnapshot(long lineId, String readyKey) {

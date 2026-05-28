@@ -101,6 +101,36 @@ class TrafficRemainingBalanceCacheServiceTest {
     }
 
     @Nested
+    class HasHashFieldTest {
+
+        @Test
+        void returnsTrueWhenHashFieldExists() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.hasKey("pooli:remaining_indiv_amount:11:202603", "qos")).thenReturn(true);
+
+            boolean result = trafficRemainingBalanceCacheService.hasHashField(
+                    "pooli:remaining_indiv_amount:11:202603",
+                    "qos"
+            );
+
+            assertTrue(result);
+        }
+
+        @Test
+        void returnsFalseWhenHashFieldMissing() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.hasKey("pooli:remaining_indiv_amount:11:202603", "qos")).thenReturn(false);
+
+            boolean result = trafficRemainingBalanceCacheService.hasHashField(
+                    "pooli:remaining_indiv_amount:11:202603",
+                    "qos"
+            );
+
+            assertFalse(result);
+        }
+    }
+
+    @Nested
     class HydrateSnapshotTest {
 
         @Test

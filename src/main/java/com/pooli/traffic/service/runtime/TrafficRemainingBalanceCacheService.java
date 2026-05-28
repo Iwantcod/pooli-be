@@ -76,6 +76,17 @@ public class TrafficRemainingBalanceCacheService {
     }
 
     /**
+     * Redis hash field가 존재하는지 확인합니다.
+     *
+     * <p>값이 0이어도 준비된 field일 수 있으므로, 숫자 파싱 대신 Redis field 존재 여부만 확인합니다.</p>
+     */
+    public boolean hasHashField(String key, String field) {
+        // hash field 존재 여부만 확인해 0, -1 같은 정상 sentinel 값을 누락으로 오인하지 않습니다.
+        Boolean hasField = cacheStringRedisTemplate.opsForHash().hasKey(key, field);
+        return Boolean.TRUE.equals(hasField);
+    }
+
+    /**
      * 잔량 hash가 이미 hydrate되어 있을 때만 `amount` 필드를 증감합니다.
      *
      * <p>key 또는 amount가 없으면 RDB source만 갱신된 상태로 두고, 다음 조회 hydrate가 반영하게 합니다.
