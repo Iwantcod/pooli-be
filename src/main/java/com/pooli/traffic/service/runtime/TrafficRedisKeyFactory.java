@@ -45,6 +45,13 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * 일별 사용량 동기화 manager 서버 1대를 선출하기 위한 분산락 키입니다.
+     */
+    public String lineDailyBatchManagerLockKey() {
+        return namespaced("line_daily_batch:manager_lock");
+    }
+
+    /**
      * 회선 정책(on-demand hydrate) 완료 여부를 나타내는 준비 키입니다.
      */
     public String linePolicyReadyKey(long lineId) {
@@ -116,6 +123,15 @@ public class TrafficRedisKeyFactory {
         // 일별 집계 키는 yyyymmdd suffix를 사용한다.
         String yyyymmdd = trafficRedisRuntimePolicy.formatYyyyMmDd(targetDate);
         return namespaced("daily_app_usage:" + lineId + ":" + yyyymmdd);
+    }
+
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
+    public String dailySharedUsageKey(long lineId, LocalDate targetDate) {
+        // 일별 집계 키는 yyyymmdd suffix를 사용한다.
+        String yyyymmdd = trafficRedisRuntimePolicy.formatYyyyMmDd(targetDate);
+        return namespaced("daily_shared_usage:" + lineId + ":" + yyyymmdd);
     }
 
     /**

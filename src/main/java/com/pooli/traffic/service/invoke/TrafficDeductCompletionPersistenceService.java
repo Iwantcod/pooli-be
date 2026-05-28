@@ -40,13 +40,16 @@ public class TrafficDeductCompletionPersistenceService {
             String recordId,
             Long latency
     ) {
-        boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload, result, recordId, latency);
-        long outboxId = trafficInFlightDedupeDeleteOutboxService.createPendingDeferred(
-                payload.getTraceId(),
-                recordId
-        );
+        // [정상 경로]
+         boolean saved = trafficDeductDoneLogService.saveIfAbsent(payload, result, recordId, latency);
+         long outboxId = trafficInFlightDedupeDeleteOutboxService.createPendingDeferred(
+                 payload.getTraceId(),
+                 recordId
+         );
+         return new CompletionPersistenceResult(saved, outboxId);
 
-        return new CompletionPersistenceResult(saved, outboxId);
+        // [DB Insert 비활성화] done log INSERT + outbox PENDING 생성을 모두 건너뜁니다.
+//        return new CompletionPersistenceResult(true, -1L);
     }
 
     public record CompletionPersistenceResult(boolean saved, long outboxId) {

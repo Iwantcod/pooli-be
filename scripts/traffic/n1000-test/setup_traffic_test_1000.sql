@@ -105,14 +105,9 @@ DELETE FROM FAMILY_SHARED_USAGE_DAILY
 WHERE family_id BETWEEN @FAMILY_START AND @FAMILY_END
    OR line_id BETWEEN @LINE_START AND @LINE_END;
 
-DELETE FROM TRAFFIC_REDIS_OUTBOX;
 
-DELETE FROM TRAFFIC_REDIS_USAGE_DELTA
-WHERE line_id BETWEEN @LINE_START AND @LINE_END;
 
-DELETE FROM TRAFFIC_DB_SPEED_BUCKET
-WHERE (pool_type = 'INDIVIDUAL' AND owner_id BETWEEN @LINE_START AND @LINE_END)
-   OR (pool_type = 'SHARED' AND owner_id BETWEEN @FAMILY_START AND @FAMILY_END);
+
 
 DELETE FROM TRAFFIC_DEDUCT_DONE
 WHERE line_id BETWEEN @LINE_START AND @LINE_END;
@@ -121,7 +116,7 @@ WHERE line_id BETWEEN @LINE_START AND @LINE_END;
 -- 2) Base quota reset
 -- ---------------------------------------------------------------------------
 UPDATE LINE
-SET remaining_data = @LINE_FULL_BYTES,
+SET total_data = @LINE_FULL_BYTES,
     deleted_at = NULL,
     updated_at = NOW(6)
 WHERE line_id BETWEEN @LINE_START AND @LINE_END;
@@ -129,29 +124,11 @@ WHERE line_id BETWEEN @LINE_START AND @LINE_END;
 UPDATE FAMILY
 SET pool_base_data = @FAMILY_SHARED_BYTES,
     pool_total_data = @FAMILY_SHARED_BYTES,
-    pool_remaining_data = @FAMILY_SHARED_BYTES,
     deleted_at = NULL,
     updated_at = NOW(6)
 WHERE family_id BETWEEN @FAMILY_START AND @FAMILY_END;
 
--- ---------------------------------------------------------------------------
--- 3) Enforce family-line mapping (4 lines per family)
--- ---------------------------------------------------------------------------
-DELETE FROM FAMILY_LINE
-WHERE line_id BETWEEN @LINE_START AND @LINE_END;
 
-INSERT INTO FAMILY_LINE (family_id, line_id, role, is_public, created_at, updated_at)
-SELECT
-    FLOOR((l.line_id - @LINE_START) / 4) + @FAMILY_START AS family_id,
-    l.line_id,
-    CASE WHEN MOD(l.line_id - @LINE_START, 4) = 0 THEN 'OWNER' ELSE 'MEMBER' END AS role,
-    1,
-    NOW(6),
-    NOW(6)
-FROM LINE l
-WHERE l.line_id BETWEEN @LINE_START AND @LINE_END
-  AND l.deleted_at IS NULL
-ORDER BY l.line_id;
 
 -- ---------------------------------------------------------------------------
 -- 4) Group-specific policy setup
@@ -256,7 +233,7 @@ ORDER BY l.line_id;
 
 -- G4: shared-pool-only
 UPDATE LINE
-SET remaining_data = 0,
+SET total_data = 0,
     updated_at = NOW(6)
 WHERE line_id BETWEEN @G4_START AND @G4_END;
 
@@ -311,7 +288,7 @@ WHERE line_id BETWEEN @G6_START AND @G6_END
 SELECT 'g4_zero_personal_count' AS check_name, COUNT(*) AS cnt, 160 AS expected
 FROM LINE
 WHERE line_id BETWEEN @G4_START AND @G4_END
-  AND remaining_data = 0;
+  AND total_data = 0;
 
 SELECT 'app_policy_distribution_in_scope' AS check_name,
        application_id,

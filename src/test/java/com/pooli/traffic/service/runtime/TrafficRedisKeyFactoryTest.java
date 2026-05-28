@@ -27,6 +27,14 @@ class TrafficRedisKeyFactoryTest {
                 trafficRedisKeyFactory.dailyTotalUsageKey(11L, LocalDate.of(2026, 3, 11))
         );
         assertEquals(
+                "pooli:daily_app_usage:11:20260311",
+                trafficRedisKeyFactory.dailyAppUsageKey(11L, LocalDate.of(2026, 3, 11))
+        );
+        assertEquals(
+                "pooli:daily_shared_usage:11:20260311",
+                trafficRedisKeyFactory.dailySharedUsageKey(11L, LocalDate.of(2026, 3, 11))
+        );
+        assertEquals(
                 "pooli:qos_speed_limit_next_available:11:7",
                 trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(11L, 7)
         );
@@ -37,6 +45,7 @@ class TrafficRedisKeyFactoryTest {
         TrafficRedisKeyFactory trafficRedisKeyFactory = keyFactoryWithNamespace(" ");
 
         assertEquals("policy:1", trafficRedisKeyFactory.policyKey(1L));
+        assertEquals("line_daily_batch:manager_lock", trafficRedisKeyFactory.lineDailyBatchManagerLockKey());
         assertEquals("dedupe:run:trace-001", trafficRedisKeyFactory.dedupeRunKey("trace-001"));
         assertEquals(
                 "shared_pool_contribution:metadata:trace-001",

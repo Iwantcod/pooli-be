@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
+import java.util.Map;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -425,7 +426,7 @@ class TrafficDataPolicyAcceptanceTest extends TrafficAcceptanceTestSupport {
         setDailyTotalLimit(lineId, 100L);
         setAppDailyLimit(lineId, appId, 100L);
         setMonthlySharedLimit(lineId, 20L);
-        setMonthlySharedUsage(lineId, 20L);
+        setMonthlySharedUsage(lineId, familyId, 20L);
 
         String traceId = enqueueTrafficRequest(lineId, familyId, appId, 50L);
 
@@ -787,10 +788,12 @@ class TrafficDataPolicyAcceptanceTest extends TrafficAcceptanceTestSupport {
     /**
      * 기존 monthly shared usage가 있는 limit 소진 시나리오를 만들기 위해 현재 월 counter를 설정합니다.
      */
-    private void setMonthlySharedUsage(long lineId, long usage) {
+    private void setMonthlySharedUsage(long lineId, long familyId, long usage) {
         YearMonth currentMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
-        cacheStringRedisTemplate.opsForValue()
-                .set(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth), String.valueOf(usage));
+        cacheStringRedisTemplate.opsForHash().putAll(
+                trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth),
+                Map.of("usage_amount", String.valueOf(usage), "family_id", String.valueOf(familyId))
+        );
     }
 
     /**
@@ -845,7 +848,11 @@ class TrafficDataPolicyAcceptanceTest extends TrafficAcceptanceTestSupport {
     private void setDailyAppUsage(long lineId, int appId, long usage) {
         LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
         cacheStringRedisTemplate.opsForHash()
-                .put(trafficRedisKeyFactory.dailyAppUsageKey(lineId, today), "app:" + appId, String.valueOf(usage));
+                .put(
+                        trafficRedisKeyFactory.dailyAppUsageKey(lineId, today),
+                        "app:" + appId + ":individual",
+                        String.valueOf(usage)
+                );
     }
 
     /**

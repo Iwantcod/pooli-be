@@ -73,7 +73,15 @@ local function read_non_negative_counter(key, field)
   return value
 end
 
--- hydrate는 월별 snapshot 준비 여부로 판단한다.
+local function read_daily_app_usage(key, individual_field, shared_field, qos_field)
+  return read_non_negative_counter(key, individual_field)
+      + read_non_negative_counter(key, shared_field)
+      + read_non_negative_counter(key, qos_field)
+end
+
+-- 월별 잔량 snapshot fallback 필요 여부는 hash field 기준으로 판단한다.
+-- 정상 차감 경로에서는 Java preflight가 snapshot을 먼저 준비하지만, Redis eviction/부분 손상/동시성 경합에 대비해
+-- Lua도 마지막 방어선으로 HYDRATE_INDIVIDUAL/HYDRATE_SHARED를 반환한다.
 local function is_hash_snapshot_ready(key, required_fields)
   if redis.call("EXISTS", key) == 0 then
     return false
@@ -97,7 +105,7 @@ local DEDUPE_PROCESSED_QOS_FIELD = "processed_qos_data"
 local DEDUPE_RETRY_FIELD = "retry_count"
 
 -- KEYS
--- 1~2: 잔량 hash, 3~6: 전역 정책 활성화 hash, 7~13: 제한/사용량, 14: 속도/QoS 예약, 15: in-flight dedupe hash.
+-- 1~2: 잔량 hash, 3~6: 전역 정책 활성화 hash, 7~13: 제한/사용량, 14: 속도/QoS 예약, 15: in-flight dedupe hash, 16: 일별 공유풀 사용량 hash.
 -- KEYS[14]는 기존 초 단위 speed bucket이 아니라 lineId+appId 단일 예약 키다.
 -- 이 키의 value는 "다음 요청이 시작 기준으로 삼아야 할 완료 가능 시각(epoch millis)"이다.
 local individual_remaining_key = KEYS[1]
@@ -115,6 +123,7 @@ local daily_app_usage_key = KEYS[12]
 local app_speed_limit_key = KEYS[13]
 local qos_speed_limit_next_available_key = KEYS[14]
 local dedupe_key = KEYS[15]
+local daily_shared_usage_key = KEYS[16]
 
 -- ARGV
 -- target_data: 이번 Lua 호출에서 추가 처리할 목표량.
@@ -125,6 +134,7 @@ local daily_expire_at = tonumber(ARGV[3])
 local monthly_expire_at = tonumber(ARGV[4])
 local whitelist_bypass_flag = tonumber(ARGV[5] or "0")
 local api_total_data = tonumber(ARGV[6] or "-1")
+local family_id = tonumber(ARGV[7] or "-1")
 
 -- ===== 입력 검증 =====
 -- 필수 key/argument가 누락되거나 음수이면 Redis 상태를 변경하지 않고 ERROR를 반환한다.
@@ -134,10 +144,16 @@ end
 if not shared_remaining_key or shared_remaining_key == "" then
   return as_json(0, 0, 0, "ERROR")
 end
+if not daily_shared_usage_key or daily_shared_usage_key == "" then
+  return as_json(0, 0, 0, "ERROR")
+end
 if not target_data or target_data < 0 then
   return as_json(0, 0, 0, "ERROR")
 end
 if not app_id or app_id < 0 then
+  return as_json(0, 0, 0, "ERROR")
+end
+if not family_id or family_id <= 0 then
   return as_json(0, 0, 0, "ERROR")
 end
 if not daily_expire_at or daily_expire_at <= 0 then
@@ -180,8 +196,8 @@ if has_missing_global_policy_key(
   return as_json(0, 0, 0, "GLOBAL_POLICY_HYDRATE")
 end
 
--- ===== 3단계: 개인 잔량 snapshot 준비 여부 확인 =====
--- 개인 snapshot은 amount와 qos가 함께 준비되어야 한다.
+-- ===== 3단계: 개인 잔량 snapshot fallback 필요 여부 확인 =====
+-- 개인 snapshot은 amount와 qos가 함께 준비되어야 한다. 누락 시 정상 흐름이 아니라 fallback 신호를 반환한다.
 if not is_hash_snapshot_ready(individual_remaining_key, { "amount", "qos" }) then
   return as_json(0, 0, 0, "HYDRATE_INDIVIDUAL")
 end
@@ -194,7 +210,9 @@ local individual_unlimited = individual_amount == -1
 
 local whitelist_bypass = whitelist_bypass_flag == 1
 local app_member = tostring(math.floor(app_id))
-local app_usage_field = "app:" .. app_member
+local app_usage_individual_field = "app:" .. app_member .. ":individual"
+local app_usage_shared_field = "app:" .. app_member .. ":shared"
+local app_usage_qos_field = "app:" .. app_member .. ":qos"
 local app_limit_field = "limit:" .. app_member
 local app_speed_field = "speed:" .. app_member
 
@@ -233,7 +251,12 @@ if not whitelist_bypass then
   if is_policy_enabled(policy_app_data_key) then
     local app_daily_limit = tonumber(redis.call("HGET", app_data_daily_limit_key, app_limit_field) or "-1")
     if app_daily_limit >= 0 then
-      local app_daily_used = tonumber(redis.call("HGET", daily_app_usage_key, app_usage_field) or "0")
+      local app_daily_used = read_daily_app_usage(
+        daily_app_usage_key,
+        app_usage_individual_field,
+        app_usage_shared_field,
+        app_usage_qos_field
+      )
       local app_daily_remaining = math.max(0, app_daily_limit - app_daily_used)
       local before_app_daily = policy_target
       policy_target = math.min(policy_target, app_daily_remaining)
@@ -282,7 +305,7 @@ if not whitelist_bypass and shared_target > 0 and is_policy_enabled(policy_share
   -- 월별 공유풀 제한은 공유풀 차감량에만 적용한다. QoS 처리량에는 적용하지 않는다.
   local monthly_limit = tonumber(redis.call("HGET", monthly_shared_limit_key, "value") or "-1")
   if monthly_limit >= 0 then
-    local monthly_used = tonumber(redis.call("GET", monthly_shared_usage_key) or "0")
+    local monthly_used = tonumber(redis.call("HGET", monthly_shared_usage_key, "usage_amount") or "0")
     local monthly_remaining = math.max(0, monthly_limit - monthly_used)
     local before_monthly = shared_target
     shared_target = math.min(shared_target, monthly_remaining)
@@ -296,6 +319,7 @@ end
 local shared_amount = 0
 local shared_unlimited = false
 if shared_target > 0 then
+  -- 공유 snapshot amount 누락은 preflight 이후 Redis 손상/eviction을 복구하기 위한 fallback 신호다.
   if not is_hash_snapshot_ready(shared_remaining_key, { "amount" }) then
     return as_json(0, 0, 0, "HYDRATE_SHARED")
   end
@@ -416,8 +440,12 @@ if shared_deducted > 0 and not shared_unlimited then
   redis.call("HINCRBY", shared_remaining_key, "amount", -shared_deducted)
 end
 if shared_deducted > 0 then
-  redis.call("INCRBY", monthly_shared_usage_key, shared_deducted)
+  redis.call("HINCRBY", monthly_shared_usage_key, "usage_amount", shared_deducted)
+  redis.call("HSET", monthly_shared_usage_key, "family_id", family_id)
   redis.call("EXPIREAT", monthly_shared_usage_key, monthly_expire_at)
+  redis.call("HINCRBY", daily_shared_usage_key, "usage_amount", shared_deducted)
+  redis.call("HSET", daily_shared_usage_key, "family_id", family_id)
+  redis.call("EXPIREAT", daily_shared_usage_key, daily_expire_at)
   redis.call("HINCRBY", dedupe_key, DEDUPE_PROCESSED_SHARED_FIELD, shared_deducted)
 end
 
@@ -426,10 +454,18 @@ if qos_deducted > 0 then
   redis.call("HINCRBY", dedupe_key, DEDUPE_PROCESSED_QOS_FIELD, qos_deducted)
 end
 
--- 일일 총 사용량과 앱별 일일 사용량은 개인/공유/QoS 전체 처리량을 합산한다.
+-- 일일 총 사용량은 개인/공유/QoS 전체 처리량을 합산하고, 앱별 일일 사용량은 source별 field에 분리 누적한다.
 redis.call("INCRBY", daily_total_usage_key, total_deducted)
 redis.call("EXPIREAT", daily_total_usage_key, daily_expire_at)
-redis.call("HINCRBY", daily_app_usage_key, app_usage_field, total_deducted)
+if indiv_deducted > 0 then
+  redis.call("HINCRBY", daily_app_usage_key, app_usage_individual_field, indiv_deducted)
+end
+if shared_deducted > 0 then
+  redis.call("HINCRBY", daily_app_usage_key, app_usage_shared_field, shared_deducted)
+end
+if qos_deducted > 0 then
+  redis.call("HINCRBY", daily_app_usage_key, app_usage_qos_field, qos_deducted)
+end
 redis.call("EXPIREAT", daily_app_usage_key, daily_expire_at)
 
 -- ===== 12단계: 최종 Lua 상태 확정 =====

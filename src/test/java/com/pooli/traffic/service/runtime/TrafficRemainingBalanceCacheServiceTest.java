@@ -68,6 +68,91 @@ class TrafficRemainingBalanceCacheServiceTest {
     }
 
     @Nested
+    class ReadHashFieldOrDefaultTest {
+
+        @Test
+        void returnsParsedHashField() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get("pooli:monthly_shared_usage:11:202603", "usage_amount")).thenReturn("300");
+
+            long amount = trafficRemainingBalanceCacheService.readHashFieldOrDefault(
+                    "pooli:monthly_shared_usage:11:202603",
+                    "usage_amount",
+                    10L
+            );
+
+            assertEquals(300L, amount);
+        }
+
+        @Test
+        void returnsDefaultWhenHashFieldMalformed() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get("pooli:monthly_shared_usage:11:202603", "usage_amount"))
+                    .thenReturn("not-a-number");
+
+            long amount = trafficRemainingBalanceCacheService.readHashFieldOrDefault(
+                    "pooli:monthly_shared_usage:11:202603",
+                    "usage_amount",
+                    77L
+            );
+
+            assertEquals(77L, amount);
+        }
+    }
+
+    @Nested
+    class HasHashFieldTest {
+
+        @Test
+        void returnsTrueWhenHashFieldExists() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.hasKey("pooli:remaining_indiv_amount:11:202603", "qos")).thenReturn(true);
+
+            boolean result = trafficRemainingBalanceCacheService.hasHashField(
+                    "pooli:remaining_indiv_amount:11:202603",
+                    "qos"
+            );
+
+            assertTrue(result);
+        }
+
+        @Test
+        void returnsFalseWhenHashFieldMissing() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.hasKey("pooli:remaining_indiv_amount:11:202603", "qos")).thenReturn(false);
+
+            boolean result = trafficRemainingBalanceCacheService.hasHashField(
+                    "pooli:remaining_indiv_amount:11:202603",
+                    "qos"
+            );
+
+            assertFalse(result);
+        }
+    }
+
+    @Nested
+    class HasKeyTest {
+
+        @Test
+        void returnsTrueWhenRedisKeyExists() {
+            when(cacheStringRedisTemplate.hasKey("pooli:remaining_shared_amount:22:202603")).thenReturn(true);
+
+            boolean result = trafficRemainingBalanceCacheService.hasKey("pooli:remaining_shared_amount:22:202603");
+
+            assertTrue(result);
+        }
+
+        @Test
+        void returnsFalseWhenRedisKeyMissing() {
+            when(cacheStringRedisTemplate.hasKey("pooli:remaining_shared_amount:22:202603")).thenReturn(false);
+
+            boolean result = trafficRemainingBalanceCacheService.hasKey("pooli:remaining_shared_amount:22:202603");
+
+            assertFalse(result);
+        }
+    }
+
+    @Nested
     class HydrateSnapshotTest {
 
         @Test

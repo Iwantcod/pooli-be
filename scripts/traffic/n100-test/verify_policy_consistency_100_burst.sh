@@ -4,7 +4,7 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 # Scenario A verifier: 100-line burst stress consistency
 # -----------------------------------------------------------------------------
-# Data source: MongoDB traffic_deduct_done_log
+# Data source: MySQL TRAFFIC_DEDUCT_DONE
 # Checks:
 # - per-line request count is deterministic
 # - final_status=FAILED is zero
@@ -21,8 +21,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-if ! command -v mongosh >/dev/null 2>&1; then
-  echo "ERROR: mongosh is required."
+if ! command -v mysql >/dev/null 2>&1; then
+  echo "ERROR: mysql client is required."
   exit 1
 fi
 
@@ -50,16 +50,29 @@ load_env_file() {
 
 load_env_file "$ENV_FILE"
 
-MONGO_URI_EFFECTIVE="${LOCAL_MONGO_URI:-${MONGO_URI:-}}"
-MONGO_DB_NAME="${MONGO_DB_NAME:-pooli}"
+if [[ -z "${DB_URL:-}" || -z "${DB_USERNAME:-}" || -z "${DB_PASSWORD:-}" ]]; then
+  echo "ERROR: DB_URL / DB_USERNAME / DB_PASSWORD must be set in $ENV_FILE"
+  exit 1
+fi
 
-mongo_eval() {
-  local js="$1"
-  if [[ -n "$MONGO_URI_EFFECTIVE" ]]; then
-    mongosh "$MONGO_URI_EFFECTIVE" --quiet --eval "$js"
-  else
-    mongosh --quiet --eval "$js"
-  fi
+DB_URL_NO_PREFIX="${DB_URL#jdbc:mysql://}"
+DB_HOST_PORT_DB="${DB_URL_NO_PREFIX%%\?*}"
+DB_HOST_PORT="${DB_HOST_PORT_DB%%/*}"
+DB_NAME="${DB_HOST_PORT_DB#*/}"
+DB_HOST="${DB_HOST_PORT%%:*}"
+DB_PORT_PART="${DB_HOST_PORT#*:}"
+DB_PORT="${DB_PORT_PART:-3306}"
+if [[ "$DB_HOST_PORT" == "$DB_PORT_PART" ]]; then
+  DB_PORT="3306"
+fi
+
+mysql_eval() {
+  local sql="$1"
+  MYSQL_PWD="$DB_PASSWORD" mysql \
+    --default-character-set=utf8mb4 \
+    --batch --skip-column-names \
+    -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME" \
+    -e "$sql"
 }
 
 ONE_MB=1048576
@@ -152,7 +165,7 @@ expected_exact_deduct_for_group() {
 
 echo "==============================================="
 echo "Scenario A Verifier (Burst Stress)"
-echo "mongo_db                : $MONGO_DB_NAME"
+echo "mysql_db                : $DB_NAME"
 echo "line_scope              : $LINE_START~$LINE_END"
 echo "==============================================="
 
@@ -168,7 +181,7 @@ done
 # done-log는 비동기 소비 완료 후 기록되므로 기대 건수까지 잠시 대기합니다.
 wait_deadline=$(( $(date +%s) + VERIFY_WAIT_TIMEOUT_SECONDS ))
 while true; do
-  current_count="$(mongo_eval "const d=db.getSiblingDB('${MONGO_DB_NAME}'); print(d.traffic_deduct_done_log.countDocuments({ line_id: { \$gte: ${LINE_START}, \$lte: ${LINE_END} } }));")"
+  current_count="$(mysql_eval "SELECT COUNT(*) FROM TRAFFIC_DEDUCT_DONE WHERE line_id BETWEEN ${LINE_START} AND ${LINE_END};")"
   current_count="${current_count//[[:space:]]/}"
   if [[ "$current_count" =~ ^[0-9]+$ ]] && (( current_count >= TOTAL_EXPECTED_REQUESTS )); then
     break
@@ -179,10 +192,10 @@ while true; do
   sleep 1
 done
 
-total_count="$(mongo_eval "const d=db.getSiblingDB('${MONGO_DB_NAME}'); print(d.traffic_deduct_done_log.countDocuments({ line_id: { \$gte: ${LINE_START}, \$lte: ${LINE_END} } }));")"
-failed_count="$(mongo_eval "const d=db.getSiblingDB('${MONGO_DB_NAME}'); print(d.traffic_deduct_done_log.countDocuments({ line_id: { \$gte: ${LINE_START}, \$lte: ${LINE_END} }, final_status: 'FAILED' }));")"
-g5_hit_app_speed_count="$(mongo_eval "const d=db.getSiblingDB('${MONGO_DB_NAME}'); print(d.traffic_deduct_done_log.countDocuments({ line_id: { \$gte: ${G5_LINE_START}, \$lte: ${G5_LINE_END} }, last_lua_status: 'HIT_APP_SPEED' }));")"
-app_id_mismatch_count="$(mongo_eval "const d=db.getSiblingDB('${MONGO_DB_NAME}'); const r=d.traffic_deduct_done_log.aggregate([{ \$match: { line_id: { \$gte: ${LINE_START}, \$lte: ${LINE_END} } } }, { \$project: { app_id: 1, expected_app: { \$switch: { branches: [ { case: { \$lte: ['\$line_id', 40] }, then: 1 }, { case: { \$lte: ['\$line_id', 60] }, then: 2 }, { case: { \$lte: ['\$line_id', 76] }, then: 3 }, { case: { \$lte: ['\$line_id', 88] }, then: 2 } ], default: 4 } } } }, { \$match: { \$expr: { \$ne: ['\$app_id', '\$expected_app'] } } }, { \$count: 'cnt' }]).toArray(); print(r.length === 0 ? 0 : Number(r[0].cnt));")"
+total_count="$(mysql_eval "SELECT COUNT(*) FROM TRAFFIC_DEDUCT_DONE WHERE line_id BETWEEN ${LINE_START} AND ${LINE_END};")"
+failed_count="$(mysql_eval "SELECT COUNT(*) FROM TRAFFIC_DEDUCT_DONE WHERE line_id BETWEEN ${LINE_START} AND ${LINE_END} AND final_status = 'FAILED';")"
+g5_hit_app_speed_count="$(mysql_eval "SELECT COUNT(*) FROM TRAFFIC_DEDUCT_DONE WHERE line_id BETWEEN ${G5_LINE_START} AND ${G5_LINE_END} AND last_lua_status = 'HIT_APP_SPEED';")"
+app_id_mismatch_count="$(mysql_eval "SELECT COUNT(*) FROM TRAFFIC_DEDUCT_DONE WHERE line_id BETWEEN ${LINE_START} AND ${LINE_END} AND app_id != CASE WHEN line_id <= 40 THEN 1 WHEN line_id <= 60 THEN 2 WHEN line_id <= 76 THEN 3 WHEN line_id <= 88 THEN 2 ELSE 4 END;")"
 
 total_count="${total_count//[[:space:]]/}"
 failed_count="${failed_count//[[:space:]]/}"
@@ -196,7 +209,7 @@ while IFS=$'\t' read -r agg_line_id agg_req_cnt agg_deducted_sum; do
   MONGO_REQ_CNT[$agg_line_id]="${agg_req_cnt:-0}"
   MONGO_DEDUCTED_SUM[$agg_line_id]="${agg_deducted_sum:-0}"
 done < <(
-  mongo_eval "const d=db.getSiblingDB('${MONGO_DB_NAME}'); d.traffic_deduct_done_log.aggregate([{ \$match: { line_id: { \$gte: ${LINE_START}, \$lte: ${LINE_END} } } }, { \$group: { _id: '\$line_id', req_cnt: { \$sum: 1 }, deducted_sum: { \$sum: '\$deducted_total_bytes' } } }, { \$sort: { _id: 1 } }]).forEach(doc => print(Number(doc._id) + '\\t' + Number(doc.req_cnt) + '\\t' + Number(doc.deducted_sum)));"
+  mysql_eval "SELECT line_id, COUNT(*), CAST(IFNULL(SUM(deducted_individual_bytes + deducted_shared_bytes + deducted_qos_bytes), 0) AS SIGNED) FROM TRAFFIC_DEDUCT_DONE WHERE line_id BETWEEN ${LINE_START} AND ${LINE_END} GROUP BY line_id ORDER BY line_id;"
 )
 
 fail_count=0

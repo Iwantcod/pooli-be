@@ -281,6 +281,7 @@ STREAMS_KEY_TRAFFIC_REQUEST=traffic:deduct:request
 STREAMS_GROUP_TRAFFIC=traffic-deduct-cg
 STREAMS_CONSUMER_NAME=local-8080
 STREAMS_KEY_TRAFFIC_DLQ=traffic:deduct:dlq
+TASK_SCHED_POOL_SIZE=2
 ```
 
 운영 환경에서는 세션/캐시/스트림 Redis를 분리하고, 쿠키 보안 옵션과 AWS 자격 증명을 환경에 맞게 조정해야 합니다.

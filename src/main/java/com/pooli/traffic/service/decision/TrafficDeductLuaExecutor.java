@@ -173,6 +173,7 @@ public class TrafficDeductLuaExecutor {
         String monthlySharedUsageKey = trafficRedisKeyFactory.monthlySharedUsageKey(payload.getLineId(), targetUsageMonth);
         String appDataDailyLimitKey = trafficRedisKeyFactory.appDataDailyLimitKey(payload.getLineId());
         String dailyAppUsageKey = trafficRedisKeyFactory.dailyAppUsageKey(payload.getLineId(), targetDate);
+        String dailySharedUsageKey = trafficRedisKeyFactory.dailySharedUsageKey(payload.getLineId(), targetDate);
         String appSpeedLimitKey = trafficRedisKeyFactory.appSpeedLimitKey(payload.getLineId());
         String qosSpeedLimitNextAvailableKey = trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(
                 payload.getLineId(),
@@ -196,7 +197,8 @@ public class TrafficDeductLuaExecutor {
                 dailyAppUsageKey,
                 appSpeedLimitKey,
                 qosSpeedLimitNextAvailableKey,
-                dedupeKey
+                dedupeKey,
+                dailySharedUsageKey
         );
         List<String> args = List.of(
                 String.valueOf(requestedDataBytes),
@@ -204,7 +206,8 @@ public class TrafficDeductLuaExecutor {
                 String.valueOf(dailyExpireAt),
                 String.valueOf(monthlyExpireAt),
                 String.valueOf(whitelistBypassFlag),
-                String.valueOf(payload.getApiTotalData())
+                String.valueOf(payload.getApiTotalData()),
+                String.valueOf(payload.getFamilyId())
         );
         // Redis 원자 구간에서 개인/공유/QoS 처리량과 usage/dedupe 갱신을 함께 수행합니다.
         return trafficLuaScriptInfraService.executeDeductUnified(keys, args);

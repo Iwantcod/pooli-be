@@ -7,10 +7,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.ZoneId;
+import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -70,7 +72,13 @@ class TrafficDeductLuaExecutorTest {
                 () -> assertEquals(30L, result.getQosDeducted()),
                 () -> assertEquals(TrafficLuaStatus.OK, result.getStatus())
         );
-        verify(trafficLuaScriptInfraService).executeDeductUnified(anyList(), anyList());
+        ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<String>> argsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(trafficLuaScriptInfraService).executeDeductUnified(keysCaptor.capture(), argsCaptor.capture());
+        assertAll(
+                () -> assertEquals("daily-shared-usage", keysCaptor.getValue().get(15)),
+                () -> assertEquals("22", argsCaptor.getValue().get(6))
+        );
     }
 
     private void stubUnifiedKeys() {
@@ -88,6 +96,7 @@ class TrafficDeductLuaExecutorTest {
         when(trafficRedisKeyFactory.monthlySharedUsageKey(11L, java.time.YearMonth.of(2026, 3))).thenReturn("monthly-shared-usage");
         when(trafficRedisKeyFactory.appDataDailyLimitKey(11L)).thenReturn("app-data-limit");
         when(trafficRedisKeyFactory.dailyAppUsageKey(11L, java.time.LocalDate.of(2026, 3, 1))).thenReturn("daily-app-usage");
+        when(trafficRedisKeyFactory.dailySharedUsageKey(11L, java.time.LocalDate.of(2026, 3, 1))).thenReturn("daily-shared-usage");
         when(trafficRedisKeyFactory.appSpeedLimitKey(11L)).thenReturn("app-speed-limit");
         when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(11L, 7)).thenReturn("qos-speed-next-available");
         when(trafficRedisKeyFactory.dedupeRunKey("trace-001")).thenReturn("dedupe");

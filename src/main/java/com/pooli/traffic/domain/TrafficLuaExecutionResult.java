@@ -29,7 +29,7 @@ public class TrafficLuaExecutionResult {
      * Lua 실행 결과 상태 코드입니다.
      *
      * <p>- 정책 검증 경로: OK, BLOCKED_IMMEDIATE, BLOCKED_REPEAT, GLOBAL_POLICY_HYDRATE, ERROR 등을 반환
-     * <br>- 차감 경로: OK/NO_BALANCE/HYDRATE/QOS/ERROR 등을 반환
+     * <br>- 차감 경로: OK, NO_BALANCE, HYDRATE_INDIVIDUAL, HYDRATE_SHARED, QOS, ERROR 등을 반환
      */
     private final TrafficLuaStatus status;
 }

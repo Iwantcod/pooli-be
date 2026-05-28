@@ -124,17 +124,20 @@ class TrafficLuaPolicyContractTest {
     }
 
     @Test
-    @DisplayName("통합 deduct Lua는 snapshot readiness 기준으로 hydrate 원인을 분리한다")
-    void unifiedDeductChecksSnapshotReadinessByPool() throws IOException {
+    @DisplayName("통합 deduct Lua는 fallback 방어선으로 hash field 기준 hydrate 원인을 분리한다")
+    void unifiedDeductKeepsFallbackSnapshotReadinessByPool() throws IOException {
         String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
+                "월별 잔량 snapshot fallback 필요 여부는 hash field 기준으로 판단한다.",
                 "local function is_hash_snapshot_ready(key, required_fields)",
                 "if redis.call(\"EXISTS\", key) == 0 then",
                 "local value = redis.call(\"HGET\", key, field)",
+                "개인 잔량 snapshot fallback 필요 여부 확인",
                 "if not is_hash_snapshot_ready(individual_remaining_key, { \"amount\", \"qos\" }) then",
                 "return as_json(0, 0, 0, \"HYDRATE_INDIVIDUAL\")",
+                "공유 snapshot amount 누락은 preflight 이후 Redis 손상/eviction을 복구하기 위한 fallback 신호다.",
                 "if not is_hash_snapshot_ready(shared_remaining_key, { \"amount\" }) then",
                 "return as_json(0, 0, 0, \"HYDRATE_SHARED\")"
         );
@@ -172,6 +175,59 @@ class TrafficLuaPolicyContractTest {
                 "local qos_bytes_per_sec = read_non_negative_counter(individual_remaining_key, \"qos\")",
                 "qos_deducted = qos_target"
         );
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 앱별 일일 사용량을 source별 field로 분리하고 합산해 limit을 판단한다")
+    void unifiedDeductUsesSourceSpecificDailyAppUsageFields() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("local app_usage_individual_field = \"app:\" .. app_member .. \":individual\""));
+        assertTrue(script.contains("local app_usage_shared_field = \"app:\" .. app_member .. \":shared\""));
+        assertTrue(script.contains("local app_usage_qos_field = \"app:\" .. app_member .. \":qos\""));
+        assertTrue(script.contains("local app_daily_used = read_daily_app_usage("));
+        assertTrue(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_individual_field, indiv_deducted)"));
+        assertTrue(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_shared_field, shared_deducted)"));
+        assertTrue(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_qos_field, qos_deducted)"));
+        assertFalse(script.contains("local app_usage_field = \"app:\" .. app_member"));
+        assertFalse(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_field, total_deducted)"));
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 공유풀 차감이 있을 때만 일별 공유풀 사용량 hash를 적재한다")
+    void unifiedDeductRecordsDailySharedUsageOnlyForSharedDeduction() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("local daily_shared_usage_key = KEYS[16]"));
+        assertTrue(script.contains("local family_id = tonumber(ARGV[7] or \"-1\")"));
+        assertTrue(script.contains("if not daily_shared_usage_key or daily_shared_usage_key == \"\" then"));
+        assertTrue(script.contains("if not family_id or family_id <= 0 then"));
+        assertAppearsInOrder(
+                script,
+                "if shared_deducted > 0 then",
+                "redis.call(\"HINCRBY\", daily_shared_usage_key, \"usage_amount\", shared_deducted)",
+                "redis.call(\"HSET\", daily_shared_usage_key, \"family_id\", family_id)",
+                "redis.call(\"EXPIREAT\", daily_shared_usage_key, daily_expire_at)"
+        );
+        assertFalse(script.contains("redis.call(\"HINCRBY\", daily_shared_usage_key, \"usage_amount\", indiv_deducted)"));
+        assertFalse(script.contains("redis.call(\"HINCRBY\", daily_shared_usage_key, \"usage_amount\", qos_deducted)"));
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 월별 공유 사용량을 hash 계약으로 읽고 누적한다")
+    void unifiedDeductUsesMonthlySharedUsageHash() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("redis.call(\"HGET\", monthly_shared_usage_key, \"usage_amount\")"));
+        assertAppearsInOrder(
+                script,
+                "if shared_deducted > 0 then",
+                "redis.call(\"HINCRBY\", monthly_shared_usage_key, \"usage_amount\", shared_deducted)",
+                "redis.call(\"HSET\", monthly_shared_usage_key, \"family_id\", family_id)",
+                "redis.call(\"EXPIREAT\", monthly_shared_usage_key, monthly_expire_at)"
+        );
+        assertFalse(script.contains("redis.call(\"GET\", monthly_shared_usage_key)"));
+        assertFalse(script.contains("redis.call(\"INCRBY\", monthly_shared_usage_key, shared_deducted)"));
     }
 
     @Test

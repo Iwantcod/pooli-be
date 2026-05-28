@@ -52,6 +52,8 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
 
         assertDoneLog(traceId, 50L, 0L, 0L, 0L, "SUCCESS", "OK");
         assertUsageCounters(lineId, appId, 50L, 50L, 0L);
+        assertDailyAppUsageBySource(lineId, appId, 50L, 0L, 0L);
+        assertDailySharedUsage(lineId, 0L, 0L);
         assertRedisBalances(lineId, familyId, 30L, 100L);
     }
 
@@ -70,6 +72,8 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
 
         assertDoneLog(traceId, 0L, 50L, 0L, 0L, "SUCCESS", "OK");
         assertUsageCounters(lineId, appId, 50L, 50L, 50L);
+        assertDailyAppUsageBySource(lineId, appId, 0L, 50L, 0L);
+        assertDailySharedUsage(lineId, 50L, familyId);
         assertRedisBalances(lineId, familyId, 0L, 30L);
     }
 
@@ -88,7 +92,29 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
 
         assertDoneLog(traceId, 30L, 20L, 0L, 0L, "SUCCESS", "OK");
         assertUsageCounters(lineId, appId, 50L, 50L, 20L);
+        assertDailyAppUsageBySource(lineId, appId, 30L, 20L, 0L);
+        assertDailySharedUsage(lineId, 20L, familyId);
         assertRedisBalances(lineId, familyId, 0L, 60L);
+    }
+
+    /**
+     * QoS 처리량도 daily total/app counter에 반영하되 앱별 hash field는 QoS source로 분리되는지 검증합니다.
+     */
+    @Test
+    @DisplayName("[USAGE-03-1] QoS 처리량은 daily app usage의 qos field에 분리 반영된다")
+    void shouldRecordQosDeductionInQosDailyAppField() throws Exception {
+        long lineId = LINE_ID_1;
+        long familyId = FAMILY_ID_1;
+        int appId = fixtureIds.appId();
+        prepareUsageScenarioWithQos(lineId, familyId, 0L, 0L, 1_000_000L);
+
+        String traceId = enqueueTrafficRequest(lineId, familyId, appId, 50L);
+
+        assertDoneLog(traceId, 0L, 0L, 50L, 0L, "SUCCESS", "QOS");
+        assertUsageCounters(lineId, appId, 50L, 50L, 0L);
+        assertDailyAppUsageBySource(lineId, appId, 0L, 0L, 50L);
+        assertDailySharedUsage(lineId, 0L, 0L);
+        assertRedisBalances(lineId, familyId, 0L, 0L);
     }
 
     /**
@@ -121,7 +147,7 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
         prepareUsageScenario(lineId, familyId, 20L, 40L);
         setDailyTotalUsage(lineId, 7L);
         setDailyAppUsage(lineId, appId, 11L);
-        setMonthlySharedUsage(lineId, 13L);
+        setMonthlySharedUsage(lineId, familyId, 13L);
 
         String traceId = enqueueTrafficRequest(lineId, familyId, appId, 50L);
 
@@ -159,7 +185,9 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
 
         assertDoneLog(traceId, 10L, 40L, 0L, 0L, "SUCCESS", "OK");
         assertUsageCountersForDate(lineId, appId, targetDate, targetMonth, 50L, 50L, 40L);
+        assertDailySharedUsageForDate(lineId, targetDate, 40L, familyId);
         assertUsageCountersForDate(lineId, appId, today, currentMonth, 0L, 0L, 0L);
+        assertDailySharedUsageForDate(lineId, today, 0L, 0L);
         assertRedisBalancesForMonth(lineId, familyId, targetMonth, 0L, 40L);
     }
 
@@ -171,6 +199,27 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
         setFamilySourcePoolTotalData(familyId, DEFAULT_SHARED_SOURCE_BYTES);
         putIndividualBalance(lineId, individualAmount);
         putSharedBalance(familyId, sharedAmount);
+    }
+
+    private void prepareUsageScenarioWithQos(
+            long lineId,
+            long familyId,
+            long individualAmount,
+            long sharedAmount,
+            long qosBytesPerSecond
+    ) {
+        setLineSourceTotalData(lineId, DEFAULT_INDIVIDUAL_SOURCE_BYTES);
+        setFamilySourcePoolTotalData(familyId, DEFAULT_SHARED_SOURCE_BYTES);
+        putIndividualBalanceWithQos(lineId, individualAmount, qosBytesPerSecond);
+        putSharedBalance(familyId, sharedAmount);
+    }
+
+    private void putIndividualBalanceWithQos(long lineId, long amount, long qosBytesPerSecond) {
+        YearMonth currentMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
+        cacheStringRedisTemplate.opsForHash().putAll(
+                trafficRedisKeyFactory.remainingIndivAmountKey(lineId, currentMonth),
+                Map.of("amount", String.valueOf(amount), "qos", String.valueOf(qosBytesPerSecond))
+        );
     }
 
     /**
@@ -225,16 +274,22 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
     private void setDailyAppUsage(long lineId, int appId, long usage) {
         LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
         cacheStringRedisTemplate.opsForHash()
-                .put(trafficRedisKeyFactory.dailyAppUsageKey(lineId, today), "app:" + appId, String.valueOf(usage));
+                .put(
+                        trafficRedisKeyFactory.dailyAppUsageKey(lineId, today),
+                        "app:" + appId + ":individual",
+                        String.valueOf(usage)
+                );
     }
 
     /**
      * 기존 monthly shared usage가 있는 누적 시나리오를 만들기 위해 현재 월 counter를 설정합니다.
      */
-    private void setMonthlySharedUsage(long lineId, long usage) {
+    private void setMonthlySharedUsage(long lineId, long familyId, long usage) {
         YearMonth currentMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
-        cacheStringRedisTemplate.opsForValue()
-                .set(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth), String.valueOf(usage));
+        cacheStringRedisTemplate.opsForHash().putAll(
+                trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth),
+                Map.of("usage_amount", String.valueOf(usage), "family_id", String.valueOf(familyId))
+        );
     }
 
     /**
@@ -252,6 +307,35 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
         assertThat(readMonthlySharedUsage(lineId)).isEqualTo(expectedMonthlySharedUsage);
     }
 
+    private void assertDailyAppUsageBySource(
+            long lineId,
+            int appId,
+            long expectedIndividualUsage,
+            long expectedSharedUsage,
+            long expectedQosUsage
+    ) {
+        assertThat(readDailyAppUsageBySource(lineId, appId, "individual")).isEqualTo(expectedIndividualUsage);
+        assertThat(readDailyAppUsageBySource(lineId, appId, "shared")).isEqualTo(expectedSharedUsage);
+        assertThat(readDailyAppUsageBySource(lineId, appId, "qos")).isEqualTo(expectedQosUsage);
+    }
+
+    private void assertDailySharedUsage(long lineId, long expectedUsageAmount, long expectedFamilyId) {
+        LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
+        assertDailySharedUsageForDate(lineId, today, expectedUsageAmount, expectedFamilyId);
+    }
+
+    private void assertDailySharedUsageForDate(
+            long lineId,
+            LocalDate usageDate,
+            long expectedUsageAmount,
+            long expectedFamilyId
+    ) {
+        String usageKey = trafficRedisKeyFactory.dailySharedUsageKey(lineId, usageDate);
+
+        assertThat(readHashCounter(usageKey, "usage_amount")).isEqualTo(expectedUsageAmount);
+        assertThat(readHashCounter(usageKey, "family_id")).isEqualTo(expectedFamilyId);
+    }
+
     /**
      * 지정 날짜/월 기준 usage key를 직접 읽어 enqueuedAt 기반 key 선택 결과를 검증합니다.
      */
@@ -266,9 +350,9 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
     ) {
         assertThat(readStringCounter(trafficRedisKeyFactory.dailyTotalUsageKey(lineId, usageDate)))
                 .isEqualTo(expectedDailyTotalUsage);
-        assertThat(readHashCounter(trafficRedisKeyFactory.dailyAppUsageKey(lineId, usageDate), "app:" + appId))
+        assertThat(readDailyAppUsageForDate(lineId, appId, usageDate))
                 .isEqualTo(expectedDailyAppUsage);
-        assertThat(readStringCounter(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, usageMonth)))
+        assertThat(readHashCounter(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, usageMonth), "usage_amount"))
                 .isEqualTo(expectedMonthlySharedUsage);
     }
 
@@ -323,6 +407,13 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
         return Long.parseLong(String.valueOf(value));
     }
 
+    private long readDailyAppUsageForDate(long lineId, int appId, LocalDate usageDate) {
+        String usageKey = trafficRedisKeyFactory.dailyAppUsageKey(lineId, usageDate);
+        return readHashCounter(usageKey, "app:" + appId + ":individual")
+                + readHashCounter(usageKey, "app:" + appId + ":shared")
+                + readHashCounter(usageKey, "app:" + appId + ":qos");
+    }
+
     /**
      * API를 우회해 원하는 enqueuedAt 값을 가진 payload를 stream에 직접 적재합니다.
      */
@@ -357,6 +448,7 @@ class TrafficDataUsageAcceptanceTest extends TrafficAcceptanceTestSupport {
     private void deleteUsageKeysForDate(long lineId, LocalDate usageDate) {
         cacheStringRedisTemplate.delete(trafficRedisKeyFactory.dailyTotalUsageKey(lineId, usageDate));
         cacheStringRedisTemplate.delete(trafficRedisKeyFactory.dailyAppUsageKey(lineId, usageDate));
+        cacheStringRedisTemplate.delete(trafficRedisKeyFactory.dailySharedUsageKey(lineId, usageDate));
     }
 
     /**

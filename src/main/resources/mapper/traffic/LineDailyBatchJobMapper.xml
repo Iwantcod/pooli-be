@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.traffic.mapper.LineDailyBatchJobMapper">
+
+    <!-- LINE_DAILY_BATCH_JOB row를 Java metadata 객체로 변환한다. -->
+    <resultMap id="LineDailyBatchJobResultMap" type="com.pooli.traffic.domain.batch.LineDailyBatchJob">
+        <id property="id" column="id"/>
+        <result property="batchName" column="batch_name"/>
+        <result property="usageDate" column="usage_date"/>
+        <result property="status" column="status"/>
+        <result property="statusUpdatedAt" column="status_updated_at"/>
+        <result property="runStartedAt" column="run_started_at"/>
+        <result property="finishedAt" column="finished_at"/>
+        <result property="targetCount" column="target_count"/>
+        <result property="successCount" column="success_count"/>
+        <result property="failedCount" column="failed_count"/>
+        <result property="skippedCount" column="skipped_count"/>
+        <result property="processedCountUpdatedAt" column="processed_count_updated_at"/>
+        <result property="managerInstanceId" column="manager_instance_id"/>
+        <result property="lastErrorCode" column="last_error_code"/>
+        <result property="lastErrorMessage" column="last_error_message"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <!--
+        자동 배치 생성 전 기존 metadata를 확인하는 조회이다.
+        DB unique key를 두지 않는 정책이므로 같은 batch_name + usage_date가 있으면 상태와 무관하게 재사용한다.
+    -->
+    <select id="selectLatestByBatchNameAndUsageDate" resultMap="LineDailyBatchJobResultMap">
+        SELECT
+            id,
+            batch_name,
+            usage_date,
+            status,
+            status_updated_at,
+            run_started_at,
+            finished_at,
+            target_count,
+            success_count,
+            failed_count,
+            skipped_count,
+            processed_count_updated_at,
+            manager_instance_id,
+            last_error_code,
+            last_error_message,
+            created_at
+        FROM LINE_DAILY_BATCH_JOB
+        WHERE batch_name = #{batchName}
+          AND usage_date = #{usageDate}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <!-- metric collector가 usage sync batch의 최신 상태를 gauge 값으로 변환할 때 사용한다. -->
+    <select id="selectLatestByBatchName" resultMap="LineDailyBatchJobResultMap">
+        SELECT
+            id,
+            batch_name,
+            usage_date,
+            status,
+            status_updated_at,
+            run_started_at,
+            finished_at,
+            target_count,
+            success_count,
+            failed_count,
+            skipped_count,
+            processed_count_updated_at,
+            manager_instance_id,
+            last_error_code,
+            last_error_message,
+            created_at
+        FROM LINE_DAILY_BATCH_JOB
+        WHERE batch_name = #{batchName}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <!-- worker는 scheduler가 계산한 usage_date의 usage sync batch가 RUNNING일 때만 claim loop를 시작한다. -->
+    <select id="selectRunningUsageSyncBatchByUsageDate" resultMap="LineDailyBatchJobResultMap">
+        SELECT
+            id,
+            batch_name,
+            usage_date,
+            status,
+            status_updated_at,
+            run_started_at,
+            finished_at,
+            target_count,
+            success_count,
+            failed_count,
+            skipped_count,
+            processed_count_updated_at,
+            manager_instance_id,
+            last_error_code,
+            last_error_message,
+            created_at
+        FROM LINE_DAILY_BATCH_JOB
+        WHERE batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'
+          AND usage_date = #{usageDate}
+          AND status = 'RUNNING'
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <!-- manager가 신규 자동 실행 metadata를 PENDING 상태로 생성할 때 사용한다. -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO LINE_DAILY_BATCH_JOB (
+            batch_name,
+            usage_date,
+            status,
+            status_updated_at,
+            target_count,
+            success_count,
+            failed_count,
+            skipped_count,
+            created_at
+        ) VALUES (
+            #{batchName},
+            #{usageDate},
+            #{status},
+            CURRENT_TIMESTAMP(6),
+            #{targetCount},
+            #{successCount},
+            #{failedCount},
+            #{skippedCount},
+            CURRENT_TIMESTAMP(6)
+        )
+    </insert>
+
+    <!-- rerun은 이전 batch row를 보존하고 새 RUNNING usage sync metadata row를 생성한다. -->
+    <insert id="insertRunningRerunUsageSyncBatch" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO LINE_DAILY_BATCH_JOB (
+            batch_name,
+            usage_date,
+            status,
+            status_updated_at,
+            run_started_at,
+            target_count,
+            success_count,
+            failed_count,
+            skipped_count,
+            created_at
+        ) VALUES (
+            'LINE_DAILY_USAGE_SYNC_BATCH',
+            #{usageDate},
+            'RUNNING',
+            CURRENT_TIMESTAMP(6),
+            CURRENT_TIMESTAMP(6),
+            #{targetCount},
+            0,
+            0,
+            0,
+            CURRENT_TIMESTAMP(6)
+        )
+    </insert>
+
+    <!-- manager가 target insert batch를 실제 실행 가능 상태로 여는 CAS성 상태 전환이다. -->
+    <update id="updateStatusFromPending">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET status = #{status},
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            run_started_at = COALESCE(run_started_at, CURRENT_TIMESTAMP(6)),
+            manager_instance_id = #{managerInstanceId}
+        WHERE id = #{id}
+          AND status = 'PENDING'
+    </update>
+
+    <!-- target insert batch는 실제 target row 수를 line 단위 count로 확정하고 종료한다. -->
+    <update id="completeRunningTargetInsertBatch">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET status = 'COMPLETED',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            finished_at = CURRENT_TIMESTAMP(6),
+            target_count = #{targetCount},
+            success_count = #{targetCount},
+            failed_count = 0,
+            skipped_count = 0,
+            processed_count_updated_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{id}
+          AND batch_name = 'LINE_DAILY_TARGET_INSERT_BATCH'
+          AND status = 'RUNNING'
+    </update>
+
+    <!-- usage sync batch는 target insert 완료 후에만 PENDING에서 RUNNING으로 열린다. -->
+    <update id="startPendingUsageSyncBatchWithTargetCount">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET status = 'RUNNING',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            run_started_at = COALESCE(run_started_at, CURRENT_TIMESTAMP(6)),
+            target_count = #{targetCount},
+            manager_instance_id = #{managerInstanceId}
+        WHERE id = #{id}
+          AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'
+          AND status = 'PENDING'
+    </update>
+
+    <!-- target row terminal 전환이 성공한 뒤 같은 트랜잭션에서 처리 count를 1 증가시킨다. -->
+    <update id="incrementUsageSyncProcessedCount">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET success_count = success_count + CASE WHEN #{targetStatus} = 'DONE' THEN 1 ELSE 0 END,
+            skipped_count = skipped_count + CASE WHEN #{targetStatus} = 'SKIPPED' THEN 1 ELSE 0 END,
+            failed_count = failed_count + CASE WHEN #{targetStatus} = 'FAILED' THEN 1 ELSE 0 END,
+            processed_count_updated_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{id}
+          AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'
+          AND status = 'RUNNING'
+    </update>
+
+    <!-- bulk terminal 전환이 성공한 DONE/SKIPPED target 수만큼 metadata count를 증가시킨다. -->
+    <update id="incrementUsageSyncSuccessAndSkippedCount">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET success_count = success_count + #{successDelta},
+            skipped_count = skipped_count + #{skippedDelta},
+            processed_count_updated_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{batchJobId}
+          AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'
+          AND status = 'RUNNING'
+    </update>
+
+    <!-- 모든 terminal count가 target_count와 일치할 때만 usage sync batch를 완료한다. -->
+    <update id="completeRunningUsageSyncBatchIfCountsMatch">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET status = 'COMPLETED',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            finished_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{id}
+          AND batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'
+          AND status = 'RUNNING'
+          AND target_count = success_count + failed_count + skipped_count
+    </update>
+
+</mapper>

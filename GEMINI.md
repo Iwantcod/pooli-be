@@ -21,19 +21,23 @@ When conflict exists, do not guess. State which rule is applied.
 
 ---
 
-## 1. Strict Read-Only Mode
+## 1. Strict Read-Only Mode (With Exceptions)
 
-Gemini performs **analysis and explanation only** in this project.
+Gemini performs **analysis and explanation only** in this project, with specific exceptions.
 
-**Strictly prohibited actions:**
+**Exceptions to the Read-Only Rule:**
+1. **Markdown (`.md`) Files**: Gemini is fully allowed to create, modify, or delete Markdown documentation files.
+2. **Code Comments**: For all other files, Gemini is ONLY allowed to add or modify comments (e.g., Javadoc, inline comments). Any other code creation, modification, deletion, or refactoring is strictly prohibited.
 
-- Creating, modifying, or deleting files
-- Writing code, refactoring, or providing bug-fix code
+**Strictly prohibited actions (outside the exceptions above):**
+
+- Creating, modifying, or deleting non-Markdown files (except for comments)
+- Writing functional code, refactoring, or providing bug-fix code
 - Changing configuration files
 - Altering Git state (commit, push, merge, etc.)
 - Running builds, deployments, or tests
 
-Even if the user requests any of the above actions, politely decline and instead provide **analysis-oriented insights** (structure, flow, impact scope, considerations, etc.).
+Even if the user requests any of the prohibited actions, politely decline and instead provide **analysis-oriented insights** (structure, flow, impact scope, considerations, etc.).
 
 ---
 
@@ -208,23 +212,15 @@ Mermaid diagrams **must** be included in the following situations:
   %%{init: {"theme": "default", "themeVariables": {"background": "#ffffff"}}}%%
   ```
 
-- **HTML Wrapping Rule (Mandatory)**: To prevent background color inversion in any viewer environment (e.g., dark mode), every Mermaid diagram block MUST be wrapped in an HTML `<div>` with an explicit white background as follows:
-
-  ```
-  <div style="background-color: #ffffff; padding: 20px;">
-
+- **No HTML Wrapping Rule**: Do NOT wrap Mermaid diagram blocks in HTML `<div>` tags. Previously, this was required to force a white background, but it causes `Invalid mermaid header` parsing errors in the chat UI due to HTML escaping of quotes within the JSON init directive.
+- The `init` directive alone is sufficient to enforce the white background.
+- Simply output pure markdown:
+  ````markdown
   ```mermaid
   %%{init: {"theme": "default", "themeVariables": {"background": "#ffffff"}}}%%
   ... diagram code ...
   ```
-
-  </div>
-  ```
-
-  **Critical line-break rules** (to prevent markdown parsing errors):
-  - There MUST be at least **one empty line** immediately after the opening `<div>` tag.
-  - There MUST be at least **one empty line** immediately before the closing `</div>` tag.
-  - Violating this rule will cause the Mermaid block to render as plain text.
+  ````
 
 ### 9.3 Tables and Structured Information
 
@@ -364,6 +360,17 @@ The exploration log may be omitted ONLY for:
 - Follow-up questions about files already explored in the same conversation
 - Questions that are purely conceptual and explicitly do not require code analysis
 - Clarification questions from the user about a previous response
+
+---
+
+## 14. User-Authorized Code Modification Exception
+
+The read-only restriction defined in §1 may be lifted **only when the user explicitly grants permission** within the current conversation.
+
+- When the user states permission (e.g., "코드 수정을 허용합니다", "이번에는 직접 수정해주세요"), code creation, modification, and deletion are permitted for that specific scope and turn.
+- The permission applies **only to the explicitly authorized scope**. It does NOT carry over to unrelated files or subsequent turns unless re-granted.
+- Even when authorized, all other rules (§10 output format, §11 exploration requirement, §12 anti-pattern policy, etc.) continue to apply.
+- After completing the authorized modification, revert to strict read-only mode.
 
 ---
 

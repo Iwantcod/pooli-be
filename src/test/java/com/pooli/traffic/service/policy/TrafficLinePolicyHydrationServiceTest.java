@@ -163,7 +163,8 @@ class TrafficLinePolicyHydrationServiceTest {
             );
             verify(trafficPolicyWriteThroughService).syncRepeatBlockUntracked(eq(11L), eq(List.of()), anyLong());
             verify(trafficPolicyWriteThroughService).syncAppPolicySnapshotUntracked(eq(11L), any(), anyLong());
-            verify(valueOperations).set(readyKey, "1", Duration.ofSeconds(60L));
+            verify(valueOperations).set(readyKey, "1");
+            verify(valueOperations, never()).set(eq(readyKey), eq("1"), any(Duration.class));
             verify(trafficLuaScriptInfraService).executeLockRelease(eq(lockKey), anyString());
         }
 
@@ -227,7 +228,8 @@ class TrafficLinePolicyHydrationServiceTest {
             verify(trafficPolicyWriteThroughService).syncImmediateBlockEndUntracked(eq(11L), isNull(), anyLong());
             verify(trafficPolicyWriteThroughService).syncRepeatBlockUntracked(eq(11L), eq(List.of()), anyLong());
             verify(trafficPolicyWriteThroughService).syncAppPolicySnapshotUntracked(eq(11L), eq(List.of()), anyLong());
-            verify(valueOperations).set(readyKey, "1", Duration.ofSeconds(60L));
+            verify(valueOperations).set(readyKey, "1");
+            verify(valueOperations, never()).set(eq(readyKey), eq("1"), any(Duration.class));
             verify(trafficLuaScriptInfraService, never()).executeLockRelease(anyString(), anyString());
         }
 
@@ -250,6 +252,7 @@ class TrafficLinePolicyHydrationServiceTest {
 
             // when / then
             assertThrows(RuntimeException.class, () -> trafficLinePolicyHydrationService.ensureLoaded(11L));
+            verify(valueOperations, never()).set(eq(readyKey), eq("1"));
             verify(valueOperations, never()).set(eq(readyKey), eq("1"), any(Duration.class));
             verify(trafficLuaScriptInfraService).executeLockRelease(eq(lockKey), anyString());
         }

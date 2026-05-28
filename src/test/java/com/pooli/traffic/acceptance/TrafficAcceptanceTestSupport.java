@@ -268,16 +268,26 @@ abstract class TrafficAcceptanceTestSupport {
      * 오늘 날짜 기준 line/app daily usage hash field를 읽습니다.
      */
     protected long readDailyAppUsage(long lineId, int appId) {
+        return readDailyAppUsageBySource(lineId, appId, "individual")
+                + readDailyAppUsageBySource(lineId, appId, "shared")
+                + readDailyAppUsageBySource(lineId, appId, "qos");
+    }
+
+    /**
+     * 오늘 날짜 기준 line/app/source daily usage hash field를 읽습니다.
+     * 하위 acceptance 테스트에서 source별 분리 적재를 직접 검증할 때 사용합니다.
+     */
+    protected long readDailyAppUsageBySource(long lineId, int appId, String source) {
         LocalDate today = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
         String usageKey = trafficRedisKeyFactory.dailyAppUsageKey(lineId, today);
-        return readHashLong(usageKey, "app:" + appId);
+        return readHashLong(usageKey, "app:" + appId + ":" + source);
     }
 
     /**
      * 현재 월 기준 line monthly shared usage counter를 읽습니다.
      */
     protected long readMonthlySharedUsage(long lineId) {
-        return readLongValue(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth()));
+        return readHashLong(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth()), "usage_amount");
     }
 
     /**
@@ -597,6 +607,7 @@ abstract class TrafficAcceptanceTestSupport {
             keys.add(trafficRedisKeyFactory.remainingIndivAmountKey(lineId, currentMonth));
             keys.add(trafficRedisKeyFactory.dailyTotalUsageKey(lineId, today));
             keys.add(trafficRedisKeyFactory.dailyAppUsageKey(lineId, today));
+            keys.add(trafficRedisKeyFactory.dailySharedUsageKey(lineId, today));
             keys.add(trafficRedisKeyFactory.monthlySharedUsageKey(lineId, currentMonth));
             keys.add(trafficRedisKeyFactory.dailyTotalLimitKey(lineId));
             keys.add(trafficRedisKeyFactory.monthlySharedLimitKey(lineId));

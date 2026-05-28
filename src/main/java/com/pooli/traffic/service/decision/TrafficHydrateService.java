@@ -26,9 +26,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 통합 Lua가 요청한 hydrate 복구만 수행합니다.
+ * 통합 Lua가 반환한 hydrate fallback 신호를 처리하는 복구 서비스입니다.
  *
- * <p>전역 정책 스냅샷 누락과 월별 잔량/QoS hash 누락을 복구하고,
+ * <p>정상 차감 경로에서는 오케스트레이터 preflight가 정책/잔량 snapshot을 먼저 준비합니다.
+ * 이 서비스는 그 이후에도 preflight 누락, Redis eviction, 부분 손상, 동시성 경합으로
+ * 전역 정책 스냅샷이나 월별 잔량/QoS hash가 누락된 경우만 방어적으로 복구하고,
  * 복구 후 재차감은 {@link TrafficDeductLuaExecutor}에 위임합니다.
  */
 @Slf4j
@@ -50,7 +52,10 @@ public class TrafficHydrateService {
     private final TrafficBalanceSnapshotHydrateService trafficBalanceSnapshotHydrateService;
 
     /**
-     * Lua 상태가 hydrate 계열이면 필요한 데이터를 적재하고 같은 차감을 재시도합니다.
+     * Lua 상태가 hydrate 계열 fallback이면 필요한 데이터를 적재하고 같은 차감을 재시도합니다.
+     *
+     * <p>hydrate 상태가 아니거나 payload가 복구에 필요한 식별자를 갖추지 못한 경우에는
+     * 기존 결과를 그대로 반환해 상위 오케스트레이터의 오류/종결 계약을 유지합니다.
      */
     public TrafficLuaDeductExecutionResult recoverIfNeeded(
             TrafficPayloadReqDto payload,
@@ -71,7 +76,7 @@ public class TrafficHydrateService {
         String individualBalanceKey = resolveBalanceKey(TrafficPoolType.INDIVIDUAL, payload, targetMonth);
         String sharedBalanceKey = resolveBalanceKey(TrafficPoolType.SHARED, payload, targetMonth);
 
-        // 전역 정책 스냅샷 누락이면 정책만 먼저 복구합니다.
+        // 전역 정책 스냅샷 누락 fallback이면 정책만 먼저 복구합니다.
         TrafficLuaDeductExecutionResult afterGlobalPolicyHydrateResult = handleGlobalPolicyHydrateIfNeeded(
                 payload,
                 individualBalanceKey,
@@ -81,7 +86,7 @@ public class TrafficHydrateService {
                 currentResult
         );
 
-        // 잔량/QoS snapshot 미준비이면 Redis hydrate 후 같은 통합 Lua를 재시도합니다.
+        // 잔량/QoS snapshot fallback이면 Redis hydrate 후 같은 통합 Lua를 재시도합니다.
         return handleHydrateIfNeeded(
                 payload,
                 targetMonth,
@@ -94,7 +99,7 @@ public class TrafficHydrateService {
     }
 
     /**
-     * 전역 정책 스냅샷 누락 상태면 정책을 재적재한 뒤 동일 통합 Lua 차감을 재시도합니다.
+     * 전역 정책 스냅샷 누락 fallback 상태면 정책을 재적재한 뒤 동일 통합 Lua 차감을 재시도합니다.
      */
     private TrafficLuaDeductExecutionResult handleGlobalPolicyHydrateIfNeeded(
             TrafficPayloadReqDto payload,
@@ -147,7 +152,7 @@ public class TrafficHydrateService {
     }
 
     /**
-     * 개인/공유 잔량 snapshot 미준비 상태면 필요한 snapshot만 hydrate 후 동일 통합 Lua 차감을 재시도합니다.
+     * 개인/공유 잔량 snapshot fallback 상태면 필요한 snapshot만 hydrate 후 동일 통합 Lua 차감을 재시도합니다.
      */
     private TrafficLuaDeductExecutionResult handleHydrateIfNeeded(
             TrafficPayloadReqDto payload,
@@ -197,7 +202,7 @@ public class TrafficHydrateService {
     }
 
     /**
-     * 통합 Lua가 참조하는 월별 snapshot 중 요청된 범위만 준비합니다.
+     * 통합 Lua가 fallback으로 요청한 월별 snapshot 범위만 준비합니다.
      */
     private TrafficLuaDeductExecutionResult applyUnifiedHydrate(
             TrafficLuaStatus hydrateStatus,

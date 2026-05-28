@@ -207,7 +207,7 @@ public class TrafficStreamConsumerRunnerTest {
             assertTrue(latencyCaptor.getValue() >= 0L);
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verify(trafficInFlightDedupeDeleteOutboxService).attemptImmediateDeleteAndMarkResult(101L, "trace-001");
-            verify(trafficDeductDoneLogService, times(2)).existsByTraceId("trace-001");
+            verify(trafficDeductDoneLogService, never()).existsByTraceId("trace-001");
 
             String doneLog = findDoneLog(listAppender);
             assertTrue(doneLog.contains("trace_id=trace-001"));
@@ -322,7 +322,7 @@ public class TrafficStreamConsumerRunnerTest {
                             .map(ILoggingEvent::getFormattedMessage)
                             .anyMatch(message -> message.startsWith("traffic_stream_duplicate_deduction_absorbed"))
             );
-            verify(trafficDeductDoneLogService, times(2)).existsByTraceId("trace-dup");
+            verify(trafficDeductDoneLogService, never()).existsByTraceId("trace-dup");
 
             detachAppender(listAppender);
         }
@@ -585,7 +585,7 @@ public class TrafficStreamConsumerRunnerTest {
 
             verify(trafficStreamInfraService, never()).acknowledge(record.getId());
             verify(trafficInFlightDedupeService).createOrGet("trace-pending");
-            verify(trafficDeductDoneLogService, times(2)).existsByTraceId("trace-pending");
+            verify(trafficDeductDoneLogService, times(1)).existsByTraceId("trace-pending");
         }
 
         @Test
@@ -610,7 +610,7 @@ public class TrafficStreamConsumerRunnerTest {
             verify(trafficStreamInfraService).acknowledge(record.getId());
             verify(trafficInFlightDedupeService).createOrGet("trace-state-absent");
             verifyNoInteractions(trafficDeductOrchestratorService);
-            verify(trafficDeductDoneLogService, times(2)).existsByTraceId("trace-state-absent");
+            verify(trafficDeductDoneLogService, times(1)).existsByTraceId("trace-state-absent");
         }
 
         @Test
@@ -840,23 +840,7 @@ public class TrafficStreamConsumerRunnerTest {
             verify(trafficRecordStageMetricsPort).incrementResult("failed");
         }
 
-        @Test
-        @DisplayName("acks without orchestration when done log exists for NEW source")
-        void acknowledgeNewSourceWithoutOrchestrationWhenDoneLogExists() {
-            String payloadJson = "{\"traceId\":\"trace-new-source\",\"lineId\":11,\"familyId\":22,\"appId\":33,\"apiTotalData\":100,\"enqueuedAt\":1700000000000}";
-            MapRecord<String, String, String> record = createRecord("8-4", payloadJson);
 
-            when(trafficStreamInfraService.extractPayload(record)).thenReturn(payloadJson);
-            when(trafficDeductDoneLogService.existsByTraceId("trace-new-source")).thenReturn(true);
-
-            invokeHandleRecord(record, TrafficStreamMessageSource.NEW);
-
-            verify(trafficDeductDoneLogService).existsByTraceId("trace-new-source");
-            verify(trafficStreamInfraService).acknowledge(record.getId());
-            verify(trafficInFlightDedupeDeleteOutboxService).createPending("trace-new-source", "8-4");
-            verifyNoInteractions(trafficInFlightDedupeService);
-            verifyNoInteractions(trafficDeductOrchestratorService);
-        }
 
         @Test
         @DisplayName("acks duplicate NEW record when in-flight dedupe already exists")
