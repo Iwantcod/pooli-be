@@ -419,8 +419,10 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
                 long dedupeStartNs = System.nanoTime();
                 try {
-                    // 이미 완료 로그가 있으면 유입 출처와 관계없이 추가 차감 없이 ACK한다.
-                    if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
+                    // RECLAIM 경로에서만: 이미 완료 로그가 있으면 추가 차감 없이 ACK한다.
+                    // NEW 경로는 in-flight dedupe 락(createOrGet)으로 중복을 방어하므로 done log DB 조회가 필요 없다.
+                    if (messageSource == TrafficStreamMessageSource.RECLAIM
+                            && trafficDeductDoneLogService.existsByTraceId(traceId)) {
                         trafficInFlightDedupeDeleteOutboxService.createPending(traceId, recordId);
                         acknowledgeWithMetrics(record.getId());
                         log.info("traffic_stream_record_already_done recordId={}", recordId);
@@ -431,13 +433,6 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
                     TrafficInFlightIdempotencyEntryResult entryResult =
                             trafficInFlightDedupeService.createOrGet(traceId);
                     dedupeCleanupRequired = true;
-                    if (trafficDeductDoneLogService.existsByTraceId(traceId)) {
-                        trafficInFlightDedupeDeleteOutboxService.createPending(traceId, recordId);
-                        acknowledgeWithMetrics(record.getId());
-                        log.info("traffic_stream_record_already_done_after_dedupe recordId={}", recordId);
-                        resultTag = RESULT_DEDUPED;
-                        return;
-                    }
                     if (messageSource == TrafficStreamMessageSource.NEW && !entryResult.created()) {
                         acknowledgeWithMetrics(record.getId());
                         log.info("traffic_stream_record_inflight_duplicate_new recordId={}", recordId);
