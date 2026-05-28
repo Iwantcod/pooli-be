@@ -40,9 +40,6 @@ public class TrafficLinePolicyHydrationService {
 
     private static final int READY_RECHECK_MAX = 3;
 
-    @Value("${app.policy.line-hydration.ready-ttl-sec:60}")
-    private long linePolicyReadyTtlSeconds = 60L;
-
     @Value("${app.traffic.deduct.redis-retry.backoff-ms:50}")
     private long retryBackoffMs = 50L;
 
@@ -130,8 +127,7 @@ public class TrafficLinePolicyHydrationService {
         trafficPolicyWriteThroughService.syncRepeatBlockUntracked(lineId, repeatBlocks, version);
         trafficPolicyWriteThroughService.syncAppPolicySnapshotUntracked(lineId, appPolicies, version);
 
-        long readyTtlSeconds = Math.max(1L, linePolicyReadyTtlSeconds);
-        cacheStringRedisTemplate.opsForValue().set(readyKey, "1", Duration.ofSeconds(readyTtlSeconds));
+        cacheStringRedisTemplate.opsForValue().set(readyKey, "1");
 
         long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNano);
         log.info(
