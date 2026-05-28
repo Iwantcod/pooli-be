@@ -79,7 +79,9 @@ local function read_daily_app_usage(key, individual_field, shared_field, qos_fie
       + read_non_negative_counter(key, qos_field)
 end
 
--- hydrate는 월별 snapshot 준비 여부로 판단한다.
+-- 월별 잔량 snapshot fallback 필요 여부는 hash field 기준으로 판단한다.
+-- 정상 차감 경로에서는 Java preflight가 snapshot을 먼저 준비하지만, Redis eviction/부분 손상/동시성 경합에 대비해
+-- Lua도 마지막 방어선으로 HYDRATE_INDIVIDUAL/HYDRATE_SHARED를 반환한다.
 local function is_hash_snapshot_ready(key, required_fields)
   if redis.call("EXISTS", key) == 0 then
     return false
@@ -194,8 +196,8 @@ if has_missing_global_policy_key(
   return as_json(0, 0, 0, "GLOBAL_POLICY_HYDRATE")
 end
 
--- ===== 3단계: 개인 잔량 snapshot 준비 여부 확인 =====
--- 개인 snapshot은 amount와 qos가 함께 준비되어야 한다.
+-- ===== 3단계: 개인 잔량 snapshot fallback 필요 여부 확인 =====
+-- 개인 snapshot은 amount와 qos가 함께 준비되어야 한다. 누락 시 정상 흐름이 아니라 fallback 신호를 반환한다.
 if not is_hash_snapshot_ready(individual_remaining_key, { "amount", "qos" }) then
   return as_json(0, 0, 0, "HYDRATE_INDIVIDUAL")
 end
@@ -317,6 +319,7 @@ end
 local shared_amount = 0
 local shared_unlimited = false
 if shared_target > 0 then
+  -- 공유 snapshot amount 누락은 preflight 이후 Redis 손상/eviction을 복구하기 위한 fallback 신호다.
   if not is_hash_snapshot_ready(shared_remaining_key, { "amount" }) then
     return as_json(0, 0, 0, "HYDRATE_SHARED")
   end

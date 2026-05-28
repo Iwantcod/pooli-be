@@ -83,8 +83,8 @@ class TrafficHydrateServiceTest {
     }
 
     @Test
-    @DisplayName("HYDRATE가 반환되면 개인/공유 잔량과 QoS를 적재한 뒤 통합 Lua를 재시도한다")
-    void recoverIfNeededHydratesThenRetries() {
+    @DisplayName("fallback HYDRATE가 반환되면 개인/공유 잔량과 QoS를 적재한 뒤 통합 Lua를 재시도한다")
+    void recoverIfNeededHydratesThenRetriesForFallbackSignal() {
         TrafficPayloadReqDto payload = payload();
         TrafficDeductExecutionContext context = TrafficDeductExecutionContext.of("trace-001");
         TrafficLuaDeductExecutionResult currentResult = unifiedResult(0L, 0L, 0L, TrafficLuaStatus.HYDRATE);
@@ -126,8 +126,8 @@ class TrafficHydrateServiceTest {
     }
 
     @Test
-    @DisplayName("HYDRATE_INDIVIDUAL이면 개인 snapshot만 적재한 뒤 통합 Lua를 재시도한다")
-    void recoverIfNeededHydratesOnlyIndividualSnapshot() {
+    @DisplayName("fallback HYDRATE_INDIVIDUAL이면 개인 snapshot만 적재한 뒤 통합 Lua를 재시도한다")
+    void recoverIfNeededHydratesOnlyIndividualSnapshotForFallbackSignal() {
         TrafficPayloadReqDto payload = payload();
         TrafficDeductExecutionContext context = TrafficDeductExecutionContext.of("trace-001");
         TrafficLuaDeductExecutionResult currentResult =
@@ -168,8 +168,8 @@ class TrafficHydrateServiceTest {
     }
 
     @Test
-    @DisplayName("HYDRATE_SHARED이면 공유 snapshot만 적재한 뒤 통합 Lua를 재시도한다")
-    void recoverIfNeededHydratesOnlySharedSnapshot() {
+    @DisplayName("fallback HYDRATE_SHARED이면 공유 snapshot만 적재한 뒤 통합 Lua를 재시도한다")
+    void recoverIfNeededHydratesOnlySharedSnapshotForFallbackSignal() {
         TrafficPayloadReqDto payload = payload();
         TrafficDeductExecutionContext context = TrafficDeductExecutionContext.of("trace-001");
         TrafficLuaDeductExecutionResult currentResult =

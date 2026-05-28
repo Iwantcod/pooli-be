@@ -124,17 +124,20 @@ class TrafficLuaPolicyContractTest {
     }
 
     @Test
-    @DisplayName("통합 deduct Lua는 snapshot readiness 기준으로 hydrate 원인을 분리한다")
-    void unifiedDeductChecksSnapshotReadinessByPool() throws IOException {
+    @DisplayName("통합 deduct Lua는 fallback 방어선으로 hash field 기준 hydrate 원인을 분리한다")
+    void unifiedDeductKeepsFallbackSnapshotReadinessByPool() throws IOException {
         String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
+                "월별 잔량 snapshot fallback 필요 여부는 hash field 기준으로 판단한다.",
                 "local function is_hash_snapshot_ready(key, required_fields)",
                 "if redis.call(\"EXISTS\", key) == 0 then",
                 "local value = redis.call(\"HGET\", key, field)",
+                "개인 잔량 snapshot fallback 필요 여부 확인",
                 "if not is_hash_snapshot_ready(individual_remaining_key, { \"amount\", \"qos\" }) then",
                 "return as_json(0, 0, 0, \"HYDRATE_INDIVIDUAL\")",
+                "공유 snapshot amount 누락은 preflight 이후 Redis 손상/eviction을 복구하기 위한 fallback 신호다.",
                 "if not is_hash_snapshot_ready(shared_remaining_key, { \"amount\" }) then",
                 "return as_json(0, 0, 0, \"HYDRATE_SHARED\")"
         );
