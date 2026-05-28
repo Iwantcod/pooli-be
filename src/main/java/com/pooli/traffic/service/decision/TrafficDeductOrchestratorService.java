@@ -293,10 +293,10 @@ public class TrafficDeductOrchestratorService {
     }
 
     /**
-     * 차단성 정책 검증 전에 Redis 정책 스냅샷과 월별 잔량 snapshot 준비를 시도합니다.
+     * 차단성 정책 검증 전에 Redis ready key와 가족풀 잔량 key 기준으로 필요한 hydrate를 시도합니다.
      */
     private void ensurePreflightHydrated(TrafficPayloadReqDto payload) {
-        // ready key는 정책 스냅샷 적재 여부만 판단하므로, 이 값으로 잔량 snapshot 검사를 대체하지 않습니다.
+        // ready key가 없으면 회선 정책 스냅샷과 개인풀 잔량 snapshot을 먼저 준비합니다.
         boolean linePolicyReady = trafficLinePolicyHydrationService.isLoaded(payload.getLineId());
         if (!linePolicyReady) {
             trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
@@ -314,9 +314,8 @@ public class TrafficDeductOrchestratorService {
         YearMonth targetMonth = resolveTargetMonth(payload);
         if (!linePolicyReady) {
             hydrateIndividualSnapshot(payload, targetMonth);
-            hydrateSharedSnapshot(payload, targetMonth);
         }
-        hydrateMissingBalanceSnapshots(payload, targetMonth);
+        hydrateSharedSnapshotIfKeyMissing(payload, targetMonth);
     }
 
     /**
@@ -339,19 +338,12 @@ public class TrafficDeductOrchestratorService {
     }
 
     /**
-     * Redis 잔량 snapshot key/field 누락 여부를 확인하고 필요한 snapshot만 hydrate합니다.
+     * 가족풀 잔량 snapshot key가 없을 때만 공유풀 잔량 hydrate를 시도합니다.
      */
-    private void hydrateMissingBalanceSnapshots(TrafficPayloadReqDto payload, YearMonth targetMonth) {
-        String individualBalanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(payload.getLineId(), targetMonth);
-        boolean individualSnapshotReady = trafficRemainingBalanceCacheService.hasHashField(individualBalanceKey, "amount")
-                && trafficRemainingBalanceCacheService.hasHashField(individualBalanceKey, "qos");
-        if (!individualSnapshotReady) {
-            hydrateIndividualSnapshot(payload, targetMonth);
-        }
-
+    private void hydrateSharedSnapshotIfKeyMissing(TrafficPayloadReqDto payload, YearMonth targetMonth) {
         String sharedBalanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(payload.getFamilyId(), targetMonth);
-        boolean sharedSnapshotReady = trafficRemainingBalanceCacheService.hasHashField(sharedBalanceKey, "amount");
-        if (!sharedSnapshotReady) {
+        boolean sharedSnapshotKeyExists = trafficRemainingBalanceCacheService.hasKey(sharedBalanceKey);
+        if (!sharedSnapshotKeyExists) {
             hydrateSharedSnapshot(payload, targetMonth);
         }
     }

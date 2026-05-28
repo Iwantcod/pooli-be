@@ -87,6 +87,17 @@ public class TrafficRemainingBalanceCacheService {
     }
 
     /**
+     * Redis key가 존재하는지 확인합니다.
+     *
+     * <p>공유풀 preflight처럼 hash field 준비 여부가 아니라 key 자체의 존재 여부만 필요한 흐름에서 사용합니다.</p>
+     */
+    public boolean hasKey(String key) {
+        // 값의 형태나 field 구성은 확인하지 않고 Redis key 존재 여부만 판단합니다.
+        Boolean hasKey = cacheStringRedisTemplate.hasKey(key);
+        return Boolean.TRUE.equals(hasKey);
+    }
+
+    /**
      * 잔량 hash가 이미 hydrate되어 있을 때만 `amount` 필드를 증감합니다.
      *
      * <p>key 또는 amount가 없으면 RDB source만 갱신된 상태로 두고, 다음 조회 hydrate가 반영하게 합니다.

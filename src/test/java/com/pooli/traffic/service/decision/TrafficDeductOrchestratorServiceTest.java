@@ -97,18 +97,8 @@ class TrafficDeductOrchestratorServiceTest {
                 .thenReturn("pooli:remaining_indiv_amount:11:202603");
         lenient().when(trafficRedisKeyFactory.remainingSharedAmountKey(eq(22L), any(YearMonth.class)))
                 .thenReturn("pooli:remaining_shared_amount:22:202603");
-        lenient().when(trafficRemainingBalanceCacheService.hasHashField(
-                "pooli:remaining_indiv_amount:11:202603",
-                "amount"
-        )).thenReturn(true);
-        lenient().when(trafficRemainingBalanceCacheService.hasHashField(
-                "pooli:remaining_indiv_amount:11:202603",
-                "qos"
-        )).thenReturn(true);
-        lenient().when(trafficRemainingBalanceCacheService.hasHashField(
-                "pooli:remaining_shared_amount:22:202603",
-                "amount"
-        )).thenReturn(true);
+        lenient().when(trafficRemainingBalanceCacheService.hasKey("pooli:remaining_shared_amount:22:202603"))
+                .thenReturn(true);
     }
 
     @Test
@@ -276,14 +266,12 @@ class TrafficDeductOrchestratorServiceTest {
     }
 
     @Test
-    @DisplayName("ready key가 없으면 정책 hydrate 후 개인/공유 잔량 snapshot을 preflight에서 준비한다")
-    void preflightHydratesPolicyAndBalanceSnapshotsWhenLinePolicyIsNotReady() {
+    @DisplayName("ready key가 없으면 정책 hydrate 후 개인풀 잔량만 먼저 hydrate한다")
+    void preflightHydratesPolicyAndIndividualSnapshotWhenLinePolicyIsNotReady() {
         TrafficPayloadReqDto payload = payload(100L);
         TrafficLuaDeductExecutionResult initialResult = unifiedResult(100L, 0L, 0L, TrafficLuaStatus.OK);
         when(trafficLinePolicyHydrationService.isLoaded(11L)).thenReturn(false);
         when(trafficBalanceSnapshotHydrateService.hydrateIndividualSnapshot(eq(11L), any(YearMonth.class)))
-                .thenReturn(TrafficBalanceSnapshotHydrateResult.hydrated());
-        when(trafficBalanceSnapshotHydrateService.hydrateSharedSnapshot(eq(22L), any(YearMonth.class)))
                 .thenReturn(TrafficBalanceSnapshotHydrateResult.hydrated());
         when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
                 eq(payload),
@@ -302,25 +290,26 @@ class TrafficDeductOrchestratorServiceTest {
 
         InOrder inOrder = inOrder(
                 trafficLinePolicyHydrationService,
+                trafficRemainingBalanceCacheService,
                 trafficBalanceSnapshotHydrateService,
                 trafficPolicyCheckLayerService
         );
         inOrder.verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
         inOrder.verify(trafficBalanceSnapshotHydrateService)
                 .hydrateIndividualSnapshot(eq(11L), any(YearMonth.class));
-        inOrder.verify(trafficBalanceSnapshotHydrateService)
-                .hydrateSharedSnapshot(eq(22L), any(YearMonth.class));
+        inOrder.verify(trafficRemainingBalanceCacheService).hasKey("pooli:remaining_shared_amount:22:202603");
         inOrder.verify(trafficPolicyCheckLayerService).evaluate(payload);
+        verify(trafficBalanceSnapshotHydrateService, never()).hydrateSharedSnapshot(eq(22L), any(YearMonth.class));
     }
 
     @Test
-    @DisplayName("ready key가 있어도 잔량 snapshot field가 없으면 차단성 정책 검증 전에 hydrate한다")
-    void preflightHydratesMissingBalanceSnapshotBeforePolicyCheckWhenLinePolicyReady() {
+    @DisplayName("가족풀 잔량 key가 없으면 차단성 정책 검증 전에 공유풀만 hydrate한다")
+    void preflightHydratesSharedSnapshotWhenSharedBalanceKeyMissing() {
         TrafficPayloadReqDto payload = payload(100L);
         TrafficLuaDeductExecutionResult initialResult = unifiedResult(100L, 0L, 0L, TrafficLuaStatus.OK);
-        when(trafficRemainingBalanceCacheService.hasHashField("pooli:remaining_indiv_amount:11:202603", "qos"))
+        when(trafficRemainingBalanceCacheService.hasKey("pooli:remaining_shared_amount:22:202603"))
                 .thenReturn(false);
-        when(trafficBalanceSnapshotHydrateService.hydrateIndividualSnapshot(eq(11L), any(YearMonth.class)))
+        when(trafficBalanceSnapshotHydrateService.hydrateSharedSnapshot(eq(22L), any(YearMonth.class)))
                 .thenReturn(TrafficBalanceSnapshotHydrateResult.hydrated());
         when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
                 eq(payload),
@@ -338,11 +327,18 @@ class TrafficDeductOrchestratorServiceTest {
         service.orchestrate(payload);
 
         verify(trafficLinePolicyHydrationService, never()).ensureLoaded(11L);
-        InOrder inOrder = inOrder(trafficBalanceSnapshotHydrateService, trafficPolicyCheckLayerService);
+        InOrder inOrder = inOrder(
+                trafficRemainingBalanceCacheService,
+                trafficBalanceSnapshotHydrateService,
+                trafficPolicyCheckLayerService
+        );
+        inOrder.verify(trafficRemainingBalanceCacheService).hasKey("pooli:remaining_shared_amount:22:202603");
         inOrder.verify(trafficBalanceSnapshotHydrateService)
-                .hydrateIndividualSnapshot(eq(11L), any(YearMonth.class));
+                .hydrateSharedSnapshot(eq(22L), any(YearMonth.class));
         inOrder.verify(trafficPolicyCheckLayerService).evaluate(payload);
-        verify(trafficBalanceSnapshotHydrateService, never()).hydrateSharedSnapshot(eq(22L), any(YearMonth.class));
+        verify(trafficRemainingBalanceCacheService, never()).hasHashField(any(), any());
+        verify(trafficBalanceSnapshotHydrateService, never())
+                .hydrateIndividualSnapshot(eq(11L), any(YearMonth.class));
     }
 
     private TrafficPayloadReqDto payload(long apiTotalData) {

@@ -131,6 +131,28 @@ class TrafficRemainingBalanceCacheServiceTest {
     }
 
     @Nested
+    class HasKeyTest {
+
+        @Test
+        void returnsTrueWhenRedisKeyExists() {
+            when(cacheStringRedisTemplate.hasKey("pooli:remaining_shared_amount:22:202603")).thenReturn(true);
+
+            boolean result = trafficRemainingBalanceCacheService.hasKey("pooli:remaining_shared_amount:22:202603");
+
+            assertTrue(result);
+        }
+
+        @Test
+        void returnsFalseWhenRedisKeyMissing() {
+            when(cacheStringRedisTemplate.hasKey("pooli:remaining_shared_amount:22:202603")).thenReturn(false);
+
+            boolean result = trafficRemainingBalanceCacheService.hasKey("pooli:remaining_shared_amount:22:202603");
+
+            assertFalse(result);
+        }
+    }
+
+    @Nested
     class HydrateSnapshotTest {
 
         @Test
