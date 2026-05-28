@@ -59,7 +59,7 @@ public class LineDailyUsageSyncWorkerService {
         );
 
         // 3. worker별 선점 결과를 남겨 empty poll과 정상 처리 흐름을 운영 로그에서 구분할 수 있게 한다.
-        log.info(
+        log.debug(
                 "line_daily_usage_sync_worker_claimed batchJobId={} usageDate={} workerId={} claimedCount={}",
                 batchJob.getId(),
                 batchJob.getUsageDate(),
@@ -130,7 +130,7 @@ public class LineDailyUsageSyncWorkerService {
                 // 2. Redis에서 target line의 일별 총량, 앱별 사용량, 공유풀 사용량 snapshot을 조회한다.
                 LineDailyUsageReadResult snapshot = lineDailyUsageRedisReader.read(target);
                 // 3. 조회 결과가 실제 DB insert 대상인지, 전체 key 없음으로 SKIPPED 대상인지 기록한다.
-                log.info(
+                log.debug(
                         "line_daily_usage_sync_worker_read_usage targetId={} usageDate={} lineId={} hasAnyUsage={}",
                         target.getId(),
                         target.getUsageDate(),
