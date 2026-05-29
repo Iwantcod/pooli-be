@@ -5,6 +5,33 @@
 
 <mapper namespace="com.pooli.traffic.mapper.TrafficDeductDoneLogMapper">
 
+    <!-- TRAFFIC_DEDUCT_DONE row를 Java domain 객체로 변환한다. -->
+    <resultMap id="TrafficDeductDoneLogResultMap" type="com.pooli.traffic.domain.entity.TrafficDeductDoneLog">
+        <id property="trafficDeductDoneId" column="traffic_deduct_done_id"/>
+        <result property="traceId" column="trace_id"/>
+        <result property="recordId" column="record_id"/>
+        <result property="lineId" column="line_id"/>
+        <result property="familyId" column="family_id"/>
+        <result property="appId" column="app_id"/>
+        <result property="enqueuedAt" column="enqueued_at"/>
+        <result property="apiTotalData" column="api_total_data"/>
+        <result property="deductedIndividualBytes" column="deducted_individual_bytes"/>
+        <result property="deductedSharedBytes" column="deducted_shared_bytes"/>
+        <result property="deductedQosBytes" column="deducted_qos_bytes"/>
+        <result property="apiRemainingData" column="api_remaining_data"/>
+        <result property="finalStatus" column="final_status"/>
+        <result property="lastLuaStatus" column="last_lua_status"/>
+        <result property="failureReason" column="failure_reason"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="finishedAt" column="finished_at"/>
+        <result property="latency" column="latency"/>
+        <result property="restoreStatus" column="restore_status"/>
+        <result property="restoreStatusUpdatedAt" column="restore_status_updated_at"/>
+        <result property="restoreRetryCount" column="restore_retry_count"/>
+        <result property="restoreLastErrorMessage" column="restore_last_error_message"/>
+    </resultMap>
+
     <select id="existsByTraceId" resultType="boolean">
         SELECT EXISTS(
             SELECT 1
@@ -64,5 +91,87 @@
             NULL
         )
     </insert>
+
+    <!-- phase 2 worker가 복구 대상 done log를 잠금 선점한다. -->
+    <select id="selectClaimableRestoreLogsForUpdate" resultMap="TrafficDeductDoneLogResultMap">
+        SELECT
+            traffic_deduct_done_id,
+            trace_id,
+            record_id,
+            line_id,
+            family_id,
+            app_id,
+            enqueued_at,
+            api_total_data,
+            deducted_individual_bytes,
+            deducted_shared_bytes,
+            deducted_qos_bytes,
+            api_remaining_data,
+            final_status,
+            last_lua_status,
+            failure_reason,
+            created_at,
+            started_at,
+            finished_at,
+            latency,
+            restore_status,
+            restore_status_updated_at,
+            restore_retry_count,
+            restore_last_error_message
+        FROM TRAFFIC_DEDUCT_DONE
+        WHERE enqueued_at &gt;= #{startInclusive}
+          AND enqueued_at &lt; #{endExclusive}
+          AND (
+              restore_status IN ('NONE', 'RETRYABLE')
+              OR (restore_status = 'PROCESSING' AND restore_status_updated_at &lt; #{leaseExpiredBefore})
+          )
+        ORDER BY traffic_deduct_done_id
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <!-- 잠금 조회한 done log를 PROCESSING 상태로 전환한다. -->
+    <update id="markRestoreLogsProcessing">
+        UPDATE TRAFFIC_DEDUCT_DONE
+        SET restore_status = 'PROCESSING',
+            restore_status_updated_at = CURRENT_TIMESTAMP(6),
+            restore_last_error_message = NULL
+        WHERE traffic_deduct_done_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+          AND restore_status IN ('NONE', 'RETRYABLE', 'PROCESSING')
+    </update>
+
+    <!-- PROCESSING 상태의 done log만 DONE terminal 상태로 닫는다. -->
+    <update id="markRestoreDoneIfProcessing">
+        UPDATE TRAFFIC_DEDUCT_DONE
+        SET restore_status = 'DONE',
+            restore_status_updated_at = CURRENT_TIMESTAMP(6),
+            restore_last_error_message = NULL
+        WHERE traffic_deduct_done_id = #{id}
+          AND restore_status = 'PROCESSING'
+    </update>
+
+    <!-- PROCESSING 상태의 done log만 FAILED terminal 상태로 닫는다. -->
+    <update id="markRestoreFailedIfProcessing">
+        UPDATE TRAFFIC_DEDUCT_DONE
+        SET restore_status = 'FAILED',
+            restore_status_updated_at = CURRENT_TIMESTAMP(6),
+            restore_retry_count = restore_retry_count + 1,
+            restore_last_error_message = #{errorMessage}
+        WHERE traffic_deduct_done_id = #{id}
+          AND restore_status = 'PROCESSING'
+    </update>
+
+    <!-- 운영 재개 시 anchor date 이전 FAILED done log만 다시 worker claim 가능한 RETRYABLE로 되돌린다. -->
+    <update id="resetFailedRestoreLogsToRetryable">
+        UPDATE TRAFFIC_DEDUCT_DONE
+        SET restore_status = 'RETRYABLE',
+            restore_status_updated_at = CURRENT_TIMESTAMP(6),
+            restore_last_error_message = NULL
+        WHERE enqueued_at &lt; #{endExclusive}
+          AND restore_status = 'FAILED'
+    </update>
 
 </mapper>
