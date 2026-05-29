@@ -1,5 +1,6 @@
 package com.pooli.traffic.mapper;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -7,6 +8,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.pooli.traffic.domain.restore.TrafficRestoreDailyAppTarget;
+import com.pooli.traffic.domain.restore.TrafficRestoreReplayCommand;
 import com.pooli.traffic.domain.restore.TrafficRestoreTargetStatus;
 
 /**
@@ -24,6 +26,20 @@ public interface TrafficRestoreDailyAppTargetMapper {
      * FAILED 상태 target row 수를 조회한다.
      */
     long countFailedTargets(@Param("batchName") String batchName);
+
+    /**
+     * DAILY_APP_TOTAL_DATA 기준 phase 1 replay target row를 생성한다.
+     */
+    int insertIgnoreTargetsFromDailyApp(
+            @Param("batchName") String batchName,
+            @Param("startInclusive") LocalDate startInclusive,
+            @Param("endExclusive") LocalDate endExclusive
+    );
+
+    /**
+     * phase 1 target row에 대응하는 replay command를 조회한다.
+     */
+    TrafficRestoreReplayCommand selectReplayCommand(@Param("id") Long id);
 
     /**
      * worker가 처리할 phase 1 daily app target row를 잠금 조회한다.
@@ -50,4 +66,9 @@ public interface TrafficRestoreDailyAppTargetMapper {
             @Param("status") TrafficRestoreTargetStatus status,
             @Param("workerId") String workerId
     );
+
+    /**
+     * 운영 재개 시 FAILED target만 RETRYABLE로 되돌린다.
+     */
+    int resetFailedTargetsToRetryable(@Param("batchName") String batchName);
 }
