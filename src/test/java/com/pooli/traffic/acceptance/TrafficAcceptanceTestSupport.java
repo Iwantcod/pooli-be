@@ -85,6 +85,7 @@ abstract class TrafficAcceptanceTestSupport {
     private static final int POLICY_APP_DATA = 5;
     private static final int POLICY_APP_SPEED = 6;
     private static final int POLICY_APP_WHITELIST = 7;
+    private static final int POLICY_RESTORE = 8;
     private static final Set<Integer> TEST_POLICY_IDS = Set.of(
             POLICY_REPEAT_BLOCK,
             POLICY_IMMEDIATE_BLOCK,
@@ -301,6 +302,15 @@ abstract class TrafficAcceptanceTestSupport {
             cacheStringRedisTemplate.opsForHash().put(policyKey, "version", String.valueOf(version));
         }
         cacheStringRedisTemplate.opsForValue().set(trafficRedisKeyFactory.policyBootstrapVersionKey(), String.valueOf(version));
+    }
+
+    /**
+     * Redis 복구 flag 정책 snapshot만 acceptance 테스트 목적에 맞게 준비합니다.
+     */
+    protected void prepareRestorePolicySnapshot(boolean active) {
+        String policyKey = trafficRedisKeyFactory.policyKey(POLICY_RESTORE);
+        cacheStringRedisTemplate.opsForHash().put(policyKey, "value", active ? "1" : "0");
+        cacheStringRedisTemplate.opsForHash().put(policyKey, "version", String.valueOf(System.currentTimeMillis()));
     }
 
     /**
@@ -646,6 +656,7 @@ abstract class TrafficAcceptanceTestSupport {
                 .map(policyId -> trafficRedisKeyFactory.policyKey(policyId))
                 .toList();
         cacheStringRedisTemplate.delete(policyKeys);
+        cacheStringRedisTemplate.delete(trafficRedisKeyFactory.policyKey(POLICY_RESTORE));
         cacheStringRedisTemplate.delete(trafficRedisKeyFactory.policyBootstrapVersionKey());
         cacheStringRedisTemplate.delete(trafficRedisKeyFactory.policyBootstrapLockKey());
     }
