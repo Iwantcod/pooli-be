@@ -296,7 +296,7 @@ public class TrafficDeductOrchestratorService {
      * 차단성 정책 검증 전에 Redis ready key와 가족풀 잔량 key 기준으로 필요한 hydrate를 시도합니다.
      */
     private void ensurePreflightHydrated(TrafficPayloadReqDto payload) {
-        // ready key가 없으면 회선 정책 스냅샷과 개인풀 잔량 snapshot을 먼저 준비합니다.
+        // ready key가 없으면 회선 정책 스냅샷만 먼저 준비합니다.
         boolean linePolicyReady = trafficLinePolicyHydrationService.isLoaded(payload.getLineId());
         if (!linePolicyReady) {
             trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
@@ -312,9 +312,7 @@ public class TrafficDeductOrchestratorService {
         }
 
         YearMonth targetMonth = resolveTargetMonth(payload);
-        if (!linePolicyReady) {
-            hydrateIndividualSnapshot(payload, targetMonth);
-        }
+        hydrateIndividualSnapshotIfKeyMissing(payload, targetMonth);
         hydrateSharedSnapshotIfKeyMissing(payload, targetMonth);
     }
 
@@ -335,6 +333,17 @@ public class TrafficDeductOrchestratorService {
             return false;
         }
         return payload.getEnqueuedAt() != null && payload.getEnqueuedAt() > 0;
+    }
+
+    /**
+     * 개인풀 잔량 snapshot hash key가 없을 때만 개인풀 잔량 hydrate를 시도합니다.
+     */
+    private void hydrateIndividualSnapshotIfKeyMissing(TrafficPayloadReqDto payload, YearMonth targetMonth) {
+        String individualBalanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(payload.getLineId(), targetMonth);
+        boolean individualSnapshotKeyExists = trafficRemainingBalanceCacheService.hasKey(individualBalanceKey);
+        if (!individualSnapshotKeyExists) {
+            hydrateIndividualSnapshot(payload, targetMonth);
+        }
     }
 
     /**
