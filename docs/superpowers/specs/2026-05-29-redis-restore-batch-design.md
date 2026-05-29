@@ -1,7 +1,7 @@
 # Redis 장애 복구 배치 설계 명세
 
 작성일: 2026-05-29  
-상태: 설계 정리 완료, 구현 미승인  
+상태: 설계 정리 완료, 구현 승인  
 원본 문서: `docs/plan/PLANS.md`  
 대상 시스템: Redis 트래픽 잔량/사용량 복구 배치  
 의존성 기준: Spring Boot 3.5.10, Spring Data Redis 3.5.8, Lettuce 6.6.0.RELEASE, Spring JDBC 6.2.15, MyBatis core 3.5.19 / starter 3.0.5, JUnit Jupiter 5.12.2, Mockito 5.17.0  
@@ -108,8 +108,9 @@ flowchart TD
 |---|---|
 | 저장소 | `POLICY` table |
 | 성격 | 전역 정책 |
+| 식별 방식 | `policy_id = 8` 고정 |
 | Redis hydrate 대상 | 포함 |
-| 일반 정책 목록 노출 | 제외 필요 |
+| 일반 정책 목록 노출 | `policy_id = 8` 조건으로 제외 |
 | Redis key | `TrafficRedisKeyFactory.policyKey(policyId)` 규칙 사용 |
 | 활성 의미 | 장애 복구 진행 중이며 traffic stream 생산/소비/처리를 중단 |
 
@@ -327,13 +328,11 @@ stateDiagram-v2
 - Redis 잔량 key에 개인/공유 사용량을 반영합니다.
 - QoS 사용량은 사용량 key에만 반영하고 잔량에서 차감하지 않습니다.
 
-### 12.2 대상 범위 보완 규칙
+### 12.2 대상 범위
 
-- 기존 초안의 "복구 대상 월 전체 `DAILY_APP_TOTAL_DATA` replay"는 phase 2 done log replay와 중복될 위험이 있습니다.
-- 구현 전 반드시 다음 둘 중 하나를 확정해야 합니다.
-  - 미완료 날짜 범위의 `DAILY_APP_TOTAL_DATA` partial row를 정리한 뒤 phase 1에서 월 전체를 replay합니다.
-  - phase 1은 일별 동기화 완료 구간의 `DAILY_APP_TOTAL_DATA`만 replay하고, 미완료 날짜 범위는 phase 2가 전담합니다.
-- 이 결정이 없으면 구현을 시작하지 않습니다.
+- phase 1은 복구 대상 날짜 범위의 `DAILY_APP_TOTAL_DATA`만 replay합니다.
+- phase 2는 동일 복구 대상 날짜 범위의 `TRAFFIC_DEDUCT_DONE`을 replay합니다.
+- phase별 idempotency key가 다르므로 각 원천 데이터의 중복 replay만 방지하고, 원천 데이터 간 중복 여부는 검증/보정 단계에서 최종 확인합니다.
 
 ### 12.3 Redis idempotency key
 
@@ -457,6 +456,7 @@ sequenceDiagram
 - sampling 검증은 금지합니다.
 - 불일치 발견 시 structured log를 기록합니다.
 - Redis 값을 검증 기준값으로 자동 보정합니다.
+- 자동 보정은 replay Lua와 분리된 `restore_usage_correction.lua`를 사용합니다.
 - 보정 실패 시 phase 2 batch를 `FAILED` 처리합니다.
 - 보정 성공 후 idempotency key cleanup을 진행합니다.
 
@@ -546,17 +546,17 @@ sequenceDiagram
 
 ---
 
-## 18. 구현 전 확정 필요 항목
+## 18. 승인된 구현 결정
 
-| 항목 | 확정 기준 |
+| 항목 | 결정 |
 |---|---|
-| 장애 복구 flag `policy_id` | 고정 ID 또는 별도 식별 전략. 후보 `8`은 운영 데이터 충돌 확인 필요 |
-| 일반 정책 목록 제외 방식 | `policy_name` 규칙 또는 별도 category 기반 제외 방식 중 하나 확정 |
-| phase 1 대상 범위 | 월 전체 replay 전 partial row 정리 방식 또는 완료 구간만 replay 방식 중 하나 확정 |
-| worker chunk env 이름 | `TRAFFIC_RESTORE_WORKER_CHUNK_SIZE` 등 실제 환경변수명 확정 |
-| manager lock key 이름 | 기존 daily batch lock과 분리된 restore 전용 key 이름 확정 |
-| phase 2 조회 index | `restore_status`, `enqueued_at`, `status_updated_at` 기반 index 형태 확정 |
-| 보정 Lua 분리 여부 | replay Lua와 verification correction Lua를 분리할지 확정 |
+| 장애 복구 flag 식별 방식 | `policy_id = 8` 고정 |
+| 일반 정책 목록 제외 방식 | `policy_id = 8` 조건으로 제외 |
+| phase 1 대상 범위 | 복구 대상 날짜 범위의 `DAILY_APP_TOTAL_DATA`만 replay |
+| worker chunk env 이름 | `TRAFFIC_RESTORE_WORKER_CHUNK_SIZE`, 기본값 `5000` |
+| manager lock key 이름 | `traffic:restore:manager-lock` |
+| phase 2 조회 index | `(restore_status, enqueued_at, restore_status_updated_at)` 복합 인덱스를 추가하고 기존 `enqueued_at` 단일 인덱스는 유지 |
+| 보정 Lua 분리 여부 | replay Lua와 correction Lua를 분리하고, 보정은 `restore_usage_correction.lua`에서 수행 |
 
 ---
 

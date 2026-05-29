@@ -12,7 +12,7 @@
 
 ## 실행 상태
 
-- 현재 상태: 구현 미승인
+- 현재 상태: 구현 승인
 - 설계 명세: `docs/superpowers/specs/2026-05-29-redis-restore-batch-design.md`
 - 의존성 출처: `docs/context7-dependencies.yaml`
 - 테스트 작성 기준: `docs/junit-unit-test-guide.md`
@@ -28,19 +28,17 @@
 - test code 작성 전 `docs/junit-unit-test-guide.md`를 확인합니다.
 - Spring Boot, Spring Security, MyBatis, Redis, JDBC, JUnit, Mockito 관련 exact API signature가 필요해지면 `docs/context7-dependencies.yaml`에서 library id와 version을 확인한 뒤 Context7을 1 dependency당 1회 원칙으로 사용합니다.
 
-## 실행 전 확정 항목
+## 승인된 구현 결정
 
-아래 항목이 확정되지 않으면 production code 구현을 시작하지 않습니다.
-
-| 항목 | 필요한 결정 |
+| 항목 | 결정 |
 |---|---|
-| 장애 복구 flag 식별 방식 | `policy_id = 8` 고정 사용 여부 또는 별도 category/key 기반 식별 방식 |
-| 일반 정책 목록 제외 방식 | `policy_name` 규칙 또는 category 기반 제외 방식 |
-| phase 1 대상 범위 | partial `DAILY_APP_TOTAL_DATA` 정리 후 월 전체 replay 또는 완료 구간만 replay |
-| worker chunk env 이름 | 예: `TRAFFIC_RESTORE_WORKER_CHUNK_SIZE`, 기본값 5000 |
-| restore manager lock key 이름 | 기존 `line_daily_batch:manager_lock`과 분리된 key 이름 |
-| phase 2 조회 index | `restore_status`, `enqueued_at`, `status_updated_at` 조합의 실제 index |
-| 보정 Lua 분리 여부 | replay Lua와 correction Lua 분리 여부 |
+| 장애 복구 flag 식별 방식 | `policy_id = 8` 고정 |
+| 일반 정책 목록 제외 방식 | `policy_id = 8` 조건으로 제외 |
+| phase 1 대상 범위 | 복구 대상 날짜 범위의 `DAILY_APP_TOTAL_DATA`만 replay |
+| worker chunk env 이름 | `TRAFFIC_RESTORE_WORKER_CHUNK_SIZE`, 기본값 `5000` |
+| restore manager lock key 이름 | `traffic:restore:manager-lock` |
+| phase 2 조회 index | `(restore_status, enqueued_at, restore_status_updated_at)` 복합 인덱스 추가, 기존 `enqueued_at` 단일 인덱스 유지 |
+| 보정 Lua 분리 여부 | replay Lua와 correction Lua 분리, 보정은 `restore_usage_correction.lua`에서 수행 |
 
 ---
 
@@ -101,7 +99,7 @@
 ### Lua
 
 - Create: `src/main/resources/lua/traffic/restore_usage_replay.lua` - phase 1/2 공통 replay Lua
-- Create 또는 생략: `src/main/resources/lua/traffic/restore_usage_correction.lua` - 보정 Lua 분리 확정 시 생성
+- Create: `src/main/resources/lua/traffic/restore_usage_correction.lua` - verification correction 전용 Lua
 - Modify: `src/main/java/com/pooli/traffic/service/runtime/TrafficLuaScriptType.java` - restore Lua type 추가
 - Modify: `src/main/java/com/pooli/traffic/service/runtime/TrafficLuaScriptInfraService.java` - restore Lua 등록과 실행 지원
 
@@ -132,7 +130,7 @@
 - Modify: `docs/superpowers/specs/2026-05-29-redis-restore-batch-design.md`
 - Modify: `docs/superpowers/plans/2026-05-29-redis-restore-batch.md`
 
-- [ ] **Step 1: 확정 항목을 사용자에게 제시**
+- [x] **Step 1: 확정 항목을 사용자에게 제시**
 
 확정 요청 항목:
 
@@ -148,7 +146,7 @@
 
 Expected: 사용자가 각 항목의 결정을 명시합니다.
 
-- [ ] **Step 2: 승인된 결정을 설계 명세에 반영**
+- [x] **Step 2: 승인된 결정을 설계 명세에 반영**
 
 Run:
 
@@ -156,21 +154,21 @@ Run:
 sed -n '1,260p' docs/superpowers/specs/2026-05-29-redis-restore-batch-design.md
 ```
 
-Expected: 확정된 decision이 `구현 전 확정 필요 항목`에 남아 있지 않습니다.
+Expected: 확정된 decision이 `승인된 구현 결정`에 반영되어 있습니다.
 
-- [ ] **Step 3: 계획의 차단 상태 제거**
+- [x] **Step 3: 계획의 차단 상태 제거**
 
 Run:
 
 ```bash
-rg -n "구현 전 확정|확정되지 않으면|필요한 결정" docs/superpowers/plans/2026-05-29-redis-restore-batch.md
+rg -n "확정되지 않으면|필요한 결정|구현 미승인" docs/superpowers/plans/2026-05-29-redis-restore-batch.md
 ```
 
 Expected: 실행 차단 문구가 승인된 decision으로 대체되어 있습니다.
 
-- [ ] **Step 4: commit 여부 확인**
+- [x] **Step 4: commit 여부 확인**
 
-Expected: 문서 변경 commit은 사용자에게 명시 확인을 받은 경우에만 수행합니다.
+Expected: 문서 변경 commit은 사용자에게 명시 확인을 받은 경우에만 수행합니다. 현재 승인 범위에는 commit 요청이 없으므로 commit하지 않습니다.
 
 ---
 
@@ -186,7 +184,7 @@ Expected: 문서 변경 commit은 사용자에게 명시 확인을 받은 경우
 - Create: `src/main/java/com/pooli/traffic/domain/restore/TrafficRestoreDailyAppTarget.java`
 - Test: `src/test/java/com/pooli/traffic/domain/restore/TrafficRestoreDomainTest.java`
 
-- [ ] **Step 1: failing test 작성**
+- [x] **Step 1: failing test 작성**
 
 검증할 동작:
 
@@ -202,7 +200,7 @@ void restoreTargetStatusContract() {
 }
 ```
 
-- [ ] **Step 2: failing test 확인**
+- [x] **Step 2: failing test 확인**
 
 Run:
 
@@ -212,7 +210,7 @@ Run:
 
 Expected: `TrafficRestoreTargetStatus`가 없어서 compile fail.
 
-- [ ] **Step 3: migration 작성**
+- [x] **Step 3: migration 작성**
 
 구현 내용:
 
@@ -275,9 +273,9 @@ CREATE INDEX idx_traffic_deduct_done_restore_claim
     ON TRAFFIC_DEDUCT_DONE (restore_status, enqueued_at, restore_status_updated_at);
 ```
 
-Expected: table, unique key, claim index가 설계 명세와 일치합니다.
+Expected: table, unique key, claim index가 설계 명세와 일치합니다. 기존 `enqueued_at` 단일 인덱스는 제거하지 않습니다.
 
-- [ ] **Step 4: domain class와 enum 작성**
+- [x] **Step 4: domain class와 enum 작성**
 
 구현 원칙:
 
@@ -293,7 +291,7 @@ public enum TrafficRestoreTargetStatus {
 
 Javadocs와 enum constant 설명은 한국어로 작성합니다.
 
-- [ ] **Step 5: test 통과 확인**
+- [x] **Step 5: test 통과 확인**
 
 Run:
 
@@ -318,7 +316,7 @@ Expected: PASS.
 - Modify: `src/main/java/com/pooli/traffic/service/invoke/TrafficStreamReclaimService.java`
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreTrafficGateServiceTest.java`
 
-- [ ] **Step 1: failing guard test 작성**
+- [x] **Step 1: failing guard test 작성**
 
 검증할 동작:
 
@@ -332,7 +330,7 @@ void blocksTrafficWhenRestoreFlagIsActive() {
 }
 ```
 
-- [ ] **Step 2: failing test 확인**
+- [x] **Step 2: failing test 확인**
 
 Run:
 
@@ -342,7 +340,7 @@ Run:
 
 Expected: restore gate service가 없어 compile fail.
 
-- [ ] **Step 3: properties와 Redis key method 구현**
+- [x] **Step 3: properties와 Redis key method 구현**
 
 구현 원칙:
 
@@ -356,7 +354,7 @@ public String restoreIdempotencyKey(String phase, String id) {
 }
 ```
 
-- [ ] **Step 4: fail-closed flag service 구현**
+- [x] **Step 4: fail-closed flag service 구현**
 
 구현 원칙:
 
@@ -368,7 +366,7 @@ public boolean isRestoreActiveFailClosed() {
 }
 ```
 
-- [ ] **Step 5: enqueue/poll/reclaim/worker 진입 차단 적용**
+- [x] **Step 5: enqueue/poll/reclaim/worker 진입 차단 적용**
 
 Expected:
 - enqueue는 `XADD` 전에 차단합니다.
@@ -376,7 +374,7 @@ Expected:
 - reclaim loop는 pending scan 전에 차단합니다.
 - worker는 ACK/DLQ/done log 생성 전에 차단하고 처리하지 않은 메시지는 pending으로 유지합니다.
 
-- [ ] **Step 6: test와 관련 acceptance 확인**
+- [x] **Step 6: test와 관련 acceptance 확인**
 
 Run:
 
@@ -402,7 +400,7 @@ Expected: PASS.
 - Create: `src/main/java/com/pooli/traffic/service/restore/TrafficRestoreBatchMetadataService.java`
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreBatchMetadataServiceTest.java`
 
-- [ ] **Step 1: failing metadata service test 작성**
+- [x] **Step 1: failing metadata service test 작성**
 
 검증할 동작:
 
@@ -418,7 +416,7 @@ void completesOnlyWhenAllTargetsAreDone() {
 }
 ```
 
-- [ ] **Step 2: failing test 확인**
+- [x] **Step 2: failing test 확인**
 
 Run:
 
@@ -428,7 +426,7 @@ Run:
 
 Expected: service/mapper method가 없어 compile fail.
 
-- [ ] **Step 3: mapper claim SQL 작성**
+- [x] **Step 3: mapper claim SQL 작성**
 
 구현 원칙:
 
@@ -457,14 +455,14 @@ LIMIT #{limit}
 FOR UPDATE SKIP LOCKED
 ```
 
-- [ ] **Step 4: metadata service 구현**
+- [x] **Step 4: metadata service 구현**
 
 Expected:
 - target insert batch와 replay batch를 분리합니다.
 - 다음 phase metadata insert는 이전 phase 완료 후 별도 transaction에서 수행합니다.
 - `FAILED` target 존재 시 다음 phase 전환을 거부합니다.
 
-- [ ] **Step 5: mapper/service test 통과 확인**
+- [x] **Step 5: mapper/service test 통과 확인**
 
 Run:
 
@@ -486,7 +484,7 @@ Expected: PASS.
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestorePhase0TargetInsertServiceTest.java`
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestorePhase0HydrateServiceTest.java`
 
-- [ ] **Step 1: failing target source test 작성**
+- [x] **Step 1: failing target source test 작성**
 
 검증할 동작:
 
@@ -500,7 +498,7 @@ void createsLineTargetsFromDailyAppAndDoneLogUnion() {
 }
 ```
 
-- [ ] **Step 2: failing test 확인**
+- [x] **Step 2: failing test 확인**
 
 Run:
 
@@ -510,7 +508,7 @@ Run:
 
 Expected: phase 0 service가 없어 compile fail.
 
-- [ ] **Step 3: target insert 구현**
+- [x] **Step 3: target insert 구현**
 
 Expected:
 - `LINE` target은 `DAILY_APP_TOTAL_DATA`와 phase 2 done log 범위의 union으로 생성합니다.
@@ -518,14 +516,14 @@ Expected:
 - family_id가 없는 line은 정상 case로 family target 생성을 생략합니다.
 - `GLOBAL_POLICY` target은 장애 복구 flag를 포함합니다.
 
-- [ ] **Step 4: hydrate worker 구현**
+- [x] **Step 4: hydrate worker 구현**
 
 Expected:
 - `LINE`은 `TrafficBalanceSnapshotHydrateService`의 개인 잔량 hydrate 흐름을 재사용합니다.
 - `FAMILY`는 공유 잔량 hydrate 흐름을 재사용합니다.
 - `GLOBAL_POLICY`는 `TrafficPolicyBootstrapService` 또는 기존 policy hydrate 흐름을 재사용합니다.
 
-- [ ] **Step 5: test 통과 확인**
+- [x] **Step 5: test 통과 확인**
 
 Run:
 
@@ -550,7 +548,7 @@ Expected: PASS.
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestorePhase1ReplayServiceTest.java`
 - Test: `src/test/java/com/pooli/traffic/service/runtime/TrafficRestoreLuaContractTest.java`
 
-- [ ] **Step 1: failing Lua contract test 작성**
+- [x] **Step 1: failing Lua contract test 작성**
 
 검증할 동작:
 
@@ -565,7 +563,7 @@ void skipsReplayWhenIdempotencyKeyExists() throws IOException {
 }
 ```
 
-- [ ] **Step 2: failing test 확인**
+- [x] **Step 2: failing test 확인**
 
 Run:
 
@@ -581,7 +579,7 @@ Expected:
 - 승인된 phase 1 대상 범위 결정에 따라 `RESTORE_DAILY_APP_TARGET`을 생성합니다.
 - unique key로 중복 target 생성을 방지합니다.
 
-- [ ] **Step 4: replay Lua 구현**
+- [x] **Step 4: replay Lua 구현**
 
 Expected:
 - idempotency key 확인과 생성, 사용량 증가, 잔량 차감을 하나의 Lua script에서 원자적으로 수행합니다.
@@ -699,7 +697,7 @@ Expected: PASS.
 **Files:**
 - Create: `src/main/java/com/pooli/traffic/service/restore/TrafficRestoreVerificationService.java`
 - Create: `src/main/java/com/pooli/traffic/service/restore/TrafficRestoreIdempotencyCleanupService.java`
-- Create 또는 생략: `src/main/resources/lua/traffic/restore_usage_correction.lua`
+- Create: `src/main/resources/lua/traffic/restore_usage_correction.lua`
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreVerificationServiceTest.java`
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreIdempotencyCleanupServiceTest.java`
 
