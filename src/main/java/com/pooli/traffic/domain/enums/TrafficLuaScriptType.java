@@ -34,7 +34,9 @@ public enum TrafficLuaScriptType {
     SHARED_POOL_CONTRIBUTION_CLEANUP(
             "shared_pool_contribution_cleanup",
             "lua/traffic/shared_pool_contribution_cleanup.lua"
-    );
+    ),
+    RESTORE_USAGE_REPLAY("restore_usage_replay", "lua/traffic/restore_usage_replay.lua"),
+    RESTORE_USAGE_CORRECTION("restore_usage_correction", "lua/traffic/restore_usage_correction.lua");
 
     private final String scriptName;
     private final String resourcePath;
