@@ -62,4 +62,9 @@ public interface TrafficRestoreHydrateTargetMapper {
             @Param("status") TrafficRestoreTargetStatus status,
             @Param("workerId") String workerId
     );
+
+    /**
+     * 운영 재개 시 FAILED target만 RETRYABLE로 되돌린다.
+     */
+    int resetFailedTargetsToRetryable(@Param("batchName") String batchName);
 }

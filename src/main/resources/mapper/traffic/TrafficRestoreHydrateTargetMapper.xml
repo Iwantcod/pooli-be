@@ -112,4 +112,16 @@
           AND worker_id = #{workerId}
     </update>
 
+    <!-- 운영 재개 시 FAILED target만 다시 worker claim 가능한 RETRYABLE로 되돌린다. -->
+    <update id="resetFailedTargetsToRetryable">
+        UPDATE RESTORE_HYDRATE_TARGET
+        SET status = 'RETRYABLE',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            worker_id = NULL,
+            last_error_code = NULL,
+            last_error_message = NULL
+        WHERE batch_name = #{batchName}
+          AND status = 'FAILED'
+    </update>
+
 </mapper>
