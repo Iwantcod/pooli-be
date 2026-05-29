@@ -24,12 +24,14 @@ When conflict exists:
 
 ## 0.1 Superpowers Workflow Alignment
 
-For planning, documentation, execution, commits, worktrees, subagent usage, verification, and completion flow, follow the Codex `superpowers` plugin workflow unless it conflicts with:
+For planning, documentation, execution, commits, worktrees, subagent usage, verification, review, and completion flow, follow the Codex `superpowers` plugin workflow when it is available, unless it conflicts with:
 
 - System/developer runtime instructions
-- This repository's dependency/Context7 rules
+- This `AGENTS.md`
 - Safety or permission requirements
 - An explicit user instruction for the current task
+
+The Codex `superpowers` workflow never takes precedence over this `AGENTS.md`. If `superpowers` is unavailable or cannot be used in the current environment, continue following the repository rules in this `AGENTS.md`.
 
 When a relevant `superpowers` skill applies, use that skill's workflow. Approved specs and implementation plans should be executed continuously according to `superpowers:subagent-driven-development` or `superpowers:executing-plans`, not stopped after every individual task, unless a stop condition in this document applies. See §0.2 for the plan approval boundary.
 
