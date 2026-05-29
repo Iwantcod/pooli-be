@@ -17,6 +17,7 @@
         FROM POLICY p
         LEFT JOIN POLICY_CATEGORY pc ON p.policy_category_id = pc.policy_category_id
         WHERE p.deleted_at IS NULL
+          AND p.policy_id != 8
           AND (pc.deleted_at IS NULL OR pc.deleted_at IS NOT NULL)
         ORDER BY p.policy_id DESC
     </select>

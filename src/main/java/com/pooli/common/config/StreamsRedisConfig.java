@@ -21,9 +21,16 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.util.StringUtils;
 
+import com.pooli.traffic.config.TrafficRestoreProperties;
+
 @Configuration
 @Profile({"default", "local", "api", "traffic"})
-@EnableConfigurationProperties({StreamsRedisProperties.class, AppStreamsProperties.class, AppRedisProperties.class})
+@EnableConfigurationProperties({
+        StreamsRedisProperties.class,
+        AppStreamsProperties.class,
+        AppRedisProperties.class,
+        TrafficRestoreProperties.class
+})
 public class StreamsRedisConfig {
 
     @Bean("streamsRedisConnectionFactory")

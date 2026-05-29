@@ -11,6 +11,7 @@ import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.stereotype.Service;
 
 import com.pooli.common.config.AppStreamsProperties;
+import com.pooli.traffic.service.restore.TrafficRestoreTrafficGateService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -21,6 +22,7 @@ public class TrafficStreamReclaimService {
 
     private final TrafficStreamInfraService trafficStreamInfraService;
     private final AppStreamsProperties appStreamsProperties;
+    private final TrafficRestoreTrafficGateService trafficRestoreTrafficGateService;
 
     public List<MapRecord<String, String, String>> reclaimAndRouteExceededRetries() {
         return reclaimAndRouteExceededRetries(appStreamsProperties.requireReadCount());
@@ -28,6 +30,9 @@ public class TrafficStreamReclaimService {
 
     public List<MapRecord<String, String, String>> reclaimAndRouteExceededRetries(int maxClaimCount) {
         if (maxClaimCount <= 0) {
+            return List.of();
+        }
+        if (trafficRestoreTrafficGateService.shouldBlockTraffic()) {
             return List.of();
         }
 
