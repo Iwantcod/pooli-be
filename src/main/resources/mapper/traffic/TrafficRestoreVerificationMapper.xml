@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.traffic.mapper.TrafficRestoreVerificationMapper">
+
+    <!-- Redis 복구 검증 기준값 row를 Java target 객체로 변환한다. -->
+    <resultMap id="TrafficRestoreVerificationTargetResultMap"
+               type="com.pooli.traffic.domain.restore.TrafficRestoreVerificationTarget">
+        <result property="keyType" column="key_type"/>
+        <result property="lineId" column="line_id"/>
+        <result property="familyId" column="family_id"/>
+        <result property="policyId" column="policy_id"/>
+        <result property="usageDate" column="usage_date"/>
+        <result property="monthStart" column="month_start"/>
+        <result property="applicationId" column="application_id"/>
+        <result property="field" column="field_name"/>
+        <result property="expectedValue" column="expected_value"/>
+        <result property="expireEpochSeconds" column="expire_epoch_seconds"/>
+    </resultMap>
+
+    <!-- 복구 검증 대상 line_id 범위를 Java 객체로 변환한다. -->
+    <resultMap id="TrafficRestoreVerificationLineRangeResultMap"
+               type="com.pooli.traffic.domain.restore.TrafficRestoreVerificationLineRange">
+        <result property="minLineId" column="min_line_id"/>
+        <result property="maxLineId" column="max_line_id"/>
+    </resultMap>
+
+    <!--
+        Redis 복구 검증 기준값 산출 쿼리 안내:
+        1. 전체 기간/전체 사용자 데이터를 한 번에 List로 적재하지 않기 위해 Java 서비스가 line_id range와 날짜 단위로
+           이 mapper method들을 반복 호출합니다.
+        2. selectUsageVerificationTargets는 하루 + line range 기준으로 daily_* 기준값만 계산합니다.
+        3. selectRemainingVerificationTargets는 전체 복구 기간 + line range 기준으로 월별 remaining_* 및
+           monthly_shared_usage 기준값을 계산합니다.
+        4. selectPolicyVerificationTargets는 row 수가 작은 전역 정책만 별도 조회합니다.
+        5. expire_epoch_seconds는 현재 보정 TTL이 필요한 대상이 없어 0을 반환합니다. TTL 정책이 필요한 key가 생기면
+           각 SELECT 블록에서 해당 key의 만료 epoch seconds를 명시적으로 계산해야 합니다.
+    -->
+    <select id="selectVerificationLineRange" resultMap="TrafficRestoreVerificationLineRangeResultMap">
+        SELECT
+            MIN(line_id) AS min_line_id,
+            MAX(line_id) AS max_line_id
+        FROM (
+            SELECT d.line_id AS line_id
+            FROM DAILY_APP_TOTAL_DATA d
+            WHERE d.usage_date &gt;= #{startInclusive}
+              AND d.usage_date &lt; #{endExclusive}
+              AND d.deleted_at IS NULL
+            UNION ALL
+            SELECT t.line_id AS line_id
+            FROM TRAFFIC_DEDUCT_DONE t
+            WHERE t.enqueued_at &gt;= #{startDateTimeInclusive}
+              AND t.enqueued_at &lt; #{endDateTimeExclusive}
+        ) restore_line_source
+    </select>
+
+    <select id="selectUsageVerificationTargets" resultMap="TrafficRestoreVerificationTargetResultMap">
+        WITH usage_source AS (
+            SELECT
+                d.usage_date AS usage_date,
+                d.line_id AS line_id,
+                d.application_id AS application_id,
+                d.individual_usage_data AS individual_usage,
+                d.shared_usage_data AS shared_usage,
+                d.qos_usage_data AS qos_usage
+            FROM DAILY_APP_TOTAL_DATA d
+            WHERE d.usage_date = #{usageDate}
+              AND d.line_id &gt;= #{lineIdStartInclusive}
+              AND d.line_id &lt;= #{lineIdEndInclusive}
+              AND d.deleted_at IS NULL
+            UNION ALL
+            SELECT
+                DATE(t.enqueued_at) AS usage_date,
+                t.line_id AS line_id,
+                t.app_id AS application_id,
+                t.deducted_individual_bytes AS individual_usage,
+                t.deducted_shared_bytes AS shared_usage,
+                t.deducted_qos_bytes AS qos_usage
+            FROM TRAFFIC_DEDUCT_DONE t
+            WHERE t.enqueued_at &gt;= #{dayStartInclusive}
+              AND t.enqueued_at &lt; #{dayEndExclusive}
+              AND t.line_id &gt;= #{lineIdStartInclusive}
+              AND t.line_id &lt;= #{lineIdEndInclusive}
+        )
+        SELECT
+            'DAILY_TOTAL_USAGE' AS key_type,
+            line_id AS line_id,
+            NULL AS family_id,
+            NULL AS policy_id,
+            usage_date AS usage_date,
+            NULL AS month_start,
+            NULL AS application_id,
+            'individual' AS field_name,
+            SUM(individual_usage) AS expected_value,
+            0 AS expire_epoch_seconds
+        FROM usage_source
+        GROUP BY line_id, usage_date
+        UNION ALL
+        SELECT
+            'DAILY_TOTAL_USAGE',
+            line_id,
+            NULL,
+            NULL,
+            usage_date,
+            NULL,
+            NULL,
+            'shared',
+            SUM(shared_usage),
+            0
+        FROM usage_source
+        GROUP BY line_id, usage_date
+        UNION ALL
+        SELECT
+            'DAILY_TOTAL_USAGE',
+            line_id,
+            NULL,
+            NULL,
+            usage_date,
+            NULL,
+            NULL,
+            'qos',
+            SUM(qos_usage),
+            0
+        FROM usage_source
+        GROUP BY line_id, usage_date
+        UNION ALL
+        SELECT
+            'DAILY_APP_USAGE',
+            line_id,
+            NULL,
+            NULL,
+            usage_date,
+            NULL,
+            application_id,
+            CONCAT('app:', application_id, ':individual'),
+            SUM(individual_usage),
+            0
+        FROM usage_source
+        GROUP BY line_id, usage_date, application_id
+        UNION ALL
+        SELECT
+            'DAILY_APP_USAGE',
+            line_id,
+            NULL,
+            NULL,
+            usage_date,
+            NULL,
+            application_id,
+            CONCAT('app:', application_id, ':shared'),
+            SUM(shared_usage),
+            0
+        FROM usage_source
+        GROUP BY line_id, usage_date, application_id
+        UNION ALL
+        SELECT
+            'DAILY_APP_USAGE',
+            line_id,
+            NULL,
+            NULL,
+            usage_date,
+            NULL,
+            application_id,
+            CONCAT('app:', application_id, ':qos'),
+            SUM(qos_usage),
+            0
+        FROM usage_source
+        GROUP BY line_id, usage_date, application_id
+        UNION ALL
+        SELECT
+            'DAILY_SHARED_USAGE',
+            line_id,
+            NULL,
+            NULL,
+            usage_date,
+            NULL,
+            NULL,
+            'shared',
+            SUM(shared_usage),
+            0
+        FROM usage_source
+        GROUP BY line_id, usage_date
+    </select>
+
+    <select id="selectRemainingVerificationTargets" resultMap="TrafficRestoreVerificationTargetResultMap">
+        WITH usage_source AS (
+            SELECT
+                d.usage_date AS usage_date,
+                d.line_id AS line_id,
+                fl.family_id AS family_id,
+                d.individual_usage_data AS individual_usage,
+                d.shared_usage_data AS shared_usage
+            FROM DAILY_APP_TOTAL_DATA d
+            LEFT JOIN FAMILY_LINE fl
+              ON fl.line_id = d.line_id
+            WHERE d.usage_date &gt;= #{startInclusive}
+              AND d.usage_date &lt; #{endExclusive}
+              AND d.line_id &gt;= #{lineIdStartInclusive}
+              AND d.line_id &lt;= #{lineIdEndInclusive}
+              AND d.deleted_at IS NULL
+            UNION ALL
+            SELECT
+                DATE(t.enqueued_at) AS usage_date,
+                t.line_id AS line_id,
+                t.family_id AS family_id,
+                t.deducted_individual_bytes AS individual_usage,
+                t.deducted_shared_bytes AS shared_usage
+            FROM TRAFFIC_DEDUCT_DONE t
+            WHERE t.enqueued_at &gt;= #{startDateTimeInclusive}
+              AND t.enqueued_at &lt; #{endDateTimeExclusive}
+              AND t.line_id &gt;= #{lineIdStartInclusive}
+              AND t.line_id &lt;= #{lineIdEndInclusive}
+        ),
+        line_month_usage AS (
+            SELECT
+                line_id,
+                CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE) AS month_start,
+                SUM(individual_usage) AS individual_usage
+            FROM usage_source
+            GROUP BY line_id, CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE)
+        ),
+        family_month_usage AS (
+            SELECT
+                family_id,
+                CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE) AS month_start,
+                SUM(shared_usage) AS shared_usage
+            FROM usage_source
+            WHERE family_id IS NOT NULL
+            GROUP BY family_id, CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE)
+        )
+        SELECT
+            'REMAINING_INDIVIDUAL' AS key_type,
+            u.line_id AS line_id,
+            NULL AS family_id,
+            NULL AS policy_id,
+            NULL AS usage_date,
+            u.month_start AS month_start,
+            NULL AS application_id,
+            'amount' AS field_name,
+            l.total_data - u.individual_usage AS expected_value,
+            0 AS expire_epoch_seconds
+        FROM line_month_usage u
+        JOIN LINE l
+          ON l.line_id = u.line_id
+         AND l.deleted_at IS NULL
+        UNION ALL
+        SELECT
+            'REMAINING_SHARED',
+            NULL,
+            u.family_id,
+            NULL,
+            NULL,
+            u.month_start,
+            NULL,
+            'amount',
+            f.pool_total_data - u.shared_usage,
+            0
+        FROM family_month_usage u
+        JOIN FAMILY f
+          ON f.family_id = u.family_id
+         AND f.deleted_at IS NULL
+        UNION ALL
+        SELECT
+            'MONTHLY_SHARED_USAGE',
+            line_id,
+            NULL,
+            NULL,
+            NULL,
+            CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE),
+            NULL,
+            'shared',
+            SUM(shared_usage),
+            0
+        FROM usage_source
+        GROUP BY line_id, CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE)
+    </select>
+
+    <select id="selectPolicyVerificationTargets" resultMap="TrafficRestoreVerificationTargetResultMap">
+        SELECT
+            'POLICY' AS key_type,
+            NULL AS line_id,
+            NULL AS family_id,
+            policy_id AS policy_id,
+            NULL AS usage_date,
+            NULL AS month_start,
+            NULL AS application_id,
+            'value' AS field_name,
+            CASE WHEN is_active = TRUE THEN 1 ELSE 0 END AS expected_value,
+            0 AS expire_epoch_seconds
+        FROM POLICY
+    </select>
+
+</mapper>

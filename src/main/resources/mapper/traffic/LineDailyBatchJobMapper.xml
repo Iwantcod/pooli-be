@@ -244,4 +244,32 @@
           AND status = 'RUNNING'
     </update>
 
+    <!-- restore phase 보정 실패 등 자동 복구가 불가능한 경우 RUNNING metadata row를 실패로 닫는다. -->
+    <update id="failRunningRestorePhaseBatch">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET status = 'FAILED',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            finished_at = CURRENT_TIMESTAMP(6),
+            last_error_code = #{errorCode},
+            last_error_message = #{errorMessage}
+        WHERE id = #{id}
+          AND batch_name = #{batchName}
+          AND status = 'RUNNING'
+    </update>
+
+    <!-- 운영자가 재개를 승인한 restore phase metadata row를 다시 RUNNING으로 연다. -->
+    <update id="restartRestorePhaseBatch">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET status = 'RUNNING',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            run_started_at = CURRENT_TIMESTAMP(6),
+            finished_at = NULL,
+            manager_instance_id = #{managerInstanceId},
+            last_error_code = NULL,
+            last_error_message = NULL
+        WHERE id = #{id}
+          AND batch_name = #{batchName}
+          AND status IN ('FAILED', 'ABANDONED')
+    </update>
+
 </mapper>

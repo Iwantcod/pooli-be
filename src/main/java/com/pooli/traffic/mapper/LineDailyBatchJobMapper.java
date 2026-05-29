@@ -100,4 +100,23 @@ public interface LineDailyBatchJobMapper {
             @Param("id") Long id,
             @Param("batchName") BatchName batchName
     );
+
+    /**
+     * restore phase RUNNING metadata row를 FAILED로 전환한다.
+     */
+    int failRunningRestorePhaseBatch(
+            @Param("id") Long id,
+            @Param("batchName") BatchName batchName,
+            @Param("errorCode") String errorCode,
+            @Param("errorMessage") String errorMessage
+    );
+
+    /**
+     * FAILED 또는 ABANDONED restore phase metadata row를 RUNNING으로 재개한다.
+     */
+    int restartRestorePhaseBatch(
+            @Param("id") Long id,
+            @Param("batchName") BatchName batchName,
+            @Param("managerInstanceId") String managerInstanceId
+    );
 }
