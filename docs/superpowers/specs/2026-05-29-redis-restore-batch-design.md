@@ -269,10 +269,17 @@ stateDiagram-v2
 
 ### 10.1 날짜 범위
 
-- 시작일: 금월 일별 동기화 배치 미완료 시작일
+- 시작일: 서버가 `LINE_DAILY_BATCH_JOB`에서 계산한 일별 동기화 배치 미완료 시작일
 - 종료일: 장애 발생일
 - 판단 기준: 장애 발생 시각이 아니라 일별 동기화 배치 완료 여부
 - 금일 포함 가능
+- 계산 규칙:
+  - `batch_name = LINE_DAILY_USAGE_SYNC_BATCH`
+  - `status = COMPLETED`
+  - `usage_date <= 장애 발생일`
+  - 위 조건의 최신 `usage_date` 다음 날을 시작일로 사용
+  - 완료된 일별 동기화 이력이 없으면 복구 시작을 거부
+  - 계산된 시작일이 장애 발생일보다 늦으면 복구 대상 없음 응답을 반환하고 복구 flag를 활성화하지 않음
 
 ### 10.2 월 범위
 
@@ -517,7 +524,8 @@ sequenceDiagram
 - 관리자 권한이 필수입니다.
 - dry-run은 제공하지 않습니다.
 - scheduler 자동 시작은 제공하지 않습니다.
-- 복구 시작은 관리자 명시 요청 기반입니다.
+- 복구 시작은 관리자 명시 요청 기반이며 요청 DTO는 장애 발생일만 입력받습니다.
+- 미완료 시작일은 서버가 `LINE_DAILY_BATCH_JOB` 완료 이력으로 계산하고 start 응답에 장애 발생일과 함께 반환합니다.
 - phase scope 확장 발생 시 중단 후 재분해합니다.
 
 ---
@@ -557,6 +565,7 @@ sequenceDiagram
 | manager lock key 이름 | `traffic:restore:manager-lock` |
 | phase 2 조회 index | `(restore_status, enqueued_at, restore_status_updated_at)` 복합 인덱스를 추가하고 기존 `enqueued_at` 단일 인덱스는 유지 |
 | 보정 Lua 분리 여부 | replay Lua와 correction Lua를 분리하고, 보정은 `restore_usage_correction.lua`에서 수행 |
+| 복구 시작일 산정 방식 | start API는 `failureDate`만 받고, 서버가 마지막 `LINE_DAILY_USAGE_SYNC_BATCH` `COMPLETED` 날짜의 다음 날을 `restoreStartDate`로 계산 |
 
 ---
 

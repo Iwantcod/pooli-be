@@ -762,9 +762,23 @@ Expected: PASS.
 - Create: `src/main/java/com/pooli/traffic/domain/dto/request/TrafficRestoreStartReqDto.java`
 - Create: `src/main/java/com/pooli/traffic/domain/dto/response/TrafficRestoreStartResDto.java`
 - Create: `src/main/java/com/pooli/traffic/domain/dto/response/TrafficRestoreResumeResDto.java`
+- Create: `src/main/java/com/pooli/traffic/service/restore/TrafficRestoreStartDateResolver.java`
+- Modify: `src/main/java/com/pooli/traffic/mapper/LineDailyBatchJobMapper.java`
+- Modify: `src/main/resources/mapper/traffic/LineDailyBatchJobMapper.xml`
 - Create: `src/main/java/com/pooli/traffic/service/restore/TrafficRestoreOrchestratorService.java`
+- Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreStartDateResolverTest.java`
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreOrchestratorServiceTest.java`
 - Test: `src/test/java/com/pooli/traffic/controller/AdminTrafficRestoreControllerTest.java`
+- Test: `src/test/java/com/pooli/traffic/mapper/LineDailyBatchJobMapperSqlContractTest.java`
+
+- [x] **Step 0: 서버 산정 방식 반영**
+
+Expected:
+- start API 요청은 `failureDate`만 입력받습니다.
+- `restoreStartDate`는 `LINE_DAILY_USAGE_SYNC_BATCH`의 마지막 `COMPLETED` `usage_date <= failureDate` 다음 날로 계산합니다.
+- 완료된 일별 동기화 이력이 없으면 복구 시작을 거부합니다.
+- 계산된 `restoreStartDate`가 `failureDate`보다 늦으면 복구 대상 없음 응답을 반환하고 복구 flag를 활성화하지 않습니다.
+- start 응답은 `failureDate`와 계산된 `restoreStartDate`를 포함합니다.
 
 - [x] **Step 1: failing orchestration test 작성**
 
@@ -797,7 +811,7 @@ Expected: orchestrator service가 없어 compile fail.
 
 Expected:
 - 관리자 권한을 요구합니다.
-- 장애 발생일과 미완료 시작일을 입력받습니다.
+- 장애 발생일을 입력받고 미완료 시작일은 서버 내부에서 계산합니다.
 - 복구 flag 활성화와 전역 정책 hydrate를 수행합니다.
 - `app.streams.reclaim-worst-processing-ms + 1000ms`를 대기합니다.
 - phase 0 target insert를 시작합니다.

@@ -79,6 +79,17 @@
         LIMIT 1
     </select>
 
+    <!-- Redis 복구 시작일 계산은 장애일 이하의 마지막 완료 usage sync 날짜만 사용한다. -->
+    <select id="selectLatestCompletedUsageSyncDateOnOrBefore" resultType="java.time.LocalDate">
+        SELECT usage_date
+        FROM LINE_DAILY_BATCH_JOB
+        WHERE batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'
+          AND status = 'COMPLETED'
+          AND usage_date &lt;= #{failureDate}
+        ORDER BY usage_date DESC, id DESC
+        LIMIT 1
+    </select>
+
     <!-- worker는 scheduler가 계산한 usage_date의 usage sync batch가 RUNNING일 때만 claim loop를 시작한다. -->
     <select id="selectRunningUsageSyncBatchByUsageDate" resultMap="LineDailyBatchJobResultMap">
         SELECT

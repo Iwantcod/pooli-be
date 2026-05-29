@@ -33,6 +33,7 @@ public class TrafficRestoreOrchestratorService {
     private final TrafficPolicyBootstrapService policyBootstrapService;
     private final TrafficRestoreWaitService waitService;
     private final TrafficRestorePhase0TargetInsertService phase0TargetInsertService;
+    private final TrafficRestoreStartDateResolver startDateResolver;
     private final LineDailyBatchJobMapper batchJobMapper;
     private final TrafficRestoreHydrateTargetMapper hydrateTargetMapper;
     private final TrafficRestoreDailyAppTargetMapper dailyAppTargetMapper;
@@ -42,16 +43,31 @@ public class TrafficRestoreOrchestratorService {
      * 복구 flag를 활성화한 뒤 phase 0 target insert를 시작한다.
      */
     public TrafficRestoreStartResDto start(TrafficRestoreStartReqDto request) {
+        LocalDate failureDate = request.failureDate();
+        LocalDate restoreStartDate = startDateResolver.resolve(failureDate);
+        if (restoreStartDate.isAfter(failureDate)) {
+            return new TrafficRestoreStartResDto(
+                    false,
+                    "NO_RESTORE_TARGET",
+                    failureDate,
+                    restoreStartDate
+            );
+        }
         policyFlagService.activateRestoreFlag();
         policyBootstrapService.hydrateOnDemand();
         waitService.waitWorstProcessingTimePlusBuffer();
         phase0TargetInsertService.insertTargets(
                 BatchName.RESTORE_P0_TARGET_INSERT,
-                request.failureDate(),
-                request.restoreStartDate(),
-                resolveTargetMonths(request.restoreStartDate(), request.failureDate())
+                failureDate,
+                restoreStartDate,
+                resolveTargetMonths(restoreStartDate, failureDate)
         );
-        return new TrafficRestoreStartResDto(true, BatchName.RESTORE_P0_TARGET_INSERT.name());
+        return new TrafficRestoreStartResDto(
+                true,
+                BatchName.RESTORE_P0_TARGET_INSERT.name(),
+                failureDate,
+                restoreStartDate
+        );
     }
 
     /**

@@ -35,10 +35,14 @@ class AdminTrafficRestoreControllerTest {
     @DisplayName("관리자 복구 시작 API는 request를 service에 그대로 전달한다")
     void startRestoreDelegatesRequest() {
         TrafficRestoreStartReqDto request = new TrafficRestoreStartReqDto(
+                LocalDate.of(2026, 5, 29)
+        );
+        TrafficRestoreStartResDto serviceResponse = new TrafficRestoreStartResDto(
+                true,
+                "RESTORE_P0_TARGET_INSERT",
                 LocalDate.of(2026, 5, 29),
                 LocalDate.of(2026, 5, 27)
         );
-        TrafficRestoreStartResDto serviceResponse = new TrafficRestoreStartResDto(true, "RESTORE_P0_TARGET_INSERT");
         when(trafficRestoreOrchestratorService.start(request)).thenReturn(serviceResponse);
 
         ResponseEntity<TrafficRestoreStartResDto> response = controller.start(request);
