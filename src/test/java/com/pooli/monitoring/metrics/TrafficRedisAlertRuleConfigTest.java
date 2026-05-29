@@ -60,7 +60,7 @@ class TrafficRedisAlertRuleConfigTest {
                 "prometheus:",
                 "image: prom/prometheus:latest",
                 "container_name: local-prometheus",
-                "mem_limit: 512m",
+                "mem_limit: 256m",
                 "cpus: 0.50",
                 "prometheus-data:/prometheus",
                 "--storage.tsdb.retention.time=2d",

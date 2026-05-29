@@ -55,9 +55,9 @@ class LineDailyBatchManagerServiceTest {
         when(lineDailyBatchJobService.startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID))
                 .thenReturn(true);
         when(lineDailyBatchTargetMapper.selectMaxLineIdByUsageDate(USAGE_DATE)).thenReturn(20L);
-        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(20L, 1000))
+        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(20L, 5000))
                 .thenReturn(List.of(30L, 40L));
-        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(40L, 1000))
+        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(40L, 5000))
                 .thenReturn(List.of());
         when(lineDailyBatchTargetMapper.countByUsageDate(USAGE_DATE)).thenReturn(4L);
         when(lineDailyBatchJobService.completeRunningTargetInsertBatch(targetInsertBatch, 4L))
@@ -82,9 +82,9 @@ class LineDailyBatchManagerServiceTest {
         );
         inOrder.verify(lineDailyBatchJobService).startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID);
         inOrder.verify(lineDailyBatchTargetMapper).selectMaxLineIdByUsageDate(USAGE_DATE);
-        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(20L, 1000);
+        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(20L, 5000);
         inOrder.verify(lineDailyBatchTargetMapper).insertIgnoreTargetRows(USAGE_DATE, List.of(30L, 40L));
-        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(40L, 1000);
+        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(40L, 5000);
         inOrder.verify(lineDailyBatchTargetMapper).countByUsageDate(USAGE_DATE);
         inOrder.verify(lineDailyBatchJobService).completeRunningTargetInsertBatch(targetInsertBatch, 4L);
         inOrder.verify(lineDailyBatchJobService).startPendingUsageSyncBatchWithTargetCount(
@@ -110,9 +110,9 @@ class LineDailyBatchManagerServiceTest {
                 USAGE_DATE
         )).thenReturn(new LineDailyBatchJobCreateResult(false, usageSyncBatch));
         when(lineDailyBatchTargetMapper.selectMaxLineIdByUsageDate(USAGE_DATE)).thenReturn(40L);
-        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(40L, 1000))
+        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(40L, 5000))
                 .thenReturn(List.of(50L));
-        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(50L, 1000))
+        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(50L, 5000))
                 .thenReturn(List.of());
         when(lineDailyBatchTargetMapper.countByUsageDate(USAGE_DATE)).thenReturn(5L);
         when(lineDailyBatchJobService.completeRunningTargetInsertBatch(targetInsertBatch, 5L))
@@ -129,9 +129,9 @@ class LineDailyBatchManagerServiceTest {
         InOrder inOrder = inOrder(lineDailyBatchJobService, lineDailyBatchTargetMapper);
         inOrder.verify(lineDailyBatchJobService).startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID);
         inOrder.verify(lineDailyBatchTargetMapper).selectMaxLineIdByUsageDate(USAGE_DATE);
-        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(40L, 1000);
+        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(40L, 5000);
         inOrder.verify(lineDailyBatchTargetMapper).insertIgnoreTargetRows(USAGE_DATE, List.of(50L));
-        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(50L, 1000);
+        inOrder.verify(lineDailyBatchTargetMapper).selectActiveLineIdsAfter(50L, 5000);
         inOrder.verify(lineDailyBatchTargetMapper).countByUsageDate(USAGE_DATE);
         inOrder.verify(lineDailyBatchJobService).completeRunningTargetInsertBatch(targetInsertBatch, 5L);
         inOrder.verify(lineDailyBatchJobService).startPendingUsageSyncBatchWithTargetCount(
@@ -280,7 +280,7 @@ class LineDailyBatchManagerServiceTest {
         when(lineDailyBatchJobService.startPendingBatch(targetInsertBatch, MANAGER_INSTANCE_ID))
                 .thenReturn(true);
         when(lineDailyBatchTargetMapper.selectMaxLineIdByUsageDate(USAGE_DATE)).thenReturn(0L);
-        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(0L, 1000))
+        when(lineDailyBatchTargetMapper.selectActiveLineIdsAfter(0L, 5000))
                 .thenReturn(List.of());
         when(lineDailyBatchTargetMapper.countByUsageDate(USAGE_DATE)).thenReturn(0L);
         when(lineDailyBatchJobService.completeRunningTargetInsertBatch(targetInsertBatch, 0L))
