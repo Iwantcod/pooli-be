@@ -1,6 +1,8 @@
 package com.pooli.traffic.mapper;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.util.List;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -43,5 +45,23 @@ public interface TrafficBalanceSnapshotSourceMapper {
             @Param("familyId") Long familyId,
             @Param("targetMonthStart") LocalDateTime targetMonthStart
     );
+
+    /**
+     * 복구 phase 0 line target 생성을 위해 daily app 월 데이터의 line_id를 조회합니다.
+     */
+    List<Long> selectRestoreDailyAppLineIds(@Param("targetMonthStarts") List<LocalDate> targetMonthStarts);
+
+    /**
+     * 복구 phase 0 line target 생성을 위해 done log 범위의 line_id를 조회합니다.
+     */
+    List<Long> selectRestoreDoneLogLineIds(
+            @Param("startInclusive") LocalDateTime startInclusive,
+            @Param("endExclusive") LocalDateTime endExclusive
+    );
+
+    /**
+     * line_id 목록에서 가족 결합에 속한 family_id를 중복 없이 조회합니다.
+     */
+    List<Long> selectRestoreFamilyIdsByLineIds(@Param("lineIds") List<Long> lineIds);
 
 }
