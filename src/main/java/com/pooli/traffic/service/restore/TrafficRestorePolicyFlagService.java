@@ -66,6 +66,15 @@ public class TrafficRestorePolicyFlagService {
     }
 
     /**
+     * Redis 장애 복구 완료 시 traffic 진입 차단 flag를 비활성화한다.
+     */
+    public void deactivateRestoreFlag() {
+        String policyKey = trafficRedisKeyFactory.policyKey(trafficRestoreProperties.getRestorePolicyId());
+        cacheStringRedisTemplate.opsForHash().put(policyKey, "value", "0");
+        cacheStringRedisTemplate.opsForHash().put(policyKey, "version", String.valueOf(System.currentTimeMillis()));
+    }
+
+    /**
      * Redis policy hash의 value 필드를 읽는다.
      */
     private String readPolicyValue(String policyKey) {

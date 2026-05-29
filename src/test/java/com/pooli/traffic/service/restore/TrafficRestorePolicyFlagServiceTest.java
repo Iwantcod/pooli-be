@@ -94,4 +94,14 @@ class TrafficRestorePolicyFlagServiceTest {
 
         verify(bootstrapService, never()).hydrateOnDemand();
     }
+
+    @Test
+    @DisplayName("복구 완료 시 traffic 진입 차단 flag를 비활성화한다")
+    void deactivatesRestoreFlag() {
+        when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+
+        service.deactivateRestoreFlag();
+
+        verify(hashOperations).put(RESTORE_POLICY_KEY, "value", "0");
+    }
 }

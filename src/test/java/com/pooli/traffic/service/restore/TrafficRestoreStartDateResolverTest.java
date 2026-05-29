@@ -1,7 +1,6 @@
 package com.pooli.traffic.service.restore;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
@@ -12,7 +11,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.pooli.common.exception.ApplicationException;
 import com.pooli.traffic.mapper.LineDailyBatchJobMapper;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,14 +33,14 @@ class TrafficRestoreStartDateResolverTest {
     }
 
     @Test
-    @DisplayName("완료된 일별 동기화 이력이 없으면 복구 범위 산정을 거부한다")
-    void rejectsWhenCompletedUsageSyncBatchDoesNotExist() {
+    @DisplayName("완료된 일별 동기화 이력이 없으면 장애일 당일 done log만 복구하도록 장애일을 시작일로 사용한다")
+    void usesFailureDateWhenCompletedUsageSyncBatchDoesNotExist() {
         LocalDate failureDate = LocalDate.of(2026, 5, 29);
         TrafficRestoreStartDateResolver resolver = new TrafficRestoreStartDateResolver(batchJobMapper);
         when(batchJobMapper.selectLatestCompletedUsageSyncDateOnOrBefore(failureDate)).thenReturn(null);
 
-        assertThatThrownBy(() -> resolver.resolve(failureDate))
-                .isInstanceOf(ApplicationException.class)
-                .hasMessageContaining("완료된 일별 사용량 동기화 배치가 없습니다.");
+        LocalDate restoreStartDate = resolver.resolve(failureDate);
+
+        assertThat(restoreStartDate).isEqualTo(failureDate);
     }
 }

@@ -4,8 +4,6 @@ import java.time.LocalDate;
 
 import org.springframework.stereotype.Service;
 
-import com.pooli.common.exception.ApplicationException;
-import com.pooli.common.exception.CommonErrorCode;
 import com.pooli.traffic.mapper.LineDailyBatchJobMapper;
 
 import lombok.RequiredArgsConstructor;
@@ -21,15 +19,13 @@ public class TrafficRestoreStartDateResolver {
 
     /**
      * 장애일 이하에서 마지막으로 완료된 일별 동기화 다음 날을 복구 시작일로 반환한다.
+     * 완료 이력이 없으면 장애일 당일 done log만 복구하도록 장애일을 반환한다.
      */
     public LocalDate resolve(LocalDate failureDate) {
         LocalDate latestCompletedUsageDate =
                 batchJobMapper.selectLatestCompletedUsageSyncDateOnOrBefore(failureDate);
         if (latestCompletedUsageDate == null) {
-            throw new ApplicationException(
-                    CommonErrorCode.INVALID_REQUEST_PARAM,
-                    "장애일 이전에 완료된 일별 사용량 동기화 배치가 없습니다."
-            );
+            return failureDate;
         }
         return latestCompletedUsageDate.plusDays(1);
     }

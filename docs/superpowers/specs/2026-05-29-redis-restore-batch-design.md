@@ -278,7 +278,7 @@ stateDiagram-v2
   - `status = COMPLETED`
   - `usage_date <= 장애 발생일`
   - 위 조건의 최신 `usage_date` 다음 날을 시작일로 사용
-  - 완료된 일별 동기화 이력이 없으면 복구 시작을 거부
+  - 완료된 일별 동기화 이력이 없으면 장애 발생일을 시작일로 사용해 금일자 done log만 복구
   - 계산된 시작일이 장애 발생일보다 늦으면 복구 대상 없음 응답을 반환하고 복구 flag를 활성화하지 않음
 
 ### 10.2 월 범위
@@ -518,7 +518,7 @@ sequenceDiagram
 
 | API | 역할 |
 |---|---|
-| Restore Start API | 장애 복구 flag 활성화, 대기, phase 0 시작 |
+| Restore Start API | 장애 복구 flag 활성화, 대기, phase 0/1/2 실행, 검증/보정, 성공 시 flag 비활성화 |
 | Restore Resume API | 중단 상태 복구 batch worker 재개 |
 
 - 관리자 권한이 필수입니다.
@@ -526,6 +526,7 @@ sequenceDiagram
 - scheduler 자동 시작은 제공하지 않습니다.
 - 복구 시작은 관리자 명시 요청 기반이며 요청 DTO는 장애 발생일만 입력받습니다.
 - 미완료 시작일은 서버가 `LINE_DAILY_BATCH_JOB` 완료 이력으로 계산하고 start 응답에 장애 발생일과 함께 반환합니다.
+- start API는 현재 요청 스레드에서 복구 phase를 순차 실행하고 성공 응답 `nextPhase`에 `RESTORE_COMPLETED`를 반환합니다.
 - phase scope 확장 발생 시 중단 후 재분해합니다.
 
 ---

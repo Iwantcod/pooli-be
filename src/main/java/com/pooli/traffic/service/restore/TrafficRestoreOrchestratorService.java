@@ -32,7 +32,7 @@ public class TrafficRestoreOrchestratorService {
     private final TrafficRestorePolicyFlagService policyFlagService;
     private final TrafficPolicyBootstrapService policyBootstrapService;
     private final TrafficRestoreWaitService waitService;
-    private final TrafficRestorePhase0TargetInsertService phase0TargetInsertService;
+    private final TrafficRestoreExecutionService executionService;
     private final TrafficRestoreStartDateResolver startDateResolver;
     private final LineDailyBatchJobMapper batchJobMapper;
     private final TrafficRestoreHydrateTargetMapper hydrateTargetMapper;
@@ -56,15 +56,15 @@ public class TrafficRestoreOrchestratorService {
         policyFlagService.activateRestoreFlag();
         policyBootstrapService.hydrateOnDemand();
         waitService.waitWorstProcessingTimePlusBuffer();
-        phase0TargetInsertService.insertTargets(
-                BatchName.RESTORE_P0_TARGET_INSERT,
+        executionService.execute(
                 failureDate,
                 restoreStartDate,
                 resolveTargetMonths(restoreStartDate, failureDate)
         );
+        policyFlagService.deactivateRestoreFlag();
         return new TrafficRestoreStartResDto(
                 true,
-                BatchName.RESTORE_P0_TARGET_INSERT.name(),
+                "RESTORE_COMPLETED",
                 failureDate,
                 restoreStartDate
         );

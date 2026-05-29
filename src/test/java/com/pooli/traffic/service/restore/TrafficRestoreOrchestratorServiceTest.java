@@ -1,6 +1,5 @@
 package com.pooli.traffic.service.restore;
 
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -37,7 +36,7 @@ class TrafficRestoreOrchestratorServiceTest {
     private TrafficRestoreWaitService waitService;
 
     @Mock
-    private TrafficRestorePhase0TargetInsertService phase0TargetInsertService;
+    private TrafficRestoreExecutionService executionService;
 
     @Mock
     private TrafficRestoreStartDateResolver startDateResolver;
@@ -58,7 +57,7 @@ class TrafficRestoreOrchestratorServiceTest {
     private TrafficRestoreOrchestratorService service;
 
     @Test
-    @DisplayName("복구 시작은 flag 활성화, 대기, phase 0 시작 순서로 진행된다")
+    @DisplayName("복구 시작은 flag 활성화, 대기, 복구 phase 실행, flag 비활성화 순서로 진행된다")
     void startsRestoreInRequiredOrder() {
         TrafficRestoreStartReqDto request = new TrafficRestoreStartReqDto(
                 LocalDate.of(2026, 5, 29)
@@ -68,16 +67,17 @@ class TrafficRestoreOrchestratorServiceTest {
 
         var response = service.start(request);
 
-        var inOrder = inOrder(policyFlagService, waitService, phase0TargetInsertService);
+        var inOrder = org.mockito.Mockito.inOrder(policyFlagService, waitService, executionService);
         inOrder.verify(policyFlagService).activateRestoreFlag();
         inOrder.verify(waitService).waitWorstProcessingTimePlusBuffer();
-        inOrder.verify(phase0TargetInsertService).insertTargets(
-                org.mockito.Mockito.eq(BatchName.RESTORE_P0_TARGET_INSERT),
+        inOrder.verify(executionService).execute(
                 org.mockito.Mockito.eq(LocalDate.of(2026, 5, 29)),
                 org.mockito.Mockito.eq(LocalDate.of(2026, 5, 27)),
                 org.mockito.Mockito.eq(java.util.List.of(java.time.YearMonth.of(2026, 5)))
         );
+        verify(policyFlagService).deactivateRestoreFlag();
         org.assertj.core.api.Assertions.assertThat(response.accepted()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(response.nextPhase()).isEqualTo("RESTORE_COMPLETED");
         org.assertj.core.api.Assertions.assertThat(response.failureDate()).isEqualTo(LocalDate.of(2026, 5, 29));
         org.assertj.core.api.Assertions.assertThat(response.restoreStartDate()).isEqualTo(LocalDate.of(2026, 5, 27));
     }
@@ -98,9 +98,8 @@ class TrafficRestoreOrchestratorServiceTest {
         org.assertj.core.api.Assertions.assertThat(response.failureDate()).isEqualTo(LocalDate.of(2026, 5, 29));
         org.assertj.core.api.Assertions.assertThat(response.restoreStartDate()).isEqualTo(LocalDate.of(2026, 5, 30));
         verify(policyFlagService, never()).activateRestoreFlag();
-        verify(phase0TargetInsertService, never())
-                .insertTargets(
-                        org.mockito.Mockito.any(),
+        verify(executionService, never())
+                .execute(
                         org.mockito.Mockito.any(),
                         org.mockito.Mockito.any(),
                         org.mockito.Mockito.any()

@@ -776,9 +776,11 @@ Expected: PASS.
 Expected:
 - start API 요청은 `failureDate`만 입력받습니다.
 - `restoreStartDate`는 `LINE_DAILY_USAGE_SYNC_BATCH`의 마지막 `COMPLETED` `usage_date <= failureDate` 다음 날로 계산합니다.
-- 완료된 일별 동기화 이력이 없으면 복구 시작을 거부합니다.
+- 완료된 일별 동기화 이력이 없으면 `failureDate`를 `restoreStartDate`로 사용해 금일자 done log만 복구합니다.
 - 계산된 `restoreStartDate`가 `failureDate`보다 늦으면 복구 대상 없음 응답을 반환하고 복구 flag를 활성화하지 않습니다.
 - start 응답은 `failureDate`와 계산된 `restoreStartDate`를 포함합니다.
+- start API는 phase 0 hydrate, phase 1 daily app replay, phase 2 done log replay, 전체 검증/보정을 현재 요청에서 순차 실행합니다.
+- 복구 성공 시 start 응답의 `nextPhase`는 `RESTORE_COMPLETED`입니다.
 
 - [x] **Step 1: failing orchestration test 작성**
 
@@ -814,7 +816,8 @@ Expected:
 - 장애 발생일을 입력받고 미완료 시작일은 서버 내부에서 계산합니다.
 - 복구 flag 활성화와 전역 정책 hydrate를 수행합니다.
 - `app.streams.reclaim-worst-processing-ms + 1000ms`를 대기합니다.
-- phase 0 target insert를 시작합니다.
+- phase 0/1/2와 전체 검증/보정을 순차 실행합니다.
+- 성공 시 복구 flag를 비활성화합니다.
 
 - [x] **Step 4: resume API 구현**
 
