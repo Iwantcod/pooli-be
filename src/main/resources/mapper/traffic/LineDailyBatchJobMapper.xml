@@ -233,4 +233,15 @@
           AND target_count = success_count + failed_count + skipped_count
     </update>
 
+    <!-- restore phase는 서비스가 target 상태를 검증한 뒤 RUNNING metadata row만 완료한다. -->
+    <update id="completeRunningRestorePhaseBatch">
+        UPDATE LINE_DAILY_BATCH_JOB
+        SET status = 'COMPLETED',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            finished_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{id}
+          AND batch_name = #{batchName}
+          AND status = 'RUNNING'
+    </update>
+
 </mapper>

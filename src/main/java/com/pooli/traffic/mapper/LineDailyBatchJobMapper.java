@@ -92,4 +92,12 @@ public interface LineDailyBatchJobMapper {
      * 모든 target row가 terminal count에 반영된 경우에만 usage sync batch를 완료한다.
      */
     int completeRunningUsageSyncBatchIfCountsMatch(@Param("id") Long id);
+
+    /**
+     * restore phase target이 모두 DONE일 때 RUNNING metadata row를 COMPLETED로 닫는다.
+     */
+    int completeRunningRestorePhaseBatch(
+            @Param("id") Long id,
+            @Param("batchName") BatchName batchName
+    );
 }
