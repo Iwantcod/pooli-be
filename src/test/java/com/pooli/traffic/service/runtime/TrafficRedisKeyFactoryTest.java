@@ -48,6 +48,10 @@ class TrafficRedisKeyFactoryTest {
         assertEquals("line_daily_batch:manager_lock", trafficRedisKeyFactory.lineDailyBatchManagerLockKey());
         assertEquals("traffic:restore:manager-lock", trafficRedisKeyFactory.trafficRestoreManagerLockKey());
         assertEquals("restore:idempotency:p1:target-1", trafficRedisKeyFactory.restoreIdempotencyKey("p1", "target-1"));
+        assertEquals(
+                "restore:idempotency:p1:daily_app:20260527:100:20",
+                trafficRedisKeyFactory.restoreIdempotencyKeyFromSuffix("p1:daily_app:20260527:100:20")
+        );
         assertEquals("dedupe:run:trace-001", trafficRedisKeyFactory.dedupeRunKey("trace-001"));
         assertEquals(
                 "shared_pool_contribution:metadata:trace-001",
