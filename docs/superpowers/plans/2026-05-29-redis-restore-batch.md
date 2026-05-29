@@ -573,7 +573,7 @@ Run:
 
 Expected: Lua file이 없어 fail.
 
-- [ ] **Step 3: phase 1 target insert 구현**
+- [x] **Step 3: phase 1 target insert 구현**
 
 Expected:
 - 승인된 phase 1 대상 범위 결정에 따라 `RESTORE_DAILY_APP_TARGET`을 생성합니다.
@@ -587,7 +587,7 @@ Expected:
 - `amount < -1` 또는 무제한이 아닌 잔량 음수 결과는 오류로 반환합니다.
 - QoS 사용량은 잔량 차감하지 않습니다.
 
-- [ ] **Step 5: phase 1 worker 구현**
+- [x] **Step 5: phase 1 worker 구현**
 
 Expected:
 - target claim 후 Lua를 실행합니다.
@@ -595,7 +595,7 @@ Expected:
 - MySQL commit 이후 idempotency key를 제거합니다.
 - Redis replay 후 MySQL commit 전 worker 사망 case는 다음 worker가 idempotency skip 후 `DONE` 처리합니다.
 
-- [ ] **Step 6: test 통과 확인**
+- [x] **Step 6: test 통과 확인**
 
 Run:
 
@@ -616,7 +616,7 @@ Expected: PASS.
 - Create: `src/main/java/com/pooli/traffic/service/restore/TrafficRestorePhase2ReplayService.java`
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestorePhase2ReplayServiceTest.java`
 
-- [ ] **Step 1: failing phase 2 claim test 작성**
+- [x] **Step 1: failing phase 2 claim test 작성**
 
 검증할 동작:
 
@@ -630,7 +630,7 @@ void claimsOnlyEligibleDoneLogs() {
 }
 ```
 
-- [ ] **Step 2: failing test 확인**
+- [x] **Step 2: failing test 확인**
 
 Run:
 
@@ -640,7 +640,7 @@ Run:
 
 Expected: phase 2 restore method가 없어 compile fail.
 
-- [ ] **Step 3: done log restore claim SQL 구현**
+- [x] **Step 3: done log restore claim SQL 구현**
 
 구현 원칙:
 
@@ -672,7 +672,7 @@ LIMIT #{limit}
 FOR UPDATE SKIP LOCKED
 ```
 
-- [ ] **Step 4: phase 2 replay service 구현**
+- [x] **Step 4: phase 2 replay service 구현**
 
 Expected:
 - phase 1과 동일한 Lua replay 계약을 사용합니다.
@@ -680,7 +680,7 @@ Expected:
 - MySQL `restore_status = DONE` commit 이후 idempotency key를 제거합니다.
 - `FAILED` done log가 남아 있으면 phase 2 batch를 완료하지 않습니다.
 
-- [ ] **Step 5: test 통과 확인**
+- [x] **Step 5: test 통과 확인**
 
 Run:
 
@@ -701,7 +701,7 @@ Expected: PASS.
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreVerificationServiceTest.java`
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreIdempotencyCleanupServiceTest.java`
 
-- [ ] **Step 1: failing verification test 작성**
+- [x] **Step 1: failing verification test 작성**
 
 검증할 동작:
 
@@ -716,7 +716,7 @@ void correctsRedisValueWhenMismatchFound() {
 }
 ```
 
-- [ ] **Step 2: failing test 확인**
+- [x] **Step 2: failing test 확인**
 
 Run:
 
@@ -726,7 +726,7 @@ Run:
 
 Expected: verification service가 없어 compile fail.
 
-- [ ] **Step 3: 검증 기준 산출 구현**
+- [x] **Step 3: 검증 기준 산출 구현**
 
 Expected:
 - 개인 잔량: hydrate 기준 개인 잔량에서 개인 사용량 replay 합계를 차감합니다.
@@ -734,7 +734,7 @@ Expected:
 - 사용량 key: phase 1/2 replay source 합계와 비교합니다.
 - policy key: DB `POLICY` 기준 전역 정책 상태와 비교합니다.
 
-- [ ] **Step 4: 자동 보정 구현**
+- [x] **Step 4: 자동 보정 구현**
 
 Expected:
 - 전체 검증은 sampling 없이 수행합니다.
@@ -742,7 +742,7 @@ Expected:
 - 보정 실패 시 phase 2 batch를 `FAILED`로 전환합니다.
 - 보정 성공 후 `restore:idempotency:*` prefix cleanup을 수행합니다.
 
-- [ ] **Step 5: test 통과 확인**
+- [x] **Step 5: test 통과 확인**
 
 Run:
 
@@ -766,7 +766,7 @@ Expected: PASS.
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreOrchestratorServiceTest.java`
 - Test: `src/test/java/com/pooli/traffic/controller/AdminTrafficRestoreControllerTest.java`
 
-- [ ] **Step 1: failing orchestration test 작성**
+- [x] **Step 1: failing orchestration test 작성**
 
 검증할 동작:
 
@@ -783,7 +783,7 @@ void startsRestoreInRequiredOrder() {
 }
 ```
 
-- [ ] **Step 2: failing test 확인**
+- [x] **Step 2: failing test 확인**
 
 Run:
 
@@ -793,7 +793,7 @@ Run:
 
 Expected: orchestrator service가 없어 compile fail.
 
-- [ ] **Step 3: start API 구현**
+- [x] **Step 3: start API 구현**
 
 Expected:
 - 관리자 권한을 요구합니다.
@@ -802,14 +802,14 @@ Expected:
 - `app.streams.reclaim-worst-processing-ms + 1000ms`를 대기합니다.
 - phase 0 target insert를 시작합니다.
 
-- [ ] **Step 4: resume API 구현**
+- [x] **Step 4: resume API 구현**
 
 Expected:
 - `FAILED` 또는 중단 상태의 phase를 확인합니다.
 - `FAILED` target 재처리 정책에 따라 `RETRYABLE`로 되돌릴 대상만 재개합니다.
 - phase scope 확장이 필요하면 중단하고 사용자 개입을 요구합니다.
 
-- [ ] **Step 5: test 통과 확인**
+- [x] **Step 5: test 통과 확인**
 
 Run:
 
@@ -828,7 +828,7 @@ Expected: PASS.
 - Create: `src/test/java/com/pooli/traffic/acceptance/TrafficRestoreBatchAcceptanceTest.java`
 - Modify: `src/test/java/com/pooli/traffic/acceptance/TrafficAcceptanceTestSupport.java`
 
-- [ ] **Step 1: acceptance scenario 작성**
+- [x] **Step 1: acceptance scenario 작성**
 
 검증 scenario:
 
@@ -842,7 +842,7 @@ void restoresRedisUsageAndBalanceFromDatabaseSources() {
 }
 ```
 
-- [ ] **Step 2: traffic guard acceptance 작성**
+- [x] **Step 2: traffic guard acceptance 작성**
 
 검증 scenario:
 
@@ -856,7 +856,7 @@ void blocksTrafficWhileRestoreFlagIsActive() {
 }
 ```
 
-- [ ] **Step 3: idempotency 재시작 scenario 작성**
+- [x] **Step 3: idempotency 재시작 scenario 작성**
 
 검증 scenario:
 
@@ -870,7 +870,7 @@ void doesNotDoubleApplyWhenWorkerDiesAfterRedisReplay() {
 }
 ```
 
-- [ ] **Step 4: 전체 test 실행**
+- [x] **Step 4: 전체 test 실행**
 
 Run:
 
@@ -880,7 +880,7 @@ Run:
 
 Expected: 모든 test PASS.
 
-- [ ] **Step 5: build 실행**
+- [x] **Step 5: build 실행**
 
 Run:
 
@@ -890,7 +890,7 @@ Run:
 
 Expected: build SUCCESS.
 
-- [ ] **Step 6: self-review 수행**
+- [x] **Step 6: self-review 수행**
 
 검토 항목:
 - 새 abstraction이 실제 runtime 책임 때문에 필요한가?
