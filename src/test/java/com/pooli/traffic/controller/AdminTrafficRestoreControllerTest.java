@@ -43,7 +43,7 @@ class AdminTrafficRestoreControllerTest {
         );
         TrafficRestoreStartResDto serviceResponse = new TrafficRestoreStartResDto(
                 true,
-                "RESTORE_P0_TARGET_INSERT",
+                "RESTORE_ACCEPTED",
                 LocalDate.of(2026, 5, 29),
                 LocalDate.of(2026, 5, 27)
         );
