@@ -1,5 +1,7 @@
 package com.pooli.traffic.service.restore;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 
 import java.time.LocalDate;
@@ -57,6 +59,35 @@ class TrafficRestorePhase0HydrateServiceTest {
         service.hydrate(target);
 
         verify(policyBootstrapService).hydrateOnDemand();
+    }
+
+    @Test
+    @DisplayName("target이 null이면 NullPointerException이 발생한다")
+    void throwsExceptionWhenTargetIsNull() {
+        assertThrows(
+                NullPointerException.class,
+                () -> service.hydrate(null),
+                "target must not be null"
+        );
+    }
+
+    @Test
+    @DisplayName("targetMonthStart가 null이면 NullPointerException이 발생한다")
+    void throwsExceptionWhenTargetMonthStartIsNull() {
+        TrafficRestoreHydrateTarget target = TrafficRestoreHydrateTarget.builder()
+                .targetMonthStart(null)
+                .targetType(TrafficRestoreHydrateTargetType.LINE)
+                .targetOwnerId(10L)
+                .build();
+
+        NullPointerException exception = assertThrows(
+                NullPointerException.class,
+                () -> service.hydrate(target)
+        );
+        assertEquals(
+                "targetMonthStart must not be null for owner 10",
+                exception.getMessage()
+        );
     }
 
     private TrafficRestoreHydrateTarget target(TrafficRestoreHydrateTargetType targetType, Long ownerId) {

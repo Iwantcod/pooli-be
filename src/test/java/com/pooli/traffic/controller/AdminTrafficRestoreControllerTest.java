@@ -2,8 +2,12 @@ package com.pooli.traffic.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 
 import java.time.LocalDate;
 
@@ -53,15 +57,17 @@ class AdminTrafficRestoreControllerTest {
     }
 
     @Test
-    @DisplayName("관리자 복구 시작 API 경로와 관리자 권한 조건을 유지한다")
+    @DisplayName("관리자 복구 시작 API 경로와 관리자 권한 조건을 유지하며 @Valid를 적용한다")
     void startRestoreMappingAndAuthorization() throws NoSuchMethodException {
         var method = AdminTrafficRestoreController.class.getMethod("start", TrafficRestoreStartReqDto.class);
 
         PostMapping postMapping = method.getAnnotation(PostMapping.class);
         PreAuthorize preAuthorize = method.getAnnotation(PreAuthorize.class);
+        var parameter = method.getParameters()[0];
 
         assertEquals("/start", postMapping.value()[0]);
         assertEquals("@authz.requireAdmin(authentication)", preAuthorize.value());
+        assertTrue(parameter.isAnnotationPresent(jakarta.validation.Valid.class));
     }
 
     @Test
@@ -88,5 +94,17 @@ class AdminTrafficRestoreControllerTest {
         assertEquals(200, response.getStatusCode().value());
         assertSame(serviceResponse, response.getBody());
         verify(trafficRestoreOrchestratorService).resume(anchorDate);
+    }
+
+    @Test
+    @DisplayName("TrafficRestoreStartReqDto의 failureDate가 null이면 검증 에러가 발생한다")
+    void validateNullFailureDate() {
+        TrafficRestoreStartReqDto request = new TrafficRestoreStartReqDto(null);
+        Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+        var violations = validator.validate(request);
+
+        assertEquals(1, violations.size());
+        assertEquals("failureDate", violations.iterator().next().getPropertyPath().toString());
+        assertEquals("failureDate는 필수입니다.", violations.iterator().next().getMessage());
     }
 }

@@ -91,6 +91,32 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * 차감 preflight에 필요한 정책 ready key, 개인 잔량 key, 공유 잔량 key 존재 여부를 한 Lua 호출로 조회합니다.
+     *
+     * @return 순서대로 정책 ready, 개인 잔량, 공유 잔량 key 존재 여부를 1/0 값으로 담은 목록입니다.
+     */
+    public List<Long> executePreflightKeyExistence(
+            String linePolicyReadyKey,
+            String individualBalanceKey,
+            String sharedBalanceKey
+    ) {
+        List rawResult = executeListSingle(
+                TrafficLuaScriptType.PREFLIGHT_KEY_EXISTENCE,
+                List.of(linePolicyReadyKey, individualBalanceKey, sharedBalanceKey),
+                List.of()
+        );
+        if (rawResult.size() != 3) {
+            throw new ApplicationException(
+                    CommonErrorCode.INTERNAL_SERVER_ERROR,
+                    "Lua preflight key existence result size is invalid."
+            );
+        }
+        return rawResult.stream()
+                .map(this::toLongResult)
+                .toList();
+    }
+
+    /**
      * 개인+공유+QoS 단일 차감 Lua 스크립트를 실행합니다.
      */
     public TrafficLuaDeductExecutionResult executeDeductUnified(List<String> keys, List<String> args) {
@@ -440,6 +466,16 @@ public class TrafficLuaScriptInfraService {
             log.error("traffic_lua_execute_failed script={}", scriptType.getScriptName(), e);
             throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);
         }
+    }
+
+    /**
+     * Redis Lua 목록 결과의 정수 값을 Java long으로 변환합니다.
+     */
+    private long toLongResult(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        return Long.parseLong(String.valueOf(value));
     }
 
     /**

@@ -3,6 +3,7 @@ package com.pooli.traffic.service.decision;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.List;
 
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.traffic.domain.TrafficBalanceSnapshotHydrateResult;
@@ -10,11 +11,11 @@ import com.pooli.traffic.domain.TrafficPolicyCheckLayerResult;
 import com.pooli.traffic.domain.enums.TrafficPolicyCheckFailureCause;
 import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
 import com.pooli.traffic.service.runtime.TrafficBalanceSnapshotHydrateService;
+import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
-import com.pooli.traffic.service.runtime.TrafficRemainingBalanceCacheService;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
@@ -46,7 +47,7 @@ public class TrafficDeductOrchestratorService {
     private final TrafficSharedPoolThresholdAlarmService trafficSharedPoolThresholdAlarmService;
     private final TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
     private final TrafficBalanceSnapshotHydrateService trafficBalanceSnapshotHydrateService;
-    private final TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
+    private final TrafficLuaScriptInfraService trafficLuaScriptInfraService;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficPolicyCheckLayerService trafficPolicyCheckLayerService;
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
@@ -296,14 +297,13 @@ public class TrafficDeductOrchestratorService {
      * 차단성 정책 검증 전에 Redis ready key와 가족풀 잔량 key 기준으로 필요한 hydrate를 시도합니다.
      */
     private void ensurePreflightHydrated(TrafficPayloadReqDto payload) {
-        // ready key가 없으면 회선 정책 스냅샷만 먼저 준비합니다.
-        boolean linePolicyReady = trafficLinePolicyHydrationService.isLoaded(payload.getLineId());
-        if (!linePolicyReady) {
-            trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
-        }
-
         // 잔량 snapshot hydrate에 필요한 owner/month 정보가 부족하면 기존 Lua/adapter 검증 경로를 유지합니다.
         if (!canRunBalanceSnapshotPreflight(payload)) {
+            // 잔량 key를 만들 수 없는 payload에서는 기존 정책 ready key 단건 확인 경로를 유지합니다.
+            boolean linePolicyReady = trafficLinePolicyHydrationService.isLoaded(payload.getLineId());
+            if (!linePolicyReady) {
+                trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
+            }
             log.debug(
                     "traffic_balance_snapshot_preflight_skipped traceId={} reason=missing_minimum_fields",
                     payload == null ? null : payload.getTraceId()
@@ -312,8 +312,20 @@ public class TrafficDeductOrchestratorService {
         }
 
         YearMonth targetMonth = resolveTargetMonth(payload);
-        hydrateIndividualSnapshotIfKeyMissing(payload, targetMonth);
-        hydrateSharedSnapshotIfKeyMissing(payload, targetMonth);
+        String linePolicyReadyKey = trafficRedisKeyFactory.linePolicyReadyKey(payload.getLineId());
+        String individualBalanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(payload.getLineId(), targetMonth);
+        String sharedBalanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(payload.getFamilyId(), targetMonth);
+        List<Long> keyExistenceResult = trafficLuaScriptInfraService.executePreflightKeyExistence(
+                linePolicyReadyKey,
+                individualBalanceKey,
+                sharedBalanceKey
+        );
+
+        if (!existsAt(keyExistenceResult, 0)) {
+            trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
+        }
+        hydrateIndividualSnapshotIfKeyMissing(payload, targetMonth, existsAt(keyExistenceResult, 1));
+        hydrateSharedSnapshotIfKeyMissing(payload, targetMonth, existsAt(keyExistenceResult, 2));
     }
 
     /**
@@ -336,22 +348,26 @@ public class TrafficDeductOrchestratorService {
     }
 
     /**
-     * 개인풀 잔량 snapshot hash key가 없을 때만 개인풀 잔량 hydrate를 시도합니다.
+     * preflight Lua 결과상 개인풀 잔량 snapshot hash key가 없을 때만 개인풀 잔량 hydrate를 시도합니다.
      */
-    private void hydrateIndividualSnapshotIfKeyMissing(TrafficPayloadReqDto payload, YearMonth targetMonth) {
-        String individualBalanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(payload.getLineId(), targetMonth);
-        boolean individualSnapshotKeyExists = trafficRemainingBalanceCacheService.hasKey(individualBalanceKey);
+    private void hydrateIndividualSnapshotIfKeyMissing(
+            TrafficPayloadReqDto payload,
+            YearMonth targetMonth,
+            boolean individualSnapshotKeyExists
+    ) {
         if (!individualSnapshotKeyExists) {
             hydrateIndividualSnapshot(payload, targetMonth);
         }
     }
 
     /**
-     * 가족풀 잔량 snapshot key가 없을 때만 공유풀 잔량 hydrate를 시도합니다.
+     * preflight Lua 결과상 가족풀 잔량 snapshot key가 없을 때만 공유풀 잔량 hydrate를 시도합니다.
      */
-    private void hydrateSharedSnapshotIfKeyMissing(TrafficPayloadReqDto payload, YearMonth targetMonth) {
-        String sharedBalanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(payload.getFamilyId(), targetMonth);
-        boolean sharedSnapshotKeyExists = trafficRemainingBalanceCacheService.hasKey(sharedBalanceKey);
+    private void hydrateSharedSnapshotIfKeyMissing(
+            TrafficPayloadReqDto payload,
+            YearMonth targetMonth,
+            boolean sharedSnapshotKeyExists
+    ) {
         if (!sharedSnapshotKeyExists) {
             hydrateSharedSnapshot(payload, targetMonth);
         }
@@ -401,6 +417,17 @@ public class TrafficDeductOrchestratorService {
      */
     private YearMonth resolveTargetMonth(TrafficPayloadReqDto payload) {
         return YearMonth.from(Instant.ofEpochMilli(payload.getEnqueuedAt()).atZone(trafficRedisRuntimePolicy.zoneId()));
+    }
+
+    /**
+     * Lua EXISTS 결과 목록에서 지정 순번의 key 존재 여부를 해석합니다.
+     */
+    private boolean existsAt(List<Long> keyExistenceResult, int index) {
+        if (keyExistenceResult == null || keyExistenceResult.size() <= index) {
+            throw new IllegalStateException("traffic_preflight_key_existence_result_invalid");
+        }
+        Long exists = keyExistenceResult.get(index);
+        return exists != null && exists == 1L;
     }
 
     /**
