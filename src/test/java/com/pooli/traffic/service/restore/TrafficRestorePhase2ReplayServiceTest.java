@@ -1,6 +1,7 @@
 package com.pooli.traffic.service.restore;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +14,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.pooli.traffic.domain.entity.TrafficDeductDoneLog;
 import com.pooli.traffic.domain.restore.TrafficRestoreReplayResult;
@@ -58,18 +61,50 @@ class TrafficRestorePhase2ReplayServiceTest {
     }
 
     @Test
-    @DisplayName("phase 2 replay 성공 후 done log를 DONE으로 전환하고 idempotency key를 제거한다")
+    @DisplayName("phase 2 replay 성공 후 done log commit 이후 idempotency key를 제거한다")
     void marksDoneWhenReplayApplied() {
         TrafficDeductDoneLog log = doneLog(10L, "PROCESSING");
         when(trafficRedisKeyFactory.restoreIdempotencyKey("p2:done_log", "10"))
                 .thenReturn("pooli:restore:idempotency:p2:done_log:10");
         when(replayLuaExecutor.replay(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(new TrafficRestoreReplayResult("APPLIED", null));
+        when(doneLogMapper.markRestoreDoneIfProcessing(10L, WORKER_ID)).thenReturn(1);
 
-        service.replay(log, WORKER_ID);
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.replay(log, WORKER_ID);
 
-        verify(doneLogMapper).markRestoreDoneIfProcessing(10L, WORKER_ID);
-        verify(replayLuaExecutor).deleteIdempotencyKey("pooli:restore:idempotency:p2:done_log:10");
+            verify(doneLogMapper).markRestoreDoneIfProcessing(10L, WORKER_ID);
+            verify(replayLuaExecutor, never()).deleteIdempotencyKey("pooli:restore:idempotency:p2:done_log:10");
+
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+
+            verify(replayLuaExecutor).deleteIdempotencyKey("pooli:restore:idempotency:p2:done_log:10");
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("phase 2 worker는 DONE 전환 대상이 없으면 idempotency key를 제거하지 않는다")
+    void doesNotDeleteIdempotencyKeyWhenDoneUpdateAffectsNoRows() {
+        TrafficDeductDoneLog log = doneLog(10L, "PROCESSING");
+        when(trafficRedisKeyFactory.restoreIdempotencyKey("p2:done_log", "10"))
+                .thenReturn("pooli:restore:idempotency:p2:done_log:10");
+        when(replayLuaExecutor.replay(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new TrafficRestoreReplayResult("APPLIED", null));
+        when(doneLogMapper.markRestoreDoneIfProcessing(10L, WORKER_ID)).thenReturn(0);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.replay(log, WORKER_ID);
+
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+            verify(replayLuaExecutor, never()).deleteIdempotencyKey("pooli:restore:idempotency:p2:done_log:10");
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     private TrafficDeductDoneLog doneLog(Long id, String restoreStatus) {
