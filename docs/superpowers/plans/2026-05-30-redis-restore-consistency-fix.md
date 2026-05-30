@@ -1,6 +1,6 @@
 # Redis Restore Consistency Fix Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for implementation because this plan touches Redis Lua, Redis data type contracts, MyBatis verification SQL, restore replay idempotency, and traffic deduction consistency. If subagents cannot be used in the current environment, use `superpowers:executing-plans` and execute task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for implementation because this plan touches Redis Lua, Redis data type contracts, MyBatis verification SQL, restore replay idempotency, and traffic deduction consistency. If subagents cannot be used in the current environment, use `superpowers:executing-plans` and execute task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Redis 장애 복구가 개인풀 hash의 모든 필드를 온전히 복구하고, 존재하지 않는 가족풀 사용량 정보를 Redis key로 만들지 않으며, 복구 후 기존 트래픽 차감이 같은 Redis 계약 위에서 정상 동작하게 한다.
 
@@ -12,13 +12,30 @@
 
 ## 실행 상태
 
-- 현재 상태: 구현 미승인, 계획서 작성만 완료
+- 현재 상태: 구현 완료, fresh verification 통과, task 완료 처리 완료
 - 이관 출처: `docs/superpowers/plans/2026-05-29-redis-restore-batch.md`의 초기 복구 배치 구현 완료 후 확인된 정합성 결함
-- 종결 조건: 이 계획이 구현되고 fresh verification을 통과해야 Redis 복구 기능을 최종 종결 처리한다.
-- 계획 승인 조건: 사용자가 "이 계획대로 진행", "구현하세요", "승인합니다"처럼 이 문서를 명시적으로 승인해야 한다.
-- 생산 코드 변경 금지: 승인 전에는 `src/main/**`, `src/test/**`, `src/main/resources/lua/**`, `src/main/resources/mapper/**`를 수정하지 않는다.
-- codebase 변경 commit 금지: 코드/테스트/리소스 변경 commit은 사용자 명시 확인 전 금지한다.
-- 문서 변경 commit: 사용자가 별도 요청하지 않았으므로 이 계획 문서도 commit하지 않는다.
+- 종결 조건: 구현 완료 후 `./gradlew test`와 `./gradlew build`가 모두 `BUILD SUCCESSFUL`로 통과했다.
+- 승인 기록: 사용자가 구현과 완료 처리를 요청했고, 코드 변경은 task 단위 commit으로 분리했다.
+- 생산 코드 변경 범위: `src/main/**`, `src/test/**`, `src/main/resources/lua/**`, `src/main/resources/mapper/**`의 승인된 정합성 수정 범위만 변경했다.
+- codebase 변경 commit: Task 1-5 변경사항을 계획서 task 단위로 commit했다.
+- 문서 변경 commit: 본 완료 처리 문서 변경은 별도 문서 commit으로 기록한다.
+
+## 완료 기록
+
+- Task 1 commit: `6c1c20d` `Test(traffic): 복구 Lua 계약 테스트 추가`
+- Task 2 commit: `7a04c26` `Fix(traffic): restore replay Redis 계약 정렬`
+- Task 3 commit: `63e2ac3` `Fix(traffic): 복구 검증 SQL 계약 정렬`
+- Task 4 commit: `4b39759` `Fix(traffic): 복구 보정 자료형 분기 적용`
+- Task 5 commit: `842398f` `Test(traffic): 복구 후 차감 정합성 검증`
+- Fresh verification:
+  - `./gradlew test` - `BUILD SUCCESSFUL`
+  - `./gradlew build` - `BUILD SUCCESSFUL`
+- Self-review:
+  - 개인풀 복구 경로는 `amount`와 `qos`를 같은 Redis hash key에서 검증/보정한다.
+  - 공유 사용량이 0인 replay/verification/correction 경로는 `daily_shared_usage`, `monthly_shared_usage` key를 생성하지 않는다.
+  - `daily_total_usage`는 replay와 verification/correction 모두 string counter 계약을 따른다.
+  - 복구 후 `deduct_unified.lua`의 GET/INCRBY 및 hash HINCRBY 계약과 충돌하지 않도록 테스트로 확인했다.
+  - 테스트 편의를 위한 production 구조 왜곡이나 새 abstraction 추가 없이 기존 service/Lua/mapper 경계를 최소 수정했다.
 
 ## 의존성 및 문서 기준
 
@@ -87,7 +104,7 @@
 **Files:**
 - No code change
 
-- [ ] **Step 1: `superpowers:using-git-worktrees` 사용**
+- [x] **Step 1: `superpowers:using-git-worktrees` 사용**
 
 승인 후 구현 시작 전에 `superpowers:using-git-worktrees`를 사용한다.
 
@@ -95,7 +112,7 @@ Expected:
 - 현재 작업이 `main` 또는 `master`에서 직접 수행되지 않는다.
 - 새 worktree 또는 안전한 feature branch에서 구현한다.
 
-- [ ] **Step 2: 작업 전 상태 확인**
+- [x] **Step 2: 작업 전 상태 확인**
 
 Run:
 
@@ -118,7 +135,7 @@ docs/superpowers/plans/2026-05-30-redis-restore-consistency-fix.md
 **Files:**
 - Modify: `src/test/java/com/pooli/traffic/service/runtime/TrafficRestoreLuaContractTest.java`
 
-- [ ] **Step 1: 실패 테스트 추가**
+- [x] **Step 1: 실패 테스트 추가**
 
 `TrafficRestoreLuaContractTest`에 아래 테스트를 추가한다.
 
@@ -159,7 +176,7 @@ void restoreCorrectionSupportsStringAndHashCorrection() throws IOException {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run:
 
@@ -182,7 +199,7 @@ Expected:
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreReplayLuaExecutorTest.java`
 - Test: `src/test/java/com/pooli/traffic/service/runtime/TrafficRestoreLuaContractTest.java`
 
-- [ ] **Step 1: executor 인자 검증 테스트 추가**
+- [x] **Step 1: executor 인자 검증 테스트 추가**
 
 `TrafficRestoreReplayLuaExecutorTest`에 아래 테스트를 추가한다.
 
@@ -227,7 +244,7 @@ void passesFamilyIdToReplayLua() {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run:
 
@@ -238,7 +255,7 @@ Run:
 Expected:
 - 새 테스트가 `"200"` 인자 누락으로 실패한다.
 
-- [ ] **Step 3: `TrafficRestoreReplayLuaExecutor.buildArgs` 수정**
+- [x] **Step 3: `TrafficRestoreReplayLuaExecutor.buildArgs` 수정**
 
 `buildArgs`를 아래 형태로 변경한다.
 
@@ -255,7 +272,7 @@ private List<String> buildArgs(TrafficRestoreReplayCommand command) {
 }
 ```
 
-- [ ] **Step 4: `restore_usage_replay.lua` 수정**
+- [x] **Step 4: `restore_usage_replay.lua` 수정**
 
 `restore_usage_replay.lua`를 아래 계약으로 수정한다.
 
@@ -366,7 +383,7 @@ redis.call('SET', idempotency_key, '1')
 return { 'APPLIED' }
 ```
 
-- [ ] **Step 5: replay 관련 테스트 통과 확인**
+- [x] **Step 5: replay 관련 테스트 통과 확인**
 
 Run:
 
@@ -386,7 +403,7 @@ Expected:
 - Modify: `src/main/java/com/pooli/traffic/domain/restore/TrafficRestoreVerificationKeyType.java`
 - Test: `src/test/java/com/pooli/traffic/mapper/TrafficRestoreVerificationMapperSqlContractTest.java`
 
-- [ ] **Step 1: mapper SQL contract test 생성**
+- [x] **Step 1: mapper SQL contract test 생성**
 
 `src/test/java/com/pooli/traffic/mapper/TrafficRestoreVerificationMapperSqlContractTest.java`를 생성한다.
 
@@ -441,7 +458,7 @@ class TrafficRestoreVerificationMapperSqlContractTest {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run:
 
@@ -452,7 +469,7 @@ Run:
 Expected:
 - 새 테스트가 기존 SQL 계약 불일치로 실패한다.
 
-- [ ] **Step 3: `TrafficRestoreVerificationKeyType` 주석 수정**
+- [x] **Step 3: `TrafficRestoreVerificationKeyType` 주석 수정**
 
 `DAILY_TOTAL_USAGE` 주석을 아래처럼 수정한다.
 
@@ -461,7 +478,7 @@ Expected:
 DAILY_TOTAL_USAGE,
 ```
 
-- [ ] **Step 4: `selectUsageVerificationTargets` 수정**
+- [x] **Step 4: `selectUsageVerificationTargets` 수정**
 
 `selectUsageVerificationTargets`의 `usage_source`에 `family_id`를 포함하고, `DAILY_TOTAL_USAGE`와 공유 사용량 target을 아래 구조로 바꾼다.
 
@@ -590,7 +607,7 @@ GROUP BY line_id, usage_date
 HAVING SUM(shared_usage) > 0
 ```
 
-- [ ] **Step 5: `selectRemainingVerificationTargets` 수정**
+- [x] **Step 5: `selectRemainingVerificationTargets` 수정**
 
 개인풀 `qos`, 월별 공유 사용량 `usage_amount`, `family_id` target을 포함하도록 `selectRemainingVerificationTargets`를 수정한다.
 
@@ -679,7 +696,7 @@ GROUP BY line_id, CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE)
 HAVING SUM(shared_usage) > 0
 ```
 
-- [ ] **Step 6: SQL contract 테스트 통과 확인**
+- [x] **Step 6: SQL contract 테스트 통과 확인**
 
 Run:
 
@@ -701,7 +718,7 @@ Expected:
 - Test: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreVerificationServiceTest.java`
 - Test: `src/test/java/com/pooli/traffic/service/runtime/TrafficRestoreLuaContractTest.java`
 
-- [ ] **Step 1: verification service 실패 테스트 추가**
+- [x] **Step 1: verification service 실패 테스트 추가**
 
 `TrafficRestoreVerificationServiceTest`에 아래 테스트를 추가한다.
 
@@ -774,7 +791,7 @@ void correctsDailyTotalUsageAsStringCounter() {
 private org.springframework.data.redis.core.ValueOperations<String, String> valueOperations;
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run:
 
@@ -785,7 +802,7 @@ Run:
 Expected:
 - 새 테스트가 `opsForValue()` 미사용 또는 `executeRestoreUsageCorrection` signature 불일치로 실패한다.
 
-- [ ] **Step 3: correction Lua 수정**
+- [x] **Step 3: correction Lua 수정**
 
 `restore_usage_correction.lua`를 아래 내용으로 교체한다.
 
@@ -828,7 +845,7 @@ end
 return { 'CORRECTED' }
 ```
 
-- [ ] **Step 4: `TrafficLuaScriptInfraService.executeRestoreUsageCorrection` signature 수정**
+- [x] **Step 4: `TrafficLuaScriptInfraService.executeRestoreUsageCorrection` signature 수정**
 
 기존 method를 아래 signature와 구현으로 수정한다.
 
@@ -851,7 +868,7 @@ public List<String> executeRestoreUsageCorrection(
 }
 ```
 
-- [ ] **Step 5: `TrafficRestoreVerificationService` 읽기/보정 분기 수정**
+- [x] **Step 5: `TrafficRestoreVerificationService` 읽기/보정 분기 수정**
 
 `verifyTargets`, `correct`, value 읽기 메서드를 아래 구조로 수정한다.
 
@@ -926,7 +943,7 @@ private long readStringLong(String key) {
 
 기존 `readHashLong`은 유지한다.
 
-- [ ] **Step 6: compile 오류 수정**
+- [x] **Step 6: compile 오류 수정**
 
 기존 테스트의 `executeRestoreUsageCorrection` stubbing과 verify 호출을 새 signature로 변경한다.
 
@@ -942,7 +959,7 @@ when(trafficLuaScriptInfraService.executeRestoreUsageCorrection(
 )).thenReturn(List.of("CORRECTED"));
 ```
 
-- [ ] **Step 7: correction/verification 단위 테스트 통과 확인**
+- [x] **Step 7: correction/verification 단위 테스트 통과 확인**
 
 Run:
 
@@ -960,7 +977,7 @@ Expected:
 **Files:**
 - Modify: `src/test/java/com/pooli/traffic/acceptance/TrafficRestoreBatchAcceptanceTest.java`
 
-- [ ] **Step 1: 기존 잘못된 hash 기반 검증 수정**
+- [x] **Step 1: 기존 잘못된 hash 기반 검증 수정**
 
 `restoresRedisUsageAndBalanceFromDatabaseSources` 테스트에서 `daily_total_usage` hash 검증을 string counter 검증으로 바꾼다.
 
@@ -1001,7 +1018,7 @@ assertThat(cacheStringRedisTemplate.opsForHash()
         .isTrue();
 ```
 
-- [ ] **Step 2: 공유 사용량 0일 때 가족풀 사용량 key 미생성 테스트 추가**
+- [x] **Step 2: 공유 사용량 0일 때 가족풀 사용량 key 미생성 테스트 추가**
 
 `TrafficRestoreBatchAcceptanceTest`에 아래 테스트를 추가한다.
 
@@ -1038,7 +1055,7 @@ void doesNotCreateSharedUsageKeysWhenSharedUsageIsZero() {
 }
 ```
 
-- [ ] **Step 3: 복구 후 정상 차감 재개 테스트 추가**
+- [x] **Step 3: 복구 후 정상 차감 재개 테스트 추가**
 
 `TrafficRestoreBatchAcceptanceTest`에 아래 테스트를 추가한다.
 
@@ -1083,7 +1100,7 @@ void deductsTrafficConsistentlyAfterRestore() throws Exception {
 }
 ```
 
-- [ ] **Step 4: acceptance 실패 확인**
+- [x] **Step 4: acceptance 실패 확인**
 
 Run:
 
@@ -1104,7 +1121,7 @@ Expected after Tasks 2-4 are complete:
 **Files:**
 - No new file
 
-- [ ] **Step 1: 좁은 범위 테스트 실행**
+- [x] **Step 1: 좁은 범위 테스트 실행**
 
 Run:
 
@@ -1115,7 +1132,7 @@ Run:
 Expected:
 - `BUILD SUCCESSFUL`
 
-- [ ] **Step 2: 차감/배치 인접 회귀 테스트 실행**
+- [x] **Step 2: 차감/배치 인접 회귀 테스트 실행**
 
 Run:
 
@@ -1126,7 +1143,7 @@ Run:
 Expected:
 - `BUILD SUCCESSFUL`
 
-- [ ] **Step 3: 전체 테스트 실행**
+- [x] **Step 3: 전체 테스트 실행**
 
 Run:
 
@@ -1137,7 +1154,7 @@ Run:
 Expected:
 - `BUILD SUCCESSFUL`
 
-- [ ] **Step 4: build 실행**
+- [x] **Step 4: build 실행**
 
 Run:
 
@@ -1148,7 +1165,7 @@ Run:
 Expected:
 - `BUILD SUCCESSFUL`
 
-- [ ] **Step 5: self-review 질문에 답하고 필요 시 수정**
+- [x] **Step 5: self-review 질문에 답하고 필요 시 수정**
 
 구현 완료 보고 전에 아래 질문을 코드 기준으로 확인한다.
 
