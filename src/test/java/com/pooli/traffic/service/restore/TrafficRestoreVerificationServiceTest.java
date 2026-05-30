@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
@@ -16,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 import com.pooli.traffic.domain.batch.BatchName;
 import com.pooli.traffic.domain.restore.RestoreRange;
@@ -52,6 +54,9 @@ class TrafficRestoreVerificationServiceTest {
     @Mock
     private HashOperations<String, Object, Object> hashOperations;
 
+    @Mock
+    private ValueOperations<String, String> valueOperations;
+
     @InjectMocks
     private TrafficRestoreVerificationService service;
 
@@ -64,10 +69,10 @@ class TrafficRestoreVerificationServiceTest {
                 LocalDate.of(2026, 5, 30)
         );
         TrafficRestoreVerificationTarget target = TrafficRestoreVerificationTarget.builder()
-                .keyType(TrafficRestoreVerificationKeyType.DAILY_TOTAL_USAGE)
+                .keyType(TrafficRestoreVerificationKeyType.DAILY_APP_USAGE)
                 .lineId(10L)
                 .usageDate(LocalDate.of(2026, 5, 27))
-                .field("individual")
+                .field("app:20:individual")
                 .expectedValue(100L)
                 .expireEpochSeconds(1_779_800_399L)
                 .build();
@@ -107,13 +112,14 @@ class TrafficRestoreVerificationServiceTest {
                 10L
         )).thenReturn(List.of());
         when(verificationMapper.selectPolicyVerificationTargets()).thenReturn(List.of());
-        when(trafficRedisKeyFactory.dailyTotalUsageKey(10L, LocalDate.of(2026, 5, 27)))
-                .thenReturn("pooli:daily_total_usage:10:20260527");
+        when(trafficRedisKeyFactory.dailyAppUsageKey(10L, LocalDate.of(2026, 5, 27)))
+                .thenReturn("pooli:daily_app_usage:10:20260527");
         when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(hashOperations.get("pooli:daily_total_usage:10:20260527", "individual")).thenReturn("10");
+        when(hashOperations.get("pooli:daily_app_usage:10:20260527", "app:20:individual")).thenReturn("10");
         when(trafficLuaScriptInfraService.executeRestoreUsageCorrection(
-                "pooli:daily_total_usage:10:20260527",
-                "individual",
+                "pooli:daily_app_usage:10:20260527",
+                "hash",
+                "app:20:individual",
                 100L,
                 1_779_800_399L
         )).thenReturn(List.of("CORRECTED"));
@@ -135,10 +141,10 @@ class TrafficRestoreVerificationServiceTest {
                 LocalDate.of(2026, 5, 30)
         );
         TrafficRestoreVerificationTarget target = TrafficRestoreVerificationTarget.builder()
-                .keyType(TrafficRestoreVerificationKeyType.DAILY_TOTAL_USAGE)
+                .keyType(TrafficRestoreVerificationKeyType.DAILY_APP_USAGE)
                 .lineId(10L)
                 .usageDate(LocalDate.of(2026, 5, 27))
-                .field("individual")
+                .field("app:20:individual")
                 .expectedValue(100L)
                 .expireEpochSeconds(0L)
                 .build();
@@ -178,13 +184,14 @@ class TrafficRestoreVerificationServiceTest {
                 10L
         )).thenReturn(List.of());
         when(verificationMapper.selectPolicyVerificationTargets()).thenReturn(List.of());
-        when(trafficRedisKeyFactory.dailyTotalUsageKey(10L, LocalDate.of(2026, 5, 27)))
-                .thenReturn("pooli:daily_total_usage:10:20260527");
+        when(trafficRedisKeyFactory.dailyAppUsageKey(10L, LocalDate.of(2026, 5, 27)))
+                .thenReturn("pooli:daily_app_usage:10:20260527");
         when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
-        when(hashOperations.get("pooli:daily_total_usage:10:20260527", "individual")).thenReturn("10");
+        when(hashOperations.get("pooli:daily_app_usage:10:20260527", "app:20:individual")).thenReturn("10");
         when(trafficLuaScriptInfraService.executeRestoreUsageCorrection(
-                "pooli:daily_total_usage:10:20260527",
-                "individual",
+                "pooli:daily_app_usage:10:20260527",
+                "hash",
+                "app:20:individual",
                 100L,
                 0L
         )).thenReturn(List.of("ERROR", "WRITE_FAILED"));
@@ -200,6 +207,126 @@ class TrafficRestoreVerificationServiceTest {
                 BatchName.RESTORE_P2_DONE_LOG_REPLAY,
                 "RESTORE_CORRECTION_FAILED",
                 "Redis 복구 검증 보정 실패 count=1"
+        );
+    }
+
+    @Test
+    @DisplayName("daily total usage는 string counter로 읽고 string mode로 보정한다")
+    void correctsDailyTotalUsageAsStringCounter() {
+        LocalDate anchorDate = LocalDate.of(2026, 5, 29);
+        RestoreRange restoreRange = new RestoreRange(LocalDate.of(2026, 5, 27), LocalDate.of(2026, 5, 28));
+        TrafficRestoreVerificationTarget target = TrafficRestoreVerificationTarget.builder()
+                .keyType(TrafficRestoreVerificationKeyType.DAILY_TOTAL_USAGE)
+                .lineId(10L)
+                .usageDate(LocalDate.of(2026, 5, 27))
+                .field("__value__")
+                .expectedValue(125L)
+                .expireEpochSeconds(0L)
+                .build();
+        when(verificationMapper.selectVerificationLineRange(
+                restoreRange.startInclusive(),
+                restoreRange.endExclusive(),
+                restoreRange.startDateTimeInclusive(),
+                restoreRange.endDateTimeExclusive()
+        )).thenReturn(TrafficRestoreVerificationLineRange.of(10L, 10L));
+        when(verificationMapper.selectRemainingVerificationTargets(
+                restoreRange.startInclusive(),
+                restoreRange.endExclusive(),
+                restoreRange.startDateTimeInclusive(),
+                restoreRange.endDateTimeExclusive(),
+                10L,
+                10L
+        )).thenReturn(List.of());
+        when(verificationMapper.selectUsageVerificationTargets(
+                LocalDate.of(2026, 5, 27),
+                LocalDate.of(2026, 5, 27).atStartOfDay(),
+                LocalDate.of(2026, 5, 28).atStartOfDay(),
+                10L,
+                10L
+        )).thenReturn(List.of(target));
+        when(verificationMapper.selectPolicyVerificationTargets()).thenReturn(List.of());
+        when(trafficRedisKeyFactory.dailyTotalUsageKey(10L, LocalDate.of(2026, 5, 27)))
+                .thenReturn("pooli:daily_total_usage:10:20260527");
+        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("pooli:daily_total_usage:10:20260527")).thenReturn("10");
+        when(trafficLuaScriptInfraService.executeRestoreUsageCorrection(
+                "pooli:daily_total_usage:10:20260527",
+                "string",
+                "__value__",
+                125L,
+                0L
+        )).thenReturn(List.of("CORRECTED"));
+        when(idempotencyCleanupService.cleanupRestoreIdempotencyKeys()).thenReturn(0L);
+
+        RestoreVerificationResult result = service.verifyAndCorrect(anchorDate, restoreRange);
+
+        assertThat(result.correctedCount()).isEqualTo(1L);
+        verify(trafficLuaScriptInfraService).executeRestoreUsageCorrection(
+                "pooli:daily_total_usage:10:20260527",
+                "string",
+                "__value__",
+                125L,
+                0L
+        );
+    }
+
+    @Test
+    @DisplayName("개인풀 qos는 개인풀 잔량 hash의 qos field로 읽고 hash mode로 보정한다")
+    void correctsIndividualQosAsHashField() {
+        LocalDate anchorDate = LocalDate.of(2026, 5, 29);
+        RestoreRange restoreRange = new RestoreRange(LocalDate.of(2026, 5, 27), LocalDate.of(2026, 5, 28));
+        TrafficRestoreVerificationTarget target = TrafficRestoreVerificationTarget.builder()
+                .keyType(TrafficRestoreVerificationKeyType.REMAINING_INDIVIDUAL)
+                .lineId(10L)
+                .monthStart(LocalDate.of(2026, 5, 1))
+                .field("qos")
+                .expectedValue(375L)
+                .expireEpochSeconds(0L)
+                .build();
+        when(verificationMapper.selectVerificationLineRange(
+                restoreRange.startInclusive(),
+                restoreRange.endExclusive(),
+                restoreRange.startDateTimeInclusive(),
+                restoreRange.endDateTimeExclusive()
+        )).thenReturn(TrafficRestoreVerificationLineRange.of(10L, 10L));
+        when(verificationMapper.selectRemainingVerificationTargets(
+                restoreRange.startInclusive(),
+                restoreRange.endExclusive(),
+                restoreRange.startDateTimeInclusive(),
+                restoreRange.endDateTimeExclusive(),
+                10L,
+                10L
+        )).thenReturn(List.of(target));
+        when(verificationMapper.selectUsageVerificationTargets(
+                LocalDate.of(2026, 5, 27),
+                LocalDate.of(2026, 5, 27).atStartOfDay(),
+                LocalDate.of(2026, 5, 28).atStartOfDay(),
+                10L,
+                10L
+        )).thenReturn(List.of());
+        when(verificationMapper.selectPolicyVerificationTargets()).thenReturn(List.of());
+        when(trafficRedisKeyFactory.remainingIndivAmountKey(10L, YearMonth.of(2026, 5)))
+                .thenReturn("pooli:remaining_indiv_amount:10:202605");
+        when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(hashOperations.get("pooli:remaining_indiv_amount:10:202605", "qos")).thenReturn("0");
+        when(trafficLuaScriptInfraService.executeRestoreUsageCorrection(
+                "pooli:remaining_indiv_amount:10:202605",
+                "hash",
+                "qos",
+                375L,
+                0L
+        )).thenReturn(List.of("CORRECTED"));
+        when(idempotencyCleanupService.cleanupRestoreIdempotencyKeys()).thenReturn(0L);
+
+        RestoreVerificationResult result = service.verifyAndCorrect(anchorDate, restoreRange);
+
+        assertThat(result.correctedCount()).isEqualTo(1L);
+        verify(trafficLuaScriptInfraService).executeRestoreUsageCorrection(
+                "pooli:remaining_indiv_amount:10:202605",
+                "hash",
+                "qos",
+                375L,
+                0L
         );
     }
 }

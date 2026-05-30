@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import com.pooli.traffic.domain.batch.BatchName;
 import com.pooli.traffic.domain.restore.RestoreRange;
 import com.pooli.traffic.domain.restore.RestoreVerificationResult;
+import com.pooli.traffic.domain.restore.TrafficRestoreVerificationKeyType;
 import com.pooli.traffic.domain.restore.TrafficRestoreVerificationLineRange;
 import com.pooli.traffic.domain.restore.TrafficRestoreVerificationTarget;
 import com.pooli.traffic.mapper.LineDailyBatchJobMapper;
@@ -138,7 +139,8 @@ public class TrafficRestoreVerificationService {
             String key = resolveRedisKey(target);
             String field = target.getField();
             long expectedValue = nullToZero(target.getExpectedValue());
-            long actualValue = readHashLong(key, field);
+            String valueKind = resolveValueKind(target);
+            long actualValue = readRedisLong(key, field, valueKind);
             if (actualValue == expectedValue) {
                 counters.matchedCount++;
                 continue;
@@ -152,9 +154,9 @@ public class TrafficRestoreVerificationService {
                     expectedValue,
                     actualValue
             );
-            // 2. 불일치 field는 replay Lua와 분리된 correction Lua로 기준값을 원자 반영한다.
+            // 2. 불일치 값은 replay Lua와 분리된 correction Lua로 자료형 계약에 맞게 원자 반영한다.
             //    실패 판정식은 correct(...) == false이며, Lua 결과가 CORRECTED가 아니거나 Redis 예외가 난 경우이다.
-            if (correct(key, field, expectedValue, nullToZero(target.getExpireEpochSeconds()))) {
+            if (correct(key, valueKind, field, expectedValue, nullToZero(target.getExpireEpochSeconds()))) {
                 counters.correctedCount++;
             } else {
                 counters.failedCorrectionCount++;
@@ -175,11 +177,29 @@ public class TrafficRestoreVerificationService {
         }
     }
 
-    private boolean correct(String key, String field, long expectedValue, long expireEpochSeconds) {
+    private String resolveValueKind(TrafficRestoreVerificationTarget target) {
+        return target.getKeyType() == TrafficRestoreVerificationKeyType.DAILY_TOTAL_USAGE ? "string" : "hash";
+    }
+
+    private long readRedisLong(String key, String field, String valueKind) {
         try {
-            // 1. 보정 Lua는 단일 hash field와 TTL만 변경해 replay 로직과 책임을 분리한다.
+            if ("string".equals(valueKind)) {
+                return readStringLong(key);
+            }
+            return readHashLong(key, field);
+        } catch (RuntimeException e) {
+            // 기존 key 자료형이 목표 계약과 다르면 읽기 단계에서 실패하므로 mismatch로 취급해 correction Lua로 넘긴다.
+            log.warn("traffic_restore_verification_read_failed key={} field={} valueKind={}", key, field, valueKind, e);
+            return Long.MIN_VALUE;
+        }
+    }
+
+    private boolean correct(String key, String valueKind, String field, long expectedValue, long expireEpochSeconds) {
+        try {
+            // 1. 보정 Lua는 string counter와 hash field 보정을 분리해 replay 로직과 책임을 나눈다.
             List<String> result = trafficLuaScriptInfraService.executeRestoreUsageCorrection(
                     key,
+                    valueKind,
                     field,
                     expectedValue,
                     expireEpochSeconds
@@ -230,6 +250,14 @@ public class TrafficRestoreVerificationService {
             return 0L;
         }
         return Long.parseLong(String.valueOf(rawValue));
+    }
+
+    private long readStringLong(String key) {
+        String rawValue = cacheStringRedisTemplate.opsForValue().get(key);
+        if (rawValue == null) {
+            return 0L;
+        }
+        return Long.parseLong(rawValue);
     }
 
     private long nullToZero(Long value) {

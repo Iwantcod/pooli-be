@@ -9,7 +9,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * Redis hash field 하나에 대한 복구 검증 기준값이다.
+ * Redis string value 또는 hash field 하나에 대한 복구 검증 기준값이다.
  */
 @Getter
 @Builder
@@ -38,10 +38,10 @@ public class TrafficRestoreVerificationTarget {
     /** 앱별 사용량 field 산출 근거가 되는 application 식별자 */
     private Integer applicationId;
 
-    /** Redis hash field 이름 */
+    /** Redis hash field 이름 또는 string value sentinel */
     private String field;
 
-    /** Redis hash field가 가져야 하는 기준값 */
+    /** Redis string value 또는 hash field가 가져야 하는 기준값 */
     private Long expectedValue;
 
     /** 보정 후 적용할 Redis key 만료 epoch seconds */

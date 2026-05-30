@@ -340,6 +340,7 @@ public class TrafficLuaScriptInfraService {
      */
     public List<String> executeRestoreUsageCorrection(
             String key,
+            String valueKind,
             String field,
             long expectedValue,
             long expireEpochSeconds
@@ -347,7 +348,7 @@ public class TrafficLuaScriptInfraService {
         List rawResult = executeListSingle(
                 TrafficLuaScriptType.RESTORE_USAGE_CORRECTION,
                 List.of(key),
-                List.of(field, String.valueOf(expectedValue), String.valueOf(expireEpochSeconds))
+                List.of(valueKind, field, String.valueOf(expectedValue), String.valueOf(expireEpochSeconds))
         );
         return rawResult.stream()
                 .map(String::valueOf)
