@@ -1,7 +1,9 @@
 package com.pooli.traffic.service.restore;
 
 import java.time.YearMonth;
+import java.util.Objects;
 
+import lombok.NonNull;
 import org.springframework.stereotype.Service;
 
 import com.pooli.traffic.domain.restore.TrafficRestoreHydrateTarget;
@@ -23,7 +25,7 @@ public class TrafficRestorePhase0HydrateService {
     /**
      * target type에 맞는 기존 hydrate 서비스를 호출한다.
      */
-    public void hydrate(TrafficRestoreHydrateTarget target) {
+    public void hydrate(@NonNull TrafficRestoreHydrateTarget target) {
         YearMonth targetMonth = YearMonth.from(target.getTargetMonthStart());
         switch (target.getTargetType()) {
             case LINE -> balanceSnapshotHydrateService.hydrateIndividualSnapshot(target.getTargetOwnerId(), targetMonth);
