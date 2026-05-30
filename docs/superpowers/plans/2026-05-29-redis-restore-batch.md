@@ -12,11 +12,18 @@
 
 ## 실행 상태
 
-- 현재 상태: 구현 승인
+- 현재 상태: 구현 완료, 후속 정합성 결함은 `docs/superpowers/plans/2026-05-30-redis-restore-consistency-fix.md`로 이관
 - 설계 명세: `docs/superpowers/specs/2026-05-29-redis-restore-batch-design.md`
 - 의존성 출처: `docs/context7-dependencies.yaml`
 - 테스트 작성 기준: `docs/junit-unit-test-guide.md`
 - Context7 사용 여부: `not_used` - 현재 계획 작성은 exact API signature 확인이 아니라 구현 분해 문서화 작업입니다.
+
+## 후속 상태
+
+- 이 문서는 Redis 복구 배치의 초기 구현 계획과 실행 기록으로 완료 처리합니다.
+- 2026년 5월 30일 확인된 Redis 복구 정합성 결함은 별도 계획 `docs/superpowers/plans/2026-05-30-redis-restore-consistency-fix.md`에서 추적합니다.
+- 기능 최종 종결은 2026년 5월 30일 정합성 수정 계획이 구현되고 fresh verification을 통과한 뒤에만 처리합니다.
+- 이 문서의 완료 처리는 후속 결함이 없다는 의미가 아니라, 초기 구현 범위가 후속 계획으로 인계되었다는 의미입니다.
 
 ## 실행 전 필수 규칙
 
@@ -931,3 +938,9 @@ Expected: 발견된 문제를 수정하고 최소 verification을 다시 실행�
 - `./gradlew test`와 `./gradlew build`가 성공합니다.
 - `superpowers:verification-before-completion` 기준으로 fresh verification evidence 없이 완료를 보고하지 않습니다.
 - `superpowers:finishing-a-development-branch`는 구현 완료와 verification 통과 후에만 사용합니다.
+
+## 완료 처리 메모
+
+- Task 0부터 Task 9까지는 모두 완료 처리되었습니다.
+- 이후 발견된 개인풀 `qos` 필드 복구 누락 가능성, 존재하지 않는 가족풀 사용량 key 생성, `daily_total_usage` Redis 자료형 정합성 문제는 이 문서의 재오픈 대신 `2026-05-30-redis-restore-consistency-fix.md`에서 별도 수정 계획으로 관리합니다.
+- 따라서 이 계획서는 "초기 복구 배치 구현 완료" 상태이며, "복구 기능 최종 종결" 상태는 아닙니다.

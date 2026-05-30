@@ -13,6 +13,8 @@
 ## 실행 상태
 
 - 현재 상태: 구현 미승인, 계획서 작성만 완료
+- 이관 출처: `docs/superpowers/plans/2026-05-29-redis-restore-batch.md`의 초기 복구 배치 구현 완료 후 확인된 정합성 결함
+- 종결 조건: 이 계획이 구현되고 fresh verification을 통과해야 Redis 복구 기능을 최종 종결 처리한다.
 - 계획 승인 조건: 사용자가 "이 계획대로 진행", "구현하세요", "승인합니다"처럼 이 문서를 명시적으로 승인해야 한다.
 - 생산 코드 변경 금지: 승인 전에는 `src/main/**`, `src/test/**`, `src/main/resources/lua/**`, `src/main/resources/mapper/**`를 수정하지 않는다.
 - codebase 변경 commit 금지: 코드/테스트/리소스 변경 commit은 사용자 명시 확인 전 금지한다.
