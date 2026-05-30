@@ -1,5 +1,7 @@
 package com.pooli.traffic.service.restore;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -12,6 +14,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.pooli.traffic.domain.batch.BatchName;
 import com.pooli.traffic.domain.restore.TrafficRestoreDailyAppTarget;
@@ -52,39 +56,93 @@ class TrafficRestorePhase1ReplayServiceTest {
     }
 
     @Test
-    @DisplayName("phase 1 worker는 replay 성공 후 target을 DONE으로 전환한다")
+    @DisplayName("phase 1 worker는 DONE 전환 commit 이후 idempotency key를 제거한다")
     void marksTargetDoneWhenReplayApplied() {
         TrafficRestoreDailyAppTarget target = target();
         TrafficRestoreReplayCommand command = command();
         when(dailyAppTargetMapper.selectReplayCommand(target.getId())).thenReturn(command);
         when(replayLuaExecutor.replay(command)).thenReturn(new TrafficRestoreReplayResult("APPLIED", null));
-
-        service.replay(target, WORKER_ID);
-
-        verify(dailyAppTargetMapper).markTargetTerminalIfProcessing(
+        when(dailyAppTargetMapper.markTargetTerminalIfProcessing(
                 target.getId(),
                 TrafficRestoreTargetStatus.DONE,
                 WORKER_ID
-        );
-        verify(replayLuaExecutor).deleteIdempotencyKey(command.getIdempotencyKey());
+        )).thenReturn(1);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.replay(target, WORKER_ID);
+
+            verify(dailyAppTargetMapper).markTargetTerminalIfProcessing(
+                    target.getId(),
+                    TrafficRestoreTargetStatus.DONE,
+                    WORKER_ID
+            );
+            verify(replayLuaExecutor, never()).deleteIdempotencyKey(command.getIdempotencyKey());
+
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+
+            verify(replayLuaExecutor).deleteIdempotencyKey(command.getIdempotencyKey());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
-    @DisplayName("phase 1 worker는 idempotency skip이어도 target을 DONE으로 전환한다")
+    @DisplayName("phase 1 worker는 idempotency skip이어도 DONE 전환 commit 이후 key를 제거한다")
     void marksTargetDoneWhenReplaySkippedByIdempotency() {
         TrafficRestoreDailyAppTarget target = target();
         TrafficRestoreReplayCommand command = command();
         when(dailyAppTargetMapper.selectReplayCommand(target.getId())).thenReturn(command);
         when(replayLuaExecutor.replay(command)).thenReturn(new TrafficRestoreReplayResult("SKIPPED", null));
-
-        service.replay(target, WORKER_ID);
-
-        verify(dailyAppTargetMapper).markTargetTerminalIfProcessing(
+        when(dailyAppTargetMapper.markTargetTerminalIfProcessing(
                 target.getId(),
                 TrafficRestoreTargetStatus.DONE,
                 WORKER_ID
-        );
-        verify(replayLuaExecutor).deleteIdempotencyKey(command.getIdempotencyKey());
+        )).thenReturn(1);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.replay(target, WORKER_ID);
+
+            verify(dailyAppTargetMapper).markTargetTerminalIfProcessing(
+                    target.getId(),
+                    TrafficRestoreTargetStatus.DONE,
+                    WORKER_ID
+            );
+            verify(replayLuaExecutor, never()).deleteIdempotencyKey(command.getIdempotencyKey());
+
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+
+            verify(replayLuaExecutor).deleteIdempotencyKey(command.getIdempotencyKey());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("phase 1 worker는 DONE 전환 ownership을 잃으면 idempotency key를 제거하지 않는다")
+    void doesNotDeleteIdempotencyKeyWhenDoneUpdateAffectsNoRows() {
+        TrafficRestoreDailyAppTarget target = target();
+        TrafficRestoreReplayCommand command = command();
+        when(dailyAppTargetMapper.selectReplayCommand(target.getId())).thenReturn(command);
+        when(replayLuaExecutor.replay(command)).thenReturn(new TrafficRestoreReplayResult("APPLIED", null));
+        when(dailyAppTargetMapper.markTargetTerminalIfProcessing(
+                target.getId(),
+                TrafficRestoreTargetStatus.DONE,
+                WORKER_ID
+        )).thenReturn(0);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.replay(target, WORKER_ID);
+
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+            verify(replayLuaExecutor, never()).deleteIdempotencyKey(command.getIdempotencyKey());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     private TrafficRestoreDailyAppTarget target() {

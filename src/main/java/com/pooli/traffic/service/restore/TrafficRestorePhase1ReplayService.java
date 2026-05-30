@@ -2,6 +2,8 @@ package com.pooli.traffic.service.restore;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.pooli.traffic.domain.restore.TrafficRestoreDailyAppTarget;
 import com.pooli.traffic.domain.restore.TrafficRestoreReplayCommand;
@@ -37,11 +39,25 @@ public class TrafficRestorePhase1ReplayService {
             return;
         }
 
-        dailyAppTargetMapper.markTargetTerminalIfProcessing(
+        int updated = dailyAppTargetMapper.markTargetTerminalIfProcessing(
                 target.getId(),
                 TrafficRestoreTargetStatus.DONE,
                 workerId
         );
-        replayLuaExecutor.deleteIdempotencyKey(command.getIdempotencyKey());
+        if (updated == 1) {
+            registerIdempotencyCleanupAfterCommit(command.getIdempotencyKey());
+        }
+    }
+
+    /**
+     * DB terminal 상태 전환 commit이 확정된 뒤에만 Redis replay idempotency key를 제거한다.
+     */
+    private void registerIdempotencyCleanupAfterCommit(String idempotencyKey) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                replayLuaExecutor.deleteIdempotencyKey(idempotencyKey);
+            }
+        });
     }
 }
