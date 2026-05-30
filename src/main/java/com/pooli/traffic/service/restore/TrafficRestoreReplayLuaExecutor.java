@@ -74,7 +74,8 @@ public class TrafficRestoreReplayLuaExecutor {
                 String.valueOf(nullToZero(command.getIndividualUsageBytes())),
                 String.valueOf(nullToZero(command.getSharedUsageBytes())),
                 String.valueOf(nullToZero(command.getQosUsageBytes())),
-                String.valueOf(nullToZero(command.getExpireEpochSeconds()))
+                String.valueOf(nullToZero(command.getExpireEpochSeconds())),
+                String.valueOf(nullToZero(command.getFamilyId()))
         );
     }
 
