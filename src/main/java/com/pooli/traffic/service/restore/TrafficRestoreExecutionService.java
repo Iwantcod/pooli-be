@@ -90,6 +90,7 @@ public class TrafficRestoreExecutionService {
     }
 
     private void drainPhase1DailyAppTargets() {
+        String workerId = START_API_WORKER_ID;
         while (true) {
             List<TrafficRestoreDailyAppTarget> targets = dailyAppTargetMapper.selectClaimableTargetsForUpdate(
                     BatchName.RESTORE_P1_DAILY_APP_REPLAY.name(),
@@ -100,7 +101,6 @@ public class TrafficRestoreExecutionService {
                 return;
             }
 
-            String workerId = START_API_WORKER_ID;
             dailyAppTargetMapper.markTargetsProcessing(dailyAppTargetIds(targets), workerId);
             for (TrafficRestoreDailyAppTarget target : targets) {
                 phase1ReplayService.replay(target, workerId);
@@ -109,8 +109,8 @@ public class TrafficRestoreExecutionService {
     }
 
     private void drainPhase2DoneLogs(RestoreRange restoreRange) {
+        String workerId = START_API_WORKER_ID;
         while (true) {
-            String workerId = START_API_WORKER_ID;
             List<TrafficDeductDoneLog> logs = phase2ReplayService.claim(
                     restoreRange.startDateTimeInclusive(),
                     restoreRange.endDateTimeExclusive(),

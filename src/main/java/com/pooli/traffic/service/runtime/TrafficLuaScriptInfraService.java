@@ -425,13 +425,17 @@ public class TrafficLuaScriptInfraService {
         RedisScript<List> script = requireListScript(scriptType);
 
         try {
+            // 1. cache Redis 명령 시도 시 가용성 측정을 위한 오퍼레이션 카운트를 증가시키고 Lua 스크립트를 실행한다.
             trafficRedisAvailabilityMetrics.incrementOperation(RedisTarget.CACHE);
             List result = cacheStringRedisTemplate.execute(script, keys, args.toArray());
+            // 2. 실행 결과가 null일 경우 정상적이지 않은 응답이므로 내부 서버 오류 예외(500)를 던진다.
             if (result == null) {
                 throw new ApplicationException(CommonErrorCode.INTERNAL_SERVER_ERROR, "Lua script returned null result.");
             }
+            // 4. 정상적으로 반환된 목록 결과를 호출처에 반환한다.
             return result;
         } catch (DataAccessException e) {
+            // 3. Redis 호출 중 예외(DataAccessException)가 발생하면 에러 메트릭을 분류하여 기록하고 로그를 출력한 후 외부 시스템 오류로 변환하여 예외를 발생시킨다.
             trafficRedisAvailabilityMetrics.incrementFailure(RedisTarget.CACHE, resolveFailureKind(e));
             log.error("traffic_lua_execute_failed script={}", scriptType.getScriptName(), e);
             throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);

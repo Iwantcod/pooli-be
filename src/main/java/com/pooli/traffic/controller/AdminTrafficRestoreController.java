@@ -2,6 +2,8 @@ package com.pooli.traffic.controller;
 
 import java.time.LocalDate;
 
+import jakarta.validation.Valid;
+
 import org.springframework.context.annotation.Profile;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -34,12 +36,12 @@ public class AdminTrafficRestoreController {
      */
     @PreAuthorize("@authz.requireAdmin(authentication)")
     @PostMapping("/start")
-    public ResponseEntity<TrafficRestoreStartResDto> start(@RequestBody TrafficRestoreStartReqDto request) {
+    public ResponseEntity<TrafficRestoreStartResDto> start(@Valid @RequestBody TrafficRestoreStartReqDto request) {
         return ResponseEntity.ok(trafficRestoreOrchestratorService.start(request));
     }
 
     /**
-     * Redis 장애 복구 batch 재개 가능 상태를 확인한다.
+     * 실패하거나 중단된 Redis 장애 복구 batch를 재개(재시작)하고 그 결과를 반환한다.
      */
     @PreAuthorize("@authz.requireAdmin(authentication)")
     @PostMapping("/{anchorDate}/resume")

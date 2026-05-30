@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum TrafficLuaScriptType {
     BLOCK_POLICY_CHECK("block_policy_check", "lua/traffic/block_policy_check.lua"),
+    PREFLIGHT_KEY_EXISTENCE("preflight_key_existence", "lua/traffic/preflight_key_existence.lua"),
     DEDUCT_UNIFIED("deduct_unified", "lua/traffic/deduct_unified.lua"),
     HYDRATE_INDIVIDUAL_SNAPSHOT(
             "hydrate_individual_snapshot",
