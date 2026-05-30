@@ -52,22 +52,114 @@ class TrafficRestoreBatchAcceptanceTest extends TrafficAcceptanceTestSupport {
 
         assertThat(result.failedCorrectionCount()).isZero();
         assertThat(result.correctedCount()).isGreaterThan(0L);
+        assertThat(cacheStringRedisTemplate.opsForValue()
+                .get(trafficRedisKeyFactory.dailyTotalUsageKey(lineId, usageDate)))
+                .isEqualTo("95");
         assertThat(readCacheHashLong(
-                trafficRedisKeyFactory.dailyTotalUsageKey(lineId, usageDate),
-                "individual"
+                trafficRedisKeyFactory.dailyAppUsageKey(lineId, usageDate),
+                "app:" + appId + ":individual"
         )).isEqualTo(70L);
         assertThat(readCacheHashLong(
-                trafficRedisKeyFactory.dailyTotalUsageKey(lineId, usageDate),
-                "shared"
+                trafficRedisKeyFactory.dailyAppUsageKey(lineId, usageDate),
+                "app:" + appId + ":shared"
         )).isEqualTo(20L);
         assertThat(readCacheHashLong(
-                trafficRedisKeyFactory.dailyTotalUsageKey(lineId, usageDate),
-                "qos"
+                trafficRedisKeyFactory.dailyAppUsageKey(lineId, usageDate),
+                "app:" + appId + ":qos"
         )).isEqualTo(5L);
+        assertThat(readCacheHashLong(
+                trafficRedisKeyFactory.dailySharedUsageKey(lineId, usageDate),
+                "usage_amount"
+        )).isEqualTo(20L);
+        assertThat(readCacheHashLong(
+                trafficRedisKeyFactory.dailySharedUsageKey(lineId, usageDate),
+                "family_id"
+        )).isEqualTo(familyId);
+        assertThat(readCacheHashLong(
+                trafficRedisKeyFactory.monthlySharedUsageKey(lineId, targetMonth),
+                "usage_amount"
+        )).isEqualTo(20L);
+        assertThat(readCacheHashLong(
+                trafficRedisKeyFactory.monthlySharedUsageKey(lineId, targetMonth),
+                "family_id"
+        )).isEqualTo(familyId);
         assertThat(readCacheHashLong(
                 trafficRedisKeyFactory.remainingIndivAmountKey(lineId, targetMonth),
                 "amount"
         )).isEqualTo(930L);
+        assertThat(cacheStringRedisTemplate.opsForHash()
+                .hasKey(trafficRedisKeyFactory.remainingIndivAmountKey(lineId, targetMonth), "qos"))
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("복구 batch는 공유 사용량이 없으면 가족풀 사용량 key를 만들지 않는다")
+    void doesNotCreateSharedUsageKeysWhenSharedUsageIsZero() {
+        LocalDate usageDate = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
+        YearMonth targetMonth = YearMonth.from(usageDate);
+        long lineId = 2L;
+        long familyId = FAMILY_ID_1;
+        int appId = fixtureIds.appId();
+        cleanupDailyAppFixture(lineId, usageDate, appId);
+        setLineSourceTotalData(lineId, 1000L);
+        setFamilySourcePoolTotalData(familyId, 1000L);
+        insertDailyAppUsage(usageDate, lineId, appId, 70L, 0L, 5L);
+
+        RestoreVerificationResult result = verificationService.verifyAndCorrect(
+                usageDate,
+                new RestoreRange(usageDate, usageDate.plusDays(1))
+        );
+
+        assertThat(result.failedCorrectionCount()).isZero();
+        // 공유 사용량이 0이면 정상 차감 계약과 동일하게 key를 만들지 않고 0 초기화도 하지 않는다.
+        assertThat(cacheStringRedisTemplate.hasKey(
+                trafficRedisKeyFactory.dailySharedUsageKey(lineId, usageDate)
+        )).isFalse();
+        assertThat(cacheStringRedisTemplate.hasKey(
+                trafficRedisKeyFactory.monthlySharedUsageKey(lineId, targetMonth)
+        )).isFalse();
+        assertThat(cacheStringRedisTemplate.opsForValue()
+                .get(trafficRedisKeyFactory.dailyTotalUsageKey(lineId, usageDate)))
+                .isEqualTo("75");
+    }
+
+    @Test
+    @DisplayName("복구된 Redis 데이터 기준으로 기존 트래픽 차감이 정상 진행된다")
+    void deductsTrafficConsistentlyAfterRestore() throws Exception {
+        LocalDate usageDate = LocalDate.now(trafficRedisRuntimePolicy.zoneId());
+        YearMonth targetMonth = YearMonth.from(usageDate);
+        long lineId = 3L;
+        long familyId = FAMILY_ID_1;
+        int appId = fixtureIds.appId();
+        cleanupDailyAppFixture(lineId, usageDate, appId);
+        setLineSourceTotalData(lineId, 1000L);
+        setFamilySourcePoolTotalData(familyId, 1000L);
+        prepareGlobalPolicySnapshot(false);
+        prepareRestorePolicySnapshot(false);
+        insertDailyAppUsage(usageDate, lineId, appId, 70L, 0L, 5L);
+
+        RestoreVerificationResult result = verificationService.verifyAndCorrect(
+                usageDate,
+                new RestoreRange(usageDate, usageDate.plusDays(1))
+        );
+        assertThat(result.failedCorrectionCount()).isZero();
+        // 복구 후 추가 차감도 공유풀을 쓰지 않았다면 가족풀 사용량 key는 계속 없어야 한다.
+        assertThat(cacheStringRedisTemplate.hasKey(
+                trafficRedisKeyFactory.dailySharedUsageKey(lineId, usageDate)
+        )).isFalse();
+
+        String traceId = enqueueTrafficRequest(lineId, familyId, appId, 10L);
+        assertDoneLog(traceId, 10L, 0L, 0L, 0L, "SUCCESS", "OK");
+
+        await("restore 이후 daily total usage string counter 증가", () -> readDailyTotalUsage(lineId) == 85L);
+        assertThat(readDailyAppUsageBySource(lineId, appId, "individual")).isEqualTo(80L);
+        assertThat(readIndividualBalanceAmount(lineId)).isEqualTo(920L);
+        assertThat(cacheStringRedisTemplate.opsForHash()
+                .hasKey(trafficRedisKeyFactory.remainingIndivAmountKey(lineId, targetMonth), "qos"))
+                .isTrue();
+        assertThat(cacheStringRedisTemplate.hasKey(
+                trafficRedisKeyFactory.dailySharedUsageKey(lineId, usageDate)
+        )).isFalse();
     }
 
     @Test
@@ -102,7 +194,7 @@ class TrafficRestoreBatchAcceptanceTest extends TrafficAcceptanceTestSupport {
         String idempotencyKey = trafficRedisKeyFactory.restoreIdempotencyKey("p2:done_log", String.valueOf(doneLogId));
         cacheStringRedisTemplate.opsForValue().set(idempotencyKey, "1");
         String dailyTotalUsageKey = trafficRedisKeyFactory.dailyTotalUsageKey(LINE_ID_1, usageDate);
-        cacheStringRedisTemplate.opsForHash().put(dailyTotalUsageKey, "individual", "11");
+        cacheStringRedisTemplate.opsForValue().set(dailyTotalUsageKey, "11");
         insertProcessingDoneLog(doneLogId, usageDate);
         TrafficDeductDoneLog log = TrafficDeductDoneLog.builder()
                 .trafficDeductDoneId(doneLogId)
@@ -118,7 +210,7 @@ class TrafficRestoreBatchAcceptanceTest extends TrafficAcceptanceTestSupport {
 
         phase2ReplayService.replay(log, "acceptance-worker");
 
-        assertThat(readCacheHashLong(dailyTotalUsageKey, "individual")).isEqualTo(11L);
+        assertThat(cacheStringRedisTemplate.opsForValue().get(dailyTotalUsageKey)).isEqualTo("11");
         assertThat(cacheStringRedisTemplate.hasKey(idempotencyKey)).isFalse();
         assertThat(readRestoreStatus(doneLogId)).isEqualTo("DONE");
         assertThat(readCacheHashLong(
