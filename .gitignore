@@ -52,3 +52,5 @@ scripts/test-data/__pycache__
 
 /traffic
 /scripts/traffic
+
+.worktrees/
