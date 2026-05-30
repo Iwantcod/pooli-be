@@ -10,7 +10,7 @@ public enum TrafficRestoreVerificationKeyType {
     /** 공유풀 월 잔량 hash key이다. */
     REMAINING_SHARED,
 
-    /** 회선 일별 전체 사용량 hash key이다. */
+    /** 회선 일별 전체 사용량 string counter key이다. */
     DAILY_TOTAL_USAGE,
 
     /** 회선 일별 앱 사용량 hash key이다. */

@@ -57,15 +57,25 @@
     </select>
 
     <select id="selectUsageVerificationTargets" resultMap="TrafficRestoreVerificationTargetResultMap">
-        WITH usage_source AS (
+        WITH family_line_source AS (
+            SELECT
+                line_id,
+                MAX(family_id) AS family_id
+            FROM FAMILY_LINE
+            GROUP BY line_id
+        ),
+        usage_source AS (
             SELECT
                 d.usage_date AS usage_date,
                 d.line_id AS line_id,
+                fl.family_id AS family_id,
                 d.application_id AS application_id,
                 d.individual_usage_data AS individual_usage,
                 d.shared_usage_data AS shared_usage,
                 d.qos_usage_data AS qos_usage
             FROM DAILY_APP_TOTAL_DATA d
+            LEFT JOIN family_line_source fl
+              ON fl.line_id = d.line_id
             WHERE d.usage_date = #{usageDate}
               AND d.line_id &gt;= #{lineIdStartInclusive}
               AND d.line_id &lt;= #{lineIdEndInclusive}
@@ -74,6 +84,7 @@
             SELECT
                 DATE(t.enqueued_at) AS usage_date,
                 t.line_id AS line_id,
+                t.family_id AS family_id,
                 t.app_id AS application_id,
                 t.deducted_individual_bytes AS individual_usage,
                 t.deducted_shared_bytes AS shared_usage,
@@ -92,39 +103,12 @@
             usage_date AS usage_date,
             NULL AS month_start,
             NULL AS application_id,
-            'individual' AS field_name,
-            SUM(individual_usage) AS expected_value,
+            '__value__' AS field_name,
+            SUM(individual_usage + shared_usage + qos_usage) AS expected_value,
             0 AS expire_epoch_seconds
         FROM usage_source
         GROUP BY line_id, usage_date
-        UNION ALL
-        SELECT
-            'DAILY_TOTAL_USAGE',
-            line_id,
-            NULL,
-            NULL,
-            usage_date,
-            NULL,
-            NULL,
-            'shared',
-            SUM(shared_usage),
-            0
-        FROM usage_source
-        GROUP BY line_id, usage_date
-        UNION ALL
-        SELECT
-            'DAILY_TOTAL_USAGE',
-            line_id,
-            NULL,
-            NULL,
-            usage_date,
-            NULL,
-            NULL,
-            'qos',
-            SUM(qos_usage),
-            0
-        FROM usage_source
-        GROUP BY line_id, usage_date
+        HAVING SUM(individual_usage + shared_usage + qos_usage) &gt; 0
         UNION ALL
         SELECT
             'DAILY_APP_USAGE',
@@ -139,6 +123,7 @@
             0
         FROM usage_source
         GROUP BY line_id, usage_date, application_id
+        HAVING SUM(individual_usage) &gt; 0
         UNION ALL
         SELECT
             'DAILY_APP_USAGE',
@@ -153,6 +138,7 @@
             0
         FROM usage_source
         GROUP BY line_id, usage_date, application_id
+        HAVING SUM(shared_usage) &gt; 0
         UNION ALL
         SELECT
             'DAILY_APP_USAGE',
@@ -167,24 +153,50 @@
             0
         FROM usage_source
         GROUP BY line_id, usage_date, application_id
+        HAVING SUM(qos_usage) &gt; 0
         UNION ALL
         SELECT
-            'DAILY_SHARED_USAGE',
-            line_id,
-            NULL,
-            NULL,
-            usage_date,
-            NULL,
-            NULL,
-            'shared',
-            SUM(shared_usage),
-            0
+            'DAILY_SHARED_USAGE' AS key_type,
+            line_id AS line_id,
+            NULL AS family_id,
+            NULL AS policy_id,
+            usage_date AS usage_date,
+            NULL AS month_start,
+            NULL AS application_id,
+            'usage_amount' AS field_name,
+            SUM(shared_usage) AS expected_value,
+            0 AS expire_epoch_seconds
         FROM usage_source
+        WHERE family_id IS NOT NULL
         GROUP BY line_id, usage_date
+        HAVING SUM(shared_usage) &gt; 0
+        UNION ALL
+        SELECT
+            'DAILY_SHARED_USAGE' AS key_type,
+            line_id AS line_id,
+            NULL AS family_id,
+            NULL AS policy_id,
+            usage_date AS usage_date,
+            NULL AS month_start,
+            NULL AS application_id,
+            'family_id' AS field_name,
+            MAX(family_id) AS expected_value,
+            0 AS expire_epoch_seconds
+        FROM usage_source
+        WHERE family_id IS NOT NULL
+        GROUP BY line_id, usage_date
+        HAVING SUM(shared_usage) &gt; 0
     </select>
 
     <select id="selectRemainingVerificationTargets" resultMap="TrafficRestoreVerificationTargetResultMap">
-        WITH usage_source AS (
+        WITH family_line_source AS (
+            SELECT
+                line_id,
+                MAX(family_id) AS family_id
+            FROM FAMILY_LINE
+            GROUP BY line_id
+        ),
+        usage_source AS (
             SELECT
                 d.usage_date AS usage_date,
                 d.line_id AS line_id,
@@ -192,7 +204,7 @@
                 d.individual_usage_data AS individual_usage,
                 d.shared_usage_data AS shared_usage
             FROM DAILY_APP_TOTAL_DATA d
-            LEFT JOIN FAMILY_LINE fl
+            LEFT JOIN family_line_source fl
               ON fl.line_id = d.line_id
             WHERE d.usage_date &gt;= #{startInclusive}
               AND d.usage_date &lt; #{endExclusive}
@@ -246,6 +258,25 @@
          AND l.deleted_at IS NULL
         UNION ALL
         SELECT
+            'REMAINING_INDIVIDUAL',
+            u.line_id,
+            NULL,
+            NULL,
+            NULL,
+            u.month_start,
+            NULL,
+            'qos',
+            CASE WHEN p.qos_speed_limit IS NULL OR p.qos_speed_limit &lt; 0 THEN 0 ELSE p.qos_speed_limit * 125 END,
+            0
+        FROM line_month_usage u
+        JOIN LINE l
+          ON l.line_id = u.line_id
+         AND l.deleted_at IS NULL
+        JOIN PLAN p
+          ON p.plan_id = l.plan_id
+         AND p.deleted_at IS NULL
+        UNION ALL
+        SELECT
             'REMAINING_SHARED',
             NULL,
             u.family_id,
@@ -262,18 +293,36 @@
          AND f.deleted_at IS NULL
         UNION ALL
         SELECT
-            'MONTHLY_SHARED_USAGE',
-            line_id,
-            NULL,
-            NULL,
-            NULL,
-            CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE),
-            NULL,
-            'shared',
-            SUM(shared_usage),
-            0
+            'MONTHLY_SHARED_USAGE' AS key_type,
+            line_id AS line_id,
+            NULL AS family_id,
+            NULL AS policy_id,
+            NULL AS usage_date,
+            CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE) AS month_start,
+            NULL AS application_id,
+            'usage_amount' AS field_name,
+            SUM(shared_usage) AS expected_value,
+            0 AS expire_epoch_seconds
         FROM usage_source
+        WHERE family_id IS NOT NULL
         GROUP BY line_id, CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE)
+        HAVING SUM(shared_usage) &gt; 0
+        UNION ALL
+        SELECT
+            'MONTHLY_SHARED_USAGE' AS key_type,
+            line_id AS line_id,
+            NULL AS family_id,
+            NULL AS policy_id,
+            NULL AS usage_date,
+            CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE) AS month_start,
+            NULL AS application_id,
+            'family_id' AS field_name,
+            MAX(family_id) AS expected_value,
+            0 AS expire_epoch_seconds
+        FROM usage_source
+        WHERE family_id IS NOT NULL
+        GROUP BY line_id, CAST(DATE_FORMAT(usage_date, '%Y-%m-01') AS DATE)
+        HAVING SUM(shared_usage) &gt; 0
     </select>
 
     <select id="selectPolicyVerificationTargets" resultMap="TrafficRestoreVerificationTargetResultMap">
