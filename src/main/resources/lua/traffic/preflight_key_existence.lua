@@ -1,11 +1,13 @@
 -- 차감 preflight에서 필요한 Redis key 존재 여부를 한 번의 Lua 호출로 확인한다.
--- KEYS[1]: line policy ready key
--- KEYS[2]: individual remaining balance key
--- KEYS[3]: shared remaining balance key
--- 반환: {policy_ready, individual_balance_exists, shared_balance_exists}
+-- KEYS: 호출자가 전달한 preflight 대상 key 목록
+-- 반환: KEYS 순서와 같은 1/0 존재 여부 목록
 
-return {
-    redis.call('EXISTS', KEYS[1]),
-    redis.call('EXISTS', KEYS[2]),
-    redis.call('EXISTS', KEYS[3])
-}
+local result = {}
+local idx = 1
+
+while idx <= #KEYS do
+    result[idx] = redis.call('EXISTS', KEYS[idx])
+    idx = idx + 1
+end
+
+return result

@@ -10,6 +10,7 @@ import com.pooli.traffic.domain.TrafficBalanceSnapshotHydrateResult;
 import com.pooli.traffic.domain.TrafficPolicyCheckLayerResult;
 import com.pooli.traffic.domain.enums.TrafficPolicyCheckFailureCause;
 import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
+import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficBalanceSnapshotHydrateService;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
@@ -41,6 +42,8 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficDeductOrchestratorService {
 
+    private static final List<Long> GLOBAL_POLICY_IDS = List.of(1L, 2L, 3L, 4L, 5L, 6L, 7L);
+
     private final TrafficDeductLuaExecutor trafficDeductLuaExecutor;
     private final TrafficHydrateService trafficHydrateService;
     private final TrafficRecentUsageBucketService trafficRecentUsageBucketService;
@@ -50,6 +53,7 @@ public class TrafficDeductOrchestratorService {
     private final TrafficLuaScriptInfraService trafficLuaScriptInfraService;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficPolicyCheckLayerService trafficPolicyCheckLayerService;
+    private final TrafficPolicyBootstrapService trafficPolicyBootstrapService;
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
@@ -304,6 +308,7 @@ public class TrafficDeductOrchestratorService {
             if (!linePolicyReady) {
                 trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
             }
+            trafficPolicyBootstrapService.hydrateOnDemandIfAnyPolicyKeyMissing(globalPolicyKeys());
             log.debug(
                     "traffic_balance_snapshot_preflight_skipped traceId={} reason=missing_minimum_fields",
                     payload == null ? null : payload.getTraceId()
@@ -315,12 +320,17 @@ public class TrafficDeductOrchestratorService {
         String linePolicyReadyKey = trafficRedisKeyFactory.linePolicyReadyKey(payload.getLineId());
         String individualBalanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(payload.getLineId(), targetMonth);
         String sharedBalanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(payload.getFamilyId(), targetMonth);
+        List<String> globalPolicyKeys = globalPolicyKeys();
         List<Long> keyExistenceResult = trafficLuaScriptInfraService.executePreflightKeyExistence(
                 linePolicyReadyKey,
                 individualBalanceKey,
-                sharedBalanceKey
+                sharedBalanceKey,
+                globalPolicyKeys
         );
 
+        if (!allGlobalPolicyKeysExist(keyExistenceResult, globalPolicyKeys.size())) {
+            trafficPolicyBootstrapService.hydrateOnDemandIfAnyPolicyKeyMissing(globalPolicyKeys);
+        }
         if (!existsAt(keyExistenceResult, 0)) {
             trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
         }
@@ -410,6 +420,28 @@ public class TrafficDeductOrchestratorService {
                 poolType,
                 result.status()
         );
+    }
+
+    /**
+     * 차감 전 preflight에서 확인할 전역 policy key 목록을 고정 순서로 생성합니다.
+     */
+    private List<String> globalPolicyKeys() {
+        return GLOBAL_POLICY_IDS.stream()
+                .map(trafficRedisKeyFactory::policyKey)
+                .toList();
+    }
+
+    /**
+     * preflight 결과의 전역 policy key 구간이 모두 존재하는지 확인합니다.
+     */
+    private boolean allGlobalPolicyKeysExist(List<Long> keyExistenceResult, int globalPolicyKeyCount) {
+        int firstGlobalPolicyIndex = 3;
+        for (int index = 0; index < globalPolicyKeyCount; index++) {
+            if (!existsAt(keyExistenceResult, firstGlobalPolicyIndex + index)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

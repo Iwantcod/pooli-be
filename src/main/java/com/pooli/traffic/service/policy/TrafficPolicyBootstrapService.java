@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -102,6 +103,37 @@ public class TrafficPolicyBootstrapService {
     }
 
     /**
+     * 차감 preflight에서 전역 policy key 누락을 감지했을 때 lock-first 방식으로 snapshot hydrate를 시도합니다.
+     *
+     * <p>정상 hot-path에서는 Redis key 존재 확인만 수행하고, 누락 시에만 lock을 획득합니다.
+     * lock 획득 후에도 key를 다시 확인해 다른 worker가 이미 hydrate한 경우 DB 조회와 pipeline 반영을 생략합니다.
+     *
+     * @param policyKeys preflight에서 확인한 전역 policy Redis key 목록
+     */
+    public void hydrateOnDemandIfAnyPolicyKeyMissing(Collection<String> policyKeys) {
+        if (allPolicyKeysExist(policyKeys)) {
+            return;
+        }
+
+        String lockKey = trafficRedisKeyFactory.policyBootstrapLockKey();
+        String lockOwner = buildLockOwner("on_demand_preflight");
+        boolean lockAcquired = tryAcquireLock(lockKey, lockOwner);
+        if (!lockAcquired) {
+            log.info("traffic_policy_bootstrap_preflight_lock_skipped lockKey={}", lockKey);
+            return;
+        }
+
+        try {
+            if (allPolicyKeysExist(policyKeys)) {
+                return;
+            }
+            synchronizePolicyActivationSnapshotWithoutLock("on_demand_preflight", false);
+        } finally {
+            releaseLock(lockKey, lockOwner);
+        }
+    }
+
+    /**
      * POLICY 스냅샷을 Redis에 동기화하는 공통 진입점입니다.
      *
      * @param executionType startup/reconcile 구분 로그
@@ -135,6 +167,44 @@ public class TrafficPolicyBootstrapService {
         } finally {
             releaseLock(lockKey, lockOwner);
         }
+    }
+
+    /**
+     * 이미 policy bootstrap lock을 보유한 호출자가 DB snapshot을 Redis에 반영합니다.
+     */
+    private void synchronizePolicyActivationSnapshotWithoutLock(
+            String executionType,
+            boolean failFastOnMissingRequiredIds
+    ) {
+        List<PolicyActivationSnapshotResDto> snapshots = policyBackOfficeMapper.selectPolicyActivationSnapshot();
+        if (!validateRequiredPolicyIds(snapshots, failFastOnMissingRequiredIds)) {
+            return;
+        }
+
+        syncSnapshotToRedis(snapshots);
+        log.info(
+                "traffic_policy_bootstrap_completed executionType={} policyCount={}",
+                executionType,
+                snapshots.size()
+        );
+    }
+
+    /**
+     * preflight 대상 policy key가 모두 Redis에 존재하는지 확인합니다.
+     */
+    private boolean allPolicyKeysExist(Collection<String> policyKeys) {
+        if (policyKeys == null || policyKeys.isEmpty()) {
+            return false;
+        }
+        for (String policyKey : policyKeys) {
+            if (policyKey == null || policyKey.isBlank()) {
+                return false;
+            }
+            if (!Boolean.TRUE.equals(cacheStringRedisTemplate.hasKey(policyKey))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

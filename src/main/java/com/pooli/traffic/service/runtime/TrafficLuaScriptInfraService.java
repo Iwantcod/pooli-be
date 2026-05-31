@@ -3,6 +3,7 @@ package com.pooli.traffic.service.runtime;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -91,21 +92,31 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
-     * 차감 preflight에 필요한 정책 ready key, 개인 잔량 key, 공유 잔량 key 존재 여부를 한 Lua 호출로 조회합니다.
+     * 차감 preflight에 필요한 정책 ready key, 개인 잔량 key, 공유 잔량 key, 전역 정책 key 존재 여부를
+     * 한 Lua 호출로 조회합니다.
      *
-     * @return 순서대로 정책 ready, 개인 잔량, 공유 잔량 key 존재 여부를 1/0 값으로 담은 목록입니다.
+     * @return 순서대로 정책 ready, 개인 잔량, 공유 잔량, 전역 정책 key 존재 여부를 1/0 값으로 담은 목록입니다.
      */
     public List<Long> executePreflightKeyExistence(
             String linePolicyReadyKey,
             String individualBalanceKey,
-            String sharedBalanceKey
+            String sharedBalanceKey,
+            List<String> globalPolicyKeys
     ) {
+        List<String> keys = new ArrayList<>();
+        keys.add(linePolicyReadyKey);
+        keys.add(individualBalanceKey);
+        keys.add(sharedBalanceKey);
+        if (globalPolicyKeys != null) {
+            keys.addAll(globalPolicyKeys);
+        }
+
         List rawResult = executeListSingle(
                 TrafficLuaScriptType.PREFLIGHT_KEY_EXISTENCE,
-                List.of(linePolicyReadyKey, individualBalanceKey, sharedBalanceKey),
+                keys,
                 List.of()
         );
-        if (rawResult.size() != 3) {
+        if (rawResult.size() != keys.size()) {
             throw new ApplicationException(
                     CommonErrorCode.INTERNAL_SERVER_ERROR,
                     "Lua preflight key existence result size is invalid."

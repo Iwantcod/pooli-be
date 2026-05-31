@@ -121,6 +121,81 @@ class TrafficPolicyBootstrapServiceTest {
             verify(trafficLuaScriptInfraService, times(1))
                     .executeLockRelease(eq(lockKey), anyString());
         }
+
+        @Test
+        @DisplayName("preflight 대상 정책 key가 모두 존재하면 DB 조회와 lock 획득을 수행하지 않음")
+        void skipsPreflightHydrateWhenAllPolicyKeysExist() {
+            // given
+            List<String> policyKeys = List.of("pooli:policy:1", "pooli:policy:2");
+            when(cacheStringRedisTemplate.hasKey("pooli:policy:1")).thenReturn(true);
+            when(cacheStringRedisTemplate.hasKey("pooli:policy:2")).thenReturn(true);
+
+            // when
+            trafficPolicyBootstrapService.hydrateOnDemandIfAnyPolicyKeyMissing(policyKeys);
+
+            // then
+            verify(policyBackOfficeMapper, never()).selectPolicyActivationSnapshot();
+            verify(cacheStringRedisTemplate, never()).opsForValue();
+        }
+
+        @Test
+        @DisplayName("preflight 대상 정책 key 누락 시 lock 획득 후 재확인하고 snapshot을 hydrate함")
+        void hydratesAfterLockAndRecheckWhenPolicyKeyStillMissing() {
+            // given
+            String lockKey = "pooli:policy:bootstrap:lock";
+            List<String> policyKeys = List.of("pooli:policy:1", "pooli:policy:2");
+            when(cacheStringRedisTemplate.hasKey("pooli:policy:1")).thenReturn(true);
+            when(cacheStringRedisTemplate.hasKey("pooli:policy:2")).thenReturn(false, false);
+            when(trafficRedisKeyFactory.policyBootstrapLockKey()).thenReturn(lockKey);
+            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.setIfAbsent(
+                    eq(lockKey),
+                    anyString(),
+                    eq(Duration.ofMillis(30_000L))
+            )).thenReturn(true);
+            when(policyBackOfficeMapper.selectPolicyActivationSnapshot()).thenReturn(allPolicySnapshots());
+            when(trafficRedisKeyFactory.policyBootstrapVersionKey()).thenReturn("pooli:policy_bootstrap_version");
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(cacheStringRedisTemplate.executePipelined(any(org.springframework.data.redis.core.SessionCallback.class)))
+                    .thenReturn(List.of());
+            when(trafficLuaScriptInfraService.executeLockRelease(eq(lockKey), anyString()))
+                    .thenReturn(true);
+
+            // when
+            trafficPolicyBootstrapService.hydrateOnDemandIfAnyPolicyKeyMissing(policyKeys);
+
+            // then
+            verify(policyBackOfficeMapper, times(1)).selectPolicyActivationSnapshot();
+            verify(cacheStringRedisTemplate, times(1))
+                    .executePipelined(any(org.springframework.data.redis.core.SessionCallback.class));
+            verify(trafficLuaScriptInfraService, times(1))
+                    .executeLockRelease(eq(lockKey), anyString());
+        }
+
+        @Test
+        @DisplayName("preflight hydrate lock을 얻지 못하면 DB 조회 없이 종료")
+        void skipsPreflightHydrateWhenLockNotAcquired() {
+            // given
+            String lockKey = "pooli:policy:bootstrap:lock";
+            List<String> policyKeys = List.of("pooli:policy:1", "pooli:policy:2");
+            when(cacheStringRedisTemplate.hasKey("pooli:policy:1")).thenReturn(false);
+            when(trafficRedisKeyFactory.policyBootstrapLockKey()).thenReturn(lockKey);
+            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.setIfAbsent(
+                    eq(lockKey),
+                    anyString(),
+                    eq(Duration.ofMillis(30_000L))
+            )).thenReturn(false);
+
+            // when
+            trafficPolicyBootstrapService.hydrateOnDemandIfAnyPolicyKeyMissing(policyKeys);
+
+            // then
+            verify(policyBackOfficeMapper, never()).selectPolicyActivationSnapshot();
+            verify(cacheStringRedisTemplate, never())
+                    .executePipelined(any(org.springframework.data.redis.core.SessionCallback.class));
+            verify(trafficLuaScriptInfraService, never()).executeLockRelease(anyString(), anyString());
+        }
     }
 
     @Nested
