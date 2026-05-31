@@ -645,7 +645,8 @@ public class TrafficLuaScriptInfraService {
                 longScriptRegistry.put(scriptType, redisScript);
             }
             case RESTORE_USAGE_REPLAY,
-                 RESTORE_USAGE_CORRECTION -> {
+                 RESTORE_USAGE_CORRECTION,
+                 PREFLIGHT_KEY_EXISTENCE -> {
                 DefaultRedisScript<List> redisScript = new DefaultRedisScript<>();
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(List.class);
