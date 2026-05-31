@@ -58,6 +58,22 @@ class LineDailyBatchJobMapperSqlContractTest {
     }
 
     @Test
+    @DisplayName("복구 시작일 산정 조회는 장애일 이하의 마지막 완료 usage sync 날짜만 찾는다")
+    void selectLatestCompletedUsageSyncDateOnOrBeforeUsesCompletedDateGuard() {
+        String sql = mapperXml();
+        String selectSql = sql.substring(
+                sql.indexOf("<select id=\"selectLatestCompletedUsageSyncDateOnOrBefore\"")
+        );
+
+        assertTrue(selectSql.contains("SELECT usage_date"));
+        assertTrue(selectSql.contains("WHERE batch_name = 'LINE_DAILY_USAGE_SYNC_BATCH'"));
+        assertTrue(selectSql.contains("AND status = 'COMPLETED'"));
+        assertTrue(selectSql.contains("AND usage_date &lt;= #{failureDate}"));
+        assertTrue(selectSql.contains("ORDER BY usage_date DESC, id DESC"));
+        assertTrue(selectSql.contains("LIMIT 1"));
+    }
+
+    @Test
     @DisplayName("신규 metadata row는 PENDING 초기 상태와 count 값을 insert 받는다")
     void insertCreatesInitialMetadataCounts() {
         String sql = mapperXml();

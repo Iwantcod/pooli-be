@@ -24,20 +24,24 @@ public class TrafficGenerateReqDto {
     @Schema(description = "회선 ID", example = "1001")
     @NotNull(message = "lineId는 필수입니다.")
     @Positive(message = "lineId는 1 이상이어야 합니다.")
+    /** 트래픽 발생 대상 회선 식별자 */
     private Long lineId;
 
     @Schema(description = "가족 ID", example = "77")
     @NotNull(message = "familyId는 필수입니다.")
     @Positive(message = "familyId는 1 이상이어야 합니다.")
+    /** 트래픽 발생 대상 가족 식별자 */
     private Long familyId;
 
     @Schema(description = "애플리케이션 ID", example = "12")
     @NotNull(message = "appId는 필수입니다.")
     @Positive(message = "appId는 1 이상이어야 합니다.")
+    /** 트래픽을 발생시킨 애플리케이션 ID */
     private Integer appId;
 
     @Schema(description = "요청 이벤트 데이터량(Byte)", example = "1048576")
     @NotNull(message = "apiTotalData는 필수입니다.")
     @PositiveOrZero(message = "apiTotalData는 0 이상이어야 합니다.")
+    /** 발생한 트래픽 총량 (Byte 단위) */
     private Long apiTotalData;
 }

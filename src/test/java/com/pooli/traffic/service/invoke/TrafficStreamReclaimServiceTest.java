@@ -28,6 +28,7 @@ import org.springframework.data.redis.connection.stream.RecordId;
 
 import com.pooli.common.config.AppStreamsProperties;
 import com.pooli.traffic.domain.TrafficStreamFields;
+import com.pooli.traffic.service.restore.TrafficRestoreTrafficGateService;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficStreamReclaimServiceTest {
@@ -37,6 +38,9 @@ class TrafficStreamReclaimServiceTest {
 
     @Mock
     private AppStreamsProperties appStreamsProperties;
+
+    @Mock
+    private TrafficRestoreTrafficGateService trafficRestoreTrafficGateService;
 
     @InjectMocks
     private TrafficStreamReclaimService trafficStreamReclaimService;
@@ -140,6 +144,18 @@ class TrafficStreamReclaimServiceTest {
         void returnsEmptyWhenClaimLimitIsZero() {
             List<MapRecord<String, String, String>> reclaimed =
                     trafficStreamReclaimService.reclaimAndRouteExceededRetries(0);
+
+            assertTrue(reclaimed.isEmpty());
+            verify(trafficStreamInfraService, never()).readPendingMessages(anyLong());
+        }
+
+        @Test
+        @DisplayName("복구 flag가 활성화되면 pending scan 전에 reclaim을 차단한다")
+        void blocksBeforePendingScanWhenRestoreFlagIsActive() {
+            when(trafficRestoreTrafficGateService.shouldBlockTraffic()).thenReturn(true);
+
+            List<MapRecord<String, String, String>> reclaimed =
+                    trafficStreamReclaimService.reclaimAndRouteExceededRetries(3);
 
             assertTrue(reclaimed.isEmpty());
             verify(trafficStreamInfraService, never()).readPendingMessages(anyLong());

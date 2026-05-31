@@ -6,8 +6,6 @@ package com.pooli.traffic.domain;
  */
 public final class TrafficStreamFields {
 
+    /** Redis Stream 메시지에 담길 페이로드 필드의 Key 명칭 */
     public static final String PAYLOAD = "payload";
-
-    private TrafficStreamFields() {
-    }
 }

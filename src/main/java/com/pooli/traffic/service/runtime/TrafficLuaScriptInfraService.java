@@ -3,6 +3,7 @@ package com.pooli.traffic.service.runtime;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +63,9 @@ public class TrafficLuaScriptInfraService {
     private final Map<TrafficLuaScriptType, RedisScript<Long>> longScriptRegistry =
             new EnumMap<>(TrafficLuaScriptType.class);
 
+    private final Map<TrafficLuaScriptType, RedisScript<List>> listScriptRegistry =
+            new EnumMap<>(TrafficLuaScriptType.class);
+
     @PostConstruct
     /**
      * 애플리케이션 시작 시 Lua 스크립트를 등록하고 SHA를 미리 적재합니다.
@@ -85,6 +89,42 @@ public class TrafficLuaScriptInfraService {
     public TrafficLuaExecutionResult executeBlockPolicyCheck(List<String> keys, List<String> args) {
         String rawJson = executeStringSingle(TrafficLuaScriptType.BLOCK_POLICY_CHECK, keys, args);
         return parseDeductResult(rawJson, TrafficLuaScriptType.BLOCK_POLICY_CHECK);
+    }
+
+    /**
+     * 차감 preflight에 필요한 정책 ready key, 개인 잔량 key, 공유 잔량 key, 전역 정책 key 존재 여부를
+     * 한 Lua 호출로 조회합니다.
+     *
+     * @return 순서대로 정책 ready, 개인 잔량, 공유 잔량, 전역 정책 key 존재 여부를 1/0 값으로 담은 목록입니다.
+     */
+    public List<Long> executePreflightKeyExistence(
+            String linePolicyReadyKey,
+            String individualBalanceKey,
+            String sharedBalanceKey,
+            List<String> globalPolicyKeys
+    ) {
+        List<String> keys = new ArrayList<>();
+        keys.add(linePolicyReadyKey);
+        keys.add(individualBalanceKey);
+        keys.add(sharedBalanceKey);
+        if (globalPolicyKeys != null) {
+            keys.addAll(globalPolicyKeys);
+        }
+
+        List rawResult = executeListSingle(
+                TrafficLuaScriptType.PREFLIGHT_KEY_EXISTENCE,
+                keys,
+                List.of()
+        );
+        if (rawResult.size() != keys.size()) {
+            throw new ApplicationException(
+                    CommonErrorCode.INTERNAL_SERVER_ERROR,
+                    "Lua preflight key existence result size is invalid."
+            );
+        }
+        return rawResult.stream()
+                .map(this::toLongResult)
+                .toList();
     }
 
     /**
@@ -323,6 +363,36 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * Redis 장애 복구 replay Lua를 실행한다.
+     */
+    public List<String> executeRestoreUsageReplay(List<String> keys, List<String> args) {
+        List rawResult = executeListSingle(TrafficLuaScriptType.RESTORE_USAGE_REPLAY, keys, args);
+        return rawResult.stream()
+                .map(String::valueOf)
+                .toList();
+    }
+
+    /**
+     * Redis 장애 복구 검증 보정 Lua를 실행한다.
+     */
+    public List<String> executeRestoreUsageCorrection(
+            String key,
+            String valueKind,
+            String field,
+            long expectedValue,
+            long expireEpochSeconds
+    ) {
+        List rawResult = executeListSingle(
+                TrafficLuaScriptType.RESTORE_USAGE_CORRECTION,
+                List.of(key),
+                List.of(valueKind, field, String.valueOf(expectedValue), String.valueOf(expireEpochSeconds))
+        );
+        return rawResult.stream()
+                .map(String::valueOf)
+                .toList();
+    }
+
+    /**
      * 미리 적재한 Lua 스크립트의 SHA를 반환합니다.
      */
     public String getPreloadedSha(TrafficLuaScriptType scriptType) {
@@ -383,6 +453,40 @@ public class TrafficLuaScriptInfraService {
             log.error("traffic_lua_execute_failed script={}", scriptType.getScriptName(), e);
             throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);
         }
+    }
+
+    /**
+     * 목록 결과를 반환하는 Lua 스크립트를 실행합니다.
+     */
+    private List executeListSingle(TrafficLuaScriptType scriptType, List<String> keys, List<String> args) {
+        RedisScript<List> script = requireListScript(scriptType);
+
+        try {
+            // 1. cache Redis 명령 시도 시 가용성 측정을 위한 오퍼레이션 카운트를 증가시키고 Lua 스크립트를 실행한다.
+            trafficRedisAvailabilityMetrics.incrementOperation(RedisTarget.CACHE);
+            List result = cacheStringRedisTemplate.execute(script, keys, args.toArray());
+            // 2. 실행 결과가 null일 경우 정상적이지 않은 응답이므로 내부 서버 오류 예외(500)를 던진다.
+            if (result == null) {
+                throw new ApplicationException(CommonErrorCode.INTERNAL_SERVER_ERROR, "Lua script returned null result.");
+            }
+            // 4. 정상적으로 반환된 목록 결과를 호출처에 반환한다.
+            return result;
+        } catch (DataAccessException e) {
+            // 3. Redis 호출 중 예외(DataAccessException)가 발생하면 에러 메트릭을 분류하여 기록하고 로그를 출력한 후 외부 시스템 오류로 변환하여 예외를 발생시킨다.
+            trafficRedisAvailabilityMetrics.incrementFailure(RedisTarget.CACHE, resolveFailureKind(e));
+            log.error("traffic_lua_execute_failed script={}", scriptType.getScriptName(), e);
+            throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, e);
+        }
+    }
+
+    /**
+     * Redis Lua 목록 결과의 정수 값을 Java long으로 변환합니다.
+     */
+    private long toLongResult(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        return Long.parseLong(String.valueOf(value));
     }
 
     /**
@@ -498,6 +602,20 @@ public class TrafficLuaScriptInfraService {
     }
 
     /**
+     * 목록 반환용 Lua 스크립트가 등록되어 있는지 확인합니다.
+     */
+    private RedisScript<List> requireListScript(TrafficLuaScriptType scriptType) {
+        RedisScript<List> script = listScriptRegistry.get(scriptType);
+        if (script == null) {
+            throw new ApplicationException(
+                    CommonErrorCode.INTERNAL_SERVER_ERROR,
+                    "Lua list script is not registered. script=" + scriptType.getScriptName()
+            );
+        }
+        return script;
+    }
+
+    /**
      * 스크립트 타입에 맞는 RedisScript 레지스트리에 등록합니다.
      */
     private void registerScript(TrafficLuaScriptType scriptType, String scriptText) {
@@ -525,6 +643,14 @@ public class TrafficLuaScriptInfraService {
                 redisScript.setScriptText(scriptText);
                 redisScript.setResultType(Long.class);
                 longScriptRegistry.put(scriptType, redisScript);
+            }
+            case RESTORE_USAGE_REPLAY,
+                 RESTORE_USAGE_CORRECTION,
+                 PREFLIGHT_KEY_EXISTENCE -> {
+                DefaultRedisScript<List> redisScript = new DefaultRedisScript<>();
+                redisScript.setScriptText(scriptText);
+                redisScript.setResultType(List.class);
+                listScriptRegistry.put(scriptType, redisScript);
             }
         }
     }

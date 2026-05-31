@@ -23,6 +23,7 @@ import com.pooli.traffic.domain.TrafficStreamFields;
 import com.pooli.traffic.domain.dto.request.TrafficGenerateReqDto;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficGenerateResDto;
+import com.pooli.traffic.service.restore.TrafficRestoreTrafficGateService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,7 @@ public class TrafficRequestEnqueueService {
     private final ObjectMapper objectMapper;
     private final AppStreamsProperties appStreamsProperties;
     private final TrafficRequestMetrics trafficRequestMetrics;
+    private final TrafficRestoreTrafficGateService trafficRestoreTrafficGateService;
 
     /**
      * 트래픽 발생 요청을 Streams에 enqueue하고, 추적용 응답(traceId/enqueuedAt)을 반환합니다.
@@ -61,6 +63,9 @@ public class TrafficRequestEnqueueService {
     public TrafficGenerateResDto enqueue(TrafficGenerateReqDto request) {
         long start = System.currentTimeMillis();
         trafficRequestMetrics.incrementRequest();
+        if (trafficRestoreTrafficGateService.shouldBlockTraffic()) {
+            throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, "Redis 장애 복구 중에는 traffic 요청을 처리할 수 없습니다.");
+        }
 
         String traceId = resolveTraceId();
         long enqueuedAt = System.currentTimeMillis();

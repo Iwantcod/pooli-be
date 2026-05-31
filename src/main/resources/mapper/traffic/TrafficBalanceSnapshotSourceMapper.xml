@@ -58,4 +58,35 @@
           AND f.last_balance_refreshed_at &lt; #{targetMonthStart}
     </update>
 
+    <!-- 복구 대상 월 집합에 포함되는 DAILY_APP_TOTAL_DATA line_id를 중복 없이 조회한다. -->
+    <select id="selectRestoreDailyAppLineIds" resultType="long">
+        SELECT DISTINCT line_id
+        FROM DAILY_APP_TOTAL_DATA
+        WHERE deleted_at IS NULL
+          AND (
+          <foreach collection="targetMonthStarts" item="targetMonthStart" separator=" OR ">
+              (usage_date &gt;= #{targetMonthStart}
+               AND usage_date &lt; DATE_ADD(#{targetMonthStart}, INTERVAL 1 MONTH))
+          </foreach>
+          )
+    </select>
+
+    <!-- 복구 대상 업무일 범위의 done log line_id를 중복 없이 조회한다. -->
+    <select id="selectRestoreDoneLogLineIds" resultType="long">
+        SELECT DISTINCT line_id
+        FROM TRAFFIC_DEDUCT_DONE
+        WHERE enqueued_at &gt;= #{startInclusive}
+          AND enqueued_at &lt; #{endExclusive}
+    </select>
+
+    <!-- 가족 결합 미소속 line은 결과에 포함되지 않으며 정상 case로 처리한다. -->
+    <select id="selectRestoreFamilyIdsByLineIds" resultType="long">
+        SELECT DISTINCT family_id
+        FROM FAMILY_LINE
+        WHERE line_id IN
+        <foreach collection="lineIds" item="lineId" open="(" separator="," close=")">
+            #{lineId}
+        </foreach>
+    </select>
+
 </mapper>

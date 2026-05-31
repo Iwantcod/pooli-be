@@ -61,6 +61,7 @@ import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
 import com.pooli.traffic.service.outbox.TrafficInFlightDedupeDeleteOutboxService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
+import com.pooli.traffic.service.restore.TrafficRestoreTrafficGateService;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -101,6 +102,9 @@ public class TrafficStreamConsumerRunnerTest {
     @Mock
     private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
+    @Mock
+    private TrafficRestoreTrafficGateService trafficRestoreTrafficGateService;
+
     private TrafficStreamConsumerRunner trafficStreamConsumerRunner;
     private AppStreamsProperties appStreamsProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -134,7 +138,8 @@ public class TrafficStreamConsumerRunnerTest {
                 trafficInFlightDedupeDeleteOutboxService,
                 trafficRedisFailureClassifier,
                 trafficGeneratorMetrics,
-                trafficRecordStageMetricsPort
+                trafficRecordStageMetricsPort,
+                trafficRestoreTrafficGateService
         );
         MDC.clear();
     }
@@ -936,6 +941,40 @@ public class TrafficStreamConsumerRunnerTest {
 
             releaseTasks.countDown();
             detachAppender(listAppender);
+        }
+
+        @Test
+        @DisplayName("복구 flag가 활성화되면 XREAD 전에 poll을 차단한다")
+        void blocksPollBeforeXreadWhenRestoreFlagIsActive() {
+            ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                    1,
+                    1,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(1),
+                    new ThreadPoolExecutor.AbortPolicy()
+            );
+            setPrivateField("workerExecutor", executor);
+            when(trafficRestoreTrafficGateService.shouldBlockTraffic()).thenReturn(true);
+
+            invokeConsumeNextBatch();
+
+            verify(trafficStreamInfraService, never()).readBlocking(anyInt());
+        }
+
+        @Test
+        @DisplayName("복구 flag가 활성화되면 worker가 ACK와 DLQ 없이 pending을 유지한다")
+        void blocksWorkerWithoutAckOrDlqWhenRestoreFlagIsActive() {
+            MapRecord<String, String, String> record = createRecord("9-9", "{\"traceId\":\"trace-restore\"}");
+            when(trafficRestoreTrafficGateService.shouldBlockTraffic()).thenReturn(true);
+
+            invokeHandleRecord(record, TrafficStreamMessageSource.NEW);
+
+            verify(trafficStreamInfraService, never()).acknowledge(record.getId());
+            verify(trafficStreamInfraService, never()).writeDlq(any(), any(), any());
+            verifyNoInteractions(trafficDeductOrchestratorService);
+            verify(trafficDeductCompletionPersistenceService, never())
+                    .persistCompletion(any(), any(TrafficDeductResultResDto.class), any(), anyLong());
         }
 
         @Test

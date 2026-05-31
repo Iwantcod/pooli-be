@@ -52,6 +52,48 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * Redis 장애 복구 manager 서버 1대를 선출하기 위한 분산락 키입니다.
+     */
+    public String trafficRestoreManagerLockKey() {
+        return namespaced("traffic:restore:manager-lock");
+    }
+
+    /**
+     * 복구 phase별 Redis replay 중복 적용을 막는 멱등키를 생성합니다.
+     */
+    public String restoreIdempotencyKey(String phase, String id) {
+        String normalizedPhase = Objects.requireNonNull(phase, "phase must not be null").trim();
+        if (normalizedPhase.isEmpty()) {
+            throw new IllegalArgumentException("phase must not be blank");
+        }
+
+        String normalizedId = Objects.requireNonNull(id, "id must not be null").trim();
+        if (normalizedId.isEmpty()) {
+            throw new IllegalArgumentException("id must not be blank");
+        }
+
+        return namespaced("restore:idempotency:" + normalizedPhase + ":" + normalizedId);
+    }
+
+    /**
+     * `p1:daily_app:...` 또는 `p2:done_log:...` suffix를 복구 idempotency key로 변환합니다.
+     */
+    public String restoreIdempotencyKeyFromSuffix(String suffix) {
+        String normalizedSuffix = Objects.requireNonNull(suffix, "suffix must not be null").trim();
+        if (normalizedSuffix.isEmpty()) {
+            throw new IllegalArgumentException("suffix must not be blank");
+        }
+        return namespaced("restore:idempotency:" + normalizedSuffix);
+    }
+
+    /**
+     * 복구 최종 성공 후 잔여 idempotency key를 scan 삭제할 때 사용하는 패턴입니다.
+     */
+    public String restoreIdempotencyKeyPattern() {
+        return namespaced("restore:idempotency:*");
+    }
+
+    /**
      * 회선 정책(on-demand hydrate) 완료 여부를 나타내는 준비 키입니다.
      */
     public String linePolicyReadyKey(long lineId) {

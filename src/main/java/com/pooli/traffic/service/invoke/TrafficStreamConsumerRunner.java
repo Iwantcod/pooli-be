@@ -24,6 +24,7 @@ import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.service.outbox.TrafficInFlightDedupeDeleteOutboxService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
+import com.pooli.traffic.service.restore.TrafficRestoreTrafficGateService;
 import com.pooli.traffic.util.TrafficRetryBackoffSupport;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
@@ -90,6 +91,7 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
     private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
     private final TrafficGeneratorMetrics trafficGeneratorMetrics;
     private final TrafficRecordStageMetricsPort trafficRecordStageMetricsPort;
+    private final TrafficRestoreTrafficGateService trafficRestoreTrafficGateService;
 
     // 전역적인 소비 루프 동작 여부 플래그(start/stop 간 공유)
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -251,6 +253,10 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
         workerPressureRetryAttempt = 0;
         clearWorkerPressureSignal();
+        if (trafficRestoreTrafficGateService.shouldBlockTraffic()) {
+            pauseForWorkerCapacity();
+            return;
+        }
 
         List<MapRecord<String, String, String>> records = trafficStreamInfraService.readBlocking(nextReadCount);
         for (MapRecord<String, String, String> record : records) {
@@ -367,6 +373,10 @@ public class TrafficStreamConsumerRunner implements SmartLifecycle {
 
         // DLQ/로그 추적을 위해 레코드 ID를 초기에 추출해 둔다.
         String recordId = record.getId().getValue();
+        if (trafficRestoreTrafficGateService.shouldBlockTraffic()) {
+            log.warn("traffic_stream_record_restore_blocked recordId={} source={}", recordId, messageSource);
+            return;
+        }
 
         // 명세(field=payload)에 맞춰 payload 문자열을 가져온다.
         String payloadJson = trafficStreamInfraService.extractPayload(record);

@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -38,14 +39,14 @@ import lombok.extern.slf4j.Slf4j;
  * POLICY 전역 활성화 상태를 Redis policy:{policyId} 키에 동기화하는 bootstrap/reconciliation 서비스입니다.
  *
  * <p>동작 규칙:
- * 1) 부팅 시 POLICY 스냅샷을 읽어 필수 정책 ID(1~7) 존재를 검증(fail-fast)
+ * 1) 부팅 시 POLICY 스냅샷을 읽어 필수 정책 ID(1~8) 존재를 검증(fail-fast)
  * 2) 분산락(NX PX) 획득 인스턴스만 pipeline으로 Redis 반영
  * 3) 주기적 reconciliation으로 DB->Redis 불일치를 보정
  * 4) lock 해제는 소유자 비교 Lua로 수행
  */
 @Slf4j
 @Service
-@Profile({"local", "traffic"})
+@Profile({"local", "api", "traffic"})
 @RequiredArgsConstructor
 public class TrafficPolicyBootstrapService {
 
@@ -58,8 +59,10 @@ public class TrafficPolicyBootstrapService {
             entry(4, "LINE_LIMIT_DAILY_POLICY"),
             entry(5, "APP_POLICY_DATA_POLICY"),
             entry(6, "APP_POLICY_SPEED_POLICY"),
-            entry(7, "APP_POLICY_WHITELIST_POLICY")
+            entry(7, "APP_POLICY_WHITELIST_POLICY"),
+            entry(8, "TRAFFIC_RESTORE_IN_PROGRESS")
     );
+
 
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
@@ -102,6 +105,42 @@ public class TrafficPolicyBootstrapService {
     }
 
     /**
+     * 차감 preflight에서 전역 policy key 누락을 감지했을 때 lock-first 방식으로 snapshot hydrate를 시도합니다.
+     *
+     * <p>정상 hot-path에서는 Redis key 존재 확인만 수행하고, 누락 시에만 lock을 획득합니다.
+     * lock 획득 후에도 key를 다시 확인해 다른 worker가 이미 hydrate한 경우 DB 조회와 pipeline 반영을 생략합니다.
+     *
+     * @param policyKeys preflight에서 확인한 전역 policy Redis key 목록
+     */
+    public void hydrateOnDemandIfAnyPolicyKeyMissing(Collection<String> policyKeys) {
+        // (1) hot-path quick check: 모든 정책 키가 이미 Redis에 존재하는지 빠르게 확인합니다. (allPolicyKeysExist)
+        if (allPolicyKeysExist(policyKeys)) {
+            return;
+        }
+
+        // (2) lockKey와 lockOwner를 생성하고 tryAcquireLock을 통해 분산 락 획득을 시도합니다.
+        String lockKey = trafficRedisKeyFactory.policyBootstrapLockKey();
+        String lockOwner = buildLockOwner("on_demand_preflight");
+        boolean lockAcquired = tryAcquireLock(lockKey, lockOwner);
+        if (!lockAcquired) {
+            log.info("traffic_policy_bootstrap_preflight_lock_skipped lockKey={}", lockKey);
+            return;
+        }
+
+        try {
+            // (3) 락 획득에 성공한 후, 다른 인스턴스가 그 사이에 적재를 완료했는지 allPolicyKeysExist로 재검사합니다.
+            if (allPolicyKeysExist(policyKeys)) {
+                return;
+            }
+            // (4) 여전히 키가 누락되어 있다면 synchronizePolicyActivationSnapshotWithoutLock을 통해 스냅샷을 적재합니다.
+            synchronizePolicyActivationSnapshotWithoutLock("on_demand_preflight", false);
+        } finally {
+            // (5) 작업 성공 여부와 상관없이 releaseLock을 통해 락을 안전하게 해제합니다.
+            releaseLock(lockKey, lockOwner);
+        }
+    }
+
+    /**
      * POLICY 스냅샷을 Redis에 동기화하는 공통 진입점입니다.
      *
      * @param executionType startup/reconcile 구분 로그
@@ -135,6 +174,44 @@ public class TrafficPolicyBootstrapService {
         } finally {
             releaseLock(lockKey, lockOwner);
         }
+    }
+
+    /**
+     * 이미 policy bootstrap lock을 보유한 호출자가 DB snapshot을 Redis에 반영합니다.
+     */
+    private void synchronizePolicyActivationSnapshotWithoutLock(
+            String executionType,
+            boolean failFastOnMissingRequiredIds
+    ) {
+        List<PolicyActivationSnapshotResDto> snapshots = policyBackOfficeMapper.selectPolicyActivationSnapshot();
+        if (!validateRequiredPolicyIds(snapshots, failFastOnMissingRequiredIds)) {
+            return;
+        }
+
+        syncSnapshotToRedis(snapshots);
+        log.info(
+                "traffic_policy_bootstrap_completed executionType={} policyCount={}",
+                executionType,
+                snapshots.size()
+        );
+    }
+
+    /**
+     * preflight 대상 policy key가 모두 Redis에 존재하는지 확인합니다.
+     */
+    private boolean allPolicyKeysExist(Collection<String> policyKeys) {
+        if (policyKeys == null || policyKeys.isEmpty()) {
+            return false;
+        }
+        for (String policyKey : policyKeys) {
+            if (policyKey == null || policyKey.isBlank()) {
+                return false;
+            }
+            if (!Boolean.TRUE.equals(cacheStringRedisTemplate.hasKey(policyKey))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

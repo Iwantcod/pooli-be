@@ -1,5 +1,6 @@
 package com.pooli.traffic.service.runtime;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -193,5 +194,41 @@ public class TrafficRemainingBalanceCacheService {
         if (result != 1L) {
             throw new IllegalStateException("Failed to hydrate traffic balance snapshot. key=" + balanceKey);
         }
+    }
+
+    /**
+     * 개인 snapshot Redis hash의 필수 필드(amount, qos)가 모두 존재하고 비어있지 않은지 검증합니다.
+     *
+     * <p>이 메서드는 형식 검사(예: 숫자 파싱 가능 여부)는 수행하지 않고, 단순 필드 존재성 및 비어 있지 않음 여부만 검증합니다.</p>
+     */
+    public boolean isIndividualReady(String balanceKey) {
+        if (balanceKey == null) {
+            return false;
+        }
+        List<Object> values = cacheStringRedisTemplate.opsForHash().multiGet(balanceKey, List.of("amount", "qos"));
+        if (values.size() < 2 || values.get(0) == null || values.get(1) == null) {
+            return false;
+        }
+        String amount = String.valueOf(values.get(0)).trim();
+        String qos = String.valueOf(values.get(1)).trim();
+        return !amount.isEmpty() && !qos.isEmpty();
+    }
+
+    /**
+     * 공유 트래픽 잔량 스냅샷 해시(Redis hash)의 필수 필드인 amount가 존재하고 값이 비어 있지 않은지 검증합니다.
+     * 이 메서드는 형식 검사(예: 숫자 파싱 가능 여부)는 수행하지 않고, 단순 필드 존재성 및 비어 있지 않음 여부만 검증합니다.
+     *
+     * @param balanceKey 검증할 Redis 키
+     * @return 필수 필드가 존재하고 비어 있지 않으면 true, 그렇지 않으면 false
+     */
+    public boolean isSharedReady(String balanceKey) {
+        if (balanceKey == null) {
+            return false;
+        }
+        Object amountObj = cacheStringRedisTemplate.opsForHash().get(balanceKey, "amount");
+        if (amountObj == null) {
+            return false;
+        }
+        return !String.valueOf(amountObj).trim().isEmpty();
     }
 }

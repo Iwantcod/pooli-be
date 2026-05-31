@@ -24,6 +24,8 @@ class TrafficLuaPolicyContractTest {
 
     private static final Path BLOCK_POLICY_CHECK_SCRIPT =
             Path.of("src/main/resources/lua/traffic/block_policy_check.lua");
+    private static final Path PREFLIGHT_KEY_EXISTENCE_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/preflight_key_existence.lua");
     private static final Path DEDUCT_UNIFIED_SCRIPT =
             Path.of("src/main/resources/lua/traffic/deduct_unified.lua");
     private static final Path HYDRATE_INDIVIDUAL_SNAPSHOT_SCRIPT =
@@ -52,6 +54,16 @@ class TrafficLuaPolicyContractTest {
                 "if is_policy_enabled(policy_immediate_key)",
                 "if is_policy_enabled(policy_repeat_key)"
         );
+    }
+
+    @Test
+    @DisplayName("preflight Lua는 전달된 모든 key의 존재 여부를 순서대로 반환한다")
+    void preflightKeyExistenceChecksEveryProvidedKey() throws IOException {
+        String script = Files.readString(PREFLIGHT_KEY_EXISTENCE_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("while idx <= #KEYS do"));
+        assertTrue(script.contains("redis.call('EXISTS', KEYS[idx])"));
+        assertFalse(script.contains("KEYS[3]"));
     }
 
     @Test

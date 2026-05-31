@@ -14,7 +14,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class InFlightDedupeDeleteOutboxPayload {
+    /** 멱등 키 제거 식별 고유 UUID */
     private String uuid;
+    /** 원본 트래픽 로그 레코드 ID */
     private String sourceRecordId;
+    /** 삭제 요청 등록 Epoch 밀리초 시각 */
     private Long requestedAtEpochMillis;
 }

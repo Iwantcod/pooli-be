@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,18 +39,29 @@ import com.pooli.traffic.domain.enums.TrafficLuaStatus;
 import com.pooli.traffic.domain.enums.TrafficPolicyCheckFailureCause;
 import com.pooli.traffic.domain.enums.TrafficPoolType;
 import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
+import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficBalanceSnapshotHydrateService;
+import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
-import com.pooli.traffic.service.runtime.TrafficRemainingBalanceCacheService;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficDeductOrchestratorServiceTest {
 
     private static final ZoneId ASIA_SEOUL = ZoneId.of("Asia/Seoul");
     private static final long FINISHED_AT_EPOCH_MILLIS = 1_710_000_000_123L;
+    private static final List<String> GLOBAL_POLICY_KEYS = List.of(
+            "pooli:policy:1",
+            "pooli:policy:2",
+            "pooli:policy:3",
+            "pooli:policy:4",
+            "pooli:policy:5",
+            "pooli:policy:6",
+            "pooli:policy:7",
+            "pooli:policy:8"
+    );
 
     @Mock
     private TrafficDeductLuaExecutor trafficDeductLuaExecutor;
@@ -70,13 +82,16 @@ class TrafficDeductOrchestratorServiceTest {
     private TrafficBalanceSnapshotHydrateService trafficBalanceSnapshotHydrateService;
 
     @Mock
-    private TrafficRemainingBalanceCacheService trafficRemainingBalanceCacheService;
+    private TrafficLuaScriptInfraService trafficLuaScriptInfraService;
 
     @Mock
     private TrafficRedisKeyFactory trafficRedisKeyFactory;
 
     @Mock
     private TrafficPolicyCheckLayerService trafficPolicyCheckLayerService;
+
+    @Mock
+    private TrafficPolicyBootstrapService trafficPolicyBootstrapService;
 
     @Mock
     private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
@@ -93,12 +108,26 @@ class TrafficDeductOrchestratorServiceTest {
                 .thenReturn(policyCheckFromLua(0L, TrafficLuaStatus.OK));
         lenient().when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ASIA_SEOUL);
         lenient().when(trafficLinePolicyHydrationService.isLoaded(11L)).thenReturn(true);
+        lenient().when(trafficRedisKeyFactory.linePolicyReadyKey(11L))
+                .thenReturn("pooli:line_policy_ready:11");
         lenient().when(trafficRedisKeyFactory.remainingIndivAmountKey(eq(11L), any(YearMonth.class)))
                 .thenReturn("pooli:remaining_indiv_amount:11:202603");
         lenient().when(trafficRedisKeyFactory.remainingSharedAmountKey(eq(22L), any(YearMonth.class)))
                 .thenReturn("pooli:remaining_shared_amount:22:202603");
-        lenient().when(trafficRemainingBalanceCacheService.hasKey("pooli:remaining_shared_amount:22:202603"))
-                .thenReturn(true);
+        lenient().when(trafficRedisKeyFactory.policyKey(1L)).thenReturn("pooli:policy:1");
+        lenient().when(trafficRedisKeyFactory.policyKey(2L)).thenReturn("pooli:policy:2");
+        lenient().when(trafficRedisKeyFactory.policyKey(3L)).thenReturn("pooli:policy:3");
+        lenient().when(trafficRedisKeyFactory.policyKey(4L)).thenReturn("pooli:policy:4");
+        lenient().when(trafficRedisKeyFactory.policyKey(5L)).thenReturn("pooli:policy:5");
+        lenient().when(trafficRedisKeyFactory.policyKey(6L)).thenReturn("pooli:policy:6");
+        lenient().when(trafficRedisKeyFactory.policyKey(7L)).thenReturn("pooli:policy:7");
+        lenient().when(trafficRedisKeyFactory.policyKey(8L)).thenReturn("pooli:policy:8");
+        lenient().when(trafficLuaScriptInfraService.executePreflightKeyExistence(
+                "pooli:line_policy_ready:11",
+                "pooli:remaining_indiv_amount:11:202603",
+                "pooli:remaining_shared_amount:22:202603",
+                GLOBAL_POLICY_KEYS
+        )).thenReturn(List.of(1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
     }
 
     @Test
@@ -253,7 +282,12 @@ class TrafficDeductOrchestratorServiceTest {
     void throwsWhenEnsureLoadedFailureIsNonRetryable() {
         TrafficPayloadReqDto payload = payload(100L);
         QueryTimeoutException exception = new QueryTimeoutException("policy check failed");
-        when(trafficLinePolicyHydrationService.isLoaded(11L)).thenReturn(false);
+        when(trafficLuaScriptInfraService.executePreflightKeyExistence(
+                "pooli:line_policy_ready:11",
+                "pooli:remaining_indiv_amount:11:202603",
+                "pooli:remaining_shared_amount:22:202603",
+                GLOBAL_POLICY_KEYS
+        )).thenReturn(List.of(0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
         doThrow(exception).when(trafficLinePolicyHydrationService).ensureLoaded(11L);
         when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(exception)).thenReturn(false);
 
@@ -266,11 +300,98 @@ class TrafficDeductOrchestratorServiceTest {
     }
 
     @Test
-    @DisplayName("ready key가 없으면 정책 hydrate 후 개인풀 잔량만 먼저 hydrate한다")
-    void preflightHydratesPolicyAndIndividualSnapshotWhenLinePolicyIsNotReady() {
+    @DisplayName("preflight Lua에서 ready key가 없으면 정책만 hydrate하고 잔량 키는 별도 hasKey로 확인하지 않는다")
+    void preflightHydratesOnlyPolicyWhenLinePolicyIsNotReadyAndIndividualBalanceKeyExists() {
         TrafficPayloadReqDto payload = payload(100L);
         TrafficLuaDeductExecutionResult initialResult = unifiedResult(100L, 0L, 0L, TrafficLuaStatus.OK);
-        when(trafficLinePolicyHydrationService.isLoaded(11L)).thenReturn(false);
+        when(trafficLuaScriptInfraService.executePreflightKeyExistence(
+                "pooli:line_policy_ready:11",
+                "pooli:remaining_indiv_amount:11:202603",
+                "pooli:remaining_shared_amount:22:202603",
+                GLOBAL_POLICY_KEYS
+        )).thenReturn(List.of(0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
+        when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(TrafficFailureStage.DEDUCT)
+        )).thenReturn(initialResult);
+        when(trafficHydrateService.recoverIfNeeded(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(initialResult)
+        )).thenReturn(initialResult);
+
+        service.orchestrate(payload);
+
+        InOrder inOrder = inOrder(
+                trafficLuaScriptInfraService,
+                trafficLinePolicyHydrationService,
+                trafficPolicyCheckLayerService
+        );
+        inOrder.verify(trafficLuaScriptInfraService).executePreflightKeyExistence(
+                "pooli:line_policy_ready:11",
+                "pooli:remaining_indiv_amount:11:202603",
+                "pooli:remaining_shared_amount:22:202603",
+                GLOBAL_POLICY_KEYS
+        );
+        inOrder.verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
+        inOrder.verify(trafficPolicyCheckLayerService).evaluate(payload);
+        verify(trafficLinePolicyHydrationService, never()).isLoaded(11L);
+        verify(trafficBalanceSnapshotHydrateService, never())
+                .hydrateIndividualSnapshot(eq(11L), any(YearMonth.class));
+        verify(trafficBalanceSnapshotHydrateService, never()).hydrateSharedSnapshot(eq(22L), any(YearMonth.class));
+    }
+
+    @Test
+    @DisplayName("preflight에서 전역 정책 key가 누락되면 정책 검증 전에 전역 정책 hydrate를 시도한다")
+    void hydratesGlobalPolicyBeforePolicyCheckWhenPreflightDetectsMissingPolicyKey() {
+        TrafficPayloadReqDto payload = payload(100L);
+        TrafficLuaDeductExecutionResult initialResult = unifiedResult(100L, 0L, 0L, TrafficLuaStatus.OK);
+        when(trafficLuaScriptInfraService.executePreflightKeyExistence(
+                "pooli:line_policy_ready:11",
+                "pooli:remaining_indiv_amount:11:202603",
+                "pooli:remaining_shared_amount:22:202603",
+                GLOBAL_POLICY_KEYS
+        )).thenReturn(List.of(1L, 1L, 1L, 1L, 0L, 1L, 1L, 1L, 1L, 1L, 1L));
+        when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(TrafficFailureStage.DEDUCT)
+        )).thenReturn(initialResult);
+        when(trafficHydrateService.recoverIfNeeded(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(initialResult)
+        )).thenReturn(initialResult);
+
+        service.orchestrate(payload);
+
+        InOrder inOrder = inOrder(trafficPolicyBootstrapService, trafficPolicyCheckLayerService, trafficDeductLuaExecutor);
+        inOrder.verify(trafficPolicyBootstrapService).hydrateOnDemandIfAnyPolicyKeyMissing(GLOBAL_POLICY_KEYS);
+        inOrder.verify(trafficPolicyCheckLayerService).evaluate(payload);
+        inOrder.verify(trafficDeductLuaExecutor).executeUnifiedWithRetry(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(TrafficFailureStage.DEDUCT)
+        );
+    }
+
+    @Test
+    @DisplayName("개인풀 잔량 hash key가 없으면 차단성 정책 검증 전에 개인풀 잔량을 hydrate한다")
+    void preflightHydratesIndividualSnapshotWhenIndividualBalanceKeyMissing() {
+        TrafficPayloadReqDto payload = payload(100L);
+        TrafficLuaDeductExecutionResult initialResult = unifiedResult(100L, 0L, 0L, TrafficLuaStatus.OK);
+        when(trafficLuaScriptInfraService.executePreflightKeyExistence(
+                "pooli:line_policy_ready:11",
+                "pooli:remaining_indiv_amount:11:202603",
+                "pooli:remaining_shared_amount:22:202603",
+                GLOBAL_POLICY_KEYS
+        )).thenReturn(List.of(1L, 0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
         when(trafficBalanceSnapshotHydrateService.hydrateIndividualSnapshot(eq(11L), any(YearMonth.class)))
                 .thenReturn(TrafficBalanceSnapshotHydrateResult.hydrated());
         when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
@@ -289,17 +410,19 @@ class TrafficDeductOrchestratorServiceTest {
         service.orchestrate(payload);
 
         InOrder inOrder = inOrder(
-                trafficLinePolicyHydrationService,
-                trafficRemainingBalanceCacheService,
+                trafficLuaScriptInfraService,
                 trafficBalanceSnapshotHydrateService,
                 trafficPolicyCheckLayerService
         );
-        inOrder.verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
+        inOrder.verify(trafficLuaScriptInfraService).executePreflightKeyExistence(
+                "pooli:line_policy_ready:11",
+                "pooli:remaining_indiv_amount:11:202603",
+                "pooli:remaining_shared_amount:22:202603",
+                GLOBAL_POLICY_KEYS
+        );
         inOrder.verify(trafficBalanceSnapshotHydrateService)
                 .hydrateIndividualSnapshot(eq(11L), any(YearMonth.class));
-        inOrder.verify(trafficRemainingBalanceCacheService).hasKey("pooli:remaining_shared_amount:22:202603");
         inOrder.verify(trafficPolicyCheckLayerService).evaluate(payload);
-        verify(trafficBalanceSnapshotHydrateService, never()).hydrateSharedSnapshot(eq(22L), any(YearMonth.class));
     }
 
     @Test
@@ -307,8 +430,12 @@ class TrafficDeductOrchestratorServiceTest {
     void preflightHydratesSharedSnapshotWhenSharedBalanceKeyMissing() {
         TrafficPayloadReqDto payload = payload(100L);
         TrafficLuaDeductExecutionResult initialResult = unifiedResult(100L, 0L, 0L, TrafficLuaStatus.OK);
-        when(trafficRemainingBalanceCacheService.hasKey("pooli:remaining_shared_amount:22:202603"))
-                .thenReturn(false);
+        when(trafficLuaScriptInfraService.executePreflightKeyExistence(
+                "pooli:line_policy_ready:11",
+                "pooli:remaining_indiv_amount:11:202603",
+                "pooli:remaining_shared_amount:22:202603",
+                GLOBAL_POLICY_KEYS
+        )).thenReturn(List.of(1L, 1L, 0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
         when(trafficBalanceSnapshotHydrateService.hydrateSharedSnapshot(eq(22L), any(YearMonth.class)))
                 .thenReturn(TrafficBalanceSnapshotHydrateResult.hydrated());
         when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
@@ -328,17 +455,83 @@ class TrafficDeductOrchestratorServiceTest {
 
         verify(trafficLinePolicyHydrationService, never()).ensureLoaded(11L);
         InOrder inOrder = inOrder(
-                trafficRemainingBalanceCacheService,
+                trafficLuaScriptInfraService,
                 trafficBalanceSnapshotHydrateService,
                 trafficPolicyCheckLayerService
         );
-        inOrder.verify(trafficRemainingBalanceCacheService).hasKey("pooli:remaining_shared_amount:22:202603");
+        inOrder.verify(trafficLuaScriptInfraService).executePreflightKeyExistence(
+                "pooli:line_policy_ready:11",
+                "pooli:remaining_indiv_amount:11:202603",
+                "pooli:remaining_shared_amount:22:202603",
+                GLOBAL_POLICY_KEYS
+        );
         inOrder.verify(trafficBalanceSnapshotHydrateService)
                 .hydrateSharedSnapshot(eq(22L), any(YearMonth.class));
         inOrder.verify(trafficPolicyCheckLayerService).evaluate(payload);
-        verify(trafficRemainingBalanceCacheService, never()).hasHashField(any(), any());
         verify(trafficBalanceSnapshotHydrateService, never())
                 .hydrateIndividualSnapshot(eq(11L), any(YearMonth.class));
+    }
+
+    @Test
+    @DisplayName("line policy ready와 전역 정책 key 누락은 각각의 hydrate 경로를 호출한다")
+    void hydratesLinePolicyAndGlobalPolicyIndependentlyWhenBothMissing() {
+        TrafficPayloadReqDto payload = payload(100L);
+        TrafficLuaDeductExecutionResult initialResult = unifiedResult(100L, 0L, 0L, TrafficLuaStatus.OK);
+        when(trafficLuaScriptInfraService.executePreflightKeyExistence(
+                "pooli:line_policy_ready:11",
+                "pooli:remaining_indiv_amount:11:202603",
+                "pooli:remaining_shared_amount:22:202603",
+                GLOBAL_POLICY_KEYS
+        )).thenReturn(List.of(0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 0L, 1L, 1L));
+        when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(TrafficFailureStage.DEDUCT)
+        )).thenReturn(initialResult);
+        when(trafficHydrateService.recoverIfNeeded(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(initialResult)
+        )).thenReturn(initialResult);
+
+        service.orchestrate(payload);
+
+        verify(trafficLinePolicyHydrationService).ensureLoaded(11L);
+        verify(trafficPolicyBootstrapService).hydrateOnDemandIfAnyPolicyKeyMissing(GLOBAL_POLICY_KEYS);
+    }
+
+    @Test
+    @DisplayName("잔량 preflight 필드가 부족해도 전역 정책 hydrate 필요 여부는 확인한다")
+    void checksGlobalPolicyHydrateWhenBalancePreflightFieldsAreMissing() {
+        TrafficPayloadReqDto payload = TrafficPayloadReqDto.builder()
+                .traceId("trace-001")
+                .lineId(11L)
+                .familyId(null)
+                .appId(3)
+                .apiTotalData(100L)
+                .enqueuedAt(FINISHED_AT_EPOCH_MILLIS)
+                .build();
+        TrafficLuaDeductExecutionResult initialResult = unifiedResult(100L, 0L, 0L, TrafficLuaStatus.OK);
+        when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(TrafficFailureStage.DEDUCT)
+        )).thenReturn(initialResult);
+        when(trafficHydrateService.recoverIfNeeded(
+                eq(payload),
+                eq(100L),
+                any(TrafficDeductExecutionContext.class),
+                eq(initialResult)
+        )).thenReturn(initialResult);
+
+        service.orchestrate(payload);
+
+        verify(trafficPolicyBootstrapService).hydrateOnDemandIfAnyPolicyKeyMissing(GLOBAL_POLICY_KEYS);
+        verify(trafficLuaScriptInfraService, never())
+                .executePreflightKeyExistence(any(), any(), any(), any());
     }
 
     private TrafficPayloadReqDto payload(long apiTotalData) {

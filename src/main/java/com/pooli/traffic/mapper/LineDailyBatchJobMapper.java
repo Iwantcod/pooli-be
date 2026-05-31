@@ -31,6 +31,11 @@ public interface LineDailyBatchJobMapper {
     LineDailyBatchJob selectLatestByBatchName(@Param("batchName") BatchName batchName);
 
     /**
+     * Redis 복구 범위 산정을 위해 장애일 이하의 마지막 완료 일별 동기화 날짜를 조회한다.
+     */
+    LocalDate selectLatestCompletedUsageSyncDateOnOrBefore(@Param("failureDate") LocalDate failureDate);
+
+    /**
      * worker 시작 감지는 scheduler가 계산한 usage_date의 RUNNING usage sync batch만 대상으로 한다.
      */
     LineDailyBatchJob selectRunningUsageSyncBatchByUsageDate(@Param("usageDate") LocalDate usageDate);
@@ -92,4 +97,31 @@ public interface LineDailyBatchJobMapper {
      * 모든 target row가 terminal count에 반영된 경우에만 usage sync batch를 완료한다.
      */
     int completeRunningUsageSyncBatchIfCountsMatch(@Param("id") Long id);
+
+    /**
+     * restore phase target이 모두 DONE일 때 RUNNING metadata row를 COMPLETED로 닫는다.
+     */
+    int completeRunningRestorePhaseBatch(
+            @Param("id") Long id,
+            @Param("batchName") BatchName batchName
+    );
+
+    /**
+     * restore phase RUNNING metadata row를 FAILED로 전환한다.
+     */
+    int failRunningRestorePhaseBatch(
+            @Param("id") Long id,
+            @Param("batchName") BatchName batchName,
+            @Param("errorCode") String errorCode,
+            @Param("errorMessage") String errorMessage
+    );
+
+    /**
+     * FAILED 또는 ABANDONED restore phase metadata row를 RUNNING으로 재개한다.
+     */
+    int restartRestorePhaseBatch(
+            @Param("id") Long id,
+            @Param("batchName") BatchName batchName,
+            @Param("managerInstanceId") String managerInstanceId
+    );
 }

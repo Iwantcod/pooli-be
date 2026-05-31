@@ -1,9 +1,12 @@
 package com.pooli.traffic.service.invoke;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.Map;
@@ -24,8 +27,10 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
+import com.pooli.common.exception.ApplicationException;
 import com.pooli.monitoring.metrics.TrafficRequestMetrics;
 import com.pooli.traffic.domain.dto.request.TrafficGenerateReqDto;
+import com.pooli.traffic.service.restore.TrafficRestoreTrafficGateService;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficRequestEnqueueServiceTest {
@@ -38,6 +43,9 @@ class TrafficRequestEnqueueServiceTest {
 
     @Mock
     private TrafficRequestMetrics trafficRequestMetrics;
+
+    @Mock
+    private TrafficRestoreTrafficGateService trafficRestoreTrafficGateService;
 
     private AppStreamsProperties appStreamsProperties;
     private TrafficRequestEnqueueService trafficRequestEnqueueService;
@@ -53,8 +61,26 @@ class TrafficRequestEnqueueServiceTest {
                 streamsStringRedisTemplate,
                 new ObjectMapper(),
                 appStreamsProperties,
-                trafficRequestMetrics
+                trafficRequestMetrics,
+                trafficRestoreTrafficGateService
         );
+    }
+
+    @Test
+    @DisplayName("복구 flag가 활성화되면 request stream XADD 전에 요청을 차단한다")
+    void blocksBeforeXaddWhenRestoreFlagIsActive() {
+        TrafficGenerateReqDto request = TrafficGenerateReqDto.builder()
+                .lineId(10L)
+                .familyId(20L)
+                .appId(30)
+                .apiTotalData(5_000L)
+                .build();
+        when(trafficRestoreTrafficGateService.shouldBlockTraffic()).thenReturn(true);
+
+        assertThrows(ApplicationException.class, () -> trafficRequestEnqueueService.enqueue(request));
+
+        verify(streamsStringRedisTemplate, never()).opsForStream();
+        verifyNoInteractions(streamOperations);
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.pooli.traffic.service.runtime;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -36,32 +37,44 @@ public class TrafficBalanceSnapshotHydrateService {
     /**
      * 개인 회선의 월별 잔량/QoS snapshot을 hydrate합니다.
      *
-     * <p>유효성 검증 후 lineId 단위 lock을 획득한 worker만 RDB source 조회와 Redis 적재를 수행합니다.
+     * <p>Redis key가 이미 있으면 성공으로 종료하고, 누락 시 lineId 단위 lock 전후로 key를 재확인한 뒤
+     * lock을 획득한 worker만 RDB source 조회와 Redis 적재를 수행합니다.
      */
     public TrafficBalanceSnapshotHydrateResult hydrateIndividualSnapshot(Long lineId, YearMonth targetMonth) {
         if (lineId == null || lineId <= 0 || targetMonth == null) {
             return TrafficBalanceSnapshotHydrateResult.invalidOwner();
         }
 
+        String balanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(lineId, targetMonth);
+        if (trafficRemainingBalanceCacheService.isIndividualReady(balanceKey)) {
+            return TrafficBalanceSnapshotHydrateResult.hydrated();
+        }
         return hydrateWithLock(
                 trafficRedisKeyFactory.indivHydrateLockKey(lineId),
-                () -> hydrateIndividualSnapshotUnlocked(lineId, targetMonth)
+                () -> trafficRemainingBalanceCacheService.isIndividualReady(balanceKey),
+                () -> hydrateIndividualSnapshotUnlocked(lineId, targetMonth, balanceKey)
         );
     }
 
     /**
      * 가족 공유풀의 월별 잔량 snapshot을 hydrate합니다.
      *
-     * <p>유효성 검증 후 familyId 단위 lock을 획득한 worker만 RDB source 조회와 Redis 적재를 수행합니다.
+     * <p>Redis key가 이미 있으면 성공으로 종료하고, 누락 시 familyId 단위 lock 전후로 key를 재확인한 뒤
+     * lock을 획득한 worker만 RDB source 조회와 Redis 적재를 수행합니다.
      */
     public TrafficBalanceSnapshotHydrateResult hydrateSharedSnapshot(Long familyId, YearMonth targetMonth) {
         if (familyId == null || familyId <= 0 || targetMonth == null) {
             return TrafficBalanceSnapshotHydrateResult.invalidOwner();
         }
 
+        String balanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(familyId, targetMonth);
+        if (trafficRemainingBalanceCacheService.isSharedReady(balanceKey)) {
+            return TrafficBalanceSnapshotHydrateResult.hydrated();
+        }
         return hydrateWithLock(
                 trafficRedisKeyFactory.sharedHydrateLockKey(familyId),
-                () -> hydrateSharedSnapshotUnlocked(familyId, targetMonth)
+                () -> trafficRemainingBalanceCacheService.isSharedReady(balanceKey),
+                () -> hydrateSharedSnapshotUnlocked(familyId, targetMonth, balanceKey)
         );
     }
 
@@ -70,7 +83,8 @@ public class TrafficBalanceSnapshotHydrateService {
      */
     private TrafficBalanceSnapshotHydrateResult hydrateIndividualSnapshotUnlocked(
             Long lineId,
-            YearMonth targetMonth
+            YearMonth targetMonth,
+            String balanceKey
     ) {
         SnapshotDecision<TrafficIndividualBalanceSnapshot> decision =
                 resolveIndividualSnapshot(lineId, targetMonth);
@@ -79,7 +93,6 @@ public class TrafficBalanceSnapshotHydrateService {
         }
 
         TrafficIndividualBalanceSnapshot snapshot = decision.snapshot();
-        String balanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(lineId, targetMonth);
         trafficRemainingBalanceCacheService.hydrateIndividualSnapshot(
                 balanceKey,
                 snapshot.getAmount() == null ? 0L : snapshot.getAmount(),
@@ -94,7 +107,8 @@ public class TrafficBalanceSnapshotHydrateService {
      */
     private TrafficBalanceSnapshotHydrateResult hydrateSharedSnapshotUnlocked(
             Long familyId,
-            YearMonth targetMonth
+            YearMonth targetMonth,
+            String balanceKey
     ) {
         SnapshotDecision<TrafficSharedBalanceSnapshot> decision = resolveSharedSnapshot(familyId, targetMonth);
         if (decision.status() != SnapshotStatus.READY) {
@@ -102,7 +116,6 @@ public class TrafficBalanceSnapshotHydrateService {
         }
 
         TrafficSharedBalanceSnapshot snapshot = decision.snapshot();
-        String balanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(familyId, targetMonth);
         trafficRemainingBalanceCacheService.hydrateSharedSnapshot(
                 balanceKey,
                 snapshot.getAmount() == null ? 0L : snapshot.getAmount(),
@@ -118,6 +131,7 @@ public class TrafficBalanceSnapshotHydrateService {
      */
     private TrafficBalanceSnapshotHydrateResult hydrateWithLock(
             String lockKey,
+            BooleanSupplier readinessChecker,
             SnapshotHydrateAction hydrateAction
     ) {
         Optional<TrafficLuaScriptInfraService.HydrateLockHandle> lockHandle =
@@ -127,6 +141,10 @@ public class TrafficBalanceSnapshotHydrateService {
         }
 
         try {
+            // lock 대기 중 다른 worker가 snapshot을 만들 수 있으므로 RDB 조회 전에 한 번 더 확인합니다.
+            if (readinessChecker.getAsBoolean()) {
+                return TrafficBalanceSnapshotHydrateResult.hydrated();
+            }
             return hydrateAction.hydrate();
         } finally {
             trafficLuaScriptInfraService.releaseHydrateLock(lockHandle.get());

@@ -53,6 +53,11 @@ app:
       redis-retry:
         max-attempts: ${TRAFFIC_DEDUCT_REDIS_RETRY_MAX_ATTEMPTS:3}
         backoff-ms: ${TRAFFIC_DEDUCT_REDIS_RETRY_BACKOFF_MS:50}
+    restore:
+      worker-chunk-size: ${TRAFFIC_RESTORE_WORKER_CHUNK_SIZE:5000}
+      processing-lease-timeout-seconds: ${TRAFFIC_RESTORE_PROCESSING_LEASE_TIMEOUT_SECONDS:300}
+      retry-limit: ${TRAFFIC_RESTORE_RETRY_LIMIT:3}
+      restore-policy-id: ${TRAFFIC_RESTORE_POLICY_ID:8}
   logging:
     driver: "json-file"
     options:
