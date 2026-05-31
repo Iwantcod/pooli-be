@@ -20,7 +20,7 @@
 - Modify: `src/main/java/com/pooli/traffic/service/runtime/TrafficRemainingBalanceCacheService.java`
 - Test: `src/test/java/com/pooli/traffic/service/runtime/TrafficRemainingBalanceCacheServiceTest.java`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   `TrafficRemainingBalanceCacheServiceTest.java` 내부에 새로 정의할 `@Nested class ReadinessCheckTest` 테스트를 아래 내용으로 추가합니다.
   
   ```java
@@ -122,11 +122,11 @@
       }
   ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `./gradlew test --tests 'com.pooli.traffic.service.runtime.TrafficRemainingBalanceCacheServiceTest$ReadinessCheckTest'`
   Expected: 컴파일 실패 혹은 메서드가 정의되지 않아 실패
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
   `TrafficRemainingBalanceCacheService.java` 파일에 아래 두 메서드를 구현합니다.
   
   ```java
@@ -162,11 +162,11 @@
       }
   ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
   Run: `./gradlew test --tests 'com.pooli.traffic.service.runtime.TrafficRemainingBalanceCacheServiceTest$ReadinessCheckTest'`
   Expected: PASS
 
-- [ ] **Step 5: Stage changes and request commit confirmation**
+- [x] **Step 5: Stage changes and request commit confirmation**
   ```bash
   git add src/main/java/com/pooli/traffic/service/runtime/TrafficRemainingBalanceCacheService.java src/test/java/com/pooli/traffic/service/runtime/TrafficRemainingBalanceCacheServiceTest.java
   ```
@@ -180,7 +180,7 @@
 - Modify: `src/main/java/com/pooli/traffic/service/runtime/TrafficBalanceSnapshotHydrateService.java`
 - Modify: `src/test/java/com/pooli/traffic/service/runtime/TrafficBalanceSnapshotHydrateServiceTest.java`
 
-- [ ] **Step 1: Write the failing/compilation-broken test**
+- [x] **Step 1: Write the failing/compilation-broken test**
   `TrafficBalanceSnapshotHydrateServiceTest.java` 파일에서 기존 `trafficRemainingBalanceCacheService.hasKey(...)`에 대한 모킹 설정을 모두 `isIndividualReady(...)` 혹은 `isSharedReady(...)`로 교체합니다. `verify(..., times(...))`를 사용하므로 아래 static import도 추가합니다.
 
   ```java
@@ -268,11 +268,11 @@
       }
   ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `./gradlew test --tests "com.pooli.traffic.service.runtime.TrafficBalanceSnapshotHydrateServiceTest"`
   Expected: 컴파일 에러 혹은 Stubbing이 맞지 않아 검증 실패
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
   `TrafficBalanceSnapshotHydrateService.java`에서 `BooleanSupplier` import를 추가하고, `hydrateWithLock`의 시그니처와 구현부를 리팩토링하며, 개별/공유 진입점을 각각 맞춤형 검증 메서드로 갱신합니다.
   
   ```java
@@ -353,11 +353,11 @@
       }
   ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
   Run: `./gradlew test --tests "com.pooli.traffic.service.runtime.TrafficBalanceSnapshotHydrateServiceTest"`
   Expected: PASS
 
-- [ ] **Step 5: Stage changes and request commit confirmation**
+- [x] **Step 5: Stage changes and request commit confirmation**
   ```bash
   git add src/main/java/com/pooli/traffic/service/runtime/TrafficBalanceSnapshotHydrateService.java src/test/java/com/pooli/traffic/service/runtime/TrafficBalanceSnapshotHydrateServiceTest.java
   ```
