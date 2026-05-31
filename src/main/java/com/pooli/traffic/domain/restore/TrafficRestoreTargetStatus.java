@@ -20,9 +20,15 @@ public enum TrafficRestoreTargetStatus {
     /** 재시도 한도를 초과했거나 자동 복구가 불가능한 terminal 실패 상태이다. */
     FAILED(false, true);
 
+    /** 복구 작업을 클레임(시작)할 수 있는 상태인지 여부 */
     private final boolean claimable;
+
+    /** 최종 종료(복구 성공 또는 영구 실패) 상태인지 여부 */
     private final boolean terminal;
 
+    /**
+     * 상태 속성을 매핑하는 생성자
+     */
     TrafficRestoreTargetStatus(boolean claimable, boolean terminal) {
         this.claimable = claimable;
         this.terminal = terminal;

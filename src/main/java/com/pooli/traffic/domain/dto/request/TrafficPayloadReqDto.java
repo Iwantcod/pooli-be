@@ -22,25 +22,31 @@ import lombok.Setter;
 public class TrafficPayloadReqDto {
 
     @NotBlank(message = "traceId는 필수입니다.")
+    /** 트래픽 차감 트랜잭션 추적을 위한 고유 식별자 */
     private String traceId;
 
     @NotNull(message = "lineId는 필수입니다.")
     @Positive(message = "lineId는 1 이상이어야 합니다.")
+    /** 회선 ID */
     private Long lineId;
 
     @NotNull(message = "familyId는 필수입니다.")
     @Positive(message = "familyId는 1 이상이어야 합니다.")
+    /** 가족 ID */
     private Long familyId;
 
     @NotNull(message = "appId는 필수입니다.")
     @Positive(message = "appId는 1 이상이어야 합니다.")
+    /** 애플리케이션 ID */
     private Integer appId;
 
     @NotNull(message = "apiTotalData는 필수입니다.")
     @PositiveOrZero(message = "apiTotalData는 0 이상이어야 합니다.")
+    /** 처리 요청 데이터량 (Byte 단위) */
     private Long apiTotalData;
 
     @NotNull(message = "enqueuedAt는 필수입니다.")
     @Positive(message = "enqueuedAt는 1 이상이어야 합니다.")
+    /** 메시지가 큐에 인입된 Epoch 밀리초 시각 */
     private Long enqueuedAt;
 }

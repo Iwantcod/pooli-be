@@ -14,7 +14,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class ImmediateBlockOutboxPayload {
+    /** 회선 ID */
     private Long lineId;
+    /** 차단 해제 예정 Epoch 초 단위 시각 */
     private Long blockEndEpochSecond;
+    /** 차단 정책 버전 */
     private Long version;
 }

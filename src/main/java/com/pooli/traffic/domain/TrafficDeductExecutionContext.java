@@ -5,9 +5,12 @@ package com.pooli.traffic.domain;
  */
 public class TrafficDeductExecutionContext {
 
+    /** 트래픽 차감 요청의 고유 식별자(Trace ID) */
     private final String traceId;
+    /** 차단성 정책 검증에 대한 Lua 스크립트 실행 결과 캐시 */
     private TrafficLuaExecutionResult blockingPolicyCheckResult;
 
+    /** 지정된 Trace ID를 사용하여 컨텍스트 인스턴스를 초기화하는 private 생성자 */
     private TrafficDeductExecutionContext(String traceId) {
         this.traceId = traceId;
         this.blockingPolicyCheckResult = null;

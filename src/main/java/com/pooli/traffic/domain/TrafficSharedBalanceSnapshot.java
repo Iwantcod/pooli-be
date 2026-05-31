@@ -17,7 +17,10 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class TrafficSharedBalanceSnapshot {
 
+    /** 가족(공유 풀) 식별자 */
     private Long familyId;
+    /** 가족 공유 풀의 잔여 데이터량 (Byte 단위) */
     private Long amount;
+    /** 공유 풀 Redis 잔액 스냅샷이 최종 갱신된 Epoch 밀리초 시각 */
     private LocalDateTime lastBalanceRefreshedAt;
 }

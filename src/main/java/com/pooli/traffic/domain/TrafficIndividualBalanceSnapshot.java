@@ -17,8 +17,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class TrafficIndividualBalanceSnapshot {
 
+    /** 회선 고유 식별자 */
     private Long lineId;
+    /** 회선별 개인 잔여 데이터량 (Byte 단위) */
     private Long amount;
+    /** 데이터 소진 시 적용될 QOS 제한 속도 (bps 단위) */
     private Long qosSpeedLimit;
+    /** Redis 잔액 스냅샷이 최종 동기화/갱신된 Epoch 밀리초 시각 */
     private LocalDateTime lastBalanceRefreshedAt;
 }

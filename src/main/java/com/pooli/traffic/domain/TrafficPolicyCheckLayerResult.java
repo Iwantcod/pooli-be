@@ -42,6 +42,7 @@ public final class TrafficPolicyCheckLayerResult {
      */
     private final RuntimeException failure;
 
+    /** 각 정책 검증 레이어의 실행 상태 및 최종 검증 결과를 생성하는 생성자입니다. */
     private TrafficPolicyCheckLayerResult(
             TrafficLuaStatus status,
             boolean whitelistBypass,
