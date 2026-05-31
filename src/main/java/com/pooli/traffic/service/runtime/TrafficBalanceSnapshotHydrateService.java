@@ -3,6 +3,7 @@ package com.pooli.traffic.service.runtime;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -45,12 +46,12 @@ public class TrafficBalanceSnapshotHydrateService {
         }
 
         String balanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(lineId, targetMonth);
-        if (trafficRemainingBalanceCacheService.hasKey(balanceKey)) {
+        if (trafficRemainingBalanceCacheService.isIndividualReady(balanceKey)) {
             return TrafficBalanceSnapshotHydrateResult.hydrated();
         }
         return hydrateWithLock(
                 trafficRedisKeyFactory.indivHydrateLockKey(lineId),
-                balanceKey,
+                () -> trafficRemainingBalanceCacheService.isIndividualReady(balanceKey),
                 () -> hydrateIndividualSnapshotUnlocked(lineId, targetMonth, balanceKey)
         );
     }
@@ -67,12 +68,12 @@ public class TrafficBalanceSnapshotHydrateService {
         }
 
         String balanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(familyId, targetMonth);
-        if (trafficRemainingBalanceCacheService.hasKey(balanceKey)) {
+        if (trafficRemainingBalanceCacheService.isSharedReady(balanceKey)) {
             return TrafficBalanceSnapshotHydrateResult.hydrated();
         }
         return hydrateWithLock(
                 trafficRedisKeyFactory.sharedHydrateLockKey(familyId),
-                balanceKey,
+                () -> trafficRemainingBalanceCacheService.isSharedReady(balanceKey),
                 () -> hydrateSharedSnapshotUnlocked(familyId, targetMonth, balanceKey)
         );
     }
@@ -130,7 +131,7 @@ public class TrafficBalanceSnapshotHydrateService {
      */
     private TrafficBalanceSnapshotHydrateResult hydrateWithLock(
             String lockKey,
-            String balanceKey,
+            BooleanSupplier readinessChecker,
             SnapshotHydrateAction hydrateAction
     ) {
         Optional<TrafficLuaScriptInfraService.HydrateLockHandle> lockHandle =
@@ -141,7 +142,7 @@ public class TrafficBalanceSnapshotHydrateService {
 
         try {
             // lock 대기 중 다른 worker가 snapshot을 만들 수 있으므로 RDB 조회 전에 한 번 더 확인합니다.
-            if (trafficRemainingBalanceCacheService.hasKey(balanceKey)) {
+            if (readinessChecker.getAsBoolean()) {
                 return TrafficBalanceSnapshotHydrateResult.hydrated();
             }
             return hydrateAction.hydrate();

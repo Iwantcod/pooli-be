@@ -58,7 +58,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
         stubIndividualHydrateLockAcquired(11L);
         when(trafficBalanceSnapshotSourceMapper.selectIndividualBalanceSnapshot(11L)).thenReturn(snapshot);
         when(trafficRedisKeyFactory.remainingIndivAmountKey(11L, targetMonth)).thenReturn("indiv:11");
-        when(trafficRemainingBalanceCacheService.hasKey("indiv:11")).thenReturn(false);
+        when(trafficRemainingBalanceCacheService.isIndividualReady("indiv:11")).thenReturn(false);
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth)).thenReturn(1_779_033_599L);
 
         TrafficBalanceSnapshotHydrateResult result = service.hydrateIndividualSnapshot(11L, targetMonth);
@@ -86,7 +86,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
         when(trafficBalanceSnapshotSourceMapper.selectSharedBalanceSnapshot(22L))
                 .thenReturn(staleSnapshot, refreshedSnapshot);
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, targetMonth)).thenReturn("shared:22");
-        when(trafficRemainingBalanceCacheService.hasKey("shared:22")).thenReturn(false);
+        when(trafficRemainingBalanceCacheService.isSharedReady("shared:22")).thenReturn(false);
         when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth)).thenReturn(1_779_033_599L);
 
         TrafficBalanceSnapshotHydrateResult result = service.hydrateSharedSnapshot(22L, targetMonth);
@@ -106,7 +106,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
         YearMonth targetMonth = YearMonth.of(2026, 5);
         stubIndividualHydrateLockAcquired(11L);
         when(trafficRedisKeyFactory.remainingIndivAmountKey(11L, targetMonth)).thenReturn("indiv:11");
-        when(trafficRemainingBalanceCacheService.hasKey("indiv:11")).thenReturn(false);
+        when(trafficRemainingBalanceCacheService.isIndividualReady("indiv:11")).thenReturn(false);
         when(trafficBalanceSnapshotSourceMapper.selectIndividualBalanceSnapshot(11L))
                 .thenReturn(TrafficIndividualBalanceSnapshot.builder()
                         .lineId(11L)
@@ -138,7 +138,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
                 .build();
         stubSharedHydrateLockAcquired(22L);
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, targetMonth)).thenReturn("shared:22");
-        when(trafficRemainingBalanceCacheService.hasKey("shared:22")).thenReturn(false);
+        when(trafficRemainingBalanceCacheService.isSharedReady("shared:22")).thenReturn(false);
         when(trafficBalanceSnapshotSourceMapper.selectSharedBalanceSnapshot(22L))
                 .thenReturn(staleSnapshot, staleSnapshot);
 
@@ -159,7 +159,7 @@ class TrafficBalanceSnapshotHydrateServiceTest {
         YearMonth targetMonth = YearMonth.of(2026, 5);
         when(trafficRedisKeyFactory.indivHydrateLockKey(11L)).thenReturn("indiv-lock:11");
         when(trafficRedisKeyFactory.remainingIndivAmountKey(11L, targetMonth)).thenReturn("indiv:11");
-        when(trafficRemainingBalanceCacheService.hasKey("indiv:11")).thenReturn(false);
+        when(trafficRemainingBalanceCacheService.isIndividualReady("indiv:11")).thenReturn(false);
         when(trafficLuaScriptInfraService.tryAcquireHydrateLock("indiv-lock:11")).thenReturn(Optional.empty());
 
         TrafficBalanceSnapshotHydrateResult result = service.hydrateIndividualSnapshot(11L, targetMonth);
@@ -177,11 +177,11 @@ class TrafficBalanceSnapshotHydrateServiceTest {
     }
 
     @Test
-    @DisplayName("개인 잔량 key가 이미 있으면 hydrate lock 없이 HYDRATED를 반환한다")
-    void hydrateIndividualSnapshot_returnsHydratedWhenKeyAlreadyExistsBeforeLock() {
+    @DisplayName("개인 잔량 필드가 이미 준비되어 있으면 hydrate lock 없이 HYDRATED를 반환한다")
+    void hydrateIndividualSnapshot_returnsHydratedWhenFieldsReadyBeforeLock() {
         YearMonth targetMonth = YearMonth.of(2026, 5);
         when(trafficRedisKeyFactory.remainingIndivAmountKey(11L, targetMonth)).thenReturn("indiv:11");
-        when(trafficRemainingBalanceCacheService.hasKey("indiv:11")).thenReturn(true);
+        when(trafficRemainingBalanceCacheService.isIndividualReady("indiv:11")).thenReturn(true);
 
         TrafficBalanceSnapshotHydrateResult result = service.hydrateIndividualSnapshot(11L, targetMonth);
 
@@ -191,11 +191,11 @@ class TrafficBalanceSnapshotHydrateServiceTest {
     }
 
     @Test
-    @DisplayName("공유 잔량 key가 lock 획득 후 생성되면 RDB 조회 없이 HYDRATED를 반환한다")
-    void hydrateSharedSnapshot_returnsHydratedWhenKeyExistsAfterLock() {
+    @DisplayName("공유 잔량 필드가 lock 획득 후 준비되면 RDB 조회 없이 HYDRATED를 반환한다")
+    void hydrateSharedSnapshot_returnsHydratedWhenFieldsReadyAfterLock() {
         YearMonth targetMonth = YearMonth.of(2026, 5);
         when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, targetMonth)).thenReturn("shared:22");
-        when(trafficRemainingBalanceCacheService.hasKey("shared:22")).thenReturn(false, true);
+        when(trafficRemainingBalanceCacheService.isSharedReady("shared:22")).thenReturn(false, true);
         stubSharedHydrateLockAcquired(22L);
 
         TrafficBalanceSnapshotHydrateResult result = service.hydrateSharedSnapshot(22L, targetMonth);
@@ -209,6 +209,51 @@ class TrafficBalanceSnapshotHydrateServiceTest {
                         org.mockito.ArgumentMatchers.anyLong()
                 );
         verify(trafficLuaScriptInfraService).releaseHydrateLock(any());
+    }
+
+    @Test
+    @DisplayName("개인 잔량 key가 존재하지만 필수 필드가 누락된 경우 RDB에서 다시 조회하여 적재한다")
+    void hydrateIndividualSnapshot_hydratesWhenKeyExistsButCorrupted() {
+        YearMonth targetMonth = YearMonth.of(2026, 5);
+        TrafficIndividualBalanceSnapshot snapshot = TrafficIndividualBalanceSnapshot.builder()
+                .lineId(11L)
+                .amount(300L)
+                .qosSpeedLimit(2L)
+                .lastBalanceRefreshedAt(LocalDateTime.of(2026, 5, 1, 0, 0))
+                .build();
+        stubIndividualHydrateLockAcquired(11L);
+        when(trafficBalanceSnapshotSourceMapper.selectIndividualBalanceSnapshot(11L)).thenReturn(snapshot);
+        when(trafficRedisKeyFactory.remainingIndivAmountKey(11L, targetMonth)).thenReturn("indiv:11");
+        when(trafficRemainingBalanceCacheService.isIndividualReady("indiv:11")).thenReturn(false);
+        when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth)).thenReturn(1_779_033_599L);
+
+        TrafficBalanceSnapshotHydrateResult result = service.hydrateIndividualSnapshot(11L, targetMonth);
+
+        assertThat(result.status()).isEqualTo(Status.HYDRATED);
+        verify(trafficRemainingBalanceCacheService)
+                .hydrateIndividualSnapshot("indiv:11", 300L, 250L, 1_779_033_599L);
+    }
+
+    @Test
+    @DisplayName("공유 잔량 key가 존재하지만 필수 필드가 누락된 경우 RDB에서 다시 조회하여 적재한다")
+    void hydrateSharedSnapshot_hydratesWhenKeyExistsButCorrupted() {
+        YearMonth targetMonth = YearMonth.of(2026, 5);
+        TrafficSharedBalanceSnapshot snapshot = TrafficSharedBalanceSnapshot.builder()
+                .familyId(22L)
+                .amount(500L)
+                .lastBalanceRefreshedAt(LocalDateTime.of(2026, 5, 1, 0, 0))
+                .build();
+        stubSharedHydrateLockAcquired(22L);
+        when(trafficBalanceSnapshotSourceMapper.selectSharedBalanceSnapshot(22L)).thenReturn(snapshot);
+        when(trafficRedisKeyFactory.remainingSharedAmountKey(22L, targetMonth)).thenReturn("shared:22");
+        when(trafficRemainingBalanceCacheService.isSharedReady("shared:22")).thenReturn(false);
+        when(trafficRedisRuntimePolicy.resolveMonthlyExpireAtEpochSeconds(targetMonth)).thenReturn(1_779_033_599L);
+
+        TrafficBalanceSnapshotHydrateResult result = service.hydrateSharedSnapshot(22L, targetMonth);
+
+        assertThat(result.status()).isEqualTo(Status.HYDRATED);
+        verify(trafficRemainingBalanceCacheService)
+                .hydrateSharedSnapshot("shared:22", 500L, 1_779_033_599L);
     }
 
     private void stubIndividualHydrateLockAcquired(Long lineId) {

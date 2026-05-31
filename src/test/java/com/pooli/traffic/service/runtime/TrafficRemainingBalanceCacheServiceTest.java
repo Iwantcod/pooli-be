@@ -311,4 +311,102 @@ class TrafficRemainingBalanceCacheServiceTest {
             verify(hashOperations, never()).increment("pooli:remaining_indiv_amount:11:202603", "amount", -100L);
         }
     }
+
+    @Nested
+    @DisplayName("캐시 준비성 검증 테스트")
+    class ReadinessCheckTest {
+
+        @Test
+        @DisplayName("개인 스냅샷 해시에 amount와 qos가 정상 존재하면 true 반환")
+        void isIndividualReadyReturnsTrueWhenFieldsExistAndNonEmpty() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.multiGet("pooli:remaining_indiv_amount:11:202605", java.util.List.of("amount", "qos")))
+                    .thenReturn(java.util.List.of("300", "250"));
+
+            boolean result = trafficRemainingBalanceCacheService.isIndividualReady("pooli:remaining_indiv_amount:11:202605");
+
+            assertTrue(result);
+        }
+
+        @Test
+        @DisplayName("개인 스냅샷 해시에 amount가 누락되면 false 반환")
+        void isIndividualReadyReturnsFalseWhenAmountMissing() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.multiGet("pooli:remaining_indiv_amount:11:202605", java.util.List.of("amount", "qos")))
+                    .thenReturn(java.util.Arrays.asList(null, "250"));
+
+            boolean result = trafficRemainingBalanceCacheService.isIndividualReady("pooli:remaining_indiv_amount:11:202605");
+
+            assertFalse(result);
+        }
+
+        @Test
+        @DisplayName("개인 스냅샷 해시에 qos가 누락되면 false 반환")
+        void isIndividualReadyReturnsFalseWhenQosMissing() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.multiGet("pooli:remaining_indiv_amount:11:202605", java.util.List.of("amount", "qos")))
+                    .thenReturn(java.util.Arrays.asList("300", null));
+
+            boolean result = trafficRemainingBalanceCacheService.isIndividualReady("pooli:remaining_indiv_amount:11:202605");
+
+            assertFalse(result);
+        }
+
+        @Test
+        @DisplayName("개인 스냅샷 해시의 amount가 공백 문자열이면 false 반환")
+        void isIndividualReadyReturnsFalseWhenAmountIsBlank() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.multiGet("pooli:remaining_indiv_amount:11:202605", java.util.List.of("amount", "qos")))
+                    .thenReturn(java.util.List.of(" ", "250"));
+
+            boolean result = trafficRemainingBalanceCacheService.isIndividualReady("pooli:remaining_indiv_amount:11:202605");
+
+            assertFalse(result);
+        }
+
+        @Test
+        @DisplayName("개인 스냅샷 해시의 qos가 공백 문자열이면 false 반환")
+        void isIndividualReadyReturnsFalseWhenQosIsBlank() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.multiGet("pooli:remaining_indiv_amount:11:202605", java.util.List.of("amount", "qos")))
+                    .thenReturn(java.util.List.of("300", " "));
+
+            boolean result = trafficRemainingBalanceCacheService.isIndividualReady("pooli:remaining_indiv_amount:11:202605");
+
+            assertFalse(result);
+        }
+
+        @Test
+        @DisplayName("공유 스냅샷 해시에 amount가 정상 존재하면 true 반환")
+        void isSharedReadyReturnsTrueWhenAmountExistsAndNonEmpty() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get("pooli:remaining_shared_amount:22:202605", "amount")).thenReturn("500");
+
+            boolean result = trafficRemainingBalanceCacheService.isSharedReady("pooli:remaining_shared_amount:22:202605");
+
+            assertTrue(result);
+        }
+
+        @Test
+        @DisplayName("공유 스냅샷 해시에 amount가 누락되면 false 반환")
+        void isSharedReadyReturnsFalseWhenAmountMissing() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get("pooli:remaining_shared_amount:22:202605", "amount")).thenReturn(null);
+
+            boolean result = trafficRemainingBalanceCacheService.isSharedReady("pooli:remaining_shared_amount:22:202605");
+
+            assertFalse(result);
+        }
+
+        @Test
+        @DisplayName("공유 스냅샷 해시의 amount가 공백 문자열이면 false 반환")
+        void isSharedReadyReturnsFalseWhenAmountIsBlank() {
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get("pooli:remaining_shared_amount:22:202605", "amount")).thenReturn(" ");
+
+            boolean result = trafficRemainingBalanceCacheService.isSharedReady("pooli:remaining_shared_amount:22:202605");
+
+            assertFalse(result);
+        }
+    }
 }
