@@ -268,7 +268,8 @@ class TrafficPolicyBootstrapServiceTest {
                 snapshot(4, true, now),
                 snapshot(5, true, now),
                 snapshot(6, true, now),
-                snapshot(7, true, now)
+                snapshot(7, true, now),
+                snapshot(8, true, now)
         );
     }
 
@@ -280,7 +281,8 @@ class TrafficPolicyBootstrapServiceTest {
                 snapshot(3, true, now),
                 snapshot(4, true, now),
                 snapshot(5, true, now),
-                snapshot(6, true, now)
+                snapshot(6, true, now),
+                snapshot(8, true, now)
         );
     }
 

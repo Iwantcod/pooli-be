@@ -59,7 +59,8 @@ class TrafficDeductOrchestratorServiceTest {
             "pooli:policy:4",
             "pooli:policy:5",
             "pooli:policy:6",
-            "pooli:policy:7"
+            "pooli:policy:7",
+            "pooli:policy:8"
     );
 
     @Mock
@@ -120,12 +121,13 @@ class TrafficDeductOrchestratorServiceTest {
         lenient().when(trafficRedisKeyFactory.policyKey(5L)).thenReturn("pooli:policy:5");
         lenient().when(trafficRedisKeyFactory.policyKey(6L)).thenReturn("pooli:policy:6");
         lenient().when(trafficRedisKeyFactory.policyKey(7L)).thenReturn("pooli:policy:7");
+        lenient().when(trafficRedisKeyFactory.policyKey(8L)).thenReturn("pooli:policy:8");
         lenient().when(trafficLuaScriptInfraService.executePreflightKeyExistence(
                 "pooli:line_policy_ready:11",
                 "pooli:remaining_indiv_amount:11:202603",
                 "pooli:remaining_shared_amount:22:202603",
                 GLOBAL_POLICY_KEYS
-        )).thenReturn(List.of(1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
+        )).thenReturn(List.of(1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
     }
 
     @Test
@@ -285,7 +287,7 @@ class TrafficDeductOrchestratorServiceTest {
                 "pooli:remaining_indiv_amount:11:202603",
                 "pooli:remaining_shared_amount:22:202603",
                 GLOBAL_POLICY_KEYS
-        )).thenReturn(List.of(0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
+        )).thenReturn(List.of(0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
         doThrow(exception).when(trafficLinePolicyHydrationService).ensureLoaded(11L);
         when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(exception)).thenReturn(false);
 
@@ -307,7 +309,7 @@ class TrafficDeductOrchestratorServiceTest {
                 "pooli:remaining_indiv_amount:11:202603",
                 "pooli:remaining_shared_amount:22:202603",
                 GLOBAL_POLICY_KEYS
-        )).thenReturn(List.of(0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
+        )).thenReturn(List.of(0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
         when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
                 eq(payload),
                 eq(100L),
@@ -352,7 +354,7 @@ class TrafficDeductOrchestratorServiceTest {
                 "pooli:remaining_indiv_amount:11:202603",
                 "pooli:remaining_shared_amount:22:202603",
                 GLOBAL_POLICY_KEYS
-        )).thenReturn(List.of(1L, 1L, 1L, 1L, 0L, 1L, 1L, 1L, 1L, 1L));
+        )).thenReturn(List.of(1L, 1L, 1L, 1L, 0L, 1L, 1L, 1L, 1L, 1L, 1L));
         when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
                 eq(payload),
                 eq(100L),
@@ -389,7 +391,7 @@ class TrafficDeductOrchestratorServiceTest {
                 "pooli:remaining_indiv_amount:11:202603",
                 "pooli:remaining_shared_amount:22:202603",
                 GLOBAL_POLICY_KEYS
-        )).thenReturn(List.of(1L, 0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
+        )).thenReturn(List.of(1L, 0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
         when(trafficBalanceSnapshotHydrateService.hydrateIndividualSnapshot(eq(11L), any(YearMonth.class)))
                 .thenReturn(TrafficBalanceSnapshotHydrateResult.hydrated());
         when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
@@ -433,7 +435,7 @@ class TrafficDeductOrchestratorServiceTest {
                 "pooli:remaining_indiv_amount:11:202603",
                 "pooli:remaining_shared_amount:22:202603",
                 GLOBAL_POLICY_KEYS
-        )).thenReturn(List.of(1L, 1L, 0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
+        )).thenReturn(List.of(1L, 1L, 0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
         when(trafficBalanceSnapshotHydrateService.hydrateSharedSnapshot(eq(22L), any(YearMonth.class)))
                 .thenReturn(TrafficBalanceSnapshotHydrateResult.hydrated());
         when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
@@ -480,7 +482,7 @@ class TrafficDeductOrchestratorServiceTest {
                 "pooli:remaining_indiv_amount:11:202603",
                 "pooli:remaining_shared_amount:22:202603",
                 GLOBAL_POLICY_KEYS
-        )).thenReturn(List.of(0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 0L, 1L));
+        )).thenReturn(List.of(0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 0L, 1L, 1L));
         when(trafficDeductLuaExecutor.executeUnifiedWithRetry(
                 eq(payload),
                 eq(100L),

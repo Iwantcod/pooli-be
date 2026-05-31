@@ -42,7 +42,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficDeductOrchestratorService {
 
-    private static final List<Long> GLOBAL_POLICY_IDS = List.of(1L, 2L, 3L, 4L, 5L, 6L, 7L);
+    private static final List<Long> GLOBAL_POLICY_IDS = List.of(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L);
 
     private final TrafficDeductLuaExecutor trafficDeductLuaExecutor;
     private final TrafficHydrateService trafficHydrateService;

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import com.pooli.traffic.config.TrafficRestoreProperties;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.policy.mapper.PolicyBackOfficeMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ public class TrafficRestorePolicyFlagService {
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRestoreProperties trafficRestoreProperties;
     private final ObjectProvider<TrafficPolicyBootstrapService> trafficPolicyBootstrapServiceProvider;
+    private final PolicyBackOfficeMapper policyBackOfficeMapper;
 
     /**
      * 복구 flag 활성 여부를 조회하고, 상태가 불명확하면 traffic 차단을 위해 true를 반환한다.
@@ -59,8 +61,15 @@ public class TrafficRestorePolicyFlagService {
      * Redis 장애 복구 시작 시 traffic 진입 차단 flag를 활성화한다.
      */
     public void activateRestoreFlag() {
+        int policyId = trafficRestoreProperties.getRestorePolicyId();
+        // 1. MySQL의 8번 정책 값을 true로 갱신
+        policyBackOfficeMapper.updatePolicyActiveStatus(policyId, true);
+
+        // 2. 다른 정책들과 함께 전체 정책 스냅샷을 Redis에 동기화
         hydratePolicySnapshot();
-        String policyKey = trafficRedisKeyFactory.policyKey(trafficRestoreProperties.getRestorePolicyId());
+
+        // 3. Redis key 직접 갱신 (락 실패 대비 및 명시적 갱신 보장)
+        String policyKey = trafficRedisKeyFactory.policyKey(policyId);
         cacheStringRedisTemplate.opsForHash().put(policyKey, "value", "1");
         cacheStringRedisTemplate.opsForHash().put(policyKey, "version", String.valueOf(System.currentTimeMillis()));
     }
@@ -69,7 +78,12 @@ public class TrafficRestorePolicyFlagService {
      * Redis 장애 복구 완료 시 traffic 진입 차단 flag를 비활성화한다.
      */
     public void deactivateRestoreFlag() {
-        String policyKey = trafficRedisKeyFactory.policyKey(trafficRestoreProperties.getRestorePolicyId());
+        int policyId = trafficRestoreProperties.getRestorePolicyId();
+        // 1. MySQL의 8번 정책 값을 false로 갱신
+        policyBackOfficeMapper.updatePolicyActiveStatus(policyId, false);
+
+        // 2. Redis key 직접 갱신
+        String policyKey = trafficRedisKeyFactory.policyKey(policyId);
         cacheStringRedisTemplate.opsForHash().put(policyKey, "value", "0");
         cacheStringRedisTemplate.opsForHash().put(policyKey, "version", String.valueOf(System.currentTimeMillis()));
     }

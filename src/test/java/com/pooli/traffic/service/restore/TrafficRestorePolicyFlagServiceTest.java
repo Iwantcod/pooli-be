@@ -19,6 +19,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import com.pooli.traffic.config.TrafficRestoreProperties;
 import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.policy.mapper.PolicyBackOfficeMapper;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficRestorePolicyFlagServiceTest {
@@ -40,6 +41,9 @@ class TrafficRestorePolicyFlagServiceTest {
     @Mock
     private TrafficPolicyBootstrapService bootstrapService;
 
+    @Mock
+    private PolicyBackOfficeMapper policyBackOfficeMapper;
+
     private TrafficRestorePolicyFlagService service;
 
     @BeforeEach
@@ -50,7 +54,8 @@ class TrafficRestorePolicyFlagServiceTest {
                 cacheStringRedisTemplate,
                 trafficRedisKeyFactory,
                 properties,
-                bootstrapServiceProvider
+                bootstrapServiceProvider,
+                policyBackOfficeMapper
         );
         when(trafficRedisKeyFactory.policyKey(8)).thenReturn(RESTORE_POLICY_KEY);
     }
@@ -102,6 +107,20 @@ class TrafficRestorePolicyFlagServiceTest {
 
         service.deactivateRestoreFlag();
 
+        verify(policyBackOfficeMapper).updatePolicyActiveStatus(8, false);
         verify(hashOperations).put(RESTORE_POLICY_KEY, "value", "0");
+    }
+
+    @Test
+    @DisplayName("복구 시작 시 traffic 진입 차단 flag를 활성화한다")
+    void activatesRestoreFlag() {
+        when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+        when(bootstrapServiceProvider.getIfAvailable()).thenReturn(bootstrapService);
+
+        service.activateRestoreFlag();
+
+        verify(policyBackOfficeMapper).updatePolicyActiveStatus(8, true);
+        verify(bootstrapService).hydrateOnDemand();
+        verify(hashOperations).put(RESTORE_POLICY_KEY, "value", "1");
     }
 }

@@ -39,7 +39,7 @@ import lombok.extern.slf4j.Slf4j;
  * POLICY 전역 활성화 상태를 Redis policy:{policyId} 키에 동기화하는 bootstrap/reconciliation 서비스입니다.
  *
  * <p>동작 규칙:
- * 1) 부팅 시 POLICY 스냅샷을 읽어 필수 정책 ID(1~7) 존재를 검증(fail-fast)
+ * 1) 부팅 시 POLICY 스냅샷을 읽어 필수 정책 ID(1~8) 존재를 검증(fail-fast)
  * 2) 분산락(NX PX) 획득 인스턴스만 pipeline으로 Redis 반영
  * 3) 주기적 reconciliation으로 DB->Redis 불일치를 보정
  * 4) lock 해제는 소유자 비교 Lua로 수행
@@ -59,8 +59,10 @@ public class TrafficPolicyBootstrapService {
             entry(4, "LINE_LIMIT_DAILY_POLICY"),
             entry(5, "APP_POLICY_DATA_POLICY"),
             entry(6, "APP_POLICY_SPEED_POLICY"),
-            entry(7, "APP_POLICY_WHITELIST_POLICY")
+            entry(7, "APP_POLICY_WHITELIST_POLICY"),
+            entry(8, "TRAFFIC_RESTORE_IN_PROGRESS")
     );
+
 
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
