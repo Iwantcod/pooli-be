@@ -49,7 +49,7 @@
 **Files:**
 - No code change
 
-- [ ] **Step 1: `superpowers:using-git-worktrees` 사용**
+- [x] **Step 1: `superpowers:using-git-worktrees` 사용**
 
 승인 후 구현 시작 전에 `superpowers:using-git-worktrees`를 사용한다.
 
@@ -57,7 +57,7 @@ Expected:
 - 현재 작업이 `main` 또는 `master`에서 직접 수행되지 않는다.
 - 새 worktree 또는 안전한 feature branch에서 구현한다.
 
-- [ ] **Step 2: 작업 전 상태 확인**
+- [x] **Step 2: 작업 전 상태 확인**
 
 Run:
 
@@ -74,7 +74,7 @@ Expected:
 **Files:**
 - Modify: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreOrchestratorServiceTest.java`
 
-- [ ] **Step 1: 테스트 fixture에 executor와 Redis lock 의존성 추가**
+- [x] **Step 1: 테스트 fixture에 executor와 Redis lock 의존성 추가**
 
 `@InjectMocks`는 `Executor`, `StringRedisTemplate`, `ValueOperations`, `TrafficRedisKeyFactory`, `TrafficLuaScriptInfraService` 주입 제어가 어려우므로 명시 생성 방식으로 바꾼다.
 
@@ -116,7 +116,7 @@ void setUp() {
 }
 ```
 
-- [ ] **Step 2: start가 worker를 제출하고 즉시 접수 응답을 반환하는 실패 테스트 작성**
+- [x] **Step 2: start가 worker를 제출하고 즉시 접수 응답을 반환하는 실패 테스트 작성**
 
 ```java
 @Test
@@ -144,7 +144,7 @@ void startSubmitsBackgroundWorkerAndReturnsAcceptedResponse() {
 }
 ```
 
-- [ ] **Step 3: 중복 start lock 미획득 실패 테스트 작성**
+- [x] **Step 3: 중복 start lock 미획득 실패 테스트 작성**
 
 ```java
 @Test
@@ -170,7 +170,7 @@ void startRejectsDuplicateWhenRestoreLockAlreadyHeld() {
 }
 ```
 
-- [ ] **Step 4: 실패 확인**
+- [x] **Step 4: 실패 확인**
 
 Run:
 
@@ -186,7 +186,7 @@ Expected:
 **Files:**
 - Modify: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreOrchestratorServiceTest.java`
 
-- [ ] **Step 1: 제출된 worker를 캡처해 성공 경로 순서를 검증하는 실패 테스트 작성**
+- [x] **Step 1: 제출된 worker를 캡처해 성공 경로 순서를 검증하는 실패 테스트 작성**
 
 ```java
 @Test
@@ -219,7 +219,7 @@ void backgroundWorkerRunsRestoreAndAlwaysCleansUpOnSuccess() {
 }
 ```
 
-- [ ] **Step 2: execute 예외 경로에서도 정리되는 실패 테스트 작성**
+- [x] **Step 2: execute 예외 경로에서도 정리되는 실패 테스트 작성**
 
 ```java
 @Test
@@ -248,7 +248,7 @@ void backgroundWorkerCleansUpWhenExecutionFails() {
 }
 ```
 
-- [ ] **Step 3: 실패 확인**
+- [x] **Step 3: 실패 확인**
 
 Run:
 
@@ -264,7 +264,7 @@ Expected:
 **Files:**
 - Modify: `src/main/java/com/pooli/traffic/service/restore/TrafficRestoreOrchestratorService.java`
 
-- [ ] **Step 1: 필요한 의존성과 상수 추가**
+- [x] **Step 1: 필요한 의존성과 상수 추가**
 
 ```java
 import java.time.Duration;
@@ -294,7 +294,7 @@ private final TrafficRedisKeyFactory trafficRedisKeyFactory;
 private final TrafficLuaScriptInfraService trafficLuaScriptInfraService;
 ```
 
-- [ ] **Step 2: `start()`를 접수형으로 변경**
+- [x] **Step 2: `start()`를 접수형으로 변경**
 
 ```java
 public TrafficRestoreStartResDto start(TrafficRestoreStartReqDto request) {
@@ -314,7 +314,7 @@ public TrafficRestoreStartResDto start(TrafficRestoreStartReqDto request) {
 }
 ```
 
-- [ ] **Step 3: worker와 lock helper 구현**
+- [x] **Step 3: worker와 lock helper 구현**
 
 ```java
 private void runRestoreWorker(LocalDate failureDate, LocalDate restoreStartDate, RestoreLock restoreLock) {
@@ -368,7 +368,7 @@ private record RestoreLock(String lockKey, String owner) {
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run:
 
@@ -384,7 +384,7 @@ Expected:
 **Files:**
 - Modify: `src/test/java/com/pooli/traffic/service/restore/TrafficRestoreOrchestratorServiceTest.java`
 
-- [ ] **Step 1: resume 허용 시 worker 제출을 검증하는 실패 테스트 작성**
+- [x] **Step 1: resume 허용 시 worker 제출을 검증하는 실패 테스트 작성**
 
 ```java
 @Test
@@ -414,7 +414,7 @@ void resumeSubmitsBackgroundWorkerWhenRestartAccepted() {
 }
 ```
 
-- [ ] **Step 2: resume 중복 lock 미획득 시 metadata를 재시작하지 않는 실패 테스트 작성**
+- [x] **Step 2: resume 중복 lock 미획득 시 metadata를 재시작하지 않는 실패 테스트 작성**
 
 ```java
 @Test
@@ -442,7 +442,7 @@ void resumeRejectsWhenRestoreLockAlreadyHeld() {
 }
 ```
 
-- [ ] **Step 3: 실패 확인**
+- [x] **Step 3: 실패 확인**
 
 Run:
 
@@ -458,7 +458,7 @@ Expected:
 **Files:**
 - Modify: `src/main/java/com/pooli/traffic/service/restore/TrafficRestoreOrchestratorService.java`
 
-- [ ] **Step 1: `resume()`에서 lock을 먼저 획득하고 metadata 재시작을 CAS 결과로 판단**
+- [x] **Step 1: `resume()`에서 lock을 먼저 획득하고 metadata 재시작을 CAS 결과로 판단**
 
 ```java
 public TrafficRestoreResumeResDto resume(LocalDate anchorDate) {
@@ -497,7 +497,7 @@ public TrafficRestoreResumeResDto resume(LocalDate anchorDate) {
 }
 ```
 
-- [ ] **Step 2: resume worker 범위 self-review**
+- [x] **Step 2: resume worker 범위 self-review**
 
 검토 기준:
 - 기존 `resume(anchorDate)`는 `restoreStartDate`를 별도 입력받지 않는다.
@@ -505,7 +505,7 @@ public TrafficRestoreResumeResDto resume(LocalDate anchorDate) {
 - 따라서 최소 변경은 `runRestoreWorker(anchorDate, anchorDate, lock)`로 같은 날짜의 phase 0~2 재개 drain을 수행하는 것이다.
 - 구현 중 실제 재개 범위가 `failureDate != restoreStartDate`를 반드시 복원해야 한다는 코드 근거가 발견되면 중단하고, 응답 DTO 또는 metadata에 restore range를 저장하는 별도 계획을 사용자에게 요청한다.
 
-- [ ] **Step 3: 테스트 통과 확인**
+- [x] **Step 3: 테스트 통과 확인**
 
 Run:
 
@@ -522,7 +522,7 @@ Expected:
 - Modify: `src/main/java/com/pooli/traffic/domain/dto/response/TrafficRestoreStartResDto.java`
 - Modify: `src/test/java/com/pooli/traffic/controller/AdminTrafficRestoreControllerTest.java`
 
-- [ ] **Step 1: start 응답 의미 Javadocs 갱신**
+- [x] **Step 1: start 응답 의미 Javadocs 갱신**
 
 `TrafficRestoreStartResDto`의 `nextPhase` 설명을 접수 상태까지 포괄하도록 바꾼다.
 
@@ -537,7 +537,7 @@ Expected:
  */
 ```
 
-- [ ] **Step 2: controller delegation fixture 기대값 갱신**
+- [x] **Step 2: controller delegation fixture 기대값 갱신**
 
 ```java
 TrafficRestoreStartResDto serviceResponse = new TrafficRestoreStartResDto(
@@ -548,7 +548,7 @@ TrafficRestoreStartResDto serviceResponse = new TrafficRestoreStartResDto(
 );
 ```
 
-- [ ] **Step 3: controller 테스트 확인**
+- [x] **Step 3: controller 테스트 확인**
 
 Run:
 
@@ -564,7 +564,7 @@ Expected:
 **Files:**
 - No code change
 
-- [ ] **Step 1: focused tests 실행**
+- [x] **Step 1: focused tests 실행**
 
 Run:
 
@@ -576,7 +576,7 @@ Run:
 Expected:
 - `BUILD SUCCESSFUL`.
 
-- [ ] **Step 2: restore 관련 회귀 테스트 실행**
+- [x] **Step 2: restore 관련 회귀 테스트 실행**
 
 Run:
 
@@ -587,7 +587,7 @@ Run:
 Expected:
 - `BUILD SUCCESSFUL`.
 
-- [ ] **Step 3: 전체 단위 테스트 실행**
+- [x] **Step 3: 전체 단위 테스트 실행**
 
 Run:
 
@@ -598,7 +598,7 @@ Run:
 Expected:
 - `BUILD SUCCESSFUL`.
 
-- [ ] **Step 4: self-review**
+- [x] **Step 4: self-review**
 
 확인 항목:
 - 중복 시작 방지는 Redis restore manager lock 한 곳에서만 처리한다.

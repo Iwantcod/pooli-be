@@ -57,7 +57,7 @@
 - Inspect only: `src/main/java/com/pooli/traffic/service/restore/TrafficRestorePhase1ReplayService.java`
 - Inspect only: `src/main/java/com/pooli/traffic/service/restore/TrafficRestorePhase2ReplayService.java`
 
-- [ ] **Step 1: replay service의 삭제 호출 위치를 검색한다**
+- [x] **Step 1: replay service의 삭제 호출 위치를 검색한다**
 
 Run:
 
@@ -70,7 +70,7 @@ Expected:
 - `replay(...)` 본문에는 `replayLuaExecutor.deleteIdempotencyKey(...)` 직접 호출이 없다.
 - `replayLuaExecutor.deleteIdempotencyKey(...)` 호출은 `afterCommit()` override 내부에만 있다.
 
-- [ ] **Step 2: DONE update count gating을 확인한다**
+- [x] **Step 2: DONE update count gating을 확인한다**
 
 확인할 코드 형태:
 
@@ -104,7 +104,7 @@ Expected:
 - Inspect only: `src/test/java/com/pooli/traffic/service/restore/TrafficRestorePhase1ReplayServiceTest.java`
 - Inspect only: `src/test/java/com/pooli/traffic/service/restore/TrafficRestorePhase2ReplayServiceTest.java`
 
-- [ ] **Step 1: Phase 1 afterCommit 테스트를 확인한다**
+- [x] **Step 1: Phase 1 afterCommit 테스트를 확인한다**
 
 Run:
 
@@ -117,7 +117,7 @@ Expected:
 - SKIPPED 경로에서도 `afterCommit()` 전 `never()` 검증이 있다.
 - update count `0` 경로에서 synchronization이 비어 있고 삭제하지 않는 검증이 있다.
 
-- [ ] **Step 2: Phase 2 afterCommit 테스트를 확인한다**
+- [x] **Step 2: Phase 2 afterCommit 테스트를 확인한다**
 
 Run:
 
@@ -138,7 +138,7 @@ Expected:
 - Verify only: `src/test/java/com/pooli/traffic/service/restore/TrafficRestorePhase1ReplayServiceTest.java`
 - Verify only: `src/test/java/com/pooli/traffic/service/restore/TrafficRestorePhase2ReplayServiceTest.java`
 
-- [ ] **Step 1: 관련 단위 테스트를 실행한다**
+- [x] **Step 1: 관련 단위 테스트를 실행한다**
 
 Run:
 
@@ -150,7 +150,7 @@ Expected:
 - `BUILD SUCCESSFUL`
 - `TrafficRestorePhase1ReplayServiceTest`와 `TrafficRestorePhase2ReplayServiceTest`가 통과한다.
 
-- [ ] **Step 2: 실패 시에만 최소 수정으로 되돌린다**
+- [x] **Step 2: 실패 시에만 최소 수정으로 되돌린다**
 
 현재 코드가 아래 형태에서 벗어나 테스트가 실패하면, 해당 service만 최소 수정한다.
 
@@ -183,7 +183,7 @@ Expected:
 **Files:**
 - Inspect only: changed files, if any
 
-- [ ] **Step 1: 자체 검토를 수행한다**
+- [x] **Step 1: 자체 검토를 수행한다**
 
 검토 항목:
 - 제보된 Phase 2 finding이 현재 코드에서 재현되는가?
@@ -198,7 +198,7 @@ Expected:
 - 필요한 소스 변경은 없다.
 - 회귀 테스트는 존재하고 통과한다.
 
-- [ ] **Step 2: 결과를 보고한다**
+- [x] **Step 2: 결과를 보고한다**
 
 보고 내용:
 - 현재 코드 검토 결과

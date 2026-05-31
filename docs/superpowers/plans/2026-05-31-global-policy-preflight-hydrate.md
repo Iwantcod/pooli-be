@@ -43,7 +43,7 @@
 - Modify: `src/main/resources/lua/traffic/preflight_key_existence.lua`
 - Modify: `src/test/java/com/pooli/traffic/service/runtime/TrafficLuaPolicyContractTest.java`
 
-- [ ] **Step 1: 실패하는 Lua 계약 테스트 작성**
+- [x] **Step 1: 실패하는 Lua 계약 테스트 작성**
 
 `TrafficLuaPolicyContractTest`에 preflight script 상수를 추가한다.
 
@@ -66,7 +66,7 @@ void preflightKeyExistenceChecksEveryProvidedKey() throws IOException {
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 실행:
 
@@ -76,7 +76,7 @@ void preflightKeyExistenceChecksEveryProvidedKey() throws IOException {
 
 예상 결과: FAIL. 현재 Lua가 `KEYS[1]`, `KEYS[2]`, `KEYS[3]`만 고정 검사하므로 `while idx <= #KEYS do` 조건이 없다.
 
-- [ ] **Step 3: Lua를 최소 변경으로 확장**
+- [x] **Step 3: Lua를 최소 변경으로 확장**
 
 `preflight_key_existence.lua` 전체를 아래 내용으로 교체한다.
 
@@ -96,7 +96,7 @@ end
 return result
 ```
 
-- [ ] **Step 4: Lua 계약 테스트 통과 확인**
+- [x] **Step 4: Lua 계약 테스트 통과 확인**
 
 실행:
 
@@ -114,7 +114,7 @@ return result
 - Modify: `src/main/java/com/pooli/traffic/service/runtime/TrafficLuaScriptInfraService.java`
 - Modify: `src/test/java/com/pooli/traffic/service/decision/TrafficDeductOrchestratorServiceTest.java`
 
-- [ ] **Step 1: orchestrator 테스트 mock 계약을 먼저 실패하도록 갱신**
+- [x] **Step 1: orchestrator 테스트 mock 계약을 먼저 실패하도록 갱신**
 
 `TrafficDeductOrchestratorServiceTest`의 import에 `java.util.stream.LongStream`은 추가하지 않는다. 테스트에서는 명시적 list를 사용해 정책 ID 순서를 드러낸다.
 
@@ -149,7 +149,7 @@ lenient().when(trafficLuaScriptInfraService.executePreflightKeyExistence(
 )).thenReturn(List.of(1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L));
 ```
 
-- [ ] **Step 2: 컴파일 실패 확인**
+- [x] **Step 2: 컴파일 실패 확인**
 
 실행:
 
@@ -159,7 +159,7 @@ lenient().when(trafficLuaScriptInfraService.executePreflightKeyExistence(
 
 예상 결과: FAIL. `TrafficLuaScriptInfraService.executePreflightKeyExistence(...)`가 아직 4번째 인자를 받지 않는다.
 
-- [ ] **Step 3: `TrafficLuaScriptInfraService` signature 확장**
+- [x] **Step 3: `TrafficLuaScriptInfraService` signature 확장**
 
 `TrafficLuaScriptInfraService`에 `ArrayList` import를 추가한다.
 
@@ -201,7 +201,7 @@ public List<Long> executePreflightKeyExistence(
 }
 ```
 
-- [ ] **Step 4: 컴파일 범위 테스트 통과 확인**
+- [x] **Step 4: 컴파일 범위 테스트 통과 확인**
 
 실행:
 
@@ -219,7 +219,7 @@ public List<Long> executePreflightKeyExistence(
 - Modify: `src/main/java/com/pooli/traffic/service/decision/TrafficDeductOrchestratorService.java`
 - Modify: `src/test/java/com/pooli/traffic/service/decision/TrafficDeductOrchestratorServiceTest.java`
 
-- [ ] **Step 1: 실패하는 orchestrator 테스트 작성**
+- [x] **Step 1: 실패하는 orchestrator 테스트 작성**
 
 `TrafficDeductOrchestratorServiceTest`에 mock을 추가한다.
 
@@ -285,7 +285,7 @@ void hydratesGlobalPolicyBeforePolicyCheckWhenPreflightDetectsMissingPolicyKey()
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 실행:
 
@@ -295,7 +295,7 @@ void hydratesGlobalPolicyBeforePolicyCheckWhenPreflightDetectsMissingPolicyKey()
 
 예상 결과: FAIL. `TrafficDeductOrchestratorService`에 `TrafficPolicyBootstrapService` 의존성과 호출 로직이 아직 없다.
 
-- [ ] **Step 3: orchestrator에 최소 구현 추가**
+- [x] **Step 3: orchestrator에 최소 구현 추가**
 
 `TrafficDeductOrchestratorService` import를 추가한다.
 
@@ -353,7 +353,7 @@ private boolean allGlobalPolicyKeysExist(List<Long> keyExistenceResult, int glob
 }
 ```
 
-- [ ] **Step 4: orchestrator 테스트 통과 확인**
+- [x] **Step 4: orchestrator 테스트 통과 확인**
 
 실행:
 
@@ -371,7 +371,7 @@ private boolean allGlobalPolicyKeysExist(List<Long> keyExistenceResult, int glob
 - Modify: `src/main/java/com/pooli/traffic/service/policy/TrafficPolicyBootstrapService.java`
 - Modify: `src/test/java/com/pooli/traffic/service/policy/TrafficPolicyBootstrapServiceTest.java`
 
-- [ ] **Step 1: 실패하는 단위 테스트 작성**
+- [x] **Step 1: 실패하는 단위 테스트 작성**
 
 `HydrateOnDemandTest` 내부에 아래 테스트를 추가한다.
 
@@ -451,7 +451,7 @@ void skipsPreflightHydrateWhenLockNotAcquired() {
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 실행:
 
@@ -461,7 +461,7 @@ void skipsPreflightHydrateWhenLockNotAcquired() {
 
 예상 결과: FAIL. `hydrateOnDemandIfAnyPolicyKeyMissing(...)`가 아직 없다.
 
-- [ ] **Step 3: lock-first hydrate 메서드 구현**
+- [x] **Step 3: lock-first hydrate 메서드 구현**
 
 `TrafficPolicyBootstrapService`에 import를 추가한다.
 
@@ -557,7 +557,7 @@ try {
 }
 ```
 
-- [ ] **Step 4: policy bootstrap 테스트 통과 확인**
+- [x] **Step 4: policy bootstrap 테스트 통과 확인**
 
 실행:
 
@@ -574,7 +574,7 @@ try {
 **Files:**
 - Modify: `src/test/java/com/pooli/traffic/service/decision/TrafficDeductOrchestratorServiceTest.java`
 
-- [ ] **Step 1: 기존 preflight 관련 테스트 mock 결과 크기 보정**
+- [x] **Step 1: 기존 preflight 관련 테스트 mock 결과 크기 보정**
 
 `TrafficDeductOrchestratorServiceTest`에서 `executePreflightKeyExistence(...)`를 stub하는 모든 위치를 찾아 결과를 10개 값으로 맞춘다.
 
@@ -596,7 +596,7 @@ List.of(1L, 0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L)
 List.of(1L, 1L, 0L, 1L, 1L, 1L, 1L, 1L, 1L, 1L)
 ```
 
-- [ ] **Step 2: line policy ready 누락과 전역 policy 누락이 독립적으로 동작하는지 검증 추가**
+- [x] **Step 2: line policy ready 누락과 전역 policy 누락이 독립적으로 동작하는지 검증 추가**
 
 아래 테스트를 추가한다.
 
@@ -642,7 +642,7 @@ void hydratesLinePolicyAndGlobalPolicyIndependentlyWhenBothMissing() {
 }
 ```
 
-- [ ] **Step 3: orchestrator 테스트 전체 통과 확인**
+- [x] **Step 3: orchestrator 테스트 전체 통과 확인**
 
 실행:
 
@@ -659,7 +659,7 @@ void hydratesLinePolicyAndGlobalPolicyIndependentlyWhenBothMissing() {
 **Files:**
 - 이전 task 외 직접 수정 파일 없음.
 
-- [ ] **Step 1: 관련 단위 테스트 실행**
+- [x] **Step 1: 관련 단위 테스트 실행**
 
 실행:
 
@@ -669,7 +669,7 @@ void hydratesLinePolicyAndGlobalPolicyIndependentlyWhenBothMissing() {
 
 예상 결과: PASS.
 
-- [ ] **Step 2: 전체 테스트 실행**
+- [x] **Step 2: 전체 테스트 실행**
 
 실행:
 
@@ -679,7 +679,7 @@ void hydratesLinePolicyAndGlobalPolicyIndependentlyWhenBothMissing() {
 
 예상 결과: PASS.
 
-- [ ] **Step 3: self-review 체크**
+- [x] **Step 3: self-review 체크**
 
 아래 질문에 모두 “아니오/문제 없음”으로 답할 수 있어야 한다.
 
@@ -689,7 +689,7 @@ void hydratesLinePolicyAndGlobalPolicyIndependentlyWhenBothMissing() {
 - 테스트 편의를 위해 production visibility, setter, test-only constructor를 추가했는가? 추가했다면 제거한다.
 - `preflight_key_existence.lua` 결과 index를 잘못 해석해 line/balance/global policy 순서가 섞였는가? `0=linePolicyReady`, `1=individualBalance`, `2=sharedBalance`, `3..9=globalPolicy` 순서를 유지한다.
 
-- [ ] **Step 4: 변경 파일 확인**
+- [x] **Step 4: 변경 파일 확인**
 
 실행:
 
@@ -699,7 +699,7 @@ git diff -- src/main/resources/lua/traffic/preflight_key_existence.lua src/main/
 
 예상 결과: diff가 이 계획의 범위 파일에만 존재한다.
 
-- [ ] **Step 5: 커밋 대기**
+- [x] **Step 5: 커밋 대기**
 
 AGENTS.md §11.6에 따라 코드 변경 커밋은 사용자 확인 전까지 수행하지 않는다. 구현 완료 보고에는 “코드베이스 커밋은 사용자 확인 대기”를 명시한다.
 
