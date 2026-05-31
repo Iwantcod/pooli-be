@@ -19,5 +19,8 @@ public interface PolicyBackOfficeMapper {
 
     // 정책 전역 활성화 bootstrap/reconciliation용 스냅샷 조회
     List<PolicyActivationSnapshotResDto> selectPolicyActivationSnapshot();
-	    
+    
+    // 특정 정책의 활성화 여부 상태를 변경합니다.
+    int updatePolicyActiveStatus(@Param("policyId") int policyId, @Param("isActive") boolean isActive);
 }
+

@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 
+import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +27,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.data.redis.core.script.RedisScript;
 
 import com.pooli.common.exception.ApplicationException;
 import com.pooli.policy.domain.dto.response.PolicyActivationSnapshotResDto;
@@ -43,6 +43,9 @@ class TrafficPolicyBootstrapServiceTest {
 
     @Mock
     private TrafficRedisKeyFactory trafficRedisKeyFactory;
+
+    @Mock
+    private TrafficLuaScriptInfraService trafficLuaScriptInfraService;
 
     @Mock
     private TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
@@ -86,7 +89,7 @@ class TrafficPolicyBootstrapServiceTest {
 
             // then
             verify(cacheStringRedisTemplate, never()).executePipelined(any(org.springframework.data.redis.core.SessionCallback.class));
-            verify(cacheStringRedisTemplate, never()).execute(any(RedisScript.class), any(), anyString());
+            verify(trafficLuaScriptInfraService, never()).executeLockRelease(anyString(), anyString());
         }
 
         @Test
@@ -106,8 +109,8 @@ class TrafficPolicyBootstrapServiceTest {
             when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
             when(cacheStringRedisTemplate.executePipelined(any(org.springframework.data.redis.core.SessionCallback.class)))
                     .thenReturn(List.of());
-            when(cacheStringRedisTemplate.execute(any(RedisScript.class), eq(List.of(lockKey)), anyString()))
-                    .thenReturn(1L);
+            when(trafficLuaScriptInfraService.executeLockRelease(eq(lockKey), anyString()))
+                    .thenReturn(true);
 
             // when
             trafficPolicyBootstrapService.bootstrapOnStartup();
@@ -115,8 +118,83 @@ class TrafficPolicyBootstrapServiceTest {
             // then
             verify(cacheStringRedisTemplate, times(1))
                     .executePipelined(any(org.springframework.data.redis.core.SessionCallback.class));
+            verify(trafficLuaScriptInfraService, times(1))
+                    .executeLockRelease(eq(lockKey), anyString());
+        }
+
+        @Test
+        @DisplayName("preflight 대상 정책 key가 모두 존재하면 DB 조회와 lock 획득을 수행하지 않음")
+        void skipsPreflightHydrateWhenAllPolicyKeysExist() {
+            // given
+            List<String> policyKeys = List.of("pooli:policy:1", "pooli:policy:2");
+            when(cacheStringRedisTemplate.hasKey("pooli:policy:1")).thenReturn(true);
+            when(cacheStringRedisTemplate.hasKey("pooli:policy:2")).thenReturn(true);
+
+            // when
+            trafficPolicyBootstrapService.hydrateOnDemandIfAnyPolicyKeyMissing(policyKeys);
+
+            // then
+            verify(policyBackOfficeMapper, never()).selectPolicyActivationSnapshot();
+            verify(cacheStringRedisTemplate, never()).opsForValue();
+        }
+
+        @Test
+        @DisplayName("preflight 대상 정책 key 누락 시 lock 획득 후 재확인하고 snapshot을 hydrate함")
+        void hydratesAfterLockAndRecheckWhenPolicyKeyStillMissing() {
+            // given
+            String lockKey = "pooli:policy:bootstrap:lock";
+            List<String> policyKeys = List.of("pooli:policy:1", "pooli:policy:2");
+            when(cacheStringRedisTemplate.hasKey("pooli:policy:1")).thenReturn(true);
+            when(cacheStringRedisTemplate.hasKey("pooli:policy:2")).thenReturn(false, false);
+            when(trafficRedisKeyFactory.policyBootstrapLockKey()).thenReturn(lockKey);
+            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.setIfAbsent(
+                    eq(lockKey),
+                    anyString(),
+                    eq(Duration.ofMillis(30_000L))
+            )).thenReturn(true);
+            when(policyBackOfficeMapper.selectPolicyActivationSnapshot()).thenReturn(allPolicySnapshots());
+            when(trafficRedisKeyFactory.policyBootstrapVersionKey()).thenReturn("pooli:policy_bootstrap_version");
+            when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
+            when(cacheStringRedisTemplate.executePipelined(any(org.springframework.data.redis.core.SessionCallback.class)))
+                    .thenReturn(List.of());
+            when(trafficLuaScriptInfraService.executeLockRelease(eq(lockKey), anyString()))
+                    .thenReturn(true);
+
+            // when
+            trafficPolicyBootstrapService.hydrateOnDemandIfAnyPolicyKeyMissing(policyKeys);
+
+            // then
+            verify(policyBackOfficeMapper, times(1)).selectPolicyActivationSnapshot();
             verify(cacheStringRedisTemplate, times(1))
-                    .execute(any(RedisScript.class), eq(List.of(lockKey)), anyString());
+                    .executePipelined(any(org.springframework.data.redis.core.SessionCallback.class));
+            verify(trafficLuaScriptInfraService, times(1))
+                    .executeLockRelease(eq(lockKey), anyString());
+        }
+
+        @Test
+        @DisplayName("preflight hydrate lock을 얻지 못하면 DB 조회 없이 종료")
+        void skipsPreflightHydrateWhenLockNotAcquired() {
+            // given
+            String lockKey = "pooli:policy:bootstrap:lock";
+            List<String> policyKeys = List.of("pooli:policy:1", "pooli:policy:2");
+            when(cacheStringRedisTemplate.hasKey("pooli:policy:1")).thenReturn(false);
+            when(trafficRedisKeyFactory.policyBootstrapLockKey()).thenReturn(lockKey);
+            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.setIfAbsent(
+                    eq(lockKey),
+                    anyString(),
+                    eq(Duration.ofMillis(30_000L))
+            )).thenReturn(false);
+
+            // when
+            trafficPolicyBootstrapService.hydrateOnDemandIfAnyPolicyKeyMissing(policyKeys);
+
+            // then
+            verify(policyBackOfficeMapper, never()).selectPolicyActivationSnapshot();
+            verify(cacheStringRedisTemplate, never())
+                    .executePipelined(any(org.springframework.data.redis.core.SessionCallback.class));
+            verify(trafficLuaScriptInfraService, never()).executeLockRelease(anyString(), anyString());
         }
     }
 
@@ -167,8 +245,8 @@ class TrafficPolicyBootstrapServiceTest {
             when(trafficRedisRuntimePolicy.zoneId()).thenReturn(ZoneId.of("Asia/Seoul"));
             when(cacheStringRedisTemplate.executePipelined(any(org.springframework.data.redis.core.SessionCallback.class)))
                     .thenReturn(List.of());
-            when(cacheStringRedisTemplate.execute(any(RedisScript.class), eq(List.of(lockKey)), anyString()))
-                    .thenReturn(1L);
+            when(trafficLuaScriptInfraService.executeLockRelease(eq(lockKey), anyString()))
+                    .thenReturn(true);
 
             // when
             trafficPolicyBootstrapService.hydrateOnDemand();
@@ -176,8 +254,8 @@ class TrafficPolicyBootstrapServiceTest {
             // then
             verify(cacheStringRedisTemplate, times(1))
                     .executePipelined(any(org.springframework.data.redis.core.SessionCallback.class));
-            verify(cacheStringRedisTemplate, times(1))
-                    .execute(any(RedisScript.class), eq(List.of(lockKey)), anyString());
+            verify(trafficLuaScriptInfraService, times(1))
+                    .executeLockRelease(eq(lockKey), anyString());
         }
     }
 
@@ -190,7 +268,8 @@ class TrafficPolicyBootstrapServiceTest {
                 snapshot(4, true, now),
                 snapshot(5, true, now),
                 snapshot(6, true, now),
-                snapshot(7, true, now)
+                snapshot(7, true, now),
+                snapshot(8, true, now)
         );
     }
 
@@ -202,7 +281,8 @@ class TrafficPolicyBootstrapServiceTest {
                 snapshot(3, true, now),
                 snapshot(4, true, now),
                 snapshot(5, true, now),
-                snapshot(6, true, now)
+                snapshot(6, true, now),
+                snapshot(8, true, now)
         );
     }
 

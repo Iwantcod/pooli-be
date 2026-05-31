@@ -14,7 +14,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class PolicyActivationOutboxPayload {
+    /** 활성화/비활성화 대상 정책 ID */
     private Long policyId;
+    /** 정책의 활성화 상태 값 */
     private Boolean active;
+    /** 정책 버전 정보 */
     private Long version;
 }

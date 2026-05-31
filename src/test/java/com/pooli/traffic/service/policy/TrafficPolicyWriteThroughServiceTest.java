@@ -2,6 +2,7 @@ package com.pooli.traffic.service.policy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -34,6 +35,7 @@ import com.pooli.traffic.domain.outbox.payload.PolicyActivationOutboxPayload;
 import com.pooli.traffic.service.outbox.PolicySyncResult;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import org.junit.jupiter.api.DisplayName;
@@ -62,6 +64,9 @@ class TrafficPolicyWriteThroughServiceTest {
 
     @Mock
     private RedisOutboxRecordService redisOutboxRecordService;
+
+    @Mock
+    private TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     @InjectMocks
     private TrafficPolicyWriteThroughService trafficPolicyWriteThroughService;
@@ -137,8 +142,9 @@ class TrafficPolicyWriteThroughServiceTest {
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+            when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(101L, 301)).thenReturn("pooli:qos_speed_limit_next_available:101:301");
             when(trafficPolicyVersionedRedisService.syncAppPolicySingle(
-                    anyString(), anyString(), anyString(), anyInt(), anyBoolean(), anyLong(), anyInt(), anyBoolean(), anyLong()
+                    anyString(), anyString(), anyString(), anyString(), anyInt(), anyBoolean(), anyLong(), anyInt(), anyBoolean(), anyLong()
             )).thenReturn(PolicySyncResult.SUCCESS);
 
             // when
@@ -165,6 +171,7 @@ class TrafficPolicyWriteThroughServiceTest {
                     eq("pooli:app_data_daily_limit:101"),
                     eq("pooli:app_speed_limit:101"),
                     eq("pooli:app_whitelist:101"),
+                    eq("pooli:qos_speed_limit_next_available:101:301"),
                     eq(301),
                     eq(true),
                     eq(1_000L),
@@ -183,8 +190,9 @@ class TrafficPolicyWriteThroughServiceTest {
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+            when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(101L, 301)).thenReturn("pooli:qos_speed_limit_next_available:101:301");
             when(trafficPolicyVersionedRedisService.syncAppPolicySingle(
-                    anyString(), anyString(), anyString(), anyInt(), anyBoolean(), anyLong(), anyInt(), anyBoolean(), anyLong()
+                    anyString(), anyString(), anyString(), anyString(), anyInt(), anyBoolean(), anyLong(), anyInt(), anyBoolean(), anyLong()
             )).thenReturn(PolicySyncResult.SUCCESS);
 
             // when
@@ -195,6 +203,7 @@ class TrafficPolicyWriteThroughServiceTest {
                     eq("pooli:app_data_daily_limit:101"),
                     eq("pooli:app_speed_limit:101"),
                     eq("pooli:app_whitelist:101"),
+                    eq("pooli:qos_speed_limit_next_available:101:301"),
                     eq(301),
                     eq(true),
                     eq(1_000L),
@@ -218,8 +227,10 @@ class TrafficPolicyWriteThroughServiceTest {
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+            when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(101L, 301)).thenReturn("pooli:qos_speed_limit_next_available:101:301");
+            when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(101L, 302)).thenReturn("pooli:qos_speed_limit_next_available:101:302");
             when(trafficPolicyVersionedRedisService.syncAppPolicySnapshot(
-                    anyString(), anyString(), anyString(), any(), any(), any(), anyLong()
+                    anyString(), anyString(), anyString(), any(), any(), any(), any(), anyLong()
             )).thenReturn(PolicySyncResult.SUCCESS);
 
             AppPolicy activeWhitelisted = AppPolicy.builder()
@@ -261,6 +272,10 @@ class TrafficPolicyWriteThroughServiceTest {
                     eq("pooli:app_data_daily_limit:101"),
                     eq("pooli:app_speed_limit:101"),
                     eq("pooli:app_whitelist:101"),
+                    eq(List.of(
+                            "pooli:qos_speed_limit_next_available:101:301",
+                            "pooli:qos_speed_limit_next_available:101:302"
+                    )),
                     eq(Map.of("limit:301", "1024")),
                     eq(Map.of("speed:301", "256000")),
                     eq(Set.of("301")),
@@ -277,8 +292,9 @@ class TrafficPolicyWriteThroughServiceTest {
             when(trafficRedisKeyFactory.appDataDailyLimitKey(101L)).thenReturn("pooli:app_data_daily_limit:101");
             when(trafficRedisKeyFactory.appSpeedLimitKey(101L)).thenReturn("pooli:app_speed_limit:101");
             when(trafficRedisKeyFactory.appWhitelistKey(101L)).thenReturn("pooli:app_whitelist:101");
+            when(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(101L, 302)).thenReturn("pooli:qos_speed_limit_next_available:101:302");
             when(trafficPolicyVersionedRedisService.syncAppPolicySnapshot(
-                    anyString(), anyString(), anyString(), any(), any(), any(), anyLong()
+                    anyString(), anyString(), anyString(), any(), any(), any(), any(), anyLong()
             )).thenReturn(PolicySyncResult.SUCCESS);
 
             AppPolicy inactive = AppPolicy.builder()
@@ -295,6 +311,7 @@ class TrafficPolicyWriteThroughServiceTest {
                     eq("pooli:app_data_daily_limit:101"),
                     eq("pooli:app_speed_limit:101"),
                     eq("pooli:app_whitelist:101"),
+                    eq(List.of("pooli:qos_speed_limit_next_available:101:302")),
                     eq(Map.of()),
                     eq(Map.of()),
                     eq(Set.of()),
@@ -469,20 +486,19 @@ class TrafficPolicyWriteThroughServiceTest {
     class RetryTest {
 
         @Test
-        @DisplayName("첫 시도 RETRYABLE 실패면 재시도 후 성공 처리")
-        void retriesAndSucceeds() {
+        @DisplayName("retry adapter의 최종 결과가 SUCCESS면 markSuccess 처리")
+        void marksSuccessWhenRetryAdapterReturnsSuccess() {
             // given
             when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), isNull())).thenReturn(17L);
             when(trafficRedisKeyFactory.policyKey(1001L)).thenReturn("pooli:policy:1001");
             when(trafficPolicyVersionedRedisService.syncVersionedValue(eq("pooli:policy:1001"), eq("1"), anyLong()))
-                    .thenReturn(PolicySyncResult.RETRYABLE_FAILURE)
                     .thenReturn(PolicySyncResult.SUCCESS);
 
             // when
             trafficPolicyWriteThroughService.syncPolicyActivation(1001L, true);
 
             // then
-            verify(trafficPolicyVersionedRedisService, times(2)).syncVersionedValue(
+            verify(trafficPolicyVersionedRedisService, times(1)).syncVersionedValue(
                     eq("pooli:policy:1001"),
                     eq("1"),
                     anyLong()
@@ -492,8 +508,8 @@ class TrafficPolicyWriteThroughServiceTest {
         }
 
         @Test
-        @DisplayName("RETRYABLE 실패가 계속되면 FAIL로 남긴다")
-        void marksFailWhenRetryableFailureExhausted() {
+        @DisplayName("retry adapter의 최종 결과가 RETRYABLE이면 FAIL로 남긴다")
+        void marksFailWhenRetryAdapterReturnsRetryableFailure() {
             // given
             when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), isNull())).thenReturn(18L);
             when(trafficRedisKeyFactory.policyKey(1001L)).thenReturn("pooli:policy:1001");
@@ -504,7 +520,7 @@ class TrafficPolicyWriteThroughServiceTest {
             trafficPolicyWriteThroughService.syncPolicyActivation(1001L, true);
 
             // then
-            verify(trafficPolicyVersionedRedisService, times(3)).syncVersionedValue(
+            verify(trafficPolicyVersionedRedisService, times(1)).syncVersionedValue(
                     eq("pooli:policy:1001"),
                     eq("1"),
                     anyLong()
@@ -577,6 +593,67 @@ class TrafficPolicyWriteThroughServiceTest {
                     isNull()
             );
             verify(redisOutboxRecordService).markFail(20L);
+            verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+        }
+
+        @Test
+        @DisplayName("RuntimeException이 retryable + connection이면 CONNECTION_FAILURE로 변환해 markFail")
+        void mapsConnectionRuntimeExceptionToConnectionFailure() {
+            // given
+            RuntimeException connectionException = new RuntimeException("redis connection down");
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), isNull())).thenReturn(24L);
+            when(trafficRedisKeyFactory.policyKey(3003L)).thenReturn("pooli:policy:3003");
+            when(trafficPolicyVersionedRedisService.syncVersionedValue(eq("pooli:policy:3003"), eq("1"), anyLong()))
+                    .thenThrow(connectionException);
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(connectionException)).thenReturn(true);
+            when(trafficRedisFailureClassifier.isConnectionFailure(connectionException)).thenReturn(true);
+
+            // when
+            trafficPolicyWriteThroughService.syncPolicyActivation(3003L, true);
+
+            // then
+            verify(redisOutboxRecordService).markFail(24L);
+            verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+        }
+
+        @Test
+        @DisplayName("RuntimeException이 retryable + non-connection이면 RETRYABLE_FAILURE로 변환해 markFail")
+        void mapsRetryableRuntimeExceptionToRetryableFailure() {
+            // given
+            RuntimeException timeoutException = new RuntimeException("redis timeout");
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), isNull())).thenReturn(25L);
+            when(trafficRedisKeyFactory.policyKey(3004L)).thenReturn("pooli:policy:3004");
+            when(trafficPolicyVersionedRedisService.syncVersionedValue(eq("pooli:policy:3004"), eq("0"), anyLong()))
+                    .thenThrow(timeoutException);
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(timeoutException)).thenReturn(true);
+            when(trafficRedisFailureClassifier.isConnectionFailure(timeoutException)).thenReturn(false);
+
+            // when
+            trafficPolicyWriteThroughService.syncPolicyActivation(3004L, false);
+
+            // then
+            verify(redisOutboxRecordService).markFail(25L);
+            verify(redisOutboxRecordService, never()).markSuccess(anyLong());
+        }
+
+        @Test
+        @DisplayName("RuntimeException이 non-retryable이면 예외를 전파하고 Outbox 상태를 갱신하지 않는다")
+        void rethrowsNonRetryableRuntimeException() {
+            // given
+            RuntimeException nonRetryable = new RuntimeException("serialization failed");
+            when(redisOutboxRecordService.createPending(eq(OutboxEventType.SYNC_POLICY_ACTIVATION), any(), isNull())).thenReturn(26L);
+            when(trafficRedisKeyFactory.policyKey(3005L)).thenReturn("pooli:policy:3005");
+            when(trafficPolicyVersionedRedisService.syncVersionedValue(eq("pooli:policy:3005"), eq("1"), anyLong()))
+                    .thenThrow(nonRetryable);
+            when(trafficRedisFailureClassifier.isRetryableInfrastructureFailure(nonRetryable)).thenReturn(false);
+
+            // when & then
+            RuntimeException thrown = assertThrows(
+                    RuntimeException.class,
+                    () -> trafficPolicyWriteThroughService.syncPolicyActivation(3005L, true)
+            );
+            assertEquals(nonRetryable, thrown);
+            verify(redisOutboxRecordService, never()).markFail(anyLong());
             verify(redisOutboxRecordService, never()).markSuccess(anyLong());
         }
     }

@@ -3,13 +3,10 @@ package com.pooli.traffic.service.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.time.Duration;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
@@ -19,13 +16,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 
-import com.pooli.traffic.domain.enums.TrafficInFlightState;
+import com.pooli.traffic.domain.TrafficInFlightIdempotencyEntry;
+import com.pooli.traffic.domain.TrafficInFlightIdempotencyEntryResult;
 
 @ExtendWith(MockitoExtension.class)
-public class TrafficInFlightDedupeServiceTest {
+class TrafficInFlightDedupeServiceTest {
 
     @Mock
     private StringRedisTemplate cacheStringRedisTemplate;
@@ -34,164 +32,146 @@ public class TrafficInFlightDedupeServiceTest {
     private TrafficRedisKeyFactory trafficRedisKeyFactory;
 
     @Mock
-    private ValueOperations<String, String> valueOperations;
+    private HashOperations<String, Object, Object> hashOperations;
+
+    @Mock
+    private TrafficLuaScriptInfraService trafficLuaScriptInfraService;
 
     @InjectMocks
     private TrafficInFlightDedupeService trafficInFlightDedupeService;
 
     @Nested
-    @DisplayName("tryClaim 테스트")
-    class TryClaimTest {
+    @DisplayName("createOrGet 테스트")
+    class CreateOrGetTest {
 
         @Test
-        @DisplayName("SET NX 성공 시 true 반환")
-        void returnsTrueWhenClaimed() {
-            // given
+        @DisplayName("키가 없으면 기본 필드와 함께 생성한다")
+        void createsNewHashWithDefaultFields() {
             String traceId = "trace-001";
             String dedupeKey = "pooli:dedupe:run:trace-001";
             when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
-            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-            when(valueOperations.setIfAbsent(
-                    eq(dedupeKey),
-                    eq(TrafficInFlightState.CLAIMED.name()),
-                    eq(Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC))
-            )).thenReturn(true);
-
-            // when
-            boolean claimed = trafficInFlightDedupeService.tryClaim(traceId);
-
-            // then
-            assertTrue(claimed);
-            verify(valueOperations).setIfAbsent(
+            when(trafficLuaScriptInfraService.executeInFlightCreateIfAbsent(
                     dedupeKey,
-                    TrafficInFlightState.CLAIMED.name(),
-                    Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
-            );
+                    "processed_individual_data",
+                    "processed_shared_data",
+                    "processed_qos_data",
+                    "retry_count",
+                    "0"
+            ))
+                    .thenReturn(1L);
+
+            TrafficInFlightIdempotencyEntryResult result = trafficInFlightDedupeService.createOrGet(traceId);
+
+            assertTrue(result.created());
+            assertEquals(0L, result.entry().processedIndividualData());
+            assertEquals(0L, result.entry().processedSharedData());
+            assertEquals(0L, result.entry().processedQosData());
+            assertEquals(0, result.entry().retryCount());
         }
 
         @Test
-        @DisplayName("SET NX 실패 시 false 반환")
-        void returnsFalseWhenAlreadyClaimed() {
-            // given
-            String traceId = "trace-001";
-            String dedupeKey = "pooli:dedupe:run:trace-001";
+        @DisplayName("키가 있으면 기존 필드를 정규화해 반환한다")
+        void returnsExistingEntryWhenAlreadyCreated() {
+            String traceId = "trace-002";
+            String dedupeKey = "pooli:dedupe:run:trace-002";
             when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
-            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-            when(valueOperations.setIfAbsent(
-                    eq(dedupeKey),
-                    eq(TrafficInFlightState.CLAIMED.name()),
-                    eq(Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC))
-            )).thenReturn(false);
+            when(trafficLuaScriptInfraService.executeInFlightCreateIfAbsent(
+                    dedupeKey,
+                    "processed_individual_data",
+                    "processed_shared_data",
+                    "processed_qos_data",
+                    "retry_count",
+                    "0"
+            ))
+                    .thenReturn(0L);
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get(dedupeKey, "processed_individual_data")).thenReturn("120");
+            when(hashOperations.get(dedupeKey, "processed_shared_data")).thenReturn("30");
+            when(hashOperations.get(dedupeKey, "processed_qos_data")).thenReturn("10");
+            when(hashOperations.get(dedupeKey, "retry_count")).thenReturn("3");
 
-            // when
-            boolean claimed = trafficInFlightDedupeService.tryClaim(traceId);
+            TrafficInFlightIdempotencyEntryResult result = trafficInFlightDedupeService.createOrGet(traceId);
 
-            // then
-            assertFalse(claimed);
+            assertFalse(result.created());
+            assertEquals(120L, result.entry().processedIndividualData());
+            assertEquals(30L, result.entry().processedSharedData());
+            assertEquals(10L, result.entry().processedQosData());
+            assertEquals(3, result.entry().retryCount());
         }
     }
 
     @Nested
-    @DisplayName("findState 테스트")
-    class FindStateTest {
+    @DisplayName("get 테스트")
+    class GetTest {
 
         @Test
-        @DisplayName("저장된 상태 문자열이 유효하면 enum 상태를 반환한다")
-        void returnsParsedStateWhenStoredValueIsValid() {
-            // given
-            String traceId = "trace-done";
-            String dedupeKey = "pooli:dedupe:run:trace-done";
-            when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
-            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-            when(valueOperations.get(dedupeKey)).thenReturn("DONE");
-
-            // when
-            Optional<TrafficInFlightState> state = trafficInFlightDedupeService.findState(traceId);
-
-            // then
-            assertTrue(state.isPresent());
-            assertEquals(TrafficInFlightState.DONE, state.get());
-        }
-
-        @Test
-        @DisplayName("traceId가 blank면 Redis를 조회하지 않고 empty를 반환한다")
-        void returnsEmptyWhenTraceIdIsBlank() {
-            // when
-            Optional<TrafficInFlightState> state = trafficInFlightDedupeService.findState(" ");
-
-            // then
-            assertTrue(state.isEmpty());
-            verify(cacheStringRedisTemplate, never()).opsForValue();
-        }
-
-        @Test
-        @DisplayName("Redis 값이 없으면 empty를 반환한다")
-        void returnsEmptyWhenStateValueMissing() {
-            // given
+        @DisplayName("키가 없으면 empty를 반환한다")
+        void returnsEmptyWhenKeyMissing() {
             String traceId = "trace-absent";
             String dedupeKey = "pooli:dedupe:run:trace-absent";
             when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
-            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-            when(valueOperations.get(dedupeKey)).thenReturn(null);
+            when(cacheStringRedisTemplate.hasKey(dedupeKey)).thenReturn(false);
 
-            // when
-            Optional<TrafficInFlightState> state = trafficInFlightDedupeService.findState(traceId);
+            Optional<TrafficInFlightIdempotencyEntry> result = trafficInFlightDedupeService.get(traceId);
 
-            // then
-            assertTrue(state.isEmpty());
+            assertTrue(result.isEmpty());
+            verify(cacheStringRedisTemplate, never()).opsForHash();
         }
 
         @Test
-        @DisplayName("정의되지 않은 상태 문자열이면 empty를 반환한다")
-        void returnsEmptyWhenStateValueIsUnknown() {
-            // given
-            String traceId = "trace-unknown";
-            String dedupeKey = "pooli:dedupe:run:trace-unknown";
+        @DisplayName("키가 있으면 hash 필드를 조회한다")
+        void returnsEntryWhenKeyExists() {
+            String traceId = "trace-present";
+            String dedupeKey = "pooli:dedupe:run:trace-present";
             when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
-            when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-            when(valueOperations.get(dedupeKey)).thenReturn("INVALID_STATE");
+            when(cacheStringRedisTemplate.hasKey(dedupeKey)).thenReturn(true);
+            when(cacheStringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+            when(hashOperations.get(dedupeKey, "processed_individual_data")).thenReturn("50");
+            when(hashOperations.get(dedupeKey, "processed_shared_data")).thenReturn("20");
+            when(hashOperations.get(dedupeKey, "processed_qos_data")).thenReturn("5");
+            when(hashOperations.get(dedupeKey, "retry_count")).thenReturn("2");
 
-            // when
-            Optional<TrafficInFlightState> state = trafficInFlightDedupeService.findState(traceId);
+            Optional<TrafficInFlightIdempotencyEntry> result = trafficInFlightDedupeService.get(traceId);
 
-            // then
-            assertTrue(state.isEmpty());
+            assertTrue(result.isPresent());
+            assertEquals(50L, result.get().processedIndividualData());
+            assertEquals(20L, result.get().processedSharedData());
+            assertEquals(5L, result.get().processedQosData());
+            assertEquals(2, result.get().retryCount());
         }
     }
 
     @Test
-    @DisplayName("release 호출 시 DONE 상태를 TTL과 함께 기록한다")
-    void releaseWritesDoneState() {
-        // given
-        String traceId = "trace-001";
-        String dedupeKey = "pooli:dedupe:run:trace-001";
+    @DisplayName("incrementRetryOnReclaim은 retryCount를 1 증가시킨다")
+    void incrementRetryOnReclaimIncrementsRetryCount() {
+        String traceId = "trace-retry";
+        String dedupeKey = "pooli:dedupe:run:trace-retry";
         when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
-        when(cacheStringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-
-        // when
-        trafficInFlightDedupeService.release(traceId);
-
-        // then
-        verify(valueOperations).set(
+        when(trafficLuaScriptInfraService.executeInFlightIncrementRetryWithInit(
                 dedupeKey,
-                TrafficInFlightState.DONE.name(),
-                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
-        );
+                "processed_individual_data",
+                "processed_shared_data",
+                "processed_qos_data",
+                "retry_count",
+                "0"
+        ))
+                .thenReturn(4L);
+
+        int retryCount = trafficInFlightDedupeService.incrementRetryOnReclaim(traceId);
+
+        assertEquals(4, retryCount);
     }
 
     @Test
-    @DisplayName("Redis 재시도와 DB fallback 상태는 로그로만 남기고 Redis에는 기록하지 않는다")
-    void marksRetryAndFallbackAsLogOnly() {
-        // given
-        String traceId = "trace-001";
+    @DisplayName("delete는 멱등키를 제거한다")
+    void deleteRemovesDedupeKey() {
+        String traceId = "trace-delete";
+        String dedupeKey = "pooli:dedupe:run:trace-delete";
+        when(trafficRedisKeyFactory.dedupeRunKey(traceId)).thenReturn(dedupeKey);
 
-        // when
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 1));
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 2));
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markRedisRetry(traceId, 3));
-        assertDoesNotThrow(() -> trafficInFlightDedupeService.markDbFallback(traceId));
+        trafficInFlightDedupeService.delete(traceId);
 
-        // then
-        verify(cacheStringRedisTemplate, never()).opsForValue();
+        verify(cacheStringRedisTemplate).delete(dedupeKey);
     }
+
 }

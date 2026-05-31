@@ -19,9 +19,11 @@ import lombok.Setter;
 public class TrafficGenerateResDto {
 
     @Schema(description = "요청 추적 ID", example = "3db88dc3-442d-489a-8e16-8de5054ec6a3")
+    /** 요청 추적용 Trace ID */
     private String traceId;
 
     @Schema(description = "요청 enqueue 시각(epoch millis)", example = "1741602800000")
+    /** 큐 인입 시각 (밀리초) */
     private Long enqueuedAt;
 }
 

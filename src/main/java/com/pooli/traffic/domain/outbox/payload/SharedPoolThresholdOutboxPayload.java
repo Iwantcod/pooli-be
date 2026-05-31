@@ -14,9 +14,14 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class SharedPoolThresholdOutboxPayload {
+    /** 알림 식별용 UUID */
     private String uuid;
+    /** 가족 ID */
     private Long familyId;
+    /** 공유 풀 경고 임계 비율 (예: 80%의 경우 80) */
     private Integer thresholdPct;
+    /** 정책 적용 년월 */
     private String targetMonth;
+    /** 임계치 동기화 요청 Epoch 밀리초 시각 */
     private Long createdAtEpochMillis;
 }

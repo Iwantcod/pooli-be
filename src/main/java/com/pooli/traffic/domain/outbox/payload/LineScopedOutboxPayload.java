@@ -14,6 +14,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class LineScopedOutboxPayload {
+    /** 회선 ID */
     private Long lineId;
+    /** 회선 범위 동기화 설정 버전 */
     private Long version;
 }

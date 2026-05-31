@@ -18,6 +18,7 @@ import com.pooli.policy.mapper.RepeatBlockMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.util.TrafficRetryBackoffSupport;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
@@ -38,10 +39,9 @@ import lombok.extern.slf4j.Slf4j;
 public class TrafficLinePolicyHydrationService {
 
     private static final int READY_RECHECK_MAX = 3;
-    private static final long READY_RECHECK_SLEEP_MS = 30L;
 
-    @Value("${app.policy.line-hydration.ready-ttl-sec:60}")
-    private long linePolicyReadyTtlSeconds = 60L;
+    @Value("${app.traffic.deduct.redis-retry.backoff-ms:50}")
+    private long retryBackoffMs = 50L;
 
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
@@ -92,6 +92,20 @@ public class TrafficLinePolicyHydrationService {
     }
 
     /**
+     * 대상 lineId의 정책 ready key가 Redis에 존재하는지 확인합니다.
+     *
+     * <p>ready key는 정책 스냅샷 적재 여부만 의미하며, 잔량 snapshot 준비 여부는 포함하지 않습니다.</p>
+     */
+    public boolean isLoaded(long lineId) {
+        if (lineId <= 0) {
+            return false;
+        }
+
+        // ready key 존재 여부만 확인하고, 누락 시 실제 적재는 ensureLoaded 호출자가 결정합니다.
+        return isReady(trafficRedisKeyFactory.linePolicyReadyKey(lineId));
+    }
+
+    /**
      * DB 스냅샷을 읽어 회선 정책 키를 Redis에 반영합니다.
      */
     private void hydrateSnapshot(long lineId, String readyKey) {
@@ -127,8 +141,7 @@ public class TrafficLinePolicyHydrationService {
         trafficPolicyWriteThroughService.syncRepeatBlockUntracked(lineId, repeatBlocks, version);
         trafficPolicyWriteThroughService.syncAppPolicySnapshotUntracked(lineId, appPolicies, version);
 
-        long readyTtlSeconds = Math.max(1L, linePolicyReadyTtlSeconds);
-        cacheStringRedisTemplate.opsForValue().set(readyKey, "1", Duration.ofSeconds(readyTtlSeconds));
+        cacheStringRedisTemplate.opsForValue().set(readyKey, "1");
 
         long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNano);
         log.info(
@@ -161,7 +174,7 @@ public class TrafficLinePolicyHydrationService {
             if (isReady(readyKey)) {
                 return true;
             }
-            sleepBriefly();
+            sleepBriefly(attempt + 1);
         }
         return isReady(readyKey);
     }
@@ -187,9 +200,13 @@ public class TrafficLinePolicyHydrationService {
     /**
      * 짧은 대기로 busy polling을 완화합니다.
      */
-    private void sleepBriefly() {
+    private void sleepBriefly(int retryAttempt) {
+        long delayMs = TrafficRetryBackoffSupport.resolveDelayMs(retryBackoffMs, retryAttempt);
+        if (delayMs <= 0L) {
+            return;
+        }
         try {
-            Thread.sleep(READY_RECHECK_SLEEP_MS);
+            Thread.sleep(delayMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

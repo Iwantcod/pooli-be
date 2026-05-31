@@ -28,7 +28,7 @@ public class TrafficRecordStageMetricsLocal implements TrafficRecordStageMetrics
             "parse_validate",
             "dedupe",
             "orchestrate",
-            "mongo_save",
+            "done_log_save",
             "ack",
             "total"
     );

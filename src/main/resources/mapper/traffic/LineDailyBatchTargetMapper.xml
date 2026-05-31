@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.pooli.traffic.mapper.LineDailyBatchTargetMapper">
+
+    <!-- LINE_DAILY_BATCH_TARGET row를 Java target 객체로 변환한다. -->
+    <resultMap id="LineDailyBatchTargetResultMap" type="com.pooli.traffic.domain.batch.LineDailyBatchTarget">
+        <id property="id" column="id"/>
+        <result property="usageDate" column="usage_date"/>
+        <result property="lineId" column="line_id"/>
+        <result property="status" column="status"/>
+        <result property="statusUpdatedAt" column="status_updated_at"/>
+        <result property="workerId" column="worker_id"/>
+        <result property="retryCount" column="retry_count"/>
+        <result property="lastErrorCode" column="last_error_code"/>
+        <result property="lastErrorMessage" column="last_error_message"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <!-- usage_date + line_id unique key 기준으로 단일 target row를 확인한다. -->
+    <select id="selectByUsageDateAndLineId" resultMap="LineDailyBatchTargetResultMap">
+        SELECT
+            id,
+            usage_date,
+            line_id,
+            status,
+            status_updated_at,
+            worker_id,
+            retry_count,
+            last_error_code,
+            last_error_message,
+            created_at
+        FROM LINE_DAILY_BATCH_TARGET
+        WHERE usage_date = #{usageDate}
+          AND line_id = #{lineId}
+    </select>
+
+    <!-- batch metadata id 없이 usage_date 하나로 target set 크기를 조회한다. -->
+    <select id="countByUsageDate" resultType="long">
+        SELECT COUNT(*)
+        FROM LINE_DAILY_BATCH_TARGET
+        WHERE usage_date = #{usageDate}
+    </select>
+
+    <!-- 선점 가능한 row가 없을 때 아직 terminal 상태가 아닌 target row가 남았는지 확인한다. -->
+    <select id="countNonTerminalByUsageDate" resultType="long">
+        SELECT COUNT(*)
+        FROM LINE_DAILY_BATCH_TARGET
+        WHERE usage_date = #{usageDate}
+          AND status IN ('PENDING', 'PROCESSING', 'RETRYABLE')
+    </select>
+
+    <!-- rerun batch의 target_count는 현재 FAILED target row 수로 확정한다. -->
+    <select id="countByUsageDateAndStatus" resultType="long">
+        SELECT COUNT(*)
+        FROM LINE_DAILY_BATCH_TARGET
+        WHERE usage_date = #{usageDate}
+          AND status = #{status}
+    </select>
+
+    <!--
+        target insert batch는 line_id 오름차순으로만 진행된다.
+        재개 시 usage_date target set의 최대 line_id를 lastLineId로 사용해 중단 지점 이후부터 이어간다.
+    -->
+    <select id="selectMaxLineIdByUsageDate" resultType="long">
+        SELECT COALESCE(MAX(line_id), 0)
+        FROM LINE_DAILY_BATCH_TARGET
+        WHERE usage_date = #{usageDate}
+    </select>
+
+    <!-- LINE 기본 PK 순서로 target row 생성 대상을 chunk 단위 조회한다. -->
+    <select id="selectActiveLineIdsAfter" resultType="long">
+        SELECT line_id
+        FROM LINE
+        WHERE deleted_at IS NULL
+          AND line_id &gt; #{lastLineId}
+        ORDER BY line_id
+        LIMIT #{limit}
+    </select>
+
+    <!-- INSERT IGNORE로 기존 target row의 status/retry/error 정보를 보존한다. -->
+    <insert id="insertIgnoreTargetRows">
+        INSERT IGNORE INTO LINE_DAILY_BATCH_TARGET (
+            usage_date,
+            line_id,
+            status,
+            status_updated_at,
+            retry_count,
+            created_at
+        ) VALUES
+        <foreach collection="lineIds" item="lineId" separator=",">
+            (
+                #{usageDate},
+                #{lineId},
+                'PENDING',
+                CURRENT_TIMESTAMP(6),
+                0,
+                CURRENT_TIMESTAMP(6)
+            )
+        </foreach>
+    </insert>
+
+    <!-- worker가 PENDING/RETRYABLE 및 lease timeout이 지난 PROCESSING row를 잠금 선점한다. -->
+    <select id="selectClaimableTargetsForUpdate" resultMap="LineDailyBatchTargetResultMap">
+        SELECT
+            id,
+            usage_date,
+            line_id,
+            status,
+            status_updated_at,
+            worker_id,
+            retry_count,
+            last_error_code,
+            last_error_message,
+            created_at
+        FROM LINE_DAILY_BATCH_TARGET
+        WHERE usage_date = #{usageDate}
+          AND (
+              status IN ('PENDING', 'RETRYABLE')
+              OR (
+                  status = 'PROCESSING'
+                  AND status_updated_at &lt; DATE_SUB(
+                      CURRENT_TIMESTAMP(6),
+                      INTERVAL #{processingLeaseTimeoutSeconds} SECOND
+                  )
+              )
+          )
+        ORDER BY status_updated_at ASC, id ASC
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <!-- 잠금 조회한 row만 PROCESSING으로 전환하고 실제 Redis/MySQL 처리는 lock 해제 후 수행한다. -->
+    <update id="markTargetsProcessing">
+        UPDATE LINE_DAILY_BATCH_TARGET
+        SET status = 'PROCESSING',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            worker_id = #{workerId}
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+          AND status IN ('PENDING', 'RETRYABLE', 'PROCESSING')
+    </update>
+
+    <!-- 현재 worker가 PROCESSING으로 보유한 row만 terminal 상태로 전환한다. -->
+    <update id="markTargetTerminalIfProcessing">
+        UPDATE LINE_DAILY_BATCH_TARGET
+        SET status = #{status},
+            status_updated_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{id}
+          AND status = 'PROCESSING'
+          AND worker_id = #{workerId}
+    </update>
+
+    <!-- 현재 worker가 PROCESSING으로 보유한 여러 row만 같은 terminal 상태로 전환한다. -->
+    <update id="markTargetsTerminalInBulk">
+        UPDATE LINE_DAILY_BATCH_TARGET
+        SET status = #{status},
+            status_updated_at = CURRENT_TIMESTAMP(6)
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+          AND status = 'PROCESSING'
+          AND worker_id = #{workerId}
+    </update>
+
+    <!-- retry_count 한도 미만인 현재 worker 보유 row만 RETRYABLE로 되돌린다. -->
+    <update id="markTargetRetryableIfProcessing">
+        UPDATE LINE_DAILY_BATCH_TARGET
+        SET status = 'RETRYABLE',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            worker_id = NULL,
+            retry_count = retry_count + 1,
+            last_error_code = #{lastErrorCode},
+            last_error_message = #{lastErrorMessage}
+        WHERE id = #{id}
+          AND status = 'PROCESSING'
+          AND worker_id = #{workerId}
+          AND retry_count &lt; #{maxRetryCount}
+    </update>
+
+    <!-- 현재 worker 보유 row를 retry_count 증가 없이 FAILED terminal 상태로 닫는다. -->
+    <update id="markTargetFailedIfProcessing">
+        UPDATE LINE_DAILY_BATCH_TARGET
+        SET status = 'FAILED',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            last_error_code = #{lastErrorCode},
+            last_error_message = #{lastErrorMessage}
+        WHERE id = #{id}
+          AND status = 'PROCESSING'
+          AND worker_id = #{workerId}
+    </update>
+
+    <!-- DONE/SKIPPED target row는 보존하고 FAILED row만 rerun claim 대상으로 되돌린다. -->
+    <update id="markFailedTargetsRetryableByUsageDate">
+        UPDATE LINE_DAILY_BATCH_TARGET
+        SET status = 'RETRYABLE',
+            status_updated_at = CURRENT_TIMESTAMP(6),
+            worker_id = NULL
+        WHERE usage_date = #{usageDate}
+          AND status = 'FAILED'
+    </update>
+
+</mapper>

@@ -15,7 +15,9 @@ public class DailyAppTotalData {
     private Long lineId;
     private Integer applicationId;
 
-    private Long totalUsageData;
+    private Long individualUsageData;
+    private Long sharedUsageData;
+    private Long qosUsageData;
 
     private LocalDateTime createdAt;
     private LocalDateTime deletedAt;

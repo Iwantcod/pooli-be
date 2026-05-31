@@ -1,14 +1,28 @@
 package com.pooli.traffic.service.decision;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.util.List;
 
+import com.pooli.common.exception.ApplicationException;
+import com.pooli.traffic.domain.TrafficBalanceSnapshotHydrateResult;
+import com.pooli.traffic.domain.TrafficPolicyCheckLayerResult;
+import com.pooli.traffic.domain.enums.TrafficPolicyCheckFailureCause;
+import com.pooli.traffic.service.policy.TrafficLinePolicyHydrationService;
+import com.pooli.traffic.service.policy.TrafficPolicyBootstrapService;
+import com.pooli.traffic.service.runtime.TrafficBalanceSnapshotHydrateService;
+import com.pooli.traffic.service.runtime.TrafficLuaScriptInfraService;
 import com.pooli.traffic.service.runtime.TrafficRecentUsageBucketService;
-import com.pooli.traffic.service.runtime.TrafficBalanceStateWriteThroughService;
+import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
+import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 import org.springframework.context.annotation.Profile;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import com.pooli.traffic.domain.TrafficDeductExecutionContext;
-import com.pooli.traffic.domain.TrafficLuaExecutionResult;
+import com.pooli.traffic.domain.TrafficLuaDeductExecutionResult;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficDeductResultResDto;
 import com.pooli.traffic.domain.enums.TrafficFinalStatus;
@@ -19,8 +33,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * * 트래픽 차감 이벤트 1건을 단일 사이클로 처리하는 오케스트레이션 서비스입니다.
- * 개인풀 우선 차감 후 residual이 남고 개인풀 상태가 NO_BALANCE일 때만 공유풀 보완 차감을 수행합니다.
+ * 트래픽 차감 이벤트 1건을 단일 사이클로 처리하는 오케스트레이션 서비스입니다.
+ * 정상 Redis 경로는 단일 Lua에서 개인풀, 공유풀, QoS 순서로 차감합니다.
  */
 @Slf4j
 @Service
@@ -28,91 +42,154 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficDeductOrchestratorService {
 
-    private final TrafficHydrateRefillAdapterService trafficHydrateRefillAdapterService;
+    private static final List<Long> GLOBAL_POLICY_IDS = List.of(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L);
+
+    private final TrafficDeductLuaExecutor trafficDeductLuaExecutor;
+    private final TrafficHydrateService trafficHydrateService;
     private final TrafficRecentUsageBucketService trafficRecentUsageBucketService;
     private final TrafficSharedPoolThresholdAlarmService trafficSharedPoolThresholdAlarmService;
-    private final TrafficBalanceStateWriteThroughService trafficBalanceStateWriteThroughService;
+    private final TrafficLinePolicyHydrationService trafficLinePolicyHydrationService;
+    private final TrafficBalanceSnapshotHydrateService trafficBalanceSnapshotHydrateService;
+    private final TrafficLuaScriptInfraService trafficLuaScriptInfraService;
+    private final TrafficRedisKeyFactory trafficRedisKeyFactory;
+    private final TrafficPolicyCheckLayerService trafficPolicyCheckLayerService;
+    private final TrafficPolicyBootstrapService trafficPolicyBootstrapService;
+    private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
+    private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
 
     /**
      * 이벤트 1건의 목표 데이터량(apiTotalData)을 처리하고 최종 상태를 반환합니다.
      */
     public TrafficDeductResultResDto orchestrate(TrafficPayloadReqDto payload) {
+        // 요청 처리 시작 시각을 기록해 단건 처리 레이턴시를 추적할 수 있게 합니다.
         LocalDateTime startedAt = LocalDateTime.now();
 
+        // 메시지 기준 목표 차감량(apiTotalData)과 누적 차감량 상태를 초기화합니다.
         long apiTotalData = normalizeNonNegative(payload == null ? null : payload.getApiTotalData());
         long apiRemainingData = apiTotalData;
-        long deductedTotalBytes = 0L;
+        long deductedIndividualBytes = 0L;
+        long deductedSharedBytes = 0L;
+        long deductedQosBytes = 0L;
         TrafficLuaStatus lastLuaStatus = null;
-        TrafficFinalStatus finalStatus;
+        String failureReason = null;
+        // 개인/공유 차감 재시도 경로에서 traceId 단위 상태를 공유하기 위한 컨텍스트를 준비합니다.
         TrafficDeductExecutionContext deductExecutionContext = TrafficDeductExecutionContext.of(
                 payload == null ? null : payload.getTraceId()
         );
 
-        try {
-            if (apiRemainingData > 0) {
-                TrafficLuaExecutionResult individualResult =
-                        trafficHydrateRefillAdapterService.executeIndividualWithRecovery(
-                                payload,
-                                apiRemainingData,
-                                deductExecutionContext
-                        );
-                lastLuaStatus = individualResult.getStatus();
+        if (apiRemainingData > 0) {
+            TrafficPolicyCheckLayerResult policyCheckResult = null;
+            boolean preCheckEligible = canRunBlockingPolicyPreCheck(payload);
 
-                long indivDeducted = normalizeNonNegative(individualResult.getAnswer());
-                deductedTotalBytes += indivDeducted;
-                apiRemainingData = clampRemaining(apiRemainingData - indivDeducted);
-                trafficRecentUsageBucketService.recordUsage(TrafficPoolType.INDIVIDUAL, payload, indivDeducted);
-
-                // residual은 개인풀 처리 후 이벤트 요청량(apiTotalData)에서 남은 미처리량입니다.
-                long residualData = apiRemainingData;
-                if (residualData > 0 && individualResult.getStatus() == TrafficLuaStatus.NO_BALANCE) {
-                    TrafficLuaExecutionResult sharedResult =
-                            trafficHydrateRefillAdapterService.executeSharedWithRecovery(
-                                    payload,
-                                    residualData,
-                                    deductExecutionContext
-                            );
-                    lastLuaStatus = sharedResult.getStatus();
-
-                    long sharedDeducted = normalizeNonNegative(sharedResult.getAnswer());
-                    deductedTotalBytes += sharedDeducted;
-                    apiRemainingData = clampRemaining(apiRemainingData - sharedDeducted);
-                    trafficRecentUsageBucketService.recordUsage(TrafficPoolType.SHARED, payload, sharedDeducted);
-                    if (sharedDeducted > 0) {
-                        safeSyncSharedMetaConsumed(payload, sharedDeducted);
-                        safeCheckAndEnqueueSharedThresholdAlarm(payload);
-                    }
-                }
+            // M4-2-d: 오케스트레이터 선행 단계에서 정책 로드/검증을 1회 수행합니다.
+            if (preCheckEligible) {
+                policyCheckResult = evaluateBlockingPolicyCheck(payload);
+            } else {
+                // 선검증 최소 필드(lineId/appId)가 없으면 기존 차감 경로로 내려 보내어
+                // 어댑터의 payload 검증/오류 처리 규칙을 그대로 적용합니다.
+                log.debug(
+                        "traffic_policy_precheck_skipped traceId={} reason=missing_minimum_fields",
+                        payload == null ? null : payload.getTraceId()
+                );
             }
 
-            finalStatus = resolveFinalStatus(apiRemainingData, lastLuaStatus);
-        } catch (Exception e) {
-            log.error("traffic_orchestrator_failed", e);
-            finalStatus = TrafficFinalStatus.FAILED;
-            lastLuaStatus = TrafficLuaStatus.ERROR;
-        }
+            // 정책 검증 단계의 retryable 인프라 장애는 정상 정책 판정이 아니다.
+            // 결과 DTO로 FAILED를 만들면 done log 저장 대상으로 오인될 수 있으므로,
+            // 예외를 전파해 Stream consumer가 ACK 없이 pending/reclaim 경로로 넘기게 한다.
+            if (policyCheckResult != null && policyCheckResult.isRetryableFailure()) {
+                throw policyCheckResult.getFailure();
+            }
 
-        return TrafficDeductResultResDto.builder()
-                .traceId(payload == null ? null : payload.getTraceId())
-                .apiTotalData(apiTotalData)
-                .deductedTotalBytes(deductedTotalBytes)
-                .apiRemainingData(apiRemainingData)
-                .finalStatus(finalStatus)
-                .lastLuaStatus(lastLuaStatus)
-                .createdAt(startedAt)
-                .finishedAt(LocalDateTime.now())
-                .build();
+            // [분기 1] 현재 차단 정책이 적용 중인 상태입니다.
+            // 즉시차단/반복차단에서는 차감을 시도하지 않고, "차감 0" 결과를 바로 반환합니다.
+            // 이 반환값은 상위(StreamConsumerRunner)에서 정상 처리로 보고 done log 저장 후 ACK 처리로 이어집니다.
+            if (policyCheckResult != null && policyCheckResult.getStatus() != TrafficLuaStatus.OK) {
+                return buildOrchestrateResult(
+                        payload,
+                        apiTotalData,
+                        0L,
+                        0L,
+                        0L,
+                        apiRemainingData,
+                        policyCheckResult.getStatus(),
+                        null,
+                        startedAt,
+                        LocalDateTime.now(trafficRedisRuntimePolicy.zoneId())
+                );
+            } else {
+                // [분기 2] 정책 허용(또는 선검증 생략) 케이스는 개인/공유/QoS 통합 Lua를 1회 호출합니다.
+                // Lua가 출처별 차감량을 반환하므로 오케스트레이터는 총 잔여량과 부가 알람만 정리합니다.
+                // Lua 실행 단계의 차단 정책 재검증을 우회하기 위해 오케스트레이터 검증 결과를 컨텍스트에 주입합니다.
+                if (policyCheckResult != null) {
+                    deductExecutionContext.cacheBlockingPolicyCheckResult(policyCheckResult.toLuaExecutionResult());
+                }
+                TrafficLuaDeductExecutionResult initialResult = trafficDeductLuaExecutor.executeUnifiedWithRetry(
+                        payload,
+                        apiRemainingData,
+                        deductExecutionContext,
+                        TrafficFailureStage.DEDUCT
+                );
+                TrafficLuaDeductExecutionResult unifiedResult = trafficHydrateService.recoverIfNeeded(
+                        payload,
+                        apiRemainingData,
+                        deductExecutionContext,
+                        initialResult
+                );
+                lastLuaStatus = unifiedResult.getStatus();
+                failureReason = unifiedResult.getFailureReason();
+                LocalDateTime finishedAt = resolveFinishedAtFromLua(unifiedResult);
+
+                long indivDeducted = normalizeNonNegative(unifiedResult.getIndivDeducted());
+                long sharedDeducted = normalizeNonNegative(unifiedResult.getSharedDeducted());
+                long qosDeducted = normalizeNonNegative(unifiedResult.getQosDeducted());
+                deductedIndividualBytes += indivDeducted;
+                deductedSharedBytes += sharedDeducted;
+                deductedQosBytes += qosDeducted;
+                apiRemainingData = clampRemaining(apiRemainingData - unifiedResult.getTotalDeducted());
+                trafficRecentUsageBucketService.recordUsage(TrafficPoolType.INDIVIDUAL, payload, indivDeducted);
+                trafficRecentUsageBucketService.recordUsage(TrafficPoolType.SHARED, payload, sharedDeducted);
+                if (sharedDeducted > 0) {
+                    safeCheckAndEnqueueSharedThresholdAlarm(payload);
+                }
+                return buildOrchestrateResult(
+                        payload,
+                        apiTotalData,
+                        deductedIndividualBytes,
+                        deductedSharedBytes,
+                        deductedQosBytes,
+                        apiRemainingData,
+                        lastLuaStatus,
+                        failureReason,
+                        startedAt,
+                        finishedAt
+                );
+            }
+        }
+        // 요청량이 0 이하로 정규화된 no-op 요청은 Lua를 호출하지 않고 즉시 성공으로 조립합니다.
+        return buildOrchestrateResult(
+                payload,
+                apiTotalData,
+                deductedIndividualBytes,
+                deductedSharedBytes,
+                deductedQosBytes,
+                apiRemainingData,
+                lastLuaStatus,
+                failureReason,
+                startedAt,
+                LocalDateTime.now(trafficRedisRuntimePolicy.zoneId())
+        );
     }
 
     /**
      * 공유풀 임계치 알람은 부가 기능이므로, 실패가 핵심 차감 결과를 오염시키지 않게 보호합니다.
      */
     private void safeCheckAndEnqueueSharedThresholdAlarm(TrafficPayloadReqDto payload) {
+        // family 식별자를 먼저 추출해 로깅/알람 enqueue에 동일하게 사용합니다.
         Long familyId = payload == null ? null : payload.getFamilyId();
         String traceId = payload == null ? null : payload.getTraceId();
         try {
             trafficSharedPoolThresholdAlarmService.checkAndEnqueueIfReached(familyId);
-        } catch (Exception e) {
+        } catch (ApplicationException | DataAccessException | IllegalStateException | IllegalArgumentException e) {
             // 알람 enqueue 실패는 관측성 이슈로 처리하고, 차감 결과는 그대로 유지한다.
             log.warn(
                     "traffic_shared_threshold_alarm_enqueue_failed traceId={} familyId={}",
@@ -124,40 +201,34 @@ public class TrafficDeductOrchestratorService {
     }
 
     /**
-     * 공유풀 실사용 차감량을 family meta 캐시에 반영합니다.
-     */
-    private void safeSyncSharedMetaConsumed(TrafficPayloadReqDto payload, long sharedDeducted) {
-        Long familyId = payload == null ? null : payload.getFamilyId();
-        String traceId = payload == null ? null : payload.getTraceId();
-        if (familyId == null || familyId <= 0 || sharedDeducted <= 0) {
-            return;
-        }
-
-        try {
-            trafficBalanceStateWriteThroughService.markSharedMetaConsumed(familyId, sharedDeducted);
-        } catch (Exception e) {
-            // write-through 실패는 관측성/알람 부가 기능으로 취급하고 핵심 차감 결과는 유지한다.
-            log.warn(
-                    "traffic_shared_meta_consumed_write_through_failed traceId={} familyId={} deducted={}",
-                    traceId,
-                    familyId,
-                    sharedDeducted,
-                    e
-            );
-        }
-    }
-
-    /**
      * 입력값과 정책을 바탕으로 최종 사용 값을 계산해 반환합니다.
      */
-    private TrafficFinalStatus resolveFinalStatus(long apiRemainingData, TrafficLuaStatus lastLuaStatus) {
+    private TrafficFinalStatus resolveFinalStatus(
+            long apiTotalData,
+            long deductedIndividualBytes,
+            long deductedSharedBytes,
+            long deductedQosBytes,
+            long apiRemainingData,
+            TrafficLuaStatus lastLuaStatus
+    ) {
+        // Lua ERROR는 시스템 오류로 간주하여 즉시 FAILED를 반환합니다.
         if (lastLuaStatus == TrafficLuaStatus.ERROR) {
-        	// Lua ERROR는 시스템/데이터 오류 성격이므로 FAILED로 해석한다.
             return TrafficFinalStatus.FAILED;
         }
+        if (apiTotalData <= 0L) {
+            return TrafficFinalStatus.SUCCESS;
+        }
+        long deductedTotalBytes = Math.max(0L, deductedIndividualBytes)
+                + Math.max(0L, deductedSharedBytes)
+                + Math.max(0L, deductedQosBytes);
+        if (deductedTotalBytes <= 0L && apiRemainingData == apiTotalData) {
+            return TrafficFinalStatus.NOT_DEDUCTED;
+        }
+        // 남은 요청량이 없으면 전체 요청량 처리 완료로 SUCCESS입니다.
         if (apiRemainingData <= 0) {
             return TrafficFinalStatus.SUCCESS;
         }
+        // 일부 요청량만 처리된 경우는 PARTIAL_SUCCESS로 마감합니다.
         return TrafficFinalStatus.PARTIAL_SUCCESS;
     }
 
@@ -165,9 +236,11 @@ public class TrafficDeductOrchestratorService {
      *  `clampRemaining` 처리 목적에 맞는 핵심 로직을 수행합니다.
      */
     private long clampRemaining(long value) {
+        // 음수 잔량은 의미가 없으므로 0으로 보정합니다.
         if (value <= 0) {
             return 0L;
         }
+        // 0보다 큰 값은 그대로 반환해 실제 잔여 요청량을 유지합니다.
         return value;
     }
 
@@ -175,9 +248,275 @@ public class TrafficDeductOrchestratorService {
      *  비정상 값을 방어하고 안전한 표준 값으로 보정합니다.
      */
     private long normalizeNonNegative(Long value) {
+        // null/0/음수 입력은 모두 0으로 정규화해 계산 안정성을 보장합니다.
         if (value == null || value <= 0) {
             return 0L;
         }
+        // 양수 입력은 손실 없이 그대로 사용합니다.
         return value;
+    }
+
+    /**
+     * 선행 정책 검증을 안전하게 수행할 수 있는 최소 필드가 있는지 확인합니다.
+     */
+    private boolean canRunBlockingPolicyPreCheck(TrafficPayloadReqDto payload) {
+        if (payload == null) {
+            return false;
+        }
+        if (payload.getLineId() == null || payload.getLineId() <= 0) {
+            return false;
+        }
+        return payload.getAppId() != null && payload.getAppId() >= 0;
+    }
+
+    /**
+     * 선행 정책 검증(ensureLoaded + policy check)을 수행하고 결과 계약으로 반환합니다.
+     */
+    private TrafficPolicyCheckLayerResult evaluateBlockingPolicyCheck(TrafficPayloadReqDto payload) {
+        TrafficFailureStage failureStage = TrafficFailureStage.POLICY_CHECK;
+        try {
+            ensurePreflightHydrated(payload);
+        } catch (DataAccessException | ApplicationException e) {
+            if (trafficRedisFailureClassifier.isRetryableInfrastructureFailure(e)) {
+                TrafficStageFailureException stageFailure =
+                        TrafficStageFailureException.retryableFailure(failureStage, e);
+                log.warn(
+                        "{} traceId={} failureCause={}",
+                        failureStage.retryableFailureLogKey(),
+                        payload == null ? null : payload.getTraceId(),
+                        TrafficPolicyCheckFailureCause.ENSURE_LOADED_RETRYABLE,
+                        stageFailure
+                );
+                return TrafficPolicyCheckLayerResult.retryableFailure(
+                        TrafficPolicyCheckFailureCause.ENSURE_LOADED_RETRYABLE,
+                        stageFailure
+                );
+            }
+            throw e;
+        }
+        return trafficPolicyCheckLayerService.evaluate(payload);
+    }
+
+    /**
+     * 차단성 정책 검증 전에 Redis ready key와 가족풀 잔량 key 기준으로 필요한 hydrate를 시도합니다.
+     */
+    private void ensurePreflightHydrated(TrafficPayloadReqDto payload) {
+        // 잔량 snapshot hydrate에 필요한 owner/month 정보가 부족하면 기존 Lua/adapter 검증 경로를 유지합니다.
+        if (!canRunBalanceSnapshotPreflight(payload)) {
+            // 잔량 key를 만들 수 없는 payload에서는 기존 정책 ready key 단건 확인 경로를 유지합니다.
+            boolean linePolicyReady = trafficLinePolicyHydrationService.isLoaded(payload.getLineId());
+            if (!linePolicyReady) {
+                trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
+            }
+            trafficPolicyBootstrapService.hydrateOnDemandIfAnyPolicyKeyMissing(globalPolicyKeys());
+            log.debug(
+                    "traffic_balance_snapshot_preflight_skipped traceId={} reason=missing_minimum_fields",
+                    payload == null ? null : payload.getTraceId()
+            );
+            return;
+        }
+
+        YearMonth targetMonth = resolveTargetMonth(payload);
+        String linePolicyReadyKey = trafficRedisKeyFactory.linePolicyReadyKey(payload.getLineId());
+        String individualBalanceKey = trafficRedisKeyFactory.remainingIndivAmountKey(payload.getLineId(), targetMonth);
+        String sharedBalanceKey = trafficRedisKeyFactory.remainingSharedAmountKey(payload.getFamilyId(), targetMonth);
+        List<String> globalPolicyKeys = globalPolicyKeys();
+        List<Long> keyExistenceResult = trafficLuaScriptInfraService.executePreflightKeyExistence(
+                linePolicyReadyKey,
+                individualBalanceKey,
+                sharedBalanceKey,
+                globalPolicyKeys
+        );
+
+        if (!allGlobalPolicyKeysExist(keyExistenceResult, globalPolicyKeys.size())) {
+            trafficPolicyBootstrapService.hydrateOnDemandIfAnyPolicyKeyMissing(globalPolicyKeys);
+        }
+        if (!existsAt(keyExistenceResult, 0)) {
+            trafficLinePolicyHydrationService.ensureLoaded(payload.getLineId());
+        }
+        hydrateIndividualSnapshotIfKeyMissing(payload, targetMonth, existsAt(keyExistenceResult, 1));
+        hydrateSharedSnapshotIfKeyMissing(payload, targetMonth, existsAt(keyExistenceResult, 2));
+    }
+
+    /**
+     * preflight 잔량 snapshot hydrate를 실행할 수 있는 최소 payload 필드를 확인합니다.
+     */
+    private boolean canRunBalanceSnapshotPreflight(TrafficPayloadReqDto payload) {
+        if (payload == null) {
+            return false;
+        }
+        if (payload.getTraceId() == null || payload.getTraceId().isBlank()) {
+            return false;
+        }
+        if (payload.getLineId() == null || payload.getLineId() <= 0) {
+            return false;
+        }
+        if (payload.getFamilyId() == null || payload.getFamilyId() <= 0) {
+            return false;
+        }
+        return payload.getEnqueuedAt() != null && payload.getEnqueuedAt() > 0;
+    }
+
+    /**
+     * preflight Lua 결과상 개인풀 잔량 snapshot hash key가 없을 때만 개인풀 잔량 hydrate를 시도합니다.
+     */
+    private void hydrateIndividualSnapshotIfKeyMissing(
+            TrafficPayloadReqDto payload,
+            YearMonth targetMonth,
+            boolean individualSnapshotKeyExists
+    ) {
+        if (!individualSnapshotKeyExists) {
+            hydrateIndividualSnapshot(payload, targetMonth);
+        }
+    }
+
+    /**
+     * preflight Lua 결과상 가족풀 잔량 snapshot key가 없을 때만 공유풀 잔량 hydrate를 시도합니다.
+     */
+    private void hydrateSharedSnapshotIfKeyMissing(
+            TrafficPayloadReqDto payload,
+            YearMonth targetMonth,
+            boolean sharedSnapshotKeyExists
+    ) {
+        if (!sharedSnapshotKeyExists) {
+            hydrateSharedSnapshot(payload, targetMonth);
+        }
+    }
+
+    /**
+     * 개인 잔량/QoS snapshot hydrate를 시도하고 결과를 관측 로그로 남깁니다.
+     */
+    private void hydrateIndividualSnapshot(TrafficPayloadReqDto payload, YearMonth targetMonth) {
+        // hydrate 결과 해석은 기존 Lua fallback 경로가 담당하므로, preflight는 Redis 준비 시도에 집중합니다.
+        TrafficBalanceSnapshotHydrateResult result =
+                trafficBalanceSnapshotHydrateService.hydrateIndividualSnapshot(payload.getLineId(), targetMonth);
+        logPreflightHydrateResult("INDIVIDUAL", payload, result);
+    }
+
+    /**
+     * 공유풀 잔량 snapshot hydrate를 시도하고 결과를 관측 로그로 남깁니다.
+     */
+    private void hydrateSharedSnapshot(TrafficPayloadReqDto payload, YearMonth targetMonth) {
+        // hydrate 결과 해석은 기존 Lua fallback 경로가 담당하므로, preflight는 Redis 준비 시도에 집중합니다.
+        TrafficBalanceSnapshotHydrateResult result =
+                trafficBalanceSnapshotHydrateService.hydrateSharedSnapshot(payload.getFamilyId(), targetMonth);
+        logPreflightHydrateResult("SHARED", payload, result);
+    }
+
+    /**
+     * preflight hydrate 결과를 디버그 로그로 남겨 정상 경로와 fallback 경로를 구분할 수 있게 합니다.
+     */
+    private void logPreflightHydrateResult(
+            String poolType,
+            TrafficPayloadReqDto payload,
+            TrafficBalanceSnapshotHydrateResult result
+    ) {
+        if (result == null || result.isHydrated()) {
+            return;
+        }
+        log.debug(
+                "traffic_balance_snapshot_preflight_not_hydrated traceId={} poolType={} status={}",
+                payload == null ? null : payload.getTraceId(),
+                poolType,
+                result.status()
+        );
+    }
+
+    /**
+     * 차감 전 preflight에서 확인할 전역 policy key 목록을 고정 순서로 생성합니다.
+     */
+    private List<String> globalPolicyKeys() {
+        return GLOBAL_POLICY_IDS.stream()
+                .map(trafficRedisKeyFactory::policyKey)
+                .toList();
+    }
+
+    /**
+     * preflight 결과의 전역 policy key 구간이 모두 존재하는지 확인합니다.
+     */
+    private boolean allGlobalPolicyKeysExist(List<Long> keyExistenceResult, int globalPolicyKeyCount) {
+        int firstGlobalPolicyIndex = 3;
+        for (int index = 0; index < globalPolicyKeyCount; index++) {
+            if (!existsAt(keyExistenceResult, firstGlobalPolicyIndex + index)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 월별 잔량 snapshot 기준 월을 payload enqueue 시각 기준으로 산출합니다.
+     */
+    private YearMonth resolveTargetMonth(TrafficPayloadReqDto payload) {
+        return YearMonth.from(Instant.ofEpochMilli(payload.getEnqueuedAt()).atZone(trafficRedisRuntimePolicy.zoneId()));
+    }
+
+    /**
+     * Lua EXISTS 결과 목록에서 지정 순번의 key 존재 여부를 해석합니다.
+     */
+    private boolean existsAt(List<Long> keyExistenceResult, int index) {
+        if (keyExistenceResult == null || keyExistenceResult.size() <= index) {
+            throw new IllegalStateException("traffic_preflight_key_existence_result_invalid");
+        }
+        Long exists = keyExistenceResult.get(index);
+        return exists != null && exists == 1L;
+    }
+
+    /**
+     * 오케스트레이션 결과 DTO를 공통 규칙으로 조립합니다.
+     */
+    private TrafficDeductResultResDto buildOrchestrateResult(
+            TrafficPayloadReqDto payload,
+            long apiTotalData,
+            long deductedIndividualBytes,
+            long deductedSharedBytes,
+            long deductedQosBytes,
+            long apiRemainingData,
+            TrafficLuaStatus lastLuaStatus,
+            String failureReason,
+            LocalDateTime startedAt,
+            LocalDateTime finishedAt
+    ) {
+        return TrafficDeductResultResDto.builder()
+                .traceId(payload == null ? null : payload.getTraceId())
+                .apiTotalData(apiTotalData)
+                .deductedIndividualBytes(deductedIndividualBytes)
+                .deductedSharedBytes(deductedSharedBytes)
+                .deductedQosBytes(deductedQosBytes)
+                .apiRemainingData(apiRemainingData)
+                .finalStatus(resolveFinalStatus(
+                        apiTotalData,
+                        deductedIndividualBytes,
+                        deductedSharedBytes,
+                        deductedQosBytes,
+                        apiRemainingData,
+                        lastLuaStatus
+                ))
+                .lastLuaStatus(lastLuaStatus)
+                .failureReason(failureReason)
+                .createdAt(startedAt)
+                .finishedAt(finishedAt)
+                .build();
+    }
+
+    /**
+     * Lua 결과의 완료 시각을 도메인 시간대로 변환합니다.
+     *
+     * <p>정상 Lua 실행 결과는 `finishedAtEpochMillis`를 반드시 포함해야 합니다.
+     * hydrate invalid처럼 Java 계층에서 합성한 ERROR 결과는 Lua 완료 시각이 없을 수 있으므로,
+     * consumer가 원래 failureReason을 DLQ로 전달할 수 있게 현재 시각을 완료 시각으로 사용합니다.</p>
+     */
+    private LocalDateTime resolveFinishedAtFromLua(TrafficLuaDeductExecutionResult luaResult) {
+        Long finishedAtEpochMillis = luaResult == null ? null : luaResult.getFinishedAtEpochMillis();
+        if (finishedAtEpochMillis == null) {
+            if (luaResult != null && luaResult.getStatus() == TrafficLuaStatus.ERROR) {
+                return LocalDateTime.now(trafficRedisRuntimePolicy.zoneId());
+            }
+            throw new IllegalStateException("traffic_lua_finished_at_epoch_millis_missing");
+        }
+        return LocalDateTime.ofInstant(
+                Instant.ofEpochMilli(finishedAtEpochMillis),
+                trafficRedisRuntimePolicy.zoneId()
+        );
     }
 }

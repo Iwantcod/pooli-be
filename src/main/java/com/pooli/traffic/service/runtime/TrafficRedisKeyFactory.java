@@ -45,6 +45,55 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * 일별 사용량 동기화 manager 서버 1대를 선출하기 위한 분산락 키입니다.
+     */
+    public String lineDailyBatchManagerLockKey() {
+        return namespaced("line_daily_batch:manager_lock");
+    }
+
+    /**
+     * Redis 장애 복구 manager 서버 1대를 선출하기 위한 분산락 키입니다.
+     */
+    public String trafficRestoreManagerLockKey() {
+        return namespaced("traffic:restore:manager-lock");
+    }
+
+    /**
+     * 복구 phase별 Redis replay 중복 적용을 막는 멱등키를 생성합니다.
+     */
+    public String restoreIdempotencyKey(String phase, String id) {
+        String normalizedPhase = Objects.requireNonNull(phase, "phase must not be null").trim();
+        if (normalizedPhase.isEmpty()) {
+            throw new IllegalArgumentException("phase must not be blank");
+        }
+
+        String normalizedId = Objects.requireNonNull(id, "id must not be null").trim();
+        if (normalizedId.isEmpty()) {
+            throw new IllegalArgumentException("id must not be blank");
+        }
+
+        return namespaced("restore:idempotency:" + normalizedPhase + ":" + normalizedId);
+    }
+
+    /**
+     * `p1:daily_app:...` 또는 `p2:done_log:...` suffix를 복구 idempotency key로 변환합니다.
+     */
+    public String restoreIdempotencyKeyFromSuffix(String suffix) {
+        String normalizedSuffix = Objects.requireNonNull(suffix, "suffix must not be null").trim();
+        if (normalizedSuffix.isEmpty()) {
+            throw new IllegalArgumentException("suffix must not be blank");
+        }
+        return namespaced("restore:idempotency:" + normalizedSuffix);
+    }
+
+    /**
+     * 복구 최종 성공 후 잔여 idempotency key를 scan 삭제할 때 사용하는 패턴입니다.
+     */
+    public String restoreIdempotencyKeyPattern() {
+        return namespaced("restore:idempotency:*");
+    }
+
+    /**
      * 회선 정책(on-demand hydrate) 완료 여부를 나타내는 준비 키입니다.
      */
     public String linePolicyReadyKey(long lineId) {
@@ -80,6 +129,13 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
+     * QoS와 앱 속도 제한이 공유하는 회선+앱 단위 다음 처리 가능 시각 예약 키입니다.
+     */
+    public String qosSpeedLimitNextAvailableKey(long lineId, int appId) {
+        return namespaced("qos_speed_limit_next_available:" + lineId + ":" + appId);
+    }
+
+    /**
       * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
      */
     public String appWhitelistKey(long lineId) {
@@ -109,6 +165,15 @@ public class TrafficRedisKeyFactory {
         // 일별 집계 키는 yyyymmdd suffix를 사용한다.
         String yyyymmdd = trafficRedisRuntimePolicy.formatYyyyMmDd(targetDate);
         return namespaced("daily_app_usage:" + lineId + ":" + yyyymmdd);
+    }
+
+    /**
+      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
+     */
+    public String dailySharedUsageKey(long lineId, LocalDate targetDate) {
+        // 일별 집계 키는 yyyymmdd suffix를 사용한다.
+        String yyyymmdd = trafficRedisRuntimePolicy.formatYyyyMmDd(targetDate);
+        return namespaced("daily_shared_usage:" + lineId + ":" + yyyymmdd);
     }
 
     /**
@@ -171,20 +236,6 @@ public class TrafficRedisKeyFactory {
      */
     public String familyMetaKey(long familyId) {
         return namespaced("family_meta:" + familyId);
-    }
-
-    /**
-      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
-     */
-    public String indivRefillLockKey(long lineId) {
-        return namespaced("indiv_refill_lock:" + lineId);
-    }
-
-    /**
-      * 입력 식별자와 정책 규칙을 기준으로 Redis 키 문자열을 생성합니다.
-     */
-    public String sharedRefillLockKey(long familyId) {
-        return namespaced("shared_refill_lock:" + familyId);
     }
 
     /**
@@ -258,17 +309,6 @@ public class TrafficRedisKeyFactory {
     }
 
     /**
-     * 리필 요청 멱등키를 생성합니다.
-     */
-    public String refillIdempotencyKey(String uuid) {
-        String normalizedUuid = Objects.requireNonNull(uuid, "uuid must not be null").trim();
-        if (normalizedUuid.isEmpty()) {
-            throw new IllegalArgumentException("uuid must not be blank");
-        }
-        return namespaced("refill:idempotency:" + normalizedUuid);
-    }
-
-    /**
      * usage delta replay 멱등 적용 여부를 기록하는 키를 생성합니다.
      */
     public String usageDeltaReplayIdempotencyKey(String traceId, String poolType) {
@@ -283,6 +323,18 @@ public class TrafficRedisKeyFactory {
         }
 
         return namespaced("usage_delta:replay:idempotency:" + normalizedTraceId + ":" + normalizedPoolType);
+    }
+
+    /**
+     * 공유풀 기여 Redis 적용 상태를 추적하는 metadata hash 키입니다.
+     */
+    public String sharedPoolContributionMetadataKey(String traceId) {
+        String normalizedTraceId = Objects.requireNonNull(traceId, "traceId must not be null").trim();
+        if (normalizedTraceId.isEmpty()) {
+            throw new IllegalArgumentException("traceId must not be blank");
+        }
+
+        return namespaced("shared_pool_contribution:metadata:" + normalizedTraceId);
     }
 
     /**

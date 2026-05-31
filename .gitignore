@@ -40,8 +40,11 @@ out/
 
 .env
 .env.bak
+discord_webhook_url
+deploy/monitoring/secrets/
 
 /docs/plan/
+/docs/lagacy/
 
 ### 테스트 데이터 csv 및 sql 파일 ###
 scripts/test-data/output
@@ -49,3 +52,5 @@ scripts/test-data/__pycache__
 
 /traffic
 /scripts/traffic
+
+.worktrees/

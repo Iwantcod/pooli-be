@@ -39,4 +39,12 @@ public class TrafficHydrateMetrics {
             counter.increment();
         }
     }
+
+    public void incrementInvalidHydrate(TrafficPoolType poolType, String reason) {
+        meterRegistry.counter(
+                "traffic_hydrate_invalid_total",
+                "pool_type", poolType == null ? "unknown" : poolType.name().toLowerCase(Locale.ROOT),
+                "reason", reason == null || reason.isBlank() ? "unknown" : reason.toLowerCase(Locale.ROOT)
+        ).increment();
+    }
 }

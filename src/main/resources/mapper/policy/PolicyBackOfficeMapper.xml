@@ -14,9 +14,13 @@
 	        is_new AS isNew
 	    FROM POLICY
 		    WHERE is_active = true
+		      AND policy_id != 8
 
 	    </select>
 
+    <!-- 
+        정책 전역 활성화 bootstrap/reconciliation용 스냅샷 조회 
+    -->
     <select id="selectPolicyActivationSnapshot"
             resultType="com.pooli.policy.domain.dto.response.PolicyActivationSnapshotResDto">
         SELECT
@@ -27,5 +31,13 @@
         FROM POLICY
         ORDER BY policy_id ASC
     </select>
+
+    <!-- 특정 정책의 활성화 여부 상태 변경 -->
+    <update id="updatePolicyActiveStatus">
+        UPDATE POLICY
+        SET is_active = #{isActive},
+            updated_at = CURRENT_TIMESTAMP(6)
+        WHERE policy_id = #{policyId}
+    </update>
 	    
 </mapper>

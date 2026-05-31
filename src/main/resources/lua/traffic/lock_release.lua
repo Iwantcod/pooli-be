@@ -1,7 +1,7 @@
 -- lock_release.lua
 -- 반환 계약: 1(해제) / 0(무시)
 -- KEYS[1]: lock 키
--- ARGV[1]: traceId
+-- ARGV[1]: lockOwner
 
 -- 단계 1) 입력값을 읽습니다.
 local lock_key = KEYS[1]

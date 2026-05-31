@@ -6,8 +6,7 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 # This script prepares a deterministic start point by running:
 # 1) Redis FLUSHALL (cache Redis)
-# 2) MongoDB cleanup: traffic_deduct_done_log.deleteMany({})
-# 3) MySQL setup SQL apply
+# 2) MySQL setup SQL apply
 # -----------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -25,7 +24,7 @@ if [[ ! -f "$SETUP_SQL_FILE" ]]; then
   exit 1
 fi
 
-for cmd in mysql redis-cli mongosh; do
+for cmd in mysql redis-cli; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "ERROR: required command is missing: $cmd"
     exit 1
@@ -78,8 +77,7 @@ if [[ "$DB_HOST_PORT" == "$DB_PORT_PART" ]]; then
   DB_PORT="3306"
 fi
 
-MONGO_URI_EFFECTIVE="${LOCAL_MONGO_URI:-${MONGO_URI:-}}"
-MONGO_DB_NAME="${MONGO_DB_NAME:-pooli}"
+
 
 redis_cmd=(
   redis-cli
@@ -97,33 +95,22 @@ if [[ -n "${CACHE_REDIS_PASSWORD:-}" ]]; then
   )
 fi
 
-mongo_eval() {
-  local js="$1"
-  if [[ -n "$MONGO_URI_EFFECTIVE" ]]; then
-    mongosh "$MONGO_URI_EFFECTIVE" --quiet --eval "$js"
-  else
-    mongosh --quiet --eval "$js"
-  fi
-}
+
 
 echo "==============================================="
-echo "Traffic 1000 Setup (Flush + Mongo clear + SQL)"
+echo "Traffic 1000 Setup (Flush + SQL)"
 echo "env_file                : $ENV_FILE"
 echo "setup_sql               : $SETUP_SQL_FILE"
 echo "mysql                   : $DB_HOST:$DB_PORT/$DB_NAME"
 echo "redis(cache)            : $CACHE_REDIS_HOST:$CACHE_REDIS_PORT"
-echo "mongo_db                : $MONGO_DB_NAME"
+
 echo "==============================================="
 
-echo "[1/3] Redis FLUSHALL"
+echo "[1/2] Redis FLUSHALL"
 "${redis_cmd[@]}" FLUSHALL >/dev/null
 echo "  done"
 
-echo "[2/3] Mongo cleanup (traffic_deduct_done_log.deleteMany({}))"
-mongo_eval "const d=db.getSiblingDB('${MONGO_DB_NAME}'); const r=d.traffic_deduct_done_log.deleteMany({}); print(r.deletedCount);" >/dev/null
-echo "  done"
-
-echo "[3/3] Apply setup sql"
+echo "[2/2] Apply setup sql"
 MYSQL_PWD="$DB_PASSWORD" mysql \
   --default-character-set=utf8mb4 \
   --batch --raw \

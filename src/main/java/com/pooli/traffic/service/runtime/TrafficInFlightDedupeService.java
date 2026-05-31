@@ -1,22 +1,23 @@
 package com.pooli.traffic.service.runtime;
 
-import java.time.Duration;
-import java.util.Locale;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
+import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import com.pooli.traffic.domain.enums.TrafficInFlightState;
+import com.pooli.traffic.domain.TrafficInFlightIdempotencyEntry;
+import com.pooli.traffic.domain.TrafficInFlightIdempotencyEntryResult;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * traceId 기준 in-flight dedupe 선점을 담당하는 서비스입니다.
- * 동일 traceId의 중복 처리/동시 처리 경쟁을 Redis NX+TTL로 완화합니다.
+ * traceId 기준 in-flight 멱등 hash를 관리하는 서비스입니다.
+ * 멱등키는 Redis hash(`processed_individual_data`, `processed_shared_data`, `processed_qos_data`, `retry_count`)로 저장하며 TTL을 사용하지 않습니다.
+ * `retry_count`는 Redis infra retry가 아니라 메시지 reclaim 횟수만 의미합니다.
  */
 @Slf4j
 @Service
@@ -24,96 +25,170 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficInFlightDedupeService {
 
+    private static final String FIELD_PROCESSED_INDIVIDUAL_DATA = "processed_individual_data";
+    private static final String FIELD_PROCESSED_SHARED_DATA = "processed_shared_data";
+    private static final String FIELD_PROCESSED_QOS_DATA = "processed_qos_data";
+    private static final String FIELD_RETRY_COUNT = "retry_count";
+    private static final String DEFAULT_ZERO = "0";
+
     @Qualifier("cacheStringRedisTemplate")
     private final StringRedisTemplate cacheStringRedisTemplate;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
+    private final TrafficLuaScriptInfraService trafficLuaScriptInfraService;
 
     /**
-      * `tryClaim` 처리 목적에 맞는 핵심 로직을 수행합니다.
+     * traceId의 in-flight 멱등 hash를 생성하거나 기존 값을 조회합니다.
+     * - 키가 없으면 processed_individual_data=0, processed_shared_data=0, processed_qos_data=0, retry_count=0으로 생성합니다.
+     * - 키가 있으면 기존 필드를 정규화해 반환합니다.
      */
-    public boolean tryClaim(String traceId) {
-        // traceId에서 dedupe 키를 생성한다. (namespace 포함)
+    public TrafficInFlightIdempotencyEntryResult createOrGet(String traceId) {
         String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
 
-        // SET NX EX(60s)와 동일한 의미:
-        // 1) 키가 없을 때만 생성(NX)
-        // 2) INFLIGHT_TTL_SEC 이후 자동 만료
-        Boolean claimed = cacheStringRedisTemplate.opsForValue().setIfAbsent(
+        long createdResult = trafficLuaScriptInfraService.executeInFlightCreateIfAbsent(
                 dedupeKey,
-                TrafficInFlightState.CLAIMED.name(),
-                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
+                FIELD_PROCESSED_INDIVIDUAL_DATA,
+                FIELD_PROCESSED_SHARED_DATA,
+                FIELD_PROCESSED_QOS_DATA,
+                FIELD_RETRY_COUNT,
+                DEFAULT_ZERO
         );
-
-        boolean acquired = Boolean.TRUE.equals(claimed);
-        if (!acquired) {
-            log.info("traffic_dedupe_claim_skipped key={}", dedupeKey);
+        boolean created = createdResult == 1L;
+        if (created) {
+            return new TrafficInFlightIdempotencyEntryResult(
+                    true,
+                    TrafficInFlightIdempotencyEntry.of(dedupeKey, 0L, 0L, 0L, 0)
+            );
         }
-        return acquired;
+
+        long processedIndividualData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_INDIVIDUAL_DATA),
+                FIELD_PROCESSED_INDIVIDUAL_DATA
+        );
+        long processedSharedData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_SHARED_DATA),
+                FIELD_PROCESSED_SHARED_DATA
+        );
+        long processedQosData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_QOS_DATA),
+                FIELD_PROCESSED_QOS_DATA
+        );
+        int retryCount = parseNonNegativeInt(hashOps().get(dedupeKey, FIELD_RETRY_COUNT));
+
+        return new TrafficInFlightIdempotencyEntryResult(
+                false,
+                TrafficInFlightIdempotencyEntry.of(
+                        dedupeKey,
+                        processedIndividualData,
+                        processedSharedData,
+                        processedQosData,
+                        retryCount
+                )
+        );
     }
 
     /**
-     * traceId의 dedupe 상태를 조회합니다.
-     * 값이 없거나 정의되지 않은 상태 문자열이면 빈 값을 반환해 호출 측이 안전하게 분기하도록 돕습니다.
+     * traceId의 in-flight 멱등 hash 필드를 조회합니다.
      */
-    public Optional<TrafficInFlightState> findState(String traceId) {
+    public Optional<TrafficInFlightIdempotencyEntry> get(String traceId) {
         if (traceId == null || traceId.isBlank()) {
             return Optional.empty();
         }
 
         String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
-        String stateValue = cacheStringRedisTemplate.opsForValue().get(dedupeKey);
-        if (stateValue == null || stateValue.isBlank()) {
+        if (!Boolean.TRUE.equals(cacheStringRedisTemplate.hasKey(dedupeKey))) {
             return Optional.empty();
+        }
+
+        long processedIndividualData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_INDIVIDUAL_DATA),
+                FIELD_PROCESSED_INDIVIDUAL_DATA
+        );
+        long processedSharedData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_SHARED_DATA),
+                FIELD_PROCESSED_SHARED_DATA
+        );
+        long processedQosData = parseNonNegativeLong(
+                hashOps().get(dedupeKey, FIELD_PROCESSED_QOS_DATA),
+                FIELD_PROCESSED_QOS_DATA
+        );
+        int retryCount = parseNonNegativeInt(hashOps().get(dedupeKey, FIELD_RETRY_COUNT));
+
+        return Optional.of(TrafficInFlightIdempotencyEntry.of(
+                dedupeKey,
+                processedIndividualData,
+                processedSharedData,
+                processedQosData,
+                retryCount
+        ));
+    }
+
+    /**
+     * reclaim 시점 재시도 횟수를 1 증가시키고 증가 후 값을 반환합니다.
+     * 키가 없으면 hash를 생성하고 retryCount=1로 시작합니다.
+     */
+    public int incrementRetryOnReclaim(String traceId) {
+        String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
+        long incremented = trafficLuaScriptInfraService.executeInFlightIncrementRetryWithInit(
+                dedupeKey,
+                FIELD_PROCESSED_INDIVIDUAL_DATA,
+                FIELD_PROCESSED_SHARED_DATA,
+                FIELD_PROCESSED_QOS_DATA,
+                FIELD_RETRY_COUNT,
+                DEFAULT_ZERO
+        );
+        long safeValue = Math.max(0L, incremented);
+        return toSafeInt(safeValue);
+    }
+
+    /**
+     * 처리 완료 또는 종결 경로에서 in-flight 멱등 hash를 삭제합니다.
+     */
+    public void delete(String traceId) {
+        if (traceId == null || traceId.isBlank()) {
+            return;
+        }
+        String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
+        cacheStringRedisTemplate.delete(dedupeKey);
+    }
+
+    private HashOperations<String, Object, Object> hashOps() {
+        return cacheStringRedisTemplate.opsForHash();
+    }
+
+    private long parseNonNegativeLong(Object rawValue, String fieldName) {
+        if (rawValue == null) {
+            return 0L;
         }
 
         try {
-            return Optional.of(TrafficInFlightState.valueOf(stateValue.trim().toUpperCase(Locale.ROOT)));
-        } catch (IllegalArgumentException e) {
-            // 운영 중 예상치 못한 값이 들어와도 처리 흐름을 끊지 않기 위해 empty로 완충한다.
-            log.warn("traffic_dedupe_state_unknown key={} rawState={}", dedupeKey, stateValue);
-            return Optional.empty();
+            return Math.max(0L, Long.parseLong(String.valueOf(rawValue).trim()));
+        } catch (NumberFormatException e) {
+            log.warn("traffic_dedupe_hash_field_parse_failed field={} rawValue={}", fieldName, rawValue);
+            return 0L;
         }
     }
 
-    /**
-      * `release` 처리 목적에 맞는 핵심 로직을 수행합니다.
-     */
-    public void release(String traceId) {
-        // DONE 상태를 잠시 유지해 후속 재전달에서 현재 처리 결과를 추적할 수 있게 한다.
-        if (traceId == null || traceId.isBlank()) {
-            return;
+    private int parseNonNegativeInt(Object rawValue) {
+        if (rawValue == null) {
+            return 0;
         }
-        String dedupeKey = trafficRedisKeyFactory.dedupeRunKey(traceId);
-        cacheStringRedisTemplate.opsForValue().set(
-                dedupeKey,
-                TrafficInFlightState.DONE.name(),
-                Duration.ofSeconds(TrafficRedisRuntimePolicy.INFLIGHT_TTL_SEC)
-        );
+
+        try {
+            long parsed = Long.parseLong(String.valueOf(rawValue).trim());
+            return toSafeInt(Math.max(0L, parsed));
+        } catch (NumberFormatException e) {
+            log.warn("traffic_dedupe_hash_field_parse_failed field={} rawValue={}", FIELD_RETRY_COUNT, rawValue);
+            return 0;
+        }
     }
 
-    /**
-     * Redis 재시도 진행 상태를 로그로만 남깁니다.
-     * Redis 장애 상황에서도 본 복구 흐름(retry/backoff/fallback)을 절대 방해하지 않기 위함입니다.
-     */
-    public void markRedisRetry(String traceId, int retryAttempt) {
-        if (traceId == null || traceId.isBlank()) {
-            return;
+    private int toSafeInt(long value) {
+        if (value <= 0L) {
+            return 0;
         }
-        TrafficInFlightState state = TrafficInFlightState.fromRetryAttempt(retryAttempt);
-        if (state == null) {
-            return;
+        if (value >= Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
         }
-        log.info("traffic_dedupe_state_log_only traceId={} state={}", traceId, state.name());
-    }
-
-    /**
-     * 요청 단위 DB fallback 전환 상태를 로그로만 남깁니다.
-     * Redis 상태 저장 실패가 DB fallback 자체를 끊지 않도록 Redis 쓰기를 하지 않습니다.
-     */
-    public void markDbFallback(String traceId) {
-        if (traceId == null || traceId.isBlank()) {
-            return;
-        }
-        log.info("traffic_dedupe_state_log_only traceId={} state={}", traceId, TrafficInFlightState.DB_FALLBACK.name());
+        return (int) value;
     }
 }

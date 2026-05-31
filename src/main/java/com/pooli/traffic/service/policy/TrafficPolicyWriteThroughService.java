@@ -1,13 +1,16 @@
 package com.pooli.traffic.service.policy;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -25,6 +28,7 @@ import com.pooli.traffic.domain.outbox.payload.PolicyActivationOutboxPayload;
 import com.pooli.traffic.service.outbox.PolicySyncResult;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
@@ -34,6 +38,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 정책 변경 시 Redis 정책 키를 즉시 동기화(write-through)하는 서비스입니다.
  * 방안 B 규칙에 맞춰 모든 정책 키를 version CAS로 반영합니다.
+ * 앱 정책 비활성화/삭제와 스냅샷 재동기화 시에는 QoS/앱 속도 제한 예약 키도 함께 정리합니다.
  */
 @Slf4j
 @Service
@@ -41,16 +46,18 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class TrafficPolicyWriteThroughService {
 
-    private static final int WRITE_THROUGH_RETRY_MAX = 3;
-    private static final long WRITE_THROUGH_RETRY_BACKOFF_MS = 50L;
     private static final int APP_SPEED_LIMIT_UPLOAD_MULTIPLIER = 125;
     private static final int END_OF_DAY_SECOND = 86_399;
     private static final int START_OF_DAY_SECOND = 0;
+
+    @Value("${app.traffic.deduct.redis-retry.max-attempts:3}")
+    private int redisRetryMaxAttempts = 3;
 
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficPolicyVersionedRedisService trafficPolicyVersionedRedisService;
     private final RedisOutboxRecordService redisOutboxRecordService;
+    private final TrafficRedisFailureClassifier trafficRedisFailureClassifier;
 
     /**
      * 정책 활성화 상태를 Redis policy 키에 동기화합니다.
@@ -66,7 +73,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_POLICY_ACTIVATION,
                 payload,
-                null,
                 "policy_activation_sync policyId=" + policyId + " isActive=" + isActive,
                 () -> syncPolicyActivationUntracked(policyId, isActive, version)
         );
@@ -95,7 +101,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_LINE_LIMIT,
                 payload,
-                null,
                 "line_limit_sync lineId=" + lineId,
                 () -> syncLineLimitUntracked(lineId, dailyLimit, isDailyActive, sharedLimit, isSharedActive, version)
         );
@@ -116,7 +121,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_IMMEDIATE_BLOCK,
                 payload,
-                null,
                 "immediate_block_sync lineId=" + lineId,
                 () -> syncImmediateBlockEndUntracked(lineId, blockEndAt, version)
         );
@@ -135,7 +139,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_REPEAT_BLOCK,
                 payload,
-                null,
                 "repeat_block_sync lineId=" + lineId,
                 () -> syncRepeatBlockUntracked(lineId, repeatBlocks, version)
         );
@@ -143,6 +146,7 @@ public class TrafficPolicyWriteThroughService {
 
     /**
      * 앱 정책(일 제한/속도 제한/화이트리스트)을 Redis 정책 키에 동기화합니다.
+     * 비활성화 요청이면 해당 회선+앱 예약 키도 같은 CAS Lua에서 삭제합니다.
      */
     public void syncAppPolicy(
             long lineId,
@@ -162,14 +166,13 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_APP_POLICY,
                 payload,
-                null,
                 "app_policy_sync lineId=" + lineId + " appId=" + appId + " isActive=" + isActive,
                 () -> syncAppPolicyUntracked(lineId, appId, isActive, dataLimit, speedLimit, isWhitelist, version)
         );
     }
 
     /**
-     * 앱 정책 삭제 시 Redis의 관련 키 조각(limit/speed/whitelist)을 제거합니다.
+     * 앱 정책 삭제 시 Redis의 관련 키 조각(limit/speed/whitelist)과 회선+앱 예약 키를 제거합니다.
      */
     public void evictAppPolicy(long lineId, int appId) {
         long version = nowEpochMillis();
@@ -182,14 +185,13 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_APP_POLICY,
                 payload,
-                null,
                 "app_policy_evict lineId=" + lineId + " appId=" + appId,
                 () -> evictAppPolicyUntracked(lineId, appId, version)
         );
     }
 
     /**
-     * 앱 정책 스냅샷을 Redis에 일괄 반영합니다.
+     * 앱 정책 스냅샷을 Redis에 일괄 반영하고, 스냅샷에 포함된 앱들의 예약 키를 정리합니다.
      */
     public void syncAppPolicySnapshot(long lineId, List<AppPolicy> appPolicies) {
         long version = nowEpochMillis();
@@ -201,7 +203,6 @@ public class TrafficPolicyWriteThroughService {
         executeTrackedAfterCommit(
                 OutboxEventType.SYNC_APP_POLICY_SNAPSHOT,
                 payload,
-                null,
                 "app_policy_snapshot_sync lineId=" + lineId,
                 () -> syncAppPolicySnapshotUntracked(lineId, appPolicies, version)
         );
@@ -270,7 +271,8 @@ public class TrafficPolicyWriteThroughService {
     }
 
     /**
-     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 동기화 메서드입니다.
+     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 앱 정책 동기화 메서드입니다.
+     * 단건 비활성화는 정책 hash/set 제거와 예약 키 삭제를 같은 CAS Lua에서 처리합니다.
      */
     public PolicySyncResult syncAppPolicyUntracked(
             long lineId,
@@ -284,6 +286,7 @@ public class TrafficPolicyWriteThroughService {
         String appDataDailyLimitKey = trafficRedisKeyFactory.appDataDailyLimitKey(lineId);
         String appSpeedLimitKey = trafficRedisKeyFactory.appSpeedLimitKey(lineId);
         String appWhitelistKey = trafficRedisKeyFactory.appWhitelistKey(lineId);
+        String qosSpeedLimitNextAvailableKey = trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(lineId, appId);
 
         long normalizedDataLimit = dataLimit == null ? -1L : dataLimit;
         int normalizedSpeedLimit = normalizeAppSpeedLimitForRedis(speedLimit);
@@ -294,6 +297,7 @@ public class TrafficPolicyWriteThroughService {
                         appDataDailyLimitKey,
                         appSpeedLimitKey,
                         appWhitelistKey,
+                        qosSpeedLimitNextAvailableKey,
                         appId,
                         isActive,
                         normalizedDataLimit,
@@ -305,14 +309,16 @@ public class TrafficPolicyWriteThroughService {
     }
 
     /**
-     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 동기화 메서드입니다.
+     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 앱 정책 제거 메서드입니다.
+     * 단건 비활성화 동기화 경로를 재사용해 정책 조각과 예약 키를 함께 삭제합니다.
      */
     public PolicySyncResult evictAppPolicyUntracked(long lineId, int appId, long version) {
         return syncAppPolicyUntracked(lineId, appId, false, -1L, -1, false, version);
     }
 
     /**
-     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 동기화 메서드입니다.
+     * Hydration/Outbox 재시도 경로에서 사용하는 비추적 앱 정책 스냅샷 동기화 메서드입니다.
+     * lineId 기준 전체 예약 키 삭제는 Redis pattern 삭제 대신 전달된 앱 목록의 단건 예약 키 삭제로 제한합니다.
      */
     public PolicySyncResult syncAppPolicySnapshotUntracked(long lineId, List<AppPolicy> appPolicies, long version) {
         String appDataDailyLimitKey = trafficRedisKeyFactory.appDataDailyLimitKey(lineId);
@@ -322,12 +328,14 @@ public class TrafficPolicyWriteThroughService {
         Map<String, String> dataLimitHash = new HashMap<>();
         Map<String, String> speedLimitHash = new HashMap<>();
         Set<String> whitelistMembers = new HashSet<>();
+        Set<Integer> appIdsToClearReservation = new LinkedHashSet<>();
 
         if (appPolicies != null) {
             for (AppPolicy appPolicy : appPolicies) {
                 if (appPolicy == null || appPolicy.getApplicationId() == null) {
                     continue;
                 }
+                appIdsToClearReservation.add(appPolicy.getApplicationId());
                 if (!Boolean.TRUE.equals(appPolicy.getIsActive())) {
                     continue;
                 }
@@ -344,6 +352,10 @@ public class TrafficPolicyWriteThroughService {
                 }
             }
         }
+        List<String> qosSpeedLimitNextAvailableKeys = new ArrayList<>();
+        for (Integer appId : appIdsToClearReservation) {
+            qosSpeedLimitNextAvailableKeys.add(trafficRedisKeyFactory.qosSpeedLimitNextAvailableKey(lineId, appId));
+        }
 
         return executeWithRetry(
                 "app_policy_snapshot_sync_untracked lineId=" + lineId,
@@ -351,6 +363,7 @@ public class TrafficPolicyWriteThroughService {
                         appDataDailyLimitKey,
                         appSpeedLimitKey,
                         appWhitelistKey,
+                        qosSpeedLimitNextAvailableKeys,
                         dataLimitHash,
                         speedLimitHash,
                         whitelistMembers,
@@ -365,11 +378,14 @@ public class TrafficPolicyWriteThroughService {
     private void executeTrackedAfterCommit(
             OutboxEventType eventType,
             Object payload,
-            String uuid,
             String operationName,
             Supplier<PolicySyncResult> redisWriteOperation
     ) {
-        long outboxId = redisOutboxRecordService.createPending(eventType, payload, uuid);
+        long outboxId = redisOutboxRecordService.createPending(
+                eventType,
+                payload,
+                null
+        );
         executeAfterCommit(() -> {
             PolicySyncResult syncResult = redisWriteOperation.get();
             if (isSuccessEquivalent(syncResult)) {
@@ -401,41 +417,69 @@ public class TrafficPolicyWriteThroughService {
 
     /**
      * Redis write-through를 재시도 정책과 함께 실행합니다.
+     * <p>
+     * 실행 순서:
+     * 1) 초기 1회 실행
+     * 2) Redis 접근부(@Retryable)의 결과를 수신해 최종 상태를 정리
      */
     private PolicySyncResult executeWithRetry(String operationName, Supplier<PolicySyncResult> redisWriteOperation) {
-        PolicySyncResult lastFailure = PolicySyncResult.RETRYABLE_FAILURE;
-        for (int attempt = 1; attempt <= WRITE_THROUGH_RETRY_MAX; attempt++) {
-            PolicySyncResult syncResult;
-            try {
-                syncResult = redisWriteOperation.get();
-            } catch (RuntimeException e) {
-                syncResult = PolicySyncResult.RETRYABLE_FAILURE;
-                log.warn("traffic_policy_write_through_exception operation={} attempt={}/{}", operationName, attempt, WRITE_THROUGH_RETRY_MAX, e);
-            }
-
-            if (syncResult != PolicySyncResult.RETRYABLE_FAILURE
-                    && syncResult != PolicySyncResult.CONNECTION_FAILURE) {
-                return syncResult;
-            }
-            lastFailure = syncResult;
-
-            if (attempt < WRITE_THROUGH_RETRY_MAX) {
-                log.warn(
-                        "traffic_policy_write_through_retry operation={} attempt={}/{}",
-                        operationName,
-                        attempt,
-                        WRITE_THROUGH_RETRY_MAX
-                );
-                sleepBackoff();
-            }
-        }
-
-        log.error(
-                "traffic_policy_write_through_retry_exhausted operation={} attempts={}",
+        PolicySyncResult syncResult = executeWriteOperation(
                 operationName,
-                WRITE_THROUGH_RETRY_MAX
+                redisWriteOperation,
+                1
         );
-        return lastFailure;
+        if (!isRetryComplete(syncResult)) {
+            log.error(
+                    "traffic_policy_write_through_retry_exhausted operation={}",
+                    operationName
+            );
+        }
+        return syncResult;
+    }
+
+    /**
+     * 단일 write-through 실행 결과를 반환합니다.
+     * 런타임 예외는 RETRYABLE_FAILURE로 정규화해 상위 실패 처리에서 동일 정책으로 다룹니다.
+     */
+    private PolicySyncResult executeWriteOperation(
+            String operationName,
+            Supplier<PolicySyncResult> redisWriteOperation,
+            int attemptNumber
+    ) {
+        try {
+            return redisWriteOperation.get();
+        } catch (RuntimeException e) {
+            if (!trafficRedisFailureClassifier.isRetryableInfrastructureFailure(e)) {
+                log.error(
+                        "traffic_policy_write_through_non_retryable_exception operation={} attempt={}",
+                        operationName,
+                        attemptNumber,
+                        e
+                );
+                throw e;
+            }
+
+            PolicySyncResult failureResult = trafficRedisFailureClassifier.isConnectionFailure(e)
+                    ? PolicySyncResult.CONNECTION_FAILURE
+                    : PolicySyncResult.RETRYABLE_FAILURE;
+            log.warn(
+                    "traffic_policy_write_through_exception operation={} attempt={} mappedResult={}",
+                    operationName,
+                    attemptNumber,
+                    failureResult,
+                    e
+            );
+            return failureResult;
+        }
+    }
+
+    /**
+     * 재시도 루프를 종료할 결과인지 판별합니다.
+     * RETRYABLE/CONNECTION 실패가 아니면 성공 계열(SUCCESS/STALE_REJECTED 등)로 간주합니다.
+     */
+    private boolean isRetryComplete(PolicySyncResult syncResult) {
+        return syncResult != PolicySyncResult.RETRYABLE_FAILURE
+                && syncResult != PolicySyncResult.CONNECTION_FAILURE;
     }
 
     /**
@@ -562,16 +606,5 @@ public class TrafficPolicyWriteThroughService {
      */
     private long nowEpochMillis() {
         return System.currentTimeMillis();
-    }
-
-    /**
-     * 재시도 간 짧은 백오프를 수행합니다.
-     */
-    private void sleepBackoff() {
-        try {
-            Thread.sleep(WRITE_THROUGH_RETRY_BACKOFF_MS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 }

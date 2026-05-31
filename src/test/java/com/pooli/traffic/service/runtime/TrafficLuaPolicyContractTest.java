@@ -1,35 +1,52 @@
 package com.pooli.traffic.service.runtime;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.pooli.traffic.domain.enums.TrafficPolicyLuaScriptType;
+
 /**
- * Lua 정책 스크립트의 역할 분리(1차 policy-check / 2차 deduct) 계약을 검증합니다.
+ * Lua 정책/차감 스크립트 계약을 검증합니다.
  */
 class TrafficLuaPolicyContractTest {
 
-    private static final Path POLICY_CHECK_INDIVIDUAL_SCRIPT =
-            Path.of("src/main/resources/lua/traffic/policy_check_indiv.lua");
-    private static final Path POLICY_CHECK_SHARED_SCRIPT =
-            Path.of("src/main/resources/lua/traffic/policy_check_shared.lua");
-    private static final Path DEDUCT_INDIVIDUAL_SCRIPT =
-            Path.of("src/main/resources/lua/traffic/deduct_indiv.lua");
-    private static final Path DEDUCT_SHARED_SCRIPT =
-            Path.of("src/main/resources/lua/traffic/deduct_shared.lua");
-    private static final Path REFILL_GATE_SCRIPT =
-            Path.of("src/main/resources/lua/traffic/refill_gate.lua");
+    private static final Path BLOCK_POLICY_CHECK_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/block_policy_check.lua");
+    private static final Path PREFLIGHT_KEY_EXISTENCE_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/preflight_key_existence.lua");
+    private static final Path DEDUCT_UNIFIED_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/deduct_unified.lua");
+    private static final Path HYDRATE_INDIVIDUAL_SNAPSHOT_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/hydrate_individual_snapshot.lua");
+    private static final Path HYDRATE_SHARED_SNAPSHOT_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/hydrate_shared_snapshot.lua");
+    private static final Path SHARED_POOL_CONTRIBUTION_APPLY_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/shared_pool_contribution_apply.lua");
+    private static final Path SHARED_POOL_CONTRIBUTION_RECOVER_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/shared_pool_contribution_recover.lua");
+    private static final Path SHARED_POOL_CONTRIBUTION_CLEANUP_SCRIPT =
+            Path.of("src/main/resources/lua/traffic/shared_pool_contribution_cleanup.lua");
+    private static final Path LUA_SCRIPT_TYPE_SOURCE =
+            Path.of("src/main/java/com/pooli/traffic/domain/enums/TrafficLuaScriptType.java");
+    private static final Path LUA_RESOURCE_ROOT =
+            Path.of("src/main/resources");
 
     @Test
-    @DisplayName("1차 개인 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
-    void keepsPolicyCheckOrderForIndividual() throws IOException {
-        String script = Files.readString(POLICY_CHECK_INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("1차 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
+    void keepsPolicyCheckOrder() throws IOException {
+        String script = Files.readString(BLOCK_POLICY_CHECK_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
@@ -40,183 +57,322 @@ class TrafficLuaPolicyContractTest {
     }
 
     @Test
-    @DisplayName("1차 공유 policy-check Lua는 whitelist 이후 immediate/repeat 순서로 평가한다")
-    void keepsPolicyCheckOrderForShared() throws IOException {
-        String script = Files.readString(POLICY_CHECK_SHARED_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("preflight Lua는 전달된 모든 key의 존재 여부를 순서대로 반환한다")
+    void preflightKeyExistenceChecksEveryProvidedKey() throws IOException {
+        String script = Files.readString(PREFLIGHT_KEY_EXISTENCE_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("while idx <= #KEYS do"));
+        assertTrue(script.contains("redis.call('EXISTS', KEYS[idx])"));
+        assertFalse(script.contains("KEYS[3]"));
+    }
+
+    @Test
+    @DisplayName("Lua 타입은 block policy와 통합 deduct만 차감 문자열 스크립트로 유지한다")
+    void keepsUnifiedScriptTypesOnly() throws IOException {
+        String enumSource = Files.readString(LUA_SCRIPT_TYPE_SOURCE, StandardCharsets.UTF_8);
+
+        assertTrue(enumSource.contains("BLOCK_POLICY_CHECK(\"block_policy_check\", \"lua/traffic/block_policy_check.lua\")"));
+        assertTrue(enumSource.contains("DEDUCT_UNIFIED(\"deduct_unified\", \"lua/traffic/deduct_unified.lua\")"));
+        assertTrue(enumSource.contains("\"hydrate_individual_snapshot\""));
+        assertTrue(enumSource.contains("\"lua/traffic/hydrate_individual_snapshot.lua\""));
+        assertTrue(enumSource.contains("HYDRATE_SHARED_SNAPSHOT(\"hydrate_shared_snapshot\", \"lua/traffic/hydrate_shared_snapshot.lua\")"));
+        assertTrue(enumSource.contains("SHARED_POOL_CONTRIBUTION_APPLY("));
+        assertTrue(enumSource.contains("\"lua/traffic/shared_pool_contribution_apply.lua\""));
+        assertTrue(enumSource.contains("SHARED_POOL_CONTRIBUTION_RECOVER("));
+        assertTrue(enumSource.contains("\"lua/traffic/shared_pool_contribution_recover.lua\""));
+        assertTrue(enumSource.contains("SHARED_POOL_CONTRIBUTION_CLEANUP("));
+        assertTrue(enumSource.contains("\"lua/traffic/shared_pool_contribution_cleanup.lua\""));
+        assertTrue(!enumSource.contains("DEDUCT_INDIVIDUAL"));
+        assertTrue(!enumSource.contains("DEDUCT_SHARED"));
+    }
+
+    @Test
+    @DisplayName("policy Lua 타입은 CAS 스크립트 4개만 관리하고 실제 파일을 가리킨다")
+    void policyLuaScriptTypesPointToExistingCasResourcesOnly() throws IOException {
+        String runtimeEnumSource = Files.readString(LUA_SCRIPT_TYPE_SOURCE, StandardCharsets.UTF_8);
+        Set<String> resourcePaths = Arrays.stream(TrafficPolicyLuaScriptType.values())
+                .map(TrafficPolicyLuaScriptType::getResourcePath)
+                .collect(Collectors.toSet());
+        Set<String> expectedResourcePaths = Set.of(
+                "lua/traffic/policy_value_cas.lua",
+                "lua/traffic/repeat_block_snapshot_cas.lua",
+                "lua/traffic/app_policy_single_cas.lua",
+                "lua/traffic/app_policy_snapshot_cas.lua"
+        );
+
+        assertEquals(4, TrafficPolicyLuaScriptType.values().length);
+        assertEquals(expectedResourcePaths, resourcePaths);
+
+        for (String resourcePath : resourcePaths) {
+            assertTrue(
+                    Files.exists(LUA_RESOURCE_ROOT.resolve(resourcePath)),
+                    "Lua resource must exist. path=" + resourcePath
+            );
+            assertFalse(
+                    runtimeEnumSource.contains(resourcePath),
+                    "Policy Lua resource must not be managed by TrafficLuaScriptType. path=" + resourcePath
+            );
+        }
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 개인/공유/QoS 응답 계약을 반환한다")
+    void unifiedDeductKeepsThreeWayResultContract() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("indivDeducted"));
+        assertTrue(script.contains("sharedDeducted"));
+        assertTrue(script.contains("qosDeducted"));
+        assertTrue(script.contains("finishedAtEpochMillis"));
+        assertTrue(script.contains("redis.call(\"TIME\")"));
+        assertTrue(script.contains("\"SPEED_LIMIT_TIMEOUT\""));
+        assertTrue(script.contains("qos_speed_limit_next_available_key"));
+        assertFalse(script.contains("speed_bucket_key"));
+        assertTrue(script.contains("\"GLOBAL_POLICY_HYDRATE\""));
+        assertTrue(script.contains("\"HYDRATE_INDIVIDUAL\""));
+        assertTrue(script.contains("\"HYDRATE_SHARED\""));
+        assertFalse(script.contains("\"HYDRATE\""));
+        assertTrue(script.contains("\"NO_BALANCE\""));
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 fallback 방어선으로 hash field 기준 hydrate 원인을 분리한다")
+    void unifiedDeductKeepsFallbackSnapshotReadinessByPool() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
-                "if is_policy_enabled(policy_whitelist_key)",
-                "if is_policy_enabled(policy_immediate_key)",
-                "if is_policy_enabled(policy_repeat_key)"
+                "월별 잔량 snapshot fallback 필요 여부는 hash field 기준으로 판단한다.",
+                "local function is_hash_snapshot_ready(key, required_fields)",
+                "if redis.call(\"EXISTS\", key) == 0 then",
+                "local value = redis.call(\"HGET\", key, field)",
+                "개인 잔량 snapshot fallback 필요 여부 확인",
+                "if not is_hash_snapshot_ready(individual_remaining_key, { \"amount\", \"qos\" }) then",
+                "return as_json(0, 0, 0, \"HYDRATE_INDIVIDUAL\")",
+                "공유 snapshot amount 누락은 preflight 이후 Redis 손상/eviction을 복구하기 위한 fallback 신호다.",
+                "if not is_hash_snapshot_ready(shared_remaining_key, { \"amount\" }) then",
+                "return as_json(0, 0, 0, \"HYDRATE_SHARED\")"
         );
     }
 
     @Test
-    @DisplayName("2차 deduct Lua는 immediate/repeat 차단 정책을 직접 검사하지 않는다")
-    void deductScriptsDoNotCheckBlockPoliciesDirectly() throws IOException {
-        String individualScript = Files.readString(DEDUCT_INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
-        String sharedScript = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
-
-        assertTrue(!individualScript.contains("BLOCKED_IMMEDIATE"), "Individual deduct must not return BLOCKED_IMMEDIATE.");
-        assertTrue(!individualScript.contains("BLOCKED_REPEAT"), "Individual deduct must not return BLOCKED_REPEAT.");
-        assertTrue(!sharedScript.contains("BLOCKED_IMMEDIATE"), "Shared deduct must not return BLOCKED_IMMEDIATE.");
-        assertTrue(!sharedScript.contains("BLOCKED_REPEAT"), "Shared deduct must not return BLOCKED_REPEAT.");
-    }
-
-    @Test
-    @DisplayName("2차 deduct Lua는 whitelist bypass flag 입력을 사용한다")
-    void deductScriptsUseWhitelistBypassFlag() throws IOException {
-        String individualScript = Files.readString(DEDUCT_INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
-        String sharedScript = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
-
-        assertTrue(
-                individualScript.contains("local whitelist_bypass_flag = tonumber(ARGV[7] or \"0\")"),
-                "Individual deduct script must consume whitelist bypass flag from ARGV[7]."
-        );
-        assertTrue(
-                sharedScript.contains("local whitelist_bypass_flag = tonumber(ARGV[8] or \"0\")"),
-                "Shared deduct script must consume whitelist bypass flag from ARGV[8]."
-        );
-    }
-
-    @Test
-    @DisplayName("2차 deduct Lua는 global policy guard 이후 잔량 조회를 수행한다")
-    void checksGlobalPolicyGuardBeforeBalanceRead() throws IOException {
-        String individualScript = Files.readString(DEDUCT_INDIVIDUAL_SCRIPT, StandardCharsets.UTF_8);
-        String sharedScript = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("hydrate snapshot Lua는 기존 hash를 지운 뒤 스냅샷 필드를 한 번에 적재한다")
+    void hydrateSnapshotScriptsReplaceWholeHash() throws IOException {
+        String individualScript = Files.readString(HYDRATE_INDIVIDUAL_SNAPSHOT_SCRIPT, StandardCharsets.UTF_8);
+        String sharedScript = Files.readString(HYDRATE_SHARED_SNAPSHOT_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 individualScript,
-                "if has_missing_global_policy_key(",
-                "return as_json(0, \"GLOBAL_POLICY_HYDRATE\")",
-                "local current_amount = tonumber(redis.call(\"HGET\", remaining_key, \"amount\") or \"-1\")"
+                "redis.call('DEL', KEYS[1])",
+                "redis.call('HSET', KEYS[1], 'amount', ARGV[1], 'qos', ARGV[2])",
+                "redis.call('EXPIREAT', KEYS[1], expireAt)"
         );
         assertAppearsInOrder(
                 sharedScript,
-                "if has_missing_global_policy_key(",
-                "return as_json(0, \"GLOBAL_POLICY_HYDRATE\")",
-                "local current_amount = tonumber(redis.call(\"HGET\", remaining_key, \"amount\") or \"-1\")"
+                "redis.call('DEL', KEYS[1])",
+                "redis.call('HSET', KEYS[1], 'amount', ARGV[1])",
+                "redis.call('EXPIREAT', KEYS[1], expireAt)"
         );
     }
 
     @Test
-    @DisplayName("공유풀 Lua는 QoS 보정 키를 추가로 받고 QOS 상태를 반환할 수 있다")
-    void sharedScriptAcceptsQosKeyAndStatus() throws IOException {
-        String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
-
-        assertTrue(
-                script.contains("local individual_remaining_key = KEYS[20]"),
-                "Shared script must accept individual remaining key for qos lookup."
-        );
-        assertTrue(
-                script.contains("\"QOS\""),
-                "Shared script must include QOS status."
-        );
-        assertTrue(
-                script.contains("local allow_qos_fallback = tonumber(ARGV[13] or \"0\")"),
-                "Shared script must accept allow_qos_fallback flag."
-        );
-    }
-
-    @Test
-    @DisplayName("공유 DB 리필 전에는 allow 플래그 없이는 QOS로 우회하지 않는다")
-    void sharedScriptRequiresAllowQosFlagBeforeFallback() throws IOException {
-        String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("통합 deduct Lua는 개인풀, 공유풀, QoS 순서로 차감한다")
+    void unifiedDeductKeepsPoolOrder() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
-                "if answer <= 0 then",
-                "if allow_qos_fallback ~= 1 then",
-                "return as_json(0, final_status)",
-                "local qos_answer, qos_status = resolve_qos_fallback("
+                "local indiv_deducted = individual_unlimited and pool_target or math.min(individual_amount, pool_target)",
+                "local shared_deducted = shared_unlimited and shared_target or math.min(shared_amount, shared_target)",
+                "local qos_bytes_per_sec = read_non_negative_counter(individual_remaining_key, \"qos\")",
+                "qos_deducted = qos_target"
         );
     }
 
     @Test
-    @DisplayName("allow 플래그로 QoS 보정이 적용되면 공유풀 잔량/월 사용량 차감은 건너뛴다")
-    void sharedScriptSkipsSharedDeductWhenQosFallbackApplies() throws IOException {
-        String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("통합 deduct Lua는 앱별 일일 사용량을 source별 field로 분리하고 합산해 limit을 판단한다")
+    void unifiedDeductUsesSourceSpecificDailyAppUsageFields() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("local app_usage_individual_field = \"app:\" .. app_member .. \":individual\""));
+        assertTrue(script.contains("local app_usage_shared_field = \"app:\" .. app_member .. \":shared\""));
+        assertTrue(script.contains("local app_usage_qos_field = \"app:\" .. app_member .. \":qos\""));
+        assertTrue(script.contains("local app_daily_used = read_daily_app_usage("));
+        assertTrue(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_individual_field, indiv_deducted)"));
+        assertTrue(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_shared_field, shared_deducted)"));
+        assertTrue(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_qos_field, qos_deducted)"));
+        assertFalse(script.contains("local app_usage_field = \"app:\" .. app_member"));
+        assertFalse(script.contains("redis.call(\"HINCRBY\", daily_app_usage_key, app_usage_field, total_deducted)"));
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 공유풀 차감이 있을 때만 일별 공유풀 사용량 hash를 적재한다")
+    void unifiedDeductRecordsDailySharedUsageOnlyForSharedDeduction() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("local daily_shared_usage_key = KEYS[16]"));
+        assertTrue(script.contains("local family_id = tonumber(ARGV[7] or \"-1\")"));
+        assertTrue(script.contains("if not daily_shared_usage_key or daily_shared_usage_key == \"\" then"));
+        assertTrue(script.contains("if not family_id or family_id <= 0 then"));
+        assertAppearsInOrder(
+                script,
+                "if shared_deducted > 0 then",
+                "redis.call(\"HINCRBY\", daily_shared_usage_key, \"usage_amount\", shared_deducted)",
+                "redis.call(\"HSET\", daily_shared_usage_key, \"family_id\", family_id)",
+                "redis.call(\"EXPIREAT\", daily_shared_usage_key, daily_expire_at)"
+        );
+        assertFalse(script.contains("redis.call(\"HINCRBY\", daily_shared_usage_key, \"usage_amount\", indiv_deducted)"));
+        assertFalse(script.contains("redis.call(\"HINCRBY\", daily_shared_usage_key, \"usage_amount\", qos_deducted)"));
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 월별 공유 사용량을 hash 계약으로 읽고 누적한다")
+    void unifiedDeductUsesMonthlySharedUsageHash() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
+
+        assertTrue(script.contains("redis.call(\"HGET\", monthly_shared_usage_key, \"usage_amount\")"));
+        assertAppearsInOrder(
+                script,
+                "if shared_deducted > 0 then",
+                "redis.call(\"HINCRBY\", monthly_shared_usage_key, \"usage_amount\", shared_deducted)",
+                "redis.call(\"HSET\", monthly_shared_usage_key, \"family_id\", family_id)",
+                "redis.call(\"EXPIREAT\", monthly_shared_usage_key, monthly_expire_at)"
+        );
+        assertFalse(script.contains("redis.call(\"GET\", monthly_shared_usage_key)"));
+        assertFalse(script.contains("redis.call(\"INCRBY\", monthly_shared_usage_key, shared_deducted)"));
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 timeout을 Redis 상태 변경 전에 반환한다")
+    void unifiedDeductChecksSpeedLimitTimeoutBeforeMutations() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
-                "if answer <= 0 then",
-                "if allow_qos_fallback ~= 1 then",
-                "local qos_answer, qos_status = resolve_qos_fallback(",
-                "used_qos_fallback = true",
-                "if not used_qos_fallback then",
-                "redis.call(\"HINCRBY\", remaining_key, \"amount\", -answer)"
+                "local speed_limited_bytes = 0",
+                "return as_json(0, 0, 0, \"SPEED_LIMIT_TIMEOUT\", finished_at_epoch_millis)",
+                "redis.call(\"SET\", qos_speed_limit_next_available_key, finished_at_epoch_millis)",
+                "if redis.call(\"EXISTS\", dedupe_key) == 0 then",
+                "redis.call(\"HINCRBY\", individual_remaining_key, \"amount\", -indiv_deducted)",
+                "redis.call(\"INCRBY\", daily_total_usage_key, total_deducted)"
         );
     }
 
     @Test
-    @DisplayName("공유 QoS fallback은 speed_remaining을 계산해 qos와 함께 최소값을 적용한다")
-    void sharedScriptUsesSpeedRemainingForQosFallback() throws IOException {
-        String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("앱 정책 CAS Lua는 정책 제거 시 QoS/속도 예약 키를 함께 삭제한다")
+    void appPolicyCasScriptsDeleteSpeedReservationKeys() throws IOException {
+        String singleScript = Files.readString(
+                Path.of("src/main/resources/lua/traffic/app_policy_single_cas.lua"),
+                StandardCharsets.UTF_8
+        );
+        String snapshotScript = Files.readString(
+                Path.of("src/main/resources/lua/traffic/app_policy_snapshot_cas.lua"),
+                StandardCharsets.UTF_8
+        );
+
+        assertAppearsInOrder(
+                singleScript,
+                "if isActive == '1' then",
+                "else",
+                "redis.call('HDEL', KEYS[1], limitField)",
+                "redis.call('HDEL', KEYS[2], speedField)",
+                "redis.call('DEL', KEYS[4])"
+        );
+        assertAppearsInOrder(
+                snapshotScript,
+                "local validKeys = {}",
+                "for i = 1, #KEYS do",
+                "validKeys[#validKeys + 1] = KEYS[i]",
+                "redis.call('DEL', unpack(validKeys))",
+                "local dataPayload = cjson.decode(ARGV[2])"
+        );
+    }
+
+    @Test
+    @DisplayName("통합 deduct Lua는 앱 속도 전역 정책이 활성일 때만 앱 예약 대상을 계산한다")
+    void unifiedDeductChecksGlobalAppSpeedPolicyBeforeReservation() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
 
         assertAppearsInOrder(
                 script,
-                "local speed_used = tonumber(redis.call(\"GET\", speed_bucket_key) or \"0\")",
-                "local speed_remaining = math.max(0, raw_app_speed_limit - speed_used)",
-                "if speed_remaining <= 0 then",
-                "fallback_answer = math.min(fallback_answer, speed_remaining)"
-        );
-        assertTrue(
-                script.contains("return 0, \"HIT_APP_SPEED\""),
-                "Shared script must return HIT_APP_SPEED when speed remaining budget is exhausted."
+                "local app_speed_limited = false",
+                "if is_policy_enabled(policy_app_speed_key) then",
+                "app_speed_limited = true",
+                "if app_speed_limited and qos_deducted > 0 then"
         );
     }
 
     @Test
-    @DisplayName("공유 QoS fallback 입력은 monthly 제외 cap(qos_capped_target)을 사용한다")
-    void sharedScriptUsesQosCappedTargetWithoutMonthlyLimit() throws IOException {
-        String script = Files.readString(DEDUCT_SHARED_SCRIPT, StandardCharsets.UTF_8);
+    @DisplayName("통합 deduct Lua는 amount 누락 직접 HYDRATE 트리거를 제거하고 -1 sentinel은 유지한다")
+    void unifiedDeductRemovesAmountMissingHydrateTriggerAndKeepsUnlimitedSentinel() throws IOException {
+        String script = Files.readString(DEDUCT_UNIFIED_SCRIPT, StandardCharsets.UTF_8);
 
-        assertTrue(
-                script.contains("local qos_capped_target = target_data"),
-                "Shared script must keep a dedicated qos cap target."
-        );
-        assertTrue(
-                script.contains("allow_qos_fallback ~= 1 and is_policy_enabled(policy_shared_key)"),
-                "Shared monthly policy must be skipped in QoS fallback call."
-        );
-        assertTrue(
-                script.contains("local qos_answer, qos_status = resolve_qos_fallback("),
-                "Shared script must call qos fallback resolver."
-        );
-        assertTrue(
-                script.contains("qos_capped_target,"),
-                "Shared script must pass qos_capped_target to qos fallback."
-        );
-    }
-
-    @Test
-    @DisplayName("refill gate는 is_empty/threshold를 원인별 SKIP 상태로 구분한다")
-    void refillGateChecksDbEmptyBeforeThreshold() throws IOException {
-        String script = Files.readString(REFILL_GATE_SCRIPT, StandardCharsets.UTF_8);
-
+        assertFalse(script.contains("raw_individual_amount == false or raw_individual_amount == nil"));
+        assertFalse(script.contains("raw_shared_amount == false or raw_shared_amount == nil"));
         assertAppearsInOrder(
                 script,
-                "if is_empty == 1 then",
-                "return \"SKIP_DB_EMPTY\"",
-                "if current_amount >= threshold then"
+                "if not is_hash_snapshot_ready(individual_remaining_key, { \"amount\", \"qos\" }) then",
+                "local raw_individual_amount = redis.call(\"HGET\", individual_remaining_key, \"amount\")",
+                "local individual_unlimited = individual_amount == -1",
+                "local indiv_deducted = individual_unlimited and pool_target or math.min(individual_amount, pool_target)",
+                "if indiv_deducted > 0 and not individual_unlimited then"
         );
-        assertTrue(
-                script.contains("return \"SKIP_THRESHOLD\""),
-                "Refill gate must return SKIP_THRESHOLD when current amount is above threshold."
+    }
+
+    @Test
+    @DisplayName("공유풀 기여 Lua는 metadata applied flag 기준으로 중복 Redis 변경을 막는다")
+    void sharedPoolContributionLuaUsesMetadataAppliedFlags() throws IOException {
+        String applyScript = Files.readString(SHARED_POOL_CONTRIBUTION_APPLY_SCRIPT, StandardCharsets.UTF_8);
+        String recoverScript = Files.readString(SHARED_POOL_CONTRIBUTION_RECOVER_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                applyScript,
+                "local metadata_exists = redis.call(\"EXISTS\", metadata_key) == 1",
+                "existing_trace_id ~= trace_id",
+                "redis.call(",
+                "\"HSET\",",
+                "metadata_key,",
+                "\"trace_id\", trace_id,",
+                "\"amount\", ARGV[2],",
+                "\"individual_applied\", \"0\",",
+                "\"shared_applied\", \"0\"",
+                "if individual_unlimited then",
+                "redis.call(\"HSET\", metadata_key, \"individual_applied\", \"1\")",
+                "elseif individual_applied == \"0\" and redis.call(\"EXISTS\", individual_key) == 1 then",
+                "redis.call(\"HINCRBY\", individual_key, \"amount\", -amount)",
+                "redis.call(\"HSET\", metadata_key, \"individual_applied\", \"1\")",
+                "if shared_applied == \"0\" and redis.call(\"EXISTS\", shared_key) == 1 then",
+                "redis.call(\"HINCRBY\", shared_key, \"amount\", amount)",
+                "redis.call(\"HSET\", metadata_key, \"shared_applied\", \"1\")"
+        );
+        assertTrue(applyScript.contains("return as_json(\"INSUFFICIENT_INDIVIDUAL\", 0, 0)"));
+        assertTrue(recoverScript.contains("return as_json(\"METADATA_MISSING\", 0, 0)"));
+        assertTrue(recoverScript.contains("local amount = tonumber(redis.call(\"HGET\", metadata_key, \"amount\"))"));
+        assertTrue(recoverScript.contains("if individual_applied == \"0\""));
+        assertTrue(recoverScript.contains("if shared_applied == \"0\""));
+    }
+
+    @Test
+    @DisplayName("공유풀 기여 cleanup Lua는 owner 값이 일치할 때만 hydrate lock을 해제한다")
+    void sharedPoolContributionCleanupReleasesOwnedLocksOnly() throws IOException {
+        String cleanupScript = Files.readString(SHARED_POOL_CONTRIBUTION_CLEANUP_SCRIPT, StandardCharsets.UTF_8);
+
+        assertAppearsInOrder(
+                cleanupScript,
+                "deleted_count = deleted_count + redis.call(\"DEL\", KEYS[1])",
+                "if redis.call(\"GET\", KEYS[2]) == ARGV[1] then",
+                "deleted_count = deleted_count + redis.call(\"DEL\", KEYS[2])",
+                "if redis.call(\"GET\", KEYS[3]) == ARGV[2] then",
+                "deleted_count = deleted_count + redis.call(\"DEL\", KEYS[3])"
         );
     }
 
     private void assertAppearsInOrder(String script, String... fragments) {
         int previousIndex = -1;
         for (String fragment : fragments) {
-            int searchFromIndex = previousIndex + 1;
-            int currentIndex = script.indexOf(fragment, searchFromIndex);
+            int currentIndex = script.indexOf(fragment, previousIndex + 1);
             assertTrue(currentIndex >= 0, "Required fragment not found. fragment=" + fragment);
-            assertTrue(
-                    currentIndex > previousIndex,
-                    "Fragments must appear in order. fragment=" + fragment + ", previousIndex=" + previousIndex + ", currentIndex=" + currentIndex
-            );
+            assertTrue(currentIndex > previousIndex, "Fragments must appear in order. fragment=" + fragment);
             previousIndex = currentIndex;
         }
     }

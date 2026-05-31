@@ -8,6 +8,7 @@ import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.connection.RedisStreamCommands.XAddOptions;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -22,6 +23,7 @@ import com.pooli.traffic.domain.TrafficStreamFields;
 import com.pooli.traffic.domain.dto.request.TrafficGenerateReqDto;
 import com.pooli.traffic.domain.dto.request.TrafficPayloadReqDto;
 import com.pooli.traffic.domain.dto.response.TrafficGenerateResDto;
+import com.pooli.traffic.service.restore.TrafficRestoreTrafficGateService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +46,7 @@ public class TrafficRequestEnqueueService {
     private final ObjectMapper objectMapper;
     private final AppStreamsProperties appStreamsProperties;
     private final TrafficRequestMetrics trafficRequestMetrics;
+    private final TrafficRestoreTrafficGateService trafficRestoreTrafficGateService;
 
     /**
      * 트래픽 발생 요청을 Streams에 enqueue하고, 추적용 응답(traceId/enqueuedAt)을 반환합니다.
@@ -60,6 +63,9 @@ public class TrafficRequestEnqueueService {
     public TrafficGenerateResDto enqueue(TrafficGenerateReqDto request) {
         long start = System.currentTimeMillis();
         trafficRequestMetrics.incrementRequest();
+        if (trafficRestoreTrafficGateService.shouldBlockTraffic()) {
+            throw new ApplicationException(CommonErrorCode.EXTERNAL_SYSTEM_ERROR, "Redis 장애 복구 중에는 traffic 요청을 처리할 수 없습니다.");
+        }
 
         String traceId = resolveTraceId();
         long enqueuedAt = System.currentTimeMillis();
@@ -148,7 +154,9 @@ public class TrafficRequestEnqueueService {
             RecordId recordId = streamsStringRedisTemplate.opsForStream().add(
                     StreamRecords.string(
                             Map.of(TrafficStreamFields.PAYLOAD, payloadJson)
-                    ).withStreamKey(appStreamsProperties.getKeyTrafficRequest())
+                    ).withStreamKey(appStreamsProperties.getKeyTrafficRequest()),
+                    XAddOptions.maxlen(appStreamsProperties.requireTrafficRequestMaxLength())
+                            .approximateTrimming(true)
             );
 
             if (recordId == null) {

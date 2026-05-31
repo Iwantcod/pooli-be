@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,7 @@ import com.pooli.traffic.domain.outbox.payload.SharedPoolThresholdOutboxPayload;
 import com.pooli.traffic.mapper.TrafficSharedThresholdAlarmLogMapper;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.runtime.TrafficFamilyMetaCacheService;
+import com.pooli.traffic.service.runtime.TrafficRemainingBalanceQueryService;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
 
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ public class TrafficSharedPoolThresholdAlarmService {
     private static final int THRESHOLD_10 = 10;
 
     private final TrafficFamilyMetaCacheService trafficFamilyMetaCacheService;
+    private final TrafficRemainingBalanceQueryService trafficRemainingBalanceQueryService;
     private final TrafficRedisRuntimePolicy trafficRedisRuntimePolicy;
     private final TrafficSharedThresholdAlarmLogMapper trafficSharedThresholdAlarmLogMapper;
     private final RedisOutboxRecordService redisOutboxRecordService;
@@ -58,7 +61,12 @@ public class TrafficSharedPoolThresholdAlarmService {
         }
 
         YearMonth targetMonth = YearMonth.now(trafficRedisRuntimePolicy.zoneId());
-        long actualRemainingData = normalizeNonNegative(familyMeta.getDbRemainingData());
+        Long actualRemaining = trafficRemainingBalanceQueryService.resolveSharedActualRemaining(familyId);
+        if (actualRemaining == null) {
+            return;
+        }
+
+        long actualRemainingData = normalizeNonNegative(actualRemaining);
         int remainingPercent = clampPercent(actualRemainingData, poolTotalData);
 
         List<Integer> thresholds = resolveThresholds(familyMeta);
@@ -111,7 +119,7 @@ public class TrafficSharedPoolThresholdAlarmService {
         redisOutboxRecordService.createPending(
                 OutboxEventType.SHARED_POOL_THRESHOLD_REACHED,
                 payload,
-                uuid
+                resolveRequiredTraceIdFromMdc()
         );
 
         log.info(
@@ -152,6 +160,17 @@ public class TrafficSharedPoolThresholdAlarmService {
             return 0L;
         }
         return value;
+    }
+
+    /**
+     * 임계치 Outbox는 소비 중인 요청의 traceId를 공통 식별자로 기록합니다.
+     */
+    private String resolveRequiredTraceIdFromMdc() {
+        String traceId = MDC.get("traceId");
+        if (traceId == null || traceId.isBlank()) {
+            throw new IllegalArgumentException("traceId must not be blank");
+        }
+        return traceId.trim();
     }
 
 }

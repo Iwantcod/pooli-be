@@ -390,7 +390,7 @@ def write_load_sql(out_dir: Path) -> None:
         sql_load_block(
             "32_daily_app_total_data.csv",
             "DAILY_APP_TOTAL_DATA",
-            "usage_date, line_id, application_id, total_usage_data, created_at, @deleted_at, @updated_at",
+            "usage_date, line_id, application_id, individual_usage_data, shared_usage_data, qos_usage_data, created_at, @deleted_at, @updated_at",
             "SET deleted_at = NULLIF(NULLIF(@deleted_at, '\\N'), 'NULL'), updated_at = NULLIF(NULLIF(@updated_at, '\\N'), 'NULL')",
         ),
         sql_load_block(
@@ -514,7 +514,7 @@ CREATE TEMPORARY TABLE tmp_datd_line_day AS
 SELECT usage_date,
        line_id,
        COUNT(*) AS datd_row_count,
-       SUM(total_usage_data) AS datd_app_usage_sum
+       SUM(individual_usage_data + shared_usage_data + qos_usage_data) AS datd_app_usage_sum
 FROM DAILY_APP_TOTAL_DATA
 WHERE DATE_FORMAT(usage_date, '%Y-%m') = @CURRENT_MONTH
 GROUP BY usage_date, line_id;
@@ -1127,7 +1127,7 @@ def generate(
         "27_repeat_block_day.csv": ["repeat_block_day_id", "repeat_block_id", "day_of_week", "start_at", "end_at", "created_at", "deleted_at", "updated_at"],
         "30_daily_total_data.csv": ["usage_date", "line_id", "total_usage_data", "created_at", "deleted_at", "updated_at"],
         "31_family_shared_usage_daily.csv": ["usage_date", "family_id", "line_id", "usage_amount", "contribution_amount", "created_at", "deleted_at", "updated_at"],
-        "32_daily_app_total_data.csv": ["usage_date", "line_id", "application_id", "total_usage_data", "created_at", "deleted_at", "updated_at"],
+        "32_daily_app_total_data.csv": ["usage_date", "line_id", "application_id", "individual_usage_data", "shared_usage_data", "qos_usage_data", "created_at", "deleted_at", "updated_at"],
         "40_question.csv": ["question_id", "question_category_id", "line_id", "title", "content", "is_answer", "created_at", "deleted_at"],
         "41_answer.csv": ["answer_id", "user_id", "question_id", "content", "created_at", "deleted_at"],
         "42_question_attachment.csv": ["question_attachment_id", "question_id", "s3_key", "file_size", "created_at", "deleted_at"],
@@ -1390,16 +1390,25 @@ def generate(
 
                 app_count = rng.randint(3, 5)
                 chosen_apps = rng.sample(app_ids, k=app_count)
-                app_usage_parts = split_integer_total(total_usage, app_count, rng)
+                shared_app_usage_parts = split_integer_total(shared_usage, app_count, rng)
+                individual_app_usage_parts = split_integer_total(total_usage - shared_usage, app_count, rng)
+                qos_app_usage_parts = [0] * app_count
 
-                for app_id, app_usage in zip(chosen_apps, app_usage_parts):
+                for app_id, individual_usage, shared_app_usage, qos_usage in zip(
+                    chosen_apps,
+                    individual_app_usage_parts,
+                    shared_app_usage_parts,
+                    qos_app_usage_parts,
+                ):
                     csvs.write(
                         "32_daily_app_total_data.csv",
                         [
                             usage_date,
                             line_id,
                             app_id,
-                            app_usage,
+                            individual_usage,
+                            shared_app_usage,
+                            qos_usage,
                             ts(random_dt_after(rng, line_created, now)),
                             null(),
                             null(),

@@ -33,6 +33,9 @@ else
   redis.call('HDEL', KEYS[1], limitField)
   redis.call('HDEL', KEYS[2], speedField)
   redis.call('SREM', KEYS[3], appId)
+  if KEYS[4] and KEYS[4] ~= '' then
+    redis.call('DEL', KEYS[4])
+  end
 end
 
 return 1

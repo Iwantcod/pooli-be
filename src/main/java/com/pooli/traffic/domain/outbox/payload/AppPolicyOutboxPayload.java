@@ -14,7 +14,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class AppPolicyOutboxPayload {
+    /** 회선 ID */
     private Long lineId;
+    /** 애플리케이션 ID */
     private Integer appId;
+    /** 정책 버전 번호 */
     private Long version;
 }

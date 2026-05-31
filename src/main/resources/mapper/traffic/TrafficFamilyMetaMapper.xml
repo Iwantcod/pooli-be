@@ -9,7 +9,6 @@
         SELECT
             family_id AS familyId,
             pool_total_data AS poolTotalData,
-            pool_remaining_data AS dbRemainingData,
             family_threshold AS familyThreshold,
             is_threshold_active AS thresholdActive
         FROM FAMILY

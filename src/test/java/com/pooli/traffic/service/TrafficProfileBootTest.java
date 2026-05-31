@@ -20,6 +20,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pooli.common.config.AppStreamsProperties;
+import com.pooli.common.config.TrafficRetryConfig;
 import com.pooli.monitoring.metrics.TrafficGeneratorMetrics;
 import com.pooli.monitoring.metrics.TrafficRecordStageMetricsLocal;
 import com.pooli.monitoring.metrics.TrafficRecordStageMetricsNoOp;
@@ -28,6 +29,7 @@ import com.pooli.monitoring.metrics.TrafficRequestMetrics;
 import com.pooli.traffic.config.TrafficSchedulingConfig;
 import com.pooli.traffic.controller.TrafficController;
 import com.pooli.traffic.service.decision.TrafficDeductOrchestratorService;
+import com.pooli.traffic.service.invoke.TrafficDeductCompletionPersistenceService;
 import com.pooli.traffic.service.invoke.TrafficDeductDoneLogService;
 import com.pooli.traffic.service.invoke.TrafficPayloadValidationService;
 import com.pooli.traffic.service.invoke.TrafficRequestEnqueueService;
@@ -36,13 +38,15 @@ import com.pooli.traffic.service.invoke.TrafficStreamInfraService;
 import com.pooli.traffic.service.invoke.TrafficStreamReclaimService;
 import com.pooli.traffic.service.outbox.RedisOutboxRecordService;
 import com.pooli.traffic.service.outbox.RedisOutboxRetryScheduler;
+import com.pooli.traffic.service.outbox.TrafficInFlightDedupeDeleteOutboxService;
 import com.pooli.traffic.service.outbox.TrafficPolicyVersionedRedisService;
-import com.pooli.traffic.service.outbox.TrafficRefillOutboxSupportService;
 import com.pooli.traffic.service.outbox.strategy.OutboxRetryStrategyRegistry;
 import com.pooli.traffic.service.policy.TrafficPolicyWriteThroughService;
 import com.pooli.traffic.service.runtime.TrafficInFlightDedupeService;
+import com.pooli.traffic.service.runtime.TrafficRedisFailureClassifier;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
 import com.pooli.traffic.service.runtime.TrafficRedisRuntimePolicy;
+import com.pooli.traffic.service.restore.TrafficRestoreTrafficGateService;
 
 class TrafficProfileBootTest {
 
@@ -59,6 +63,7 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficController.class);
                         assertThat(context).hasSingleBean(TrafficRequestEnqueueService.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
+                        assertThat(context).hasSingleBean(TrafficRetryConfig.class);
                         assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
                         assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
                                 .isInstanceOf(TrafficRecordStageMetricsNoOp.class);
@@ -83,6 +88,7 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficStreamReclaimService.class);
                         assertThat(context).hasSingleBean(RedisOutboxRetryScheduler.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
+                        assertThat(context).hasSingleBean(TrafficRetryConfig.class);
                         assertThat(context).hasSingleBean(TrafficSchedulingConfig.class);
                         assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
                         assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
@@ -102,6 +108,7 @@ class TrafficProfileBootTest {
                         assertThat(context).hasSingleBean(TrafficStreamReclaimService.class);
                         assertThat(context).hasSingleBean(RedisOutboxRetryScheduler.class);
                         assertThat(context).hasSingleBean(TrafficPolicyWriteThroughService.class);
+                        assertThat(context).hasSingleBean(TrafficRetryConfig.class);
                         assertThat(context).hasSingleBean(TrafficSchedulingConfig.class);
                         assertThat(context).hasSingleBean(TrafficRecordStageMetricsPort.class);
                         assertThat(context.getBean(TrafficRecordStageMetricsPort.class))
@@ -188,6 +195,7 @@ class TrafficProfileBootTest {
                         TrafficRecordStageMetricsLocal.class,
                         TrafficRecordStageMetricsNoOp.class,
                         TrafficSchedulingConfig.class,
+                        TrafficRetryConfig.class,
                         TestBeans.class
                 )
                 .withBean(AppStreamsProperties.class, () -> appStreamsProperties)
@@ -199,13 +207,18 @@ class TrafficProfileBootTest {
                 .withBean(TrafficDeductOrchestratorService.class, () -> mock(TrafficDeductOrchestratorService.class))
                 .withBean(TrafficInFlightDedupeService.class, () -> mock(TrafficInFlightDedupeService.class))
                 .withBean(TrafficDeductDoneLogService.class, () -> mock(TrafficDeductDoneLogService.class))
+                .withBean(TrafficDeductCompletionPersistenceService.class,
+                        () -> mock(TrafficDeductCompletionPersistenceService.class))
                 .withBean(TrafficRedisKeyFactory.class, () -> mock(TrafficRedisKeyFactory.class))
+                .withBean(TrafficRedisFailureClassifier.class, () -> mock(TrafficRedisFailureClassifier.class))
+                .withBean(TrafficRestoreTrafficGateService.class, () -> mock(TrafficRestoreTrafficGateService.class))
                 .withBean(TrafficGeneratorMetrics.class, () -> mock(TrafficGeneratorMetrics.class))
                 .withBean(TrafficRequestMetrics.class, () -> mock(TrafficRequestMetrics.class))
                 .withBean(TrafficPolicyVersionedRedisService.class, () -> mock(TrafficPolicyVersionedRedisService.class))
                 .withBean(RedisOutboxRecordService.class, () -> mock(RedisOutboxRecordService.class))
+                .withBean(TrafficInFlightDedupeDeleteOutboxService.class,
+                        () -> mock(TrafficInFlightDedupeDeleteOutboxService.class))
                 .withBean(OutboxRetryStrategyRegistry.class, () -> mock(OutboxRetryStrategyRegistry.class))
-                .withBean(TrafficRefillOutboxSupportService.class, () -> mock(TrafficRefillOutboxSupportService.class))
                 .withBean(MeterRegistry.class, SimpleMeterRegistry::new);
     }
 
@@ -233,7 +246,6 @@ class TrafficProfileBootTest {
         properties.setReclaimIntervalMs(1000L);
         properties.setReclaimMinIdleMs(15_000L);
         properties.setShutdownAwaitMs(1_000L);
-        properties.setMaxRetry(5);
         return properties;
     }
 
