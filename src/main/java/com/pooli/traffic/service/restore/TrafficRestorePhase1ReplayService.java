@@ -1,5 +1,6 @@
 package com.pooli.traffic.service.restore;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -17,6 +18,7 @@ import lombok.RequiredArgsConstructor;
  * Redis 복구 phase 1 daily app target을 Redis replay 후 DONE 처리한다.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class TrafficRestorePhase1ReplayService {
 
@@ -56,7 +58,13 @@ public class TrafficRestorePhase1ReplayService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                replayLuaExecutor.deleteIdempotencyKey(idempotencyKey);
+                try {
+                    replayLuaExecutor.deleteIdempotencyKey(idempotencyKey);
+                } catch (Exception cleanupFailure) {
+                    // 커밋은 완료되었으므로, 정리 실패가 다음 비즈니스 replay의 처리를 방해하지 않도록 예외를 차단(Swallow)합니다.
+                    log.warn("Failed to delete phase 2 idempotency key: {}", idempotencyKey, cleanupFailure);
+                    // TODO: cleanupFailureMetric.increment(); // 후처리 실패 모니터링 메트릭 카운트 증가
+                }
             }
         });
     }
