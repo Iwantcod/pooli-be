@@ -111,10 +111,12 @@ public class TrafficPolicyBootstrapService {
      * @param policyKeys preflight에서 확인한 전역 policy Redis key 목록
      */
     public void hydrateOnDemandIfAnyPolicyKeyMissing(Collection<String> policyKeys) {
+        // (1) hot-path quick check: 모든 정책 키가 이미 Redis에 존재하는지 빠르게 확인합니다. (allPolicyKeysExist)
         if (allPolicyKeysExist(policyKeys)) {
             return;
         }
 
+        // (2) lockKey와 lockOwner를 생성하고 tryAcquireLock을 통해 분산 락 획득을 시도합니다.
         String lockKey = trafficRedisKeyFactory.policyBootstrapLockKey();
         String lockOwner = buildLockOwner("on_demand_preflight");
         boolean lockAcquired = tryAcquireLock(lockKey, lockOwner);
@@ -124,11 +126,14 @@ public class TrafficPolicyBootstrapService {
         }
 
         try {
+            // (3) 락 획득에 성공한 후, 다른 인스턴스가 그 사이에 적재를 완료했는지 allPolicyKeysExist로 재검사합니다.
             if (allPolicyKeysExist(policyKeys)) {
                 return;
             }
+            // (4) 여전히 키가 누락되어 있다면 synchronizePolicyActivationSnapshotWithoutLock을 통해 스냅샷을 적재합니다.
             synchronizePolicyActivationSnapshotWithoutLock("on_demand_preflight", false);
         } finally {
+            // (5) 작업 성공 여부와 상관없이 releaseLock을 통해 락을 안전하게 해제합니다.
             releaseLock(lockKey, lockOwner);
         }
     }
