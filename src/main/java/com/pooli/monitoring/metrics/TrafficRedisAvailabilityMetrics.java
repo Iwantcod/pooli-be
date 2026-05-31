@@ -99,6 +99,16 @@ public class TrafficRedisAvailabilityMetrics {
     }
 
     /**
+     * 복구 작업 완료 후 멱등키 정리(afterCommit) 과정에서 발생한 실패 횟수를 기록합니다.
+     */
+    public void incrementIdempotencyCleanupFailure() {
+        meterRegistry.counter(
+                "traffic_restore_idempotency_cleanup_failures_total",
+                "redis", RedisTarget.CACHE.tagValue()
+        ).increment();
+    }
+
+    /**
      * 능동 PING 결과를 gauge 상태 holder에 반영합니다.
      *
      * <p>1. Redis 종류에 해당하는 `up`/`failures` holder를 조회합니다.

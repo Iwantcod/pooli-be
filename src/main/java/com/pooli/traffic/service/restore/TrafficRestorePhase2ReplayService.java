@@ -3,6 +3,7 @@ package com.pooli.traffic.service.restore;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -13,6 +14,7 @@ import com.pooli.traffic.domain.restore.TrafficRestoreReplayCommand;
 import com.pooli.traffic.domain.restore.TrafficRestoreReplayResult;
 import com.pooli.traffic.mapper.TrafficDeductDoneLogMapper;
 import com.pooli.traffic.service.runtime.TrafficRedisKeyFactory;
+import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics;
 
 import lombok.RequiredArgsConstructor;
 
@@ -28,6 +30,7 @@ public class TrafficRestorePhase2ReplayService {
     private final TrafficDeductDoneLogMapper doneLogMapper;
     private final TrafficRestoreReplayLuaExecutor replayLuaExecutor;
     private final TrafficRedisKeyFactory trafficRedisKeyFactory;
+    private final TrafficRedisAvailabilityMetrics redisMetrics;
 
     /**
      * 업무일 범위의 claim 가능한 done log를 PROCESSING으로 선점한다.
@@ -83,12 +86,21 @@ public class TrafficRestorePhase2ReplayService {
 
     /**
      * DB terminal 상태 전환 commit이 확정된 뒤에만 Redis replay idempotency key를 제거한다.
+     * 멱등키 삭제 중 예외가 발생하더라도 트랜잭션 완료 후에 영향을 주지 않도록 예외를 포획하고 경고 로그 및 메트릭을 기록합니다.
      */
     private void registerIdempotencyCleanupAfterCommit(String idempotencyKey) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                replayLuaExecutor.deleteIdempotencyKey(idempotencyKey);
+                try {
+                    // Redis에서 복구 작업용 멱등키를 비동기식으로 제거합니다.
+                    replayLuaExecutor.deleteIdempotencyKey(idempotencyKey);
+                } catch (Exception cleanupFailure) {
+                    // 정리 도중 예외가 발생하더라도 사용자 스레드에 영향이 가지 않도록 로그와 메트릭만 기록하고 예외를 삼킵니다.
+                    LoggerFactory.getLogger(TrafficRestorePhase2ReplayService.class)
+                            .warn("Failed to delete phase 2 idempotency key: {}", idempotencyKey, cleanupFailure);
+                    redisMetrics.incrementIdempotencyCleanupFailure();
+                }
             }
         });
     }

@@ -4,12 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 import java.time.LocalDate;
 import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -23,6 +25,7 @@ import com.pooli.traffic.domain.restore.TrafficRestoreReplayCommand;
 import com.pooli.traffic.domain.restore.TrafficRestoreReplayResult;
 import com.pooli.traffic.domain.restore.TrafficRestoreTargetStatus;
 import com.pooli.traffic.mapper.TrafficRestoreDailyAppTargetMapper;
+import com.pooli.monitoring.metrics.TrafficRedisAvailabilityMetrics;
 
 @ExtendWith(MockitoExtension.class)
 class TrafficRestorePhase1ReplayServiceTest {
@@ -34,6 +37,9 @@ class TrafficRestorePhase1ReplayServiceTest {
 
     @Mock
     private TrafficRestoreReplayLuaExecutor replayLuaExecutor;
+
+    @Mock
+    private TrafficRedisAvailabilityMetrics redisMetrics;
 
     @InjectMocks
     private TrafficRestorePhase1ReplayService service;
@@ -140,6 +146,54 @@ class TrafficRestorePhase1ReplayServiceTest {
 
             assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
             verify(replayLuaExecutor, never()).deleteIdempotencyKey(command.getIdempotencyKey());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("멱등키 삭제 중 예외 발생 시 예외를 전파하지 않고 가용성 실패 메트릭을 증가시킨다")
+    /**
+     * 트랜잭션 커밋 완료 이후 멱등키 삭제를 수행할 때 예외가 발생하더라도,
+     * 사용자 스레드로 예외를 전파하지 않고 정상적으로 삼키며 실패 메트릭을 증가시키는지 검증합니다.
+     */
+    void swallowsExceptionAndIncrementsMetricWhenCleanupFails() {
+        TrafficRestoreDailyAppTarget target = target();
+        TrafficRestoreReplayCommand command = command();
+        when(dailyAppTargetMapper.selectReplayCommand(target.getId())).thenReturn(command);
+        when(replayLuaExecutor.replay(command)).thenReturn(new TrafficRestoreReplayResult("APPLIED", null));
+        when(dailyAppTargetMapper.markTargetTerminalIfProcessing(
+                target.getId(),
+                TrafficRestoreTargetStatus.DONE,
+                WORKER_ID
+        )).thenReturn(1);
+
+        // deleteIdempotencyKey 호출 시 강제로 예외가 발생하도록 목(Mock) 행동을 설정합니다.
+        doThrow(new RuntimeException("Redis connection failure"))
+                .when(replayLuaExecutor).deleteIdempotencyKey(command.getIdempotencyKey());
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.replay(target, WORKER_ID);
+
+            verify(dailyAppTargetMapper).markTargetTerminalIfProcessing(
+                    target.getId(),
+                    TrafficRestoreTargetStatus.DONE,
+                    WORKER_ID
+            );
+
+            List<TransactionSynchronization> synchronizations = TransactionSynchronizationManager.getSynchronizations();
+            assertThat(synchronizations).hasSize(1);
+
+            // afterCommit 내부에서 예외를 발생시키나 밖으로 예외가 던져지지 않아야(swallow) 합니다.
+            Assertions.assertDoesNotThrow(() -> {
+                synchronizations.forEach(TransactionSynchronization::afterCommit);
+            });
+
+            // 멱등키 삭제를 실제로 시도했는지 확인합니다.
+            verify(replayLuaExecutor).deleteIdempotencyKey(command.getIdempotencyKey());
+            // 정리 실패 메트릭 카운트가 정상 증가했는지 검증합니다.
+            verify(redisMetrics).incrementIdempotencyCleanupFailure();
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
