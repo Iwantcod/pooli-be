@@ -44,6 +44,23 @@ class TrafficRestoreLuaContractTest {
     }
 
     @Test
+    @DisplayName("restore replay Lua는 모든 remaining 검증 성공 후에만 잔량을 변경한다")
+    void restoreReplayMutatesRemainingOnlyAfterAllRemainingValidationPasses() throws IOException {
+        String lua = Files.readString(Path.of("src/main/resources/lua/traffic/restore_usage_replay.lua"));
+
+        assertAppearsBefore(lua,
+                "shared_error = resolve_remaining_delta",
+                "redis.call('HSET', KEYS[2], 'amount'");
+        assertAppearsBefore(lua,
+                "if shared_error ~= nil then",
+                "redis.call('HSET', KEYS[2], 'amount'");
+        assertAppearsBefore(lua,
+                "return { 'ERROR', shared_error }",
+                "redis.call('HSET', KEYS[2], 'amount'");
+        assertThat(lua).doesNotContain("redis.call('HSET', key, 'amount'");
+    }
+
+    @Test
     @DisplayName("restore correction Lua는 string value와 hash field 보정을 구분한다")
     void restoreCorrectionSupportsStringAndHashCorrection() throws IOException {
         String lua = Files.readString(Path.of("src/main/resources/lua/traffic/restore_usage_correction.lua"));
@@ -62,5 +79,20 @@ class TrafficRestoreLuaContractTest {
 
         assertThat(enumSource).contains("RESTORE_USAGE_REPLAY(\"restore_usage_replay\", \"lua/traffic/restore_usage_replay.lua\")");
         assertThat(enumSource).contains("RESTORE_USAGE_CORRECTION(\"restore_usage_correction\", \"lua/traffic/restore_usage_correction.lua\")");
+    }
+
+    private void assertAppearsBefore(String source, String earlier, String later) {
+        int earlierIndex = source.indexOf(earlier);
+        int laterIndex = source.indexOf(later);
+
+        assertThat(earlierIndex)
+                .as("앞에 있어야 하는 Lua 조각: %s", earlier)
+                .isGreaterThanOrEqualTo(0);
+        assertThat(laterIndex)
+                .as("뒤에 있어야 하는 Lua 조각: %s", later)
+                .isGreaterThanOrEqualTo(0);
+        assertThat(earlierIndex)
+                .as("Lua 조각 순서가 보장되어야 한다")
+                .isLessThan(laterIndex);
     }
 }

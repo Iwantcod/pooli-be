@@ -28,7 +28,7 @@
 **Files:**
 - Modify: `src/test/java/com/pooli/traffic/service/runtime/TrafficRestoreLuaContractTest.java`
 
-- [ ] **Step 1: Lua 문자열 순서 검증 helper를 추가한다**
+- [x] **Step 1: Lua 문자열 순서 검증 helper를 추가한다**
 
 `TrafficRestoreLuaContractTest` class 내부 마지막 `}` 바로 앞에 아래 private helper를 추가한다.
 
@@ -49,7 +49,7 @@
     }
 ```
 
-- [ ] **Step 2: 부분 차감 방지 실패 테스트를 추가한다**
+- [x] **Step 2: 부분 차감 방지 실패 테스트를 추가한다**
 
 `TrafficRestoreLuaContractTest`의 `restoreReplayCreatesSharedUsageHashOnlyForPositiveSharedUsage` 테스트 다음에 아래 테스트를 추가한다.
 
@@ -60,7 +60,7 @@
         String lua = Files.readString(Path.of("src/main/resources/lua/traffic/restore_usage_replay.lua"));
 
         assertAppearsBefore(lua,
-                "local shared_error =",
+                "shared_error = resolve_remaining_delta",
                 "redis.call('HSET', KEYS[2], 'amount'");
         assertAppearsBefore(lua,
                 "if shared_error ~= nil then",
@@ -74,7 +74,7 @@
 
 이 테스트는 현재 코드에서 실패해야 한다. 현재 `apply_remaining_delta` 함수 내부에 `redis.call('HSET', key, 'amount', tostring(next_amount))`가 있고, shared 검증 전에 individual 함수 호출이 먼저 실행되기 때문이다.
 
-- [ ] **Step 3: 실패를 확인한다**
+- [x] **Step 3: 실패를 확인한다**
 
 Run:
 
@@ -95,7 +95,7 @@ TrafficRestoreLuaContractTest > restore replay Lua는 모든 remaining 검증 �
 **Files:**
 - Modify: `src/main/resources/lua/traffic/restore_usage_replay.lua`
 
-- [ ] **Step 1: `apply_remaining_delta`를 계산 전용 함수로 교체한다**
+- [x] **Step 1: `apply_remaining_delta`를 계산 전용 함수로 교체한다**
 
 `restore_usage_replay.lua`의 기존 `apply_remaining_delta` 함수와 individual/shared 호출 블록을 아래 코드로 교체한다. 위치는 현재 line 37부터 line 69까지의 블록이다.
 
@@ -157,7 +157,7 @@ end
 - 모든 ERROR 반환은 remaining `HSET`보다 먼저 발생한다.
 - idempotency key `SET`은 기존처럼 성공 경로 마지막에서만 수행된다.
 
-- [ ] **Step 2: contract test를 통과시킨다**
+- [x] **Step 2: contract test를 통과시킨다**
 
 Run:
 
@@ -176,7 +176,7 @@ BUILD SUCCESSFUL
 **Files:**
 - Test only
 
-- [ ] **Step 1: restore replay executor 단위 테스트를 실행한다**
+- [x] **Step 1: restore replay executor 단위 테스트를 실행한다**
 
 Run:
 
@@ -190,7 +190,7 @@ Expected:
 BUILD SUCCESSFUL
 ```
 
-- [ ] **Step 2: restore batch acceptance 테스트를 실행한다**
+- [x] **Step 2: restore batch acceptance 테스트를 실행한다**
 
 Run:
 
@@ -206,7 +206,9 @@ BUILD SUCCESSFUL
 
 이 테스트가 환경 의존성 때문에 실패하면, 실패한 외부 의존성 또는 profile 조건을 기록하고 Task 1, Task 2의 focused test 결과를 최소 검증으로 보고한다.
 
-- [ ] **Step 3: 전체 테스트를 실행한다**
+결과: 기본 `test` 태스크에서는 `local-only` 태그 제외 때문에 테스트를 찾지 못했다. 실제 설정에 맞춰 `./gradlew local-only --tests com.pooli.traffic.acceptance.TrafficRestoreBatchAcceptanceTest`와 실패 메서드 단독 실행을 수행했으며, `preflight_key_existence` list script 미등록으로 stream record가 DLQ 처리되어 실패했다. 변경 파일인 `restore_usage_replay.lua`와 직접 관련 없는 기존 local-only 시나리오 문제로 기록한다.
+
+- [x] **Step 3: 전체 테스트를 실행한다**
 
 Run:
 
@@ -227,12 +229,14 @@ BUILD SUCCESSFUL
 ./gradlew test --tests com.pooli.traffic.service.restore.TrafficRestoreReplayLuaExecutorTest
 ```
 
+결과: `./gradlew test`는 661개 중 `TrafficRestorePhase0HydrateServiceTest.throwsExceptionWhenTargetMonthStartIsNull` 1건이 실패했다. 실패 원인은 기대 메시지 `targetMonthStart must not be null for owner 10`과 실제 메시지 `temporal` 불일치이며, 변경 파일과 무관하다. 최소 검증 명령 두 개는 모두 성공했다.
+
 ## Task 4: 자체 검토와 보고
 
 **Files:**
 - Review only
 
-- [ ] **Step 1: 변경 범위를 확인한다**
+- [x] **Step 1: 변경 범위를 확인한다**
 
 Run:
 
@@ -254,7 +258,7 @@ diff --git a/src/test/java/com/pooli/traffic/service/runtime/TrafficRestoreLuaCo
 - Lua 함수는 검증/계산만 수행하고, `HSET`은 shared error 반환 뒤에만 나타난다.
 - 테스트 편의 때문에 production 설계를 왜곡한 변경이 없다.
 
-- [ ] **Step 2: 단순성 검토를 수행한다**
+- [x] **Step 2: 단순성 검토를 수행한다**
 
 아래 질문에 모두 “예”로 답할 수 있어야 한다.
 
@@ -264,7 +268,7 @@ diff --git a/src/test/java/com/pooli/traffic/service/runtime/TrafficRestoreLuaCo
 - 관련 없는 코드를 정리하지 않았는가? 답: restore replay remaining 원자성 외 코드는 건드리지 않는다.
 - 유지보수자가 추가 문서 없이 변경 의도를 이해할 수 있는가? 답: Lua 주석과 테스트 DisplayName이 결함 조건을 직접 설명한다.
 
-- [ ] **Step 3: 완료 보고를 작성한다**
+- [x] **Step 3: 완료 보고를 작성한다**
 
 보고에는 아래 항목을 포함한다.
 
@@ -286,4 +290,3 @@ diff --git a/src/test/java/com/pooli/traffic/service/runtime/TrafficRestoreLuaCo
 ## 승인 경계
 
 이 계획서는 아직 구현 승인이 아니다. 사용자가 “이 계획대로 진행하세요”, “구현하세요”, “승인합니다”처럼 명시적으로 승인한 뒤에만 production code와 test code를 수정한다.
-

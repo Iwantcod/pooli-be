@@ -34,38 +34,46 @@ if shared_usage > 0 and family_id <= 0 then
     return { 'ERROR', 'MISSING_FAMILY_ID' }
 end
 
-local function apply_remaining_delta(key, usage)
+-- remaining 상태를 검증하고 적용할 다음 값을 계산한다.
+local function resolve_remaining_delta(key, usage)
     if usage <= 0 then
-        return nil
+        return nil, nil
     end
 
     local amount = tonumber(redis.call('HGET', key, 'amount'))
     if amount == nil then
-        return 'MISSING_REMAINING'
+        return nil, 'MISSING_REMAINING'
     end
     if amount == -1 then
-        return nil
+        return nil, nil
     end
     if amount < -1 then
-        return 'INVALID_REMAINING'
+        return nil, 'INVALID_REMAINING'
     end
 
     local next_amount = amount - usage
     if next_amount < 0 then
-        return 'NEGATIVE_REMAINING'
+        return nil, 'NEGATIVE_REMAINING'
     end
-    redis.call('HSET', key, 'amount', tostring(next_amount))
-    return nil
+    return next_amount, nil
 end
 
-local individual_error = apply_remaining_delta(KEYS[2], individual_usage)
+local individual_next, individual_error = resolve_remaining_delta(KEYS[2], individual_usage)
 if individual_error ~= nil then
     return { 'ERROR', individual_error }
 end
 
-local shared_error = apply_remaining_delta(KEYS[3], shared_usage)
+local shared_next, shared_error = resolve_remaining_delta(KEYS[3], shared_usage)
 if shared_error ~= nil then
     return { 'ERROR', shared_error }
+end
+
+-- 두 remaining 검증이 모두 성공한 뒤에만 실제 차감을 적용한다.
+if individual_next ~= nil then
+    redis.call('HSET', KEYS[2], 'amount', tostring(individual_next))
+end
+if shared_next ~= nil then
+    redis.call('HSET', KEYS[3], 'amount', tostring(shared_next))
 end
 
 if total_usage > 0 then
