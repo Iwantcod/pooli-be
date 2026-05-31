@@ -18,6 +18,11 @@
 
 	    </select>
 
+    <!-- 
+        정책 전역 활성화 bootstrap/reconciliation용 스냅샷 조회 
+        ※ policy_id = 8 (장애 복구 전역 플래그)은 복구 프로세스가 Redis에서 동적으로 관리하므로, 
+           DB 스냅샷 동기화 시 덮어쓰여져 정합성이 오염되는 것을 방지하기 위해 제외합니다.
+    -->
     <select id="selectPolicyActivationSnapshot"
             resultType="com.pooli.policy.domain.dto.response.PolicyActivationSnapshotResDto">
         SELECT
@@ -26,6 +31,7 @@
             created_at AS createdAt,
             updated_at AS updatedAt
         FROM POLICY
+        WHERE policy_id != 8
         ORDER BY policy_id ASC
     </select>
 	    
