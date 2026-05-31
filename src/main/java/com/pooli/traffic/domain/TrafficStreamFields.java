@@ -8,8 +8,4 @@ public final class TrafficStreamFields {
 
     /** Redis Stream 메시지에 담길 페이로드 필드의 Key 명칭 */
     public static final String PAYLOAD = "payload";
-
-    /** 상수 제공용 유틸리티 클래스의 인스턴스화 방지를 위한 private 생성자 */
-    private TrafficStreamFields() {
-    }
 }
